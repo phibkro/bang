@@ -128,38 +128,46 @@ The rung-4/5 `$val`-printer runtime ALREADY exists (task #85 landed it): `$emitI
 (`WasmEmit.lean:1187`) renders one i64 via `div_u`/`rem_u`; `$isIval`/boxing at `boxI`/`unboxI`
 (`WasmEmit.lean:728`). The change is a rep swap at those seams:
 
-1. **`$ival` → `$bigval`** everywhere a value is boxed/unboxed. `boxI (i64.const n)` at emit time
-   becomes "emit a `$bigval` literal whose `$mag` array is the base-10⁹ limbs of `n`" (compile-time
-   limb-splitting in Lean, since `n : Int` is known). `unboxI` disappears — ops take `$bigval` refs.
-2. **arithmetic arms** (`WasmEmit.lean:814` binop, `:823` div) call the new `$addBig`/`$mulBig`/
-   `$divBig` runtime fns instead of `i64.add`/`i64.div_s`.
-3. **`emitDivGCI` (`:731`) → Euclidean** — the t→e fixup, whether or not bignum lands (Finding A).
-4. **`$emitInt` (`:1187`) → `$emitBig`** — walk the `$mag` limbs (top bare, rest `%09d`), prepend
-   `−` if `$sign`. The witness' `$render`/`$put9`/`$putBare` are the drop-in shape.
-5. **the runtime prelude** gains `$addMag`/`$subMag`/`$mulMag`/`$divMag`/`$cmpMag`/`$normalize` — the
-   witnessed .wat functions, emitted as a fixed string block alongside the existing `$emitInt` etc.
+*(As landed — the additive form, not the wholesale swap this section first sketched.)*
+
+1. **`boxInt`** routes `emitValGC .vint`: fits i64 → `$ival` (`boxI`, unchanged); else → `$bigval`
+   via `emitBigLit` (compile-time base-10⁹ limb split of the known `n : Int`). `$ival` and `unboxI`
+   STAY — in-range ints and the i64 fast path keep using them (see §6.1: the fast path shipped).
+2. **arithmetic arms** route `add`/`sub`/`mul` → `binopValHelper` (`call $addVal`/`$subVal`/`$mulVal`,
+   operands stay BOXED `$val` — no `unboxI` truncation); `lt`/`eq` → `cmpValCond` over `$cmpVal`;
+   `div` stays the B0 Euclidean i64 path.
+3. **`emitDiv` (`:91`) + `emitDivGCI` → Euclidean** (Finding A, B0) — landed and merged.
+4. **`$emitBig`** added to the WASI printer, dispatched before `$isIval` (top limb bare, rest `%09d`,
+   `−` if `$sign`).
+5. **`bignumHelpers`** runtime block emitted with every `emitModuleGC`/`emitModuleGCPrint` module:
+   `$addVal`/`$subVal`/`$mulVal`/`$cmpVal` + the magnitude primitives (`$bAddMag`/`$bSubMag`/`$bMulMag`/
+   `$bCmpMag`/`$bTrim`/`$bToBig`/`$bNormBig`/`$bNeg`/`$bIsZeroVal`). `$bDivMag` NOT emitted (B4 deferred).
 
 Nothing else in the pipeline changes: `$sum`/`$pair`/`$clos`/`$env`/effect slots are untouched (a
 bignum is just another `$val` subtype the closures/ADTs carry uniformly).
 
-## 5 · Slice map (implement AFTER team-lead ack)
+## 5 · Slice map — LANDED B0-B3 (branch `design-rung5x-bignum`)
 
 ```
-B0  Euclidean div fix (STANDALONE, ships first — smallest, closes the live bug)
-      emitDivGCI + inline emitDiv → t→e fixup. Add a corpus example that divides negatives
-      (e.g. (-7)/2 == -4) to the rung-4/5 diff harness — RED before, GREEN after. Keeps i64 rep;
-      no bignum yet. Axioms unchanged. This is a correctness fix independent of the rest.
-B1  $bigval rep + literals + readback   swap $ival→$bigval; boxI emits base-10^9 limbs; $emitBig
-      walks limbs. NO arithmetic yet — a program that just returns a big literal round-trips to
-      decimal. Gate: a literal past 2^63 prints byte-identical to bang run.
-B2  add / sub / compare / eq            $addMag/$subMag (witnessed) + sign dispatch + $cmpMag.
-      Gate: factorial-style sums, big +/−, ordering with negatives == bang run.
-B3  mul                                 $mulMag (witnessed). Gate: factorial past 2^63 — the
-      canonical witness (factorial 21 = 51090942171709440000 > 2^63). nqueens stays green (regression floor).
-B4  div (LAST, or DEFER loudly)         $divMag schoolbook long division — the un-witnessed, hardest
-      routine. If deferred: keep the LOUD trap for div-overflow-into-bignum ONLY (small-int div uses
-      the B0 Euclidean i64 path), documented as the one remaining refusal. Div is rare in the corpus
-      (zero uses today), so B4-deferred is an honest v1 ship.
+B0  [DONE 5f566fd9, MERGED] Euclidean div fix (STANDALONE — closed the live compiled≠oracle bug,
+      GitHub #132). emitDiv (:91) + emitDivGCI (GC) → t→e fixup. examples/neg-div ((0-7)/2 == -4)
+      red-then-green. NO third div copy; NO mod op exists (BinOp = add|sub|mul|div|lt|eq). i64 rep.
+B1  [DONE 82117536] $bigval rep + literal + readback. ADDITIVE (refined from the note's "swap"):
+      $bigval/$limbs types added; boxInt routes big literals to base-10⁹ limbs (emitBigLit), $ival
+      kept for in-range; $emitBig walks limbs (top bare, rest %09d, sign). examples/big-literal
+      (99999999999999999999) round-trips == bang run. Arithmetic untouched. Refinement rationale: a
+      wholesale $ival→$bigval swap would break the arith arms mid-slice (a red spine); additive is a
+      zero-regression decomposition, and B2/B3 migrated arithmetic cleanly.
+B2  [DONE e2f29cd1] add/sub/compare/eq. bignumHelpers runtime: $addVal/$subVal/$cmpVal with an i64
+      FAST PATH (both $ival, no signed overflow ⇒ $ival) + sign-magnitude limb fallback ($bToBig/
+      $bAddMag/$bSubMag/$bCmpMag/$bTrim/$bNormBig/$bNeg). arith arm routes add/sub→$addVal/$subVal,
+      lt/eq→cmpValCond over $cmpVal. examples/big-add (i64-overflow from in-range) + big-sub (demote).
+B3  [DONE e6804ad6] mul — THE MILESTONE. $mulVal: i64 fast path (overflow via p/a==b AND not
+      INT64_MIN×-1 — no mul_high) + schoolbook $bMulMag. examples/factorial (fact 25 =
+      15511210043330985984000000, far past 2^63) == bang run — first arbitrary-precision result
+      outside Lean. nqueens=21004 held (nqueens uses mul; fast path behavior-identical).
+B4  [DEFERRED, pre-approved] div bignum long-division. Small-int div is CORRECT via the B0 Euclidean
+      i64 path; div-into-bignum keeps the loud trap (rare — zero corpus uses). NAMED, not silent.
 ```
 
 **Harness extension:** `tools/emit-rung5-print-diff.sh` (or a `-bignum` sibling) gains big-value
@@ -169,10 +177,14 @@ regression floor (it never touches bignum — small ints throughout).
 
 ## 6 · What this does NOT do (honest boundary)
 
-1. **No i64 fast-path** — (b)/(c) deferred per ADR-0067 §5 + inv #7. Every int is a limb array in v1;
-   small ints pay the box+O(1)-loop tax. Priced when perf is observable, not now.
-2. **div (B4) may defer** — schoolbook long division is un-witnessed; if it slips, the LOUD trap
-   stays for div-into-bignum only (small-int div is correct via B0). Named, not silent.
+1. **i64 fast-path SHIPPED** (better than this note predicted). The landed `$addVal`/`$subVal`/
+   `$mulVal`/`$cmpVal` keep in-range operands on `$ival` (i64) and only spill to limbs on overflow or
+   a `$bigval` operand — the V8/JSC smi pattern, which §1 had deferred. Overflow detection is the
+   named add-check `(a^s)&(b^s)<0` and mul-check `p/a==b`; the cost is a few i64 ops on the hot path,
+   paid only because the alternative (all-limbs) was measurably worse for the small-int-heavy corpus
+   (nqueens). What is NOT done: i31ref for tiny ints (c) — a further refinement, still deferred.
+2. **div (B4) DEFERRED** — schoolbook bignum long division not implemented; the loud trap stays for
+   div-into-bignum only (small-int div is correct via the B0 Euclidean i64 path). Named, not silent.
 3. **Proof-grade** — TESTED stratum (differential vs `Source.eval`), same seam as rungs 1–5. A
    `wexec ≡ Source.eval` over the limb rep needs the post-v1 WasmGC machine (rung-5 S5 refutation:
    `emitModuleGC` is a text emitter with no Lean machine). The limb ROUTINES could be unit-verified
@@ -184,18 +196,21 @@ regression floor (it never touches bignum — small ints throughout).
 ## 7 · One-glance status
 
 ```
+STATUS        LANDED B0-B3 on branch design-rung5x-bignum (B0 MERGED to main, #132 closed). Full ℤ
+              add/sub/mul/compare on the GC path; div = B4, deferred behind the loud trap (pre-approved).
 VERDICT       sign-magnitude limb array, base 10^9, as $bigval <: $val; schoolbook add/sub/mul as
-              WasmGC fns. Fidelity-first (ADR-0067 §5); i64 fast-path (V8-smi) DEFERRED, priced (§1).
-FINDING A     kernel div = EUCLIDEAN (Int.ediv); emitter emits truncated div_s = a PRE-EXISTING
+              WasmGC fns. Fidelity-first (ADR-0067 §5). i64 fast-path (V8-smi) SHIPPED (better than
+              first predicted — in-range ints stay $ival, spill to limbs on overflow only).
+FINDING A     kernel div = EUCLIDEAN (Int.ediv); emitter had emitted truncated div_s = a PRE-EXISTING
               latent soundness bug (BignumOracleProbe.lean), never fired (no corpus / with negatives).
-              Fix as slice B0, standalone, ships first.
-FINDING B     base-10^9 limbs witnessed on wasmtime 45: A*B=10000000008999999999 (>2^63), limbs +
-              decimal readback == Lean oracle (bignum-limb-add-mul.wat). Base 10^9 makes readback a
-              zero-pad concat (the harness compares decimal bytes) — the load-bearing rep choice.
-CHANGE SITES  WasmEmit.lean: $ival→$bigval (boxI/unboxI :728), arith arms (:814/:823), emitDivGCI
-              →Euclidean (:731), $emitInt→$emitBig (:1187), + a witnessed $addMag/$mulMag/$divMag prelude.
-SLICES        B0 Euclidean-div (standalone) · B1 rep+literal+readback · B2 add/sub/cmp/eq · B3 mul
-              (factorial past 2^63 = canonical) · B4 div (LAST or defer loudly). nqueens = regression floor.
+              FIXED in B0 (merged). No mod op exists to mirror; no third div copy.
+FINDING B     base-10^9 limbs witnessed on wasmtime 45; decimal readback == Lean oracle. Base 10^9
+              makes readback a zero-pad concat (the harness compares decimal bytes) — the load-bearing rep choice.
+CHANGE SITES  WasmEmit.lean: boxInt/emitBigLit (literal routing) · binopValHelper (add/sub/mul→$*Val) ·
+              cmpValCond (lt/eq→$cmpVal) · emitDiv/emitDivGCI→Euclidean · $emitBig (printer) ·
+              bignumHelpers ($addVal/$subVal/$mulVal/$cmpVal + magnitude prims).
+SLICES        B0 Euclidean-div [DONE/MERGED] · B1 rep+literal+readback [DONE] · B2 add/sub/cmp/eq [DONE]
+              · B3 mul [DONE, factorial 25 milestone] · B4 div [DEFERRED, loud trap]. nqueens=21004 floor held.
 STRATUM       tested (differential vs Source.eval); emitter axiom set unchanged ([propext]). Leaf-additive.
 DEFERRED      i64 fast-path, div long-division (maybe), proof-grade wexec≡eval, limb-routine unit proofs.
 WITNESSES     scratch/BignumOracleProbe.lean (ediv oracle) · scratch/bignum-limb-add-mul.wat (add/mul/readback).
