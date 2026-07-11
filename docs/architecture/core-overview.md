@@ -40,7 +40,7 @@ graph TD
     Core_IR["Core.IR<br/>440L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
     Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>582L · fan-in 0"]
+    Core_Semantics_Eval["Core.Semantics.Eval<br/>621L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>3400L · fan-in 0"]
@@ -105,7 +105,7 @@ graph TD
 | `Core.IR` | ? | 440 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
 | `Core.Semantics.Dispatch` | ? | 273 | 0 |
-| `Core.Semantics.Eval` | ? | 582 | 0 |
+| `Core.Semantics.Eval` | ? | 621 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
 | `Core.Semantics.Subst` | ? | 947 | 0 |
 | `Core.Soundness` | ? | 3400 | 0 |

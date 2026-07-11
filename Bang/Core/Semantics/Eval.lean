@@ -457,11 +457,50 @@ def Config.runTrace {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig
               | .perform (.vcap _ _) _ _ => .escapedCap
               | _                        => .stuck
 
+/-- Project a traced result to its value component (Trace-erasing) — the bridge to the oracle. -/
+def Result.eraseTrace : Result (Val × Trace Eff) → Result Val
+  | .done (v, _) => .done v
+  | .oom         => .oom
+  | .escapedCap  => .escapedCap
+  | .stuck       => .stuck
+
+/-- **Value-agreement (the invariant-#1 tie).** `Config.runTrace`'s value component IS `Config.run`:
+erasing the trace recovers the oracle EXACTLY, for all `n`/`cfg`/`e`/`t`. The accumulator is a
+passenger — `runTrace` copies `Config.run`'s control flow (same `Source.step`, same terminals), so
+`Source.eval` stays the single reference the trace instrument rides (never an unoracled path). A
+fuel induction mirroring the copied structure (via `Config.runTrace.induct`). This makes
+value-agreement a THEOREM, not a convention — no drift between the two evaluators. -/
+theorem runTrace_erase_eq_run {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    (n : Nat) (cfg : Config) (e : Eff) (t : Trace Eff) :
+    Result.eraseTrace (Config.runTrace (Mult := Mult) n cfg e t) = Config.run n cfg := by
+  induction n, cfg, e, t using Config.runTrace.induct (Eff := Eff) (Mult := Mult) with
+  | case1 cfg e t => simp [Config.runTrace, Config.run, Result.eraseTrace]
+  | case2 n g w e t => simp [Config.runTrace, Config.run, Result.eraseTrace]
+  | case3 n cfg e t hnd a ℓ op arg hperf cfg' hstep ih =>
+      obtain ⟨g, K, M⟩ := cfg; simp only at hperf; subst hperf
+      simp only [Config.runTrace, Config.run, hstep]; exact ih
+  | case4 n cfg e t hnd a ℓ op arg hperf hstep =>
+      obtain ⟨g, K, M⟩ := cfg; simp only at hperf; subst hperf
+      simp [Config.runTrace, Config.run, hstep, Result.eraseTrace]
+  | case5 n cfg e t hnd cfg' hstep hnp ih =>
+      simp only [Config.runTrace, Config.run, hstep]; exact ih
+  | case6 n cfg e t hnd hstep hperf hnp =>
+      simp [Config.runTrace, Config.run, hstep, Result.eraseTrace]
+  | case7 n cfg e t hnd hstep hperf hnp =>
+      simp [Config.runTrace, Config.run, hstep, Result.eraseTrace]
+
 /-- Fuel-bounded evaluation returning both the value and the effect `Trace`. Load into a fresh
 machine (`⟨0, [], c⟩`), run under the whole-program residual `e`, empty trace. -/
 def Source.evalTrace {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
     (fuel : Nat) (c : Comp) (e : Eff) : Result (Val × Trace Eff) :=
   Config.runTrace (Mult := Mult) fuel (0, [], c) e []
+
+/-- Value-agreement at the program entry: `Source.evalTrace`'s value IS `Source.eval` (the corollary
+that ties the trace instrument to the hop-1 oracle at the load site). -/
+theorem evalTrace_erase_eq_eval {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    (fuel : Nat) (c : Comp) (e : Eff) :
+    Result.eraseTrace (Source.evalTrace (Mult := Mult) fuel c e) = Source.eval fuel c :=
+  runTrace_erase_eq_run fuel (0, [], c) e []
 
 /-- The trace stays within its recorded bounds (INFORMATIVE, Q14 option 1): every dispatched label
 is `≤` the runtime live bound in force when it was performed. Internally-handled labels are checked

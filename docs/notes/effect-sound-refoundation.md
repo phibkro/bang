@@ -146,13 +146,15 @@ dispatcher, not of the static type — a strength, not a vacuity.
 
 ### The discharge structure (as landed)
 
-1. **Value-agreement differential guard.** `Source.eval` stays the oracle. A generic
-   lemma (NOT a `#guard` on the value — the kernel is abstract over `Eff`; the WITNESS
-   file uses a local `Finset Label` instance to check the TRACE shape instead):
-   `(Config.runTrace n cfg e t).value = Config.run n cfg` — the value component agrees
-   for all `n, cfg, e, t`. Structural induction on fuel; the two defs share `Source.step`
-   and the same terminal classification (DISPATCH `none → escapedCap` matches
-   `Config.run`'s `perform (vcap _) → escapedCap`).
+1. **Value-agreement — a THEOREM (not convention).** `Source.eval` stays the oracle, and the tie is
+   PROVEN: `runTrace_erase_eq_run (Bang/Core/Semantics/Eval.lean)`:
+   `Result.eraseTrace (Config.runTrace n cfg e t) = Config.run n cfg` for all `n, cfg, e, t`
+   (`eraseTrace` = project the `done`-value, preserve `oom`/`escapedCap`/`stuck`), with the
+   entry corollary `evalTrace_erase_eq_eval : eraseTrace (evalTrace fuel c e) = eval fuel c`. A
+   fuel induction via `Config.runTrace.induct` mirroring the copied control flow (~15 lines, `simp`
+   per case). This converts value-agreement from convention (copied control flow) to a machine fact —
+   no drift between the two evaluators, `runTrace` is not an unoracled execution path (invariant #1).
+   The witness file's local `Finset Label` instance additionally checks the TRACE shape by `rfl`.
 2. **The discharge.** `traceWithin t` = every recorded `(ℓ, liveBound K e)` has
    `labelEff ℓ ≤ liveBound K e`. The induction invariant: at every DISPATCH-recording
    config, the dispatched capability `vcap n ℓ` resolves (`idDispatch K n ℓ … ≠ none`,
