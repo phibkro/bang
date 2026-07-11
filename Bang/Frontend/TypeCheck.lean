@@ -3591,6 +3591,29 @@ def monomorphizeLRBindings (gen : List (String × GenData)) (aliases : List (Str
   | f + 1, .cons n t e rest  => do return .cons n t (← monomorphizeLetRec gen aliases f e) (← monomorphizeLRBindings gen aliases f rest)
 end
 
+/-- #124: the `.matchD` scrutinee-type-mismatch error, teaching-phrase aware. `foldDataTyOrRaw`
+(the general-purpose renderer `bang holes`/`bang query type`/`hover` ALSO depend on — its raw
+`#N` markers are `Bang.Query.holesOf`'s OWN detection signal, `holeMarkersIn`'s textual scan —
+must NOT be changed to prose here; only THIS error-throw site's rendering is teaching-phrase'd,
+so the general fold stays byte-identical for every other caller). An unresolved position (`n ≥
+holeBase`, the same threshold `holesOf` itself uses) renders as a phrase naming the fix — ascribe
+the scrutinee — instead of the bare `#N` a stranger cannot act on (the #124 finding: a curried
+`let rec`'s LATER parameter falls through unascribed — `letRecS`'s elaboration arm only threads
+the declared type onto the OUTERMOST `.lam` binder, so a match on a later param's value lands
+here with an unresolved `paramHole`). -/
+def matchScrutineeTyErr (ctors : List (String × CtorInfo)) (gen : List (String × GenData))
+    (τ : VT) (dataName : String) (indefiniteArticle : Bool) : String :=
+  let rendered := foldDataTyOrRaw ctors gen τ
+  let isHole := match τ with | .tvar n => decide (n ≥ holeBase) | _ => false
+  let article := if indefiniteArticle then "a " else ""
+  if isHole then
+    s!"match scrutinee's type is undetermined here (an underdetermined position, shown as \
+'{rendered}' internally) — ascribe it, e.g. `match (s : {dataName}) \{ … }`, to pin the type \
+BEFORE the match (this is the common shape when a curried `let rec`'s LATER parameter is matched: \
+only the OUTERMOST param's declared type is threaded automatically)"
+  else
+    s!"match scrutinee is {rendered}, not {article}{dataName}"
+
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
 constructor maps structurally (ENUMERATED — a new `Surf` form fails here until elaborated, the
@@ -3861,10 +3884,10 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             match runInferV (synthSV Γ s') with
             | .ok τ =>
                 if ci0.params.isEmpty then
-                  if τ != vtyOf ci0.dataTy then throw s!"match scrutinee is {foldDataTyOrRaw env.ctors env.gen τ}, not {ci0.dataName}"
+                  if τ != vtyOf ci0.dataTy then throw (matchScrutineeTyErr env.ctors env.gen τ ci0.dataName false)
                 else match τ with
                      | .mu _ => pure ()
-                     | _     => throw s!"match scrutinee is {foldDataTyOrRaw env.ctors env.gen τ}, not a {ci0.dataName}"
+                     | _     => throw (matchScrutineeTyErr env.ctors env.gen τ ci0.dataName true)
             | .error e => throw s!"match scrutinee: {e}"
             -- order arms by ctor position (pure bookkeeping — no recursion below)
             let mut ordered : List (List String × Surf) := []
