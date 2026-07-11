@@ -96,11 +96,12 @@ below. They confirm Candidate 1 is structurally sound on a real engine before th
 ## The implementation-lane slice map
 
 ```
-S0  $env effect slots     add a $ref (mutable box) $val subtype; the emitter's env becomes uniform
+S0  [DONE] $env effect slots   add a $ref (mutable box) $val subtype; the emitter's env becomes uniform
                           $env (rung-4 already has it) — a handler pushes a $ref/tag slot, get/put =
                           struct.get/set. Refute-first: the two hand witnesses (DONE) fix the shape.
-S1  state on the GC path  port the rung-2b `.state` arm to $env: handle (state s₀) mints a $ref box,
+S1  [DONE] state on GC path   port the rung-2b `.state` arm to $env: handle (state s₀) mints a $ref box,
                           get/put read/write it; closures capture it for free (the S0 witness).
+                          LANDED: `state` example emits emitModuleGC + runs 5 == bang run on wasmtime 45.
 S2  throws on the GC path port rung-2's try_table/throw verbatim (control flow, rep-agnostic); the
                           cap slot carries the tag identity. The first GC program mixing raise + a closure.
 S3  transaction (GC heap) TVar heap = a GC array of $ref cells (rung-3 Q1 option B); newTVar appends,

@@ -844,8 +844,37 @@ partial def emitCompGC (envL : Nat) (c : Comp) (st : GCState) : EmitGC × GCStat
               let snd := s!"(struct.get $pair 1 (ref.cast (ref $pair) (local.get {scL})))"
               (.ok (seqBlock s!"(local.set {scL} {ev})\n    (local.set {e1L} (struct.new $env {fst} (local.get {envL})))\n    (local.set {e2L} (struct.new $env {snd} (local.get {e1L})))\n    {bn}"), st3)
   | .unfold v => emitValGC envL v st
-  | .perform _ _ _ => (.unsup "perform (effects on the GC path are rung-5)", st)
-  | .handle _ _ => (.unsup "handle (effects lower on the inline path; GC-path effects are rung-5)", st)
+  -- RUNG 5: state `get`/`put` on the GC path (design (b) Candidate 1). The cap `vvar i` resolves via
+  -- `$lookup` to the `$ref` mutable box the enclosing `handle (state …)` minted; `get` reads it,
+  -- `put` mutates in place (one-shot resume, ADR-0025 D1 — no unwind, no reified continuation). Unlike
+  -- the inline path (unit has no i64 rep, so `put` MUST fuse with its `letC`), the GC path boxes unit
+  -- as a $val, so `put` is an ordinary value-producing arm: mutate, then return boxed unit.
+  | .perform (.vvar i) "get" _ =>
+      -- get: read the box's current $val (the kernel returns the stored `s`, resume in place).
+      (.ok s!"(struct.get $ref 0 (ref.cast (ref $ref) {lookupGC envL i}))", st)
+  | .perform (.vvar i) "put" v =>
+      match emitValGC envL v st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ev, st1) =>
+          -- struct.set the box in place, then leave boxed unit (put returns `ret .vunit`). Wrapped in
+          -- a seqBlock so the statement + value compose as one value expression.
+          (.ok (seqBlock s!"(struct.set $ref 0 (ref.cast (ref $ref) {lookupGC envL i}) {ev})\n    {boxI "(i64.const 0)"}"), st1)
+  | .perform _ _ _ => (.unsup "perform: only `get`/`put` (state) lower on the GC path so far (rung-5 S1); throws/txn/custom are S2-S4", st)
+  -- RUNG 5 S1: handle (state s₀) M on the GC path. Mint a $ref box holding s₀, PREPEND it as env slot
+  -- 0 (so M's index-0 cap-binder resolves to the box via $lookup — exactly the inline `.state` Slot,
+  -- now a heap box reachable by closures). The handle's value is M's value (handler return = identity,
+  -- Eval.lean:65). Fuse the box construction into the env via a fresh env local, like `letC`.
+  | .handle (.state _ s₀) M =>
+      match emitValGC envL s₀ st with
+      | (.unsup r, st') => (.unsup s!"state init value: {r}", st')
+      | (.ok es₀, st1) =>
+          let (e2L, st2) := st1.fresh tyEnv
+          match emitCompGC e2L M st2 with
+          | (.unsup r, st') => (.unsup r, st')
+          | (.ok bM, st3) =>
+              -- env slot 0 = a fresh $ref box wrapping s₀; M runs under (box :: envL).
+              (.ok (seqBlock s!"(local.set {e2L} (struct.new $env (struct.new $ref {es₀}) (local.get {envL})))\n    {bM}"), st3)
+  | .handle _ _ => (.unsup "handle: only `state` lowers on the GC path so far (rung-5 S1); throws/txn/custom are S2-S4", st)
   | .oom => (.unsup "oom", st)
   | .wrong s => (.unsup s!"wrong: {s}", st)
 
@@ -876,6 +905,12 @@ def gcTypes : String :=
   "    (type $ival (sub $val (struct (field i64))))\n" ++
   "    (type $sum  (sub $val (struct (field $tag i32) (field $payload (ref null $val)))))\n" ++
   "    (type $pair (sub $val (struct (field (ref null $val)) (field (ref null $val)))))\n" ++
+  -- RUNG 5: a $ref is a MUTABLE box holding a $val — the GC-path image of a state cell / TVar cell.
+  -- A `handle (state s₀)` mints one and pushes it as an ordinary $env slot, so a captured closure
+  -- reads/mutates it via the SAME $lookup rung 4 uses (get = struct.get, put = struct.set). This is
+  -- the unified-rep move (rung-5 design (b) Candidate 1): the compile-time inline `.state` LOCAL
+  -- becomes a runtime heap box, reachable through the env cons-list.
+  "    (type $ref  (sub $val (struct (field (mut (ref null $val))))))\n" ++
   "    (type $env  (struct (field $hd (ref null $val)) (field $tl (ref null $env))))\n" ++
   "    (type $fn   (func (param (ref null $env)) (param (ref null $val)) (result (ref null $val))))\n" ++
   "    (type $clos (sub $val (struct (field $code (ref $fn)) (field $env (ref null $env))))))"
