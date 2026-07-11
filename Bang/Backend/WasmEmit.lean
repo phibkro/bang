@@ -70,25 +70,34 @@ def binOpWat : BinOp → Option String
   | .div => none               -- guarded separately (emitDiv): kernel `a/0 = 0`, wasm div_s traps
   | .lt | .eq => none          -- comparisons ⇒ sum-encoded bool ⇒ need a `case` context (emitCmpCase)
 
-/-- Guarded division — REVIEWER-RULED semantics (rung-1.5): the kernel's `div` is TOTAL,
-`a / 0 = 0` (Lean `Int` division, `BinOp.eval div`, IR.lean:184). wasm's `i64.div_s` TRAPS on a
-zero divisor, so a bare emission would diverge from `Source.eval` exactly at div-by-zero — and
-the reference wins (invariant #1: proof rides the reference; invariant #7: the guard's extra
-instructions are free, performance is second-class).
+/-- Guarded, EUCLIDEAN division — the kernel's `div` is TOTAL and EUCLIDEAN: `a / 0 = 0` and
+`a / b = Int.ediv a b` (`BinOp.eval div`, IR.lean:188 — Lean core `Int./` is `Int.ediv`, whose
+remainder is always `≥ 0`). This is NOT truncated-toward-zero: `(-7)/2 = -4`, `7/(-2) = -3`,
+`(-7)/(-2) = 4` (pinned in `scratch/BignumOracleProbe.lean`). wasm's `i64.div_s` is TRUNCATED, so
+a bare `div_s` diverges from `Source.eval` for EVERY negative-operand division — and the reference
+wins (invariant #1). This was a latent compiled≠oracle gap (issue #132): the corpus never divided
+with a negative operand, so it never fired.
 
-The guard tests `i64.eqz` of the divisor and yields `0` when it is zero, else `div_s`. The
-operands `ea`/`eb` are pure `Val` expressions (`i64.const`/`local.get` — no side effects, no
-traps), so duplicating `eb` in both the test and the divide is safe (no scratch local needed).
+The emitted sequence (witnessed on wasmtime 45, `scratch/euclid-div.wat`; the t→e fixup formula is
+verified against the oracle across all sign quadrants in `scratch/EuclidDivProbe.lean`):
 
-  (if (result i64) (i64.eqz <eb>)
+  (if (result i64) (i64.eqz <eb>)                              ;; b = 0  ⇒  0  (kernel a/0 = 0)
     (then (i64.const 0))
-    (else (i64.div_s <ea> <eb>)))
+    (else                                                       ;; qt = a div_s b ; rt = a rem_s b
+      (if (result i64) (i64.lt_s (i64.rem_s <ea> <eb>) 0)       ;; truncated remainder < 0 ?
+        (then (if (result i64) (i64.gt_s <eb> 0)                ;; euclidean fixup: qt - sign(b)
+          (then (i64.sub (i64.div_s <ea> <eb>) 1))
+          (else (i64.add (i64.div_s <ea> <eb>) 1))))
+        (else (i64.div_s <ea> <eb>)))))
 
-Known residual gap (NOT this slice): `i64.div_s` also traps on `INT64_MIN / -1` (signed
-overflow). That is the pre-existing unbounded-`Int`→i64 edge (probe note §4.1, the bignum gap),
-orthogonal to div-by-zero; the corpus stays within the i64-representable range. -/
+The operands `ea`/`eb` are pure `Val` expressions (`i64.const`/`local.get` — no side effects, no
+traps, `emitVal`), so duplicating them across the eqz/rem_s/div_s tests is safe (no scratch local).
+
+Known residual gap (NOT this slice, the bignum lane): `i64.div_s` also traps on `INT64_MIN / -1`
+(signed overflow) and any operand outside [−2⁶³, 2⁶³); the unbounded-`Int`→i64 edge closes when the
+`$bigval` limb rep lands (`docs/notes/emission-bignum-design.md`). -/
 def emitDiv (ea eb : String) : String :=
-  s!"(if (result i64) (i64.eqz {eb})\n      (then (i64.const 0))\n      (else (i64.div_s {ea} {eb})))"
+  s!"(if (result i64) (i64.eqz {eb})\n      (then (i64.const 0))\n      (else (if (result i64) (i64.lt_s (i64.rem_s {ea} {eb}) (i64.const 0))\n        (then (if (result i64) (i64.gt_s {eb} (i64.const 0))\n          (then (i64.sub (i64.div_s {ea} {eb}) (i64.const 1)))\n          (else (i64.add (i64.div_s {ea} {eb}) (i64.const 1)))))\n        (else (i64.div_s {ea} {eb})))))"
 
 /-- The wasm comparison instruction for a comparison `BinOp` — used ONLY inside the fused
 `letC cmp; case` if-then-else pattern (a comparison result has no standalone i64 rep). Each
@@ -727,8 +736,13 @@ def cmpGCWat : BinOp → Option String
 
 def unboxI (e : String) : String := s!"(struct.get $ival 0 (ref.cast (ref $ival) {e}))"
 def boxI (e : String) : String := s!"(struct.new $ival {e})"
+/-- GC-path Euclidean guarded division — same semantics as `emitDiv` (kernel `div = Int.ediv`,
+`a/0 = 0`): the truncated `div_s` fixed up to Euclidean when the truncated remainder is negative
+(issue #132; witnessed `scratch/euclid-div.wat`, formula verified `scratch/EuclidDivProbe.lean`).
+`ea`/`eb` here are UNBOXED i64 expressions (`unboxI` = a pure `struct.get $ival` — no side effect),
+so duplicating them across the eqz/rem_s/div_s tests is safe. -/
 def emitDivGCI (ea eb : String) : String :=
-  s!"(if (result i64) (i64.eqz {eb}) (then (i64.const 0)) (else (i64.div_s {ea} {eb})))"
+  s!"(if (result i64) (i64.eqz {eb}) (then (i64.const 0)) (else (if (result i64) (i64.lt_s (i64.rem_s {ea} {eb}) (i64.const 0)) (then (if (result i64) (i64.gt_s {eb} (i64.const 0)) (then (i64.sub (i64.div_s {ea} {eb}) (i64.const 1))) (else (i64.add (i64.div_s {ea} {eb}) (i64.const 1))))) (else (i64.div_s {ea} {eb})))))"
 def lookupGC (envL i : Nat) : String := s!"(call $lookup (local.get {envL}) (i32.const {i}))"
 
 /-- wasm type strings for the two local roles. -/

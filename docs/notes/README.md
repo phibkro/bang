@@ -28,6 +28,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
 - [`effect-algebra-survey.md`](effect-algebra-survey.md) — The algebra of effects and the effect-side lambda cube — design survey (R-series companion to R6)
 - [`effects-vs-cic.md`](effects-vs-cic.md) — Effects vs the Calculus of (Inductive) Constructions — additive or derivative?
+- [`emission-bignum-design.md`](emission-bignum-design.md) — Emission bignum design — full ℤ on the WasmGC path (closing the rung-4/5 i64-wrap gap)
 - [`emission-rung1-probe.md`](emission-rung1-probe.md) — Emission rung-1 probe — pure ⊥-row arithmetic → real `.wat`, run on wasmtime
 - [`emission-rung3-design.md`](emission-rung3-design.md) — Emission rung-3 design — transaction journal/rollback on Wasm (the ◊5.5 novelty rung)
 - [`emission-rung4-design.md`](emission-rung4-design.md) — Emission rung-4 design — closures + ADTs + recursion on WasmGC (the "nqueens compiles" rung)
