@@ -544,6 +544,9 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### Exceptional / error terminals — the typed `Outcome` layer's NEW capability (issue #54).
 
 - `1 + Left(0)` ⟹ `0`  — helper says only `false`, the `Outcome` names the actual terminal (here: a type error).
+### #118 — the bare-fun-param hole gap: `fun p => … p == derivedCarrierValue …`. `elabS`'s
+
+- `effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }` ⟹ `32`
 ### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
 
 - `let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 41` ⟹ `42`  — the checkSC thunk arm (thunk in COMPUTATION position): an annotated thunk at top level, forced+applied.
@@ -595,7 +598,7 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### Validation ⑦b — HM polymorphism RUNS end-to-end (ADR-0075 bite-0, the real pipeline).
 
 - `let id = {fun x => x} in (let a = ($id) 5 in (let u = ($id) () in a))` ⟹ `5`  — id at Int and Unit (independent instantiations): 5.
-### EFFECT ROW-POLYMORPHISM (ADR-0075 bite-0b item 3) — ONE `compose`, generic over its effect row.
+### #119 — the row-subsumption asymmetry (fork-1): `checkSC`'s `.annotS` arm ALREADY used
 
 - `match Right(7) { Left(a) -> 0, Right(x) -> x }` ⟹ `7`  — #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
 - `let x = Right(7) in match x { Left(a) -> 0, Right(x) -> x }` ⟹ `7`

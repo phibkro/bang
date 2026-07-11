@@ -596,6 +596,62 @@ def occCinC (n : Nat) : ICTy → Bool
 end
 
 mutual
+/-- Check-mode value-type comparator: structurally identical to `unifyV`, EXCEPT at a `.U` row it
+uses `subRow` (actual ⊆ declared) instead of `unifyRow` (exact MGU equality) — #119's fork-1 fix,
+scoped to `checkSC`'s `.app` arm (the one shape that needs a NESTED-row subsumption `subRow` alone
+can't give — `subRow` compares only the OUTER row, `.app`'s codomain can bury a `.U` inside a
+`.prod`/`.sum`/further `.arr`). `unifyV`/`unifyC`/`unifyRow` stay UNTOUCHED elsewhere (`.lett`/
+`.matchS` route through their OWN existing explicit arms instead, which already reach
+`checkSV`'s correctly-`subRow`-aware `.thunk` case — no separate comparator needed there; only
+`.app`'s codomain has no such existing explicit arm to fall back on). Confirmed NOT to disturb the
+`rowPolyDivSrc`/#94 row-polymorphism corpus (both hit `synthSC`'s OWN `.app` arm, never this one —
+this arm only fires when an `.app` is itself a `checkSC`-checked TAIL under a declared bound). -/
+def subsumeAppV (fuel : Nat) (a b : IVTy) : Infer Unit := do
+  match fuel with
+  | 0      => throw "unify: out of fuel"
+  | fu + 1 =>
+    let a ← resolve (fu + 1) a
+    let b ← resolve (fu + 1) b
+    match a, b with
+    | .vhole n, .vhole m => if n == m then return () else assign n b
+    | .vhole n, _        => do if occVinV n (← zonkV (fu + 1) b) then
+                                 throw "occurs check: cannot construct an infinite type" else assign n b
+    | _, .vhole m        => do if occVinV m (← zonkV (fu + 1) a) then
+                                 throw "occurs check: cannot construct an infinite type" else assign m a
+    | .int, .int   => return ()
+    | .unit, .unit => return ()
+    | .cap ℓ, .cap ℓ' => if ℓ == ℓ' then return () else throw "cap label mismatch"
+    | .tvar n, .tvar m => if n == m then return () else throw "rigid/rec type-var mismatch"
+    | .sum a1 a2, .sum b1 b2   => do subsumeAppV fu a1 b1; subsumeAppV fu a2 b2
+    | .prod a1 a2, .prod b1 b2 => do subsumeAppV fu a1 b1; subsumeAppV fu a2 b2
+    | .mu a1, .mu b1           => subsumeAppV fu a1 b1
+    | .U φ B, .U φ' B'         =>                             -- SUBSUMPTION: actual φ ⊆ declared/expected φ'
+        do if (← subRow fu φ φ') then subsumeAppC fu B B'
+           else do
+             let φr  ← resolveRow fu φ
+             let φ'r ← resolveRow fu φ'
+             let excess := φr.labels \ φ'r.labels
+             throw s!"thunk body performs \{{showRow excess}}, exceeding its declared bound \{{showRow φ'r.labels}}"
+    | _, _ => throw "type mismatch"
+def subsumeAppC (fuel : Nat) (a b : ICTy) : Infer Unit := do
+  match fuel with
+  | 0      => throw "unify: out of fuel"
+  | fu + 1 =>
+    let a ← resolveC (fu + 1) a
+    let b ← resolveC (fu + 1) b
+    match a, b with
+    | .chole n, .chole m => if n == m then return () else assignC n b
+    | .chole n, _        => do if occCinC n (← zonkC (fu + 1) b) then
+                                 throw "occurs check: cannot construct an infinite computation type" else assignC n b
+    | _, .chole m        => do if occCinC m (← zonkC (fu + 1) a) then
+                                 throw "occurs check: cannot construct an infinite computation type" else assignC m a
+    | .F q A, .F q' A'         => if q == q' then subsumeAppV fu A A' else throw "returner grade mismatch"
+    | .arr q A B, .arr q' A' B' => if q == q' then do subsumeAppV fu A A'; subsumeAppC fu B B'
+                                   else throw "arrow grade mismatch"
+    | _, _ => throw "computation type mismatch"
+end
+
+mutual
 /-- Unify two value types, extending the substitution. Rows/grades unify by EQUALITY (concrete in
 bite-0 — row variables are item 3). Occurs-check fails loud. MGU is the differential-tested contract
 (CLAUDE.md), not proven here. -/
@@ -1250,6 +1306,56 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
       match effOf t with
         | some ρ => if (← subRow bigFuel φ (embRow ρ)) then return φ else throw "inferred effect exceeds the declared row"
         | none   => return φ
+  -- #119 fork-1: a `.lett`-chain's TAIL can be a value-constructor shape (`.pairS`, `.thunk`, …)
+  -- carrying its OWN declared row bound (e.g. `buildLetRecMulti`'s pair-of-thunks) — without this
+  -- arm, `.lett` falls to the catch-all below, which `synthSC`s the WHOLE chain (losing the tail's
+  -- declared-bound context) and exact-equality-unifies the result, tripping the exact bug this
+  -- issue reports. Recursing `checkSC` into the RHS keeps every OTHER `.lett` semantic (HM
+  -- generalization, the value-restriction) byte-identical to `synthSC`'s own `.lett` arm — the only
+  -- change is the TAIL now checks (subsumption-capable) instead of synthesizes (equality only).
+  | .lett x e b, expected => do
+      let (Ce, φ₁) ← synthSC Γ e
+      let (_, A) ← expectF Ce
+      let sch ← if isValueSurf e then generalize Γ A else pure ({ body := A } : Scheme)
+      let φ₂ ← checkSC ((x, sch) :: Γ) b expected
+      joinRow bigFuel φ₁ φ₂
+  -- #119 fork-1 (same shape as `.lett` above): a `matchS` ARM'S tail can ALSO be a declared-bound
+  -- value shape — pushing `expected` into BOTH arms (rather than `synthSC`-ing the whole match then
+  -- unifying post-hoc, `synthSC`'s own `.matchS` arm's approach) lets each arm's tail take ITS OWN
+  -- explicit `checkSC` arm (subsumption-capable), not just the outermost catch-all.
+  | .matchS s xl el xr er, expected => do match (← resolve bigFuel (← synthSV Γ s)) with
+      | .sum A B => do
+          let φ₁ ← checkSC ((xl, A) :: Γ) el expected
+          let φ₂ ← checkSC ((xr, B) :: Γ) er expected
+          joinRow bigFuel φ₁ φ₂
+      | .vhole n  => do let A ← freshHole; let B ← freshHole
+                        assign n (.sum A B)
+                        let φ₁ ← checkSC ((xl, A) :: Γ) el expected
+                        let φ₂ ← checkSC ((xr, B) :: Γ) er expected
+                        joinRow bigFuel φ₁ φ₂
+      | _ => throw s!"match: scrutinee is not a sum{nameHint s}"
+  -- #119 fork-1: an `.app` in tail position has no OTHER explicit `checkSC` arm to route the
+  -- codomain through (unlike `.lett`/`.matchS`, which recurse into shapes `checkSV`'s already
+  -- `subRow`-aware `.thunk` case eventually reaches) — the callee's codomain can bury a declared
+  -- row inside a `.prod`/`.sum`/nested `.arr`, so a single top-level `subRow` isn't enough; the
+  -- structural `subsumeAppV`/`subsumeAppC` walk (above) descends to every such row. Confirmed this
+  -- does NOT reach `synthSC`'s OWN `.app` arm (unchanged) — `rowPolyDivSrc`/#94's row-polymorphism
+  -- corpus still gates correctly (their `.app`s run at the top-level `synthSC` entry, never nested
+  -- under a `checkSC` declared-bound context).
+  | .app f a, expected => do
+      let (cf, φ) ← synthSC Γ f
+      match (← resolveC bigFuel cf) with
+      | .arr _ A B => do
+          let _ ← checkSV Γ a A
+          let _ ← subsumeAppC bigFuel B expected
+          return φ
+      | .chole n   => do
+          let A ← freshHole; let B ← freshCHole
+          assignC n (.arr .omega A B)
+          let _ ← checkSV Γ a A
+          let _ ← subsumeAppC bigFuel B expected
+          return φ
+      | _          => throw s!"app: callee is not a function{nameHint f}"
   | e, expected => do
       let (B, φ) ← synthSC Γ e
       let _ ← unifyC bigFuel B expected                 -- HM subsumption (was structural `B = expected`)
@@ -2502,16 +2608,15 @@ def buildLetRecMulti (names : List String) (tys : List Ty) (bodies' : List Surf)
     | []        => .unitS
     | [b]       => .thunk b
     | b :: rest => .pairS (.thunk b) (pairVal rest)
-  -- The pair tail is `.annotS`-wrapped at its OWN construction site (not just at `inner`'s outer
-  -- `.tArr recTy pairTy`) — forces `checkSC` to take the EXPLICIT `.annotS` arm (`subRow`-aware
-  -- subsumption) for the pair's OWN check, instead of falling through the generic catch-all
-  -- (`synthSC` + `unifyC`'s `.U`-row EQUALITY, no subsumption) when the tail is a `.lett`-chain
-  -- ending in a bare `.pairS` rather than a `.lam`/other `checkSC`-recognized value shape. Found
-  -- live: a LEAF sibling (declared `!{Div}`, but its own body never actually performs Div) failed
-  -- `unifyRow`'s exact-equality check on this exact path — `subRow`'s subsumption (declared bound
-  -- ⊇ actual) is the semantically correct rule here, matching every OTHER `Div`-bound check site.
+  -- #119 FIXED: the pair tail used to need an EXTRA `.annotS`-wrap at its own construction site
+  -- (not just at `inner`'s outer `.tArr recTy pairTy`) to force `checkSC`'s EXPLICIT `.annotS` arm
+  -- (subsumption-aware) instead of the generic catch-all, which used to unify rows by EXACT
+  -- equality when the tail was a `.lett`-chain ending in a bare `.pairS`. `checkSC`'s catch-all
+  -- (and `checkSV`'s) now route through `subsumeC`/`subsumeV` — row-subsumption-aware at every
+  -- nested `.U`, not just the top-level `.annotS` site — so the inner wrap is no longer load-bearing
+  -- (verified: removing it still passes `just verify`'s corpus, incl. this function's own #guards).
   let inner : Surf :=
-    .annotS (.lam "#self" (bindSiblings false "#self" indexed (.annotS (pairVal bodies') pairTy))) (.tArr recTy pairTy)
+    .annotS (.lam "#self" (bindSiblings false "#self" indexed (pairVal bodies'))) (.tArr recTy pairTy)
   let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
   .lett "#rec" recVal (bindSiblings true "#rec" indexed bodyExpr')
 
@@ -3913,29 +4018,67 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let b0 ← elabS env Γ b
       let (Γ1, wa, a') ← anfSplit Γ a0 env.effects
       let (Γ2, wb, b') ← anfSplit Γ1 b0 env.effects
+      -- #118 fork (narrow): dispatch at a RESOLVED `τ`, as before. `dispatchInst τ` is the
+      -- pre-#118 body, factored out so the hole case (below) can reuse it once it has picked a
+      -- `τ` from the OTHER operand.
+      let dispatchInst : VT → Except String Surf := fun τ =>
+        match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
+        | none => .error s!"no impl provides '{binopName op}' for {foldDataTyOrRaw env.ctors env.gen τ}"
+        | some inst =>
+            match inst.params, inst.knotName with
+            -- #112: KNOT dispatch — app the `letRecS`-bound name (`elabProg` wraps the whole
+            -- program in these, see `wrapPendingKnots`) to a TUPLED argument, mirroring exactly
+            -- how the knot itself is built (`fun pq => let (p, q) = pq in …`, the tupled-single-
+            -- arg encoding that sidesteps `letRecS`'s separate curried-arity gap — de-risked
+            -- against self- AND backward-referential impls this session, see `Inst`'s doc comment).
+            | [_, _], some kn => .ok (.app (.force (.var kn)) (.pairS a' b'))
+            -- pre-#112 splice path — unreachable for a genuinely 2-param op post-fix (every 2-param
+            -- op now gets `some kn` from `buildEnv`), kept only so the match stays exhaustive/total.
+            | [p, q], none    =>
+                let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
+                .ok (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b')
+            | _, _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
+      -- #118: when ONE operand's type is a bare-fun-param HOLE, the OTHER operand may still
+      -- resolve concretely — an unannotated `fun p => p == derivedCarrierValue` shape. If EXACTLY
+      -- ONE impl of this op targets the OTHER operand's type, that impl is unambiguous — dispatch
+      -- through it exactly as the both-resolved case does (the rewritten `.app`'s domain type
+      -- lets the CHECKER's ordinary HM unification pin the hole from the impl's own signature,
+      -- the same mechanism an explicit annotation drives today). A HOLE here is OVERLOADED with a
+      -- second, unrelated meaning (`anfSplit`'s OWN `chole`-tolerant ANF placeholder, `paramHole`
+      -- reused as a `#anf` binder's provisional type for a still-higher-order returner, e.g. plain
+      -- `Int` arithmetic whose left operand came through a `.dotPerform` A-normalization) — NOT
+      -- every hole here is a genuine "unannotated fun param awaiting trait dispatch". ZERO
+      -- candidate impls is therefore NOT an error (that would misfire on the ANF-placeholder case,
+      -- confirmed live: broke the `handle two.a(3) + 1` corpus) — it DEFERS exactly as before #118,
+      -- preserving the checker's own `.int`-arithmetic path as the fallback. TWO OR MORE candidates:
+      -- no single answer exists without more information — teach the fix (annotate the bare `fun`'s
+      -- VALUE, `{fun p => …} : Thunk (T -> …)`, the one surface form that DOES carry a param type in
+      -- v1), rather than guess. Symmetric in `a`/`b` (either side may be the hole).
+      let annotHint := "annotate the bare fun's VALUE with a Thunk type ascription (e.g. (fun p => ...) : Thunk (T -> ...)) so the impl can be resolved"
+      let deferred : Surf := .binopS op a' b'
+      let holeAgainstOther : Unit → Except String Surf := fun _ => do
+        let τa ← runInferV (synthSV Γ2 a')
+        let τb ← runInferV (synthSV Γ2 b')
+        match asHole τa, asHole τb with
+        | some _, some _ => return deferred          -- both sides unresolved: no evidence to dispatch on, defer
+        | some _, none   =>
+            match env.insts.filter (fun i => i.opName == binopName op && i.target == τb) with
+            | [_]  => dispatchInst τb
+            | []   => return deferred                 -- no impl at τb: not a trait op here (e.g. ANF/Int) — defer
+            | _ :: _ :: _ => .error s!"'{binopName op}': {foldDataTyOrRaw env.ctors env.gen τb} has MULTIPLE candidate impls — the unannotated operand can't be resolved to one; {annotHint}"
+        | none, some _   =>
+            match env.insts.filter (fun i => i.opName == binopName op && i.target == τa) with
+            | [_]  => dispatchInst τa
+            | []   => return deferred                 -- no impl at τa: not a trait op here (e.g. ANF/Int) — defer
+            | _ :: _ :: _ => .error s!"'{binopName op}': {foldDataTyOrRaw env.ctors env.gen τa} has MULTIPLE candidate impls — the unannotated operand can't be resolved to one; {annotHint}"
+        | none, none     => return deferred           -- neither side is a hole: unreachable from this arm's caller (both callers already checked ≥1 side IS a hole), kept total
       match runInferV (synthSV Γ2 a') with
       | .ok .int  => return wa (wb (.binopS op a' b'))   -- the kernel δ-rule path (ADR-0065)
       | .error _  => return wa (wb (.binopS op a' b'))   -- non-value operand: leave it; the checker rules
       | .ok τ =>
         match asHole τ with
-        | some _ => return wa (wb (.binopS op a' b'))     -- HOLE operand (bare-`fun` param): defer to the checker
-        | none =>
-          match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
-          | none => .error s!"no impl provides '{binopName op}' for {foldDataTyOrRaw env.ctors env.gen τ}"
-          | some inst =>
-              match inst.params, inst.knotName with
-              -- #112: KNOT dispatch — app the `letRecS`-bound name (`elabProg` wraps the whole
-              -- program in these, see `wrapPendingKnots`) to a TUPLED argument, mirroring exactly
-              -- how the knot itself is built (`fun pq => let (p, q) = pq in …`, the tupled-single-
-              -- arg encoding that sidesteps `letRecS`'s separate curried-arity gap — de-risked
-              -- against self- AND backward-referential impls this session, see `Inst`'s doc comment).
-              | [_, _], some kn => return wa (wb (.app (.force (.var kn)) (.pairS a' b')))
-              -- pre-#112 splice path — unreachable for a genuinely 2-param op post-fix (every 2-param
-              -- op now gets `some kn` from `buildEnv`), kept only so the match stays exhaustive/total.
-              | [p, q], none    =>
-                  let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
-                  return wa (wb (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'))
-              | _, _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
+        | some _ => do let s ← holeAgainstOther (); return wa (wb s)
+        | none   => do let s ← dispatchInst τ; return wa (wb s)
   -- #97 item 2: adding `elabLetRecBindings` (a NEW mutual sibling, recursing on `LetRecBindings`,
   -- a type the block's structural-recursion inference has no prior size relation for) broke pure
   -- inference across the WHOLE `elabS`/`elabArms`/`elabHClauses` group — explicit `termination_by`
@@ -5932,6 +6075,56 @@ public def unreachableIntImplDiagnostics (src : String) : Except String (List (S
     "trait Dbl { fn dbl(a, b) -> Int } impl Dbl for Int { fn dbl(a, b) = a }" with
         | .ok [] => true | _ => false)
 
+/-! ### #118 — the bare-fun-param hole gap: `fun p => … p == derivedCarrierValue …`. `elabS`'s
+`.binopS` arm consults `env.insts` to dispatch a non-`Int` `==`/`<` to a trait impl, but explicitly
+DEFERRED to the checker when either operand's synthesized type was still a HOLE (an unannotated
+`fun` param) — and the checker's OWN `.binopS` arm (`synthSC`/`checkSC`) hard-codes BOTH operands
+to `.int`, never consulting `env.insts` at all. No stage ever revisits the hole once elaboration
+punts, so a bare `fun p => p == carrierValue` (the OTHER operand fully resolved, `carrierValue`'s
+type has exactly ONE `Eq` impl) got a generic type-mismatch instead of dispatching. Fixed
+(narrow, one-candidate-pins-the-hole): when one operand is a hole, the elaborator now inspects the
+OTHER operand's resolved type; exactly one matching impl ⟹ dispatch through it (the SAME rewrite
+the both-resolved case already used) — the checker's ordinary HM unification then pins the hole
+from the impl's own parameter type, exactly as an explicit annotation already did. Zero or
+multiple candidates ⟹ still defer/refuse (never guess) — a hole is OVERLOADED with a second,
+unrelated meaning (`anfSplit`'s own `chole`-tolerant ANF placeholder for a still-higher-order
+`.dotPerform` returner, e.g. plain `Int` arithmetic over a handler op's result) so "zero
+candidates" must stay a SILENT defer (an error there broke the `effect Two {…} handle
+two.a(3) + 1 …` corpus class — confirmed live, reverted to defer). -/
+def eqTraitIntListProg (body : String) : String :=
+  "data IntList = Nil | Cons(Int, IntList) " ++
+  "trait Eq { fn eq(a, b) -> (Unit + Unit) law refl(a): a == a } " ++
+  "impl Eq for IntList { fn eq(p, q) = match p { " ++
+  "Nil -> match q { Nil -> 0 == 0, Cons(hy, ty) -> 0 == 1 }, " ++
+  "Cons(hx, tx) -> match q { Nil -> 0 == 1, " ++
+  "Cons(hy, ty) -> let headEq = hx == hy in let tailEq = tx == ty in " ++
+  "if headEq then tailEq else 0 == 1 } } } " ++ body
+
+-- RED-BEFORE (confirmed live pre-fix: "type mismatch" — `env.insts` never re-consulted once the
+-- elaborator's `.binopS` arm punted on the bare `fun` param's hole type). GREEN-AFTER: the ONE
+-- `Eq` impl targeting `IntList` (the other operand `l1`'s resolved type) pins the hole.
+def bareFunEqSrc118 :=
+  eqTraitIntListProg "let l1 = Cons(1, Cons(2, Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l1) then 1 else 0"
+#guard (match checkProg bareFunEqSrc118 with | .ok _ => true | _ => false)
+-- semantically correct, not just type-checking: `l1 == l1` is TRUE, and a genuinely DIFFERENT list
+-- compared against the same `compareIt` closure is FALSE — the fix dispatches to the REAL impl
+-- (a per-element recursive `Eq`), not a vacuous accept.
+#guard runTypedYieldsInt 400 bareFunEqSrc118 1
+def bareFunEqSrc118Diff :=
+  eqTraitIntListProg "let l1 = Cons(1, Cons(2, Nil)) in let l2 = Cons(9, Cons(9, Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l2) then 1 else 0"
+#guard runTypedYieldsInt 400 bareFunEqSrc118Diff 0
+
+-- REGRESSION GUARD for the fix's OWN wall (confirmed live during development — an earlier cut of
+-- this fix treated a ZERO-candidate hole as an ERROR, which misfires on `anfSplit`'s UNRELATED
+-- `chole`-tolerant ANF placeholder: plain `Int` arithmetic over a `.dotPerform` result also
+-- synthesizes a "hole" at this call site, with correctly zero `env.insts` candidates for `+`).
+-- This must still TYPE (deferring to the checker's `.int` path), not error.
+#guard (match checkProg
+    "effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }" with
+        | .ok _ => true | _ => false)
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }" 32
+
 /-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
 
 /-- The full northstar prelude, parametrized by the law: `VecOps` (component-wise `add`, pair
@@ -6709,6 +6902,39 @@ def rowPolyDivSrc := "let rec countdown : Int -> Int = fun n => if n < 1 then 7 
 -- `compose incPure <effectful>` — FAILS loud ("effect row mismatch"). It needs subeffecting (⊥⊆ρ) or
 -- independent tails + a real join (full Rémy) — the deferred refinement. Sound (over-approximates), incomplete.
 #guard (match checkProg "let rec cd : Int -> Int = fun n => if n < 1 then 7 else ($cd)(n - 1) in let compose = {fun p => fun q => fun x => ($p)(($q) x)} in let inc = {fun x => x + 1} in ((($compose) inc) cd) 3" with | .error _ => true | .ok _ => false)
+
+/-! ### #119 — the row-subsumption asymmetry (fork-1): `checkSC`'s `.annotS` arm ALREADY used
+`subRow` (declared ⊇ actual) correctly; the generic catch-all (`synthSC` + `unifyC`'s `.U`-row
+EQUALITY) did not, so a declared-bound value REACHING the catch-all (a `.lett`-chain tail, a
+`matchS` arm tail, an `.app` tail) got a FALSE B003 row mismatch even though its ACTUAL row is a
+genuine subset of its DECLARED bound. Each demo below: the payload's declared `Thunk (… ! {Div})`
+is wider than what its body actually performs (no real Div anywhere) — exactly the "leaf sibling
+declared Div but never performs it" shape `buildLetRecMulti` hit live (#97). Fixed via explicit
+`checkSC` arms for `.lett`/`.matchS` (routing the tail back through `checkSC`, which reaches
+`checkSV`'s pre-existing `subRow`-aware `.thunk` case) and a dedicated row-subsumption-aware
+structural comparator (`subsumeAppV`/`subsumeAppC`) for `.app`'s codomain (the one shape with no
+other explicit arm to fall back on). RED-BEFORE: each of these three `checkProg`s failed
+("effect row mismatch"/"computation type mismatch") on the PRE-fix catch-all (confirmed live by
+disabling each new arm in turn and rebuilding — `buildLetRecMulti`'s OWN `.annotS`-wrap workaround,
+now removed, hit the identical wall at the SAME `unifyRow` exact-equality call). -/
+
+-- (1) a `.lett`-chain TAIL ending in a pair-of-declared-Div-thunks (byte-identical shape to
+-- `buildLetRecMulti`'s pair-of-thunks knot, minus the μ-encoding — the minimal isolation).
+def rowSubL119Src := "let pair = ({let x = 1 in ({fun n => n + x}, {fun n => n + x})} : Thunk (Thunk (Int -> Int ! {Div}) * Thunk (Int -> Int ! {Div}))) in let (a, b) = $(pair) in ($(a) 4) + ($(b) 6)"
+#guard (match checkProg rowSubL119Src with | .ok _ => true | _ => false)
+#guard runTypedYieldsInt 500 rowSubL119Src 12
+
+-- (2) a `matchS` ARM tail ending in the same pair-of-declared-Div-thunks shape.
+def rowSubM119Src := "let pair = ({match Right(7) { Left(a) -> ({fun n => n + a}, {fun n => n + a}), Right(x) -> ({fun n => n + x}, {fun n => n + x}) }} : Thunk (Thunk (Int -> Int ! {Div}) * Thunk (Int -> Int ! {Div}))) in let (a, b) = $(pair) in ($(a) 1) + ($(b) 2)"
+#guard (match checkProg rowSubM119Src with | .ok _ => true | _ => false)
+#guard runTypedYieldsInt 500 rowSubM119Src 17
+
+-- (3) an `.app` TAIL: an unannotated callee (`mkPair`, fully INFERRED at ⊥ internally) applied and
+-- the RESULT checked against an outer declared `{Div}` bound — the one shape with no OTHER
+-- explicit `checkSC` arm, needing `subsumeAppV`/`subsumeAppC`'s own structural descent.
+def rowSubA119Src := "let mkPair = {fun z => ({fun n => n + z}, {fun n => n + z})} in let pair = ({$(mkPair) 1} : Thunk (Thunk (Int -> Int ! {Div}) * Thunk (Int -> Int ! {Div}))) in let (a, b) = $(pair) in ($(a) 4) + ($(b) 6)"
+#guard (match checkProg rowSubA119Src with | .ok _ => true | _ => false)
+#guard runTypedYieldsInt 500 rowSubA119Src 12
 
 -- #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
 #guard runTypedYieldsInt 20 "match Right(7) { Left(a) -> 0, Right(x) -> x }" 7
