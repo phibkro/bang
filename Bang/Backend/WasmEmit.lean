@@ -671,11 +671,34 @@ structure GCState where
   base     : Nat := 0                 -- first non-param local index (0 in main, 2 in a lifted fn)
   next     : Nat := 0                 -- next fresh local index
   localTys : List String := []        -- types of locals [base..next), reversed
+  nextTag  : Nat := 0                 -- RUNG 5 S2: next-free wasm exception TAG (per minted `handle throws`)
+  tagCount : Nat := 0                 -- RUNG 5 S2: peak tag count minted (drives `(tag $exnT …)` decls)
   deriving Inhabited
 
 /-- Claim a fresh local of wasm type `ty`, returning its index and the updated state. -/
 def GCState.fresh (st : GCState) (ty : String) : Nat × GCState :=
   (st.next, { st with next := st.next + 1, localTys := ty :: st.localTys })
+
+/-- RUNG 5 S2: claim a fresh wasm exception-tag index (for a `handle (throws …)`). Tags accumulate
+across the WHOLE module (each minted once), so `nextTag` bumps monotonically and `tagCount` records
+the peak for the module-level `(tag $exnT (param (ref null $val)))` declarations. -/
+def GCState.freshTag (st : GCState) : Nat × GCState :=
+  (st.nextTag, { st with nextTag := st.nextTag + 1, tagCount := max st.tagCount (st.nextTag + 1) })
+
+/-- RUNG 5: a compile-time CAPABILITY slot in the de-Bruijn context threaded ALONGSIDE the runtime
+`$env` cons-list (mirroring the inline emitter's `List Slot`). The `$env` carries VALUES at runtime;
+`caps` carries the STATIC dispatch metadata a `perform` needs but a `$val` slot can't hold:
+  - `none`        : an ordinary value binder (letC result, lam arg, case/split payload, state box).
+  - `throwsTag t` : a `handle (throws)` cap-binder — a `raise` on it emits `throw $exn{t}` (tag
+                    identity = lexical dispatch, exactly the inline `.cap t` Slot).
+  - `customClo f p`: a `handle (custom p cls)` cap-binder (RUNG 5 S4) — a matching `perform op v`
+                    `call_ref`s the lifted clause fn `f` with `(v :: p :: handlerEnv)`; `p` is the
+                    handler param $val (read-only in v1). Non-matching ops fall through to a raise.
+Pushed identically to the `$env` at every binder so index `i` agrees between the two. -/
+inductive CapSlot where
+  | none      : CapSlot
+  | throwsTag : Nat → CapSlot
+  deriving Inhabited
 
 /-- Wrap a statement-prefixed sequence (`local.set …`s followed by a value expression) in a
 `(block (result (ref null $val)) …)` so it is a SINGLE value-producing expression, valid in
@@ -705,29 +728,31 @@ def tyEnv : String := "(ref null $env)"
 def tyVal : String := "(ref null $val)"
 
 mutual
-/-- Emit a `Val` as a `(ref null $val)` expression under env-local `envL`, threading `GCState`. -/
-partial def emitValGC (envL : Nat) (v : Val) (st : GCState) : EmitGC × GCState :=
+/-- Emit a `Val` as a `(ref null $val)` expression under env-local `envL`. `caps` is the compile-time
+capability context (§`CapSlot`), threaded ALONGSIDE the runtime `$env` so a nested closure body knows
+which de-Bruijn slots are handler caps. Threads `GCState`. -/
+partial def emitValGC (envL : Nat) (caps : List CapSlot) (v : Val) (st : GCState) : EmitGC × GCState :=
   match v with
   | .vint n => (.ok (boxI s!"(i64.const {n})"), st)
   | .vvar i => (.ok (lookupGC envL i), st)
   | .vunit  => (.ok (boxI "(i64.const 0)"), st)
   | .inl w =>
-      match emitValGC envL w st with
+      match emitValGC envL caps w st with
       | (.ok ew, st') => (.ok s!"(struct.new $sum (i32.const 0) {ew})", st')
       | (.unsup r, st') => (.unsup r, st')
   | .inr w =>
-      match emitValGC envL w st with
+      match emitValGC envL caps w st with
       | (.ok ew, st') => (.ok s!"(struct.new $sum (i32.const 1) {ew})", st')
       | (.unsup r, st') => (.unsup r, st')
   | .pair a b =>
-      match emitValGC envL a st with
+      match emitValGC envL caps a st with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok ea, st1) =>
-        match emitValGC envL b st1 with
+        match emitValGC envL caps b st1 with
         | (.unsup r, st') => (.unsup r, st')
         | (.ok eb, st2) => (.ok s!"(struct.new $pair {ea} {eb})", st2)
-  | .fold w => emitValGC envL w st
-  | .vthunk M => emitCloVal true envL M st            -- THUNK: no arg binder (force = run M as-is).
+  | .fold w => emitValGC envL caps w st
+  | .vthunk M => emitCloVal true envL caps M st       -- THUNK: no arg binder (force = run M as-is).
   | .vcap _ _ => (.unsup "vcap (runtime capability — no rung-4 GC value rep)", st)
 
 /-- Lambda-lift `M` to a fresh top-level fn; emit the closure value capturing the CURRENT env.
@@ -740,7 +765,7 @@ AbstractMachine.lean:269 vs 263/270):
               CAPTURED var. The lifted fn runs the body under the captured env DIRECTLY (the fn's arg
               param is a `force`-supplied dummy, ignored). Getting this wrong shifts every index by
               one inside every thunk — the μ-knot's `unfold`/`force`/`app` then cast a non-closure. -/
-partial def emitCloVal (isThunk : Bool) (envL : Nat) (M : Comp) (st : GCState) : EmitGC × GCState :=
+partial def emitCloVal (isThunk : Bool) (envL : Nat) (caps : List CapSlot) (M : Comp) (st : GCState) : EmitGC × GCState :=
   let fnIdx := st.nextFn
   -- lam: local 2 = arg :: env0, body under env-local 2. thunk: body under env-local 0 (the captured
   -- env param directly), no arg prepend. Fresh locals start at 3 (lam) or 1 (thunk).
@@ -749,9 +774,14 @@ partial def emitCloVal (isThunk : Bool) (envL : Nat) (M : Comp) (st : GCState) :
   let (bodyEnvL, freshStart) := if isThunk then (0, 2) else (2, 3)
   -- Pre-declared locals past the two params: lam declares local 2 (arg::env0, tyEnv); thunk none.
   let preTys : List String := if isThunk then [] else [tyEnv]
+  -- The body's compile-time cap context = the CAPTURED caps (a closure closes over its lexical caps,
+  -- mirroring the $env capture). lam PREPENDS its arg as a non-cap (`none`) slot at index 0; thunk
+  -- runs the captured context directly (its dummy arg is not bound). Tag counter stays in `GCState`
+  -- (module-wide), so a raise inside a lifted body still throws its captured lexical tag.
+  let bodyCaps : List CapSlot := if isThunk then caps else CapSlot.none :: caps
   let stInner : GCState :=
     { st with nextFn := st.nextFn + 1, base := freshStart, next := freshStart, localTys := preTys }
-  match emitCompGC bodyEnvL M stInner with
+  match emitCompGC bodyEnvL bodyCaps M stInner with
   | (.unsup r, st') => (.unsup r, { st with fns := st'.fns, nextFn := st'.nextFn })
   | (.ok body, st2) =>
       let prefixArg := if isThunk then "" else s!"(local.set 2 (struct.new $env (local.get 1) (local.get 0)))\n    "
@@ -760,26 +790,27 @@ partial def emitCloVal (isThunk : Bool) (envL : Nat) (M : Comp) (st : GCState) :
       (.ok s!"(struct.new $clos (ref.func $fn{fnIdx}) (local.get {envL}))",
        { st with fns := lifted :: st2.fns, nextFn := st2.nextFn })
 
-/-- Emit a `Comp` as a `(ref null $val)` expression under env-local `envL`, threading `GCState`. -/
-partial def emitCompGC (envL : Nat) (c : Comp) (st : GCState) : EmitGC × GCState :=
+/-- Emit a `Comp` as a `(ref null $val)` expression under env-local `envL`. `caps` = the compile-time
+capability context (threaded with the runtime `$env`). Threads `GCState`. -/
+partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCState) : EmitGC × GCState :=
   match c with
-  | .ret v => emitValGC envL v st
+  | .ret v => emitValGC envL caps v st
   | .binop op a b =>
       match binopGCWat op with
       | some w =>
-          match emitValGC envL a st with
+          match emitValGC envL caps a st with
           | (.unsup r, st') => (.unsup r, st')
           | (.ok ea, st1) =>
-            match emitValGC envL b st1 with
+            match emitValGC envL caps b st1 with
             | (.unsup r, st') => (.unsup r, st')
             | (.ok eb, st2) => (.ok (boxI s!"({w} {unboxI ea} {unboxI eb})"), st2)
       | none =>
           match op with
           | .div =>
-              match emitValGC envL a st with
+              match emitValGC envL caps a st with
               | (.unsup r, st') => (.unsup r, st')
               | (.ok ea, st1) =>
-                match emitValGC envL b st1 with
+                match emitValGC envL caps b st1 with
                 | (.unsup r, st') => (.unsup r, st')
                 | (.ok eb, st2) => (.ok (boxI (emitDivGCI (unboxI ea) (unboxI eb))), st2)
           | _ =>
@@ -790,61 +821,67 @@ partial def emitCompGC (envL : Nat) (c : Comp) (st : GCState) : EmitGC × GCStat
               match cmpGCWat op with
               | none => (.unsup s!"binop {repr op} not emittable on the GC path", st)
               | some cw =>
-                  match emitValGC envL a st with
+                  match emitValGC envL caps a st with
                   | (.unsup r, st') => (.unsup r, st')
                   | (.ok ea, st1) =>
-                    match emitValGC envL b st1 with
+                    match emitValGC envL caps b st1 with
                     | (.unsup r, st') => (.unsup r, st')
                     | (.ok eb, st2) =>
                         let u := boxI "(i64.const 0)"
                         (.ok s!"(if (result (ref null $val)) ({cw} {unboxI ea} {unboxI eb}) (then (struct.new $sum (i32.const 1) {u})) (else (struct.new $sum (i32.const 0) {u})))", st2)
-  | .letC m n => emitLetGC envL m n st
+  -- RUNG 5 S1: a `put`/`get` fused with its `letC` continuation. The inline path MUST fuse (unit has
+  -- no i64 rep); the GC path does NOT need to (unit is a boxed $val), but a bare `letC (put) N`
+  -- prepends a `none` cap slot for the unit binder — so route through the ordinary letC arm, which
+  -- already pushes `.none`. No special case needed: `put`/`get` are value-producing comps.
+  | .letC m n => emitLetGC envL caps m n st
   | .force fv =>
-      match emitValGC envL fv st with
+      match emitValGC envL caps fv st with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok efv, st1) =>
           let (clL, st2) := st1.fresh tyVal
           (.ok (callClosGC clL efv (boxI "(i64.const 0)")), st2)
-  | .lam M => emitCloVal false envL M st              -- LAM: arg at index 0 (prepended by the fn).
+  | .lam M => emitCloVal false envL caps M st         -- LAM: arg at index 0 (prepended by the fn).
   | .app M v =>
-      match emitCompGC envL M st with
+      match emitCompGC envL caps M st with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok eM, st1) =>
-        match emitValGC envL v st1 with
+        match emitValGC envL caps v st1 with
         | (.unsup r, st') => (.unsup r, st')
         | (.ok ev, st2) =>
             let (clL, st3) := st2.fresh tyVal
             (.ok (callClosGC clL eM ev), st3)
   | .case v n1 n2 =>
-      match emitValGC envL v st with
+      match emitValGC envL caps v st with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok ev, st1) =>
           let (scL, st1a) := st1.fresh tyVal
           let (e1L, st1b) := st1a.fresh tyEnv
           let (e2L, st2) := st1b.fresh tyEnv
-          match emitCompGC e1L n1 st2 with
+          -- each branch binds the payload at index 0 (a value ⇒ `.none` cap slot).
+          match emitCompGC e1L (CapSlot.none :: caps) n1 st2 with
           | (.unsup r, st') => (.unsup r, st')
           | (.ok b1, st3) =>
-            match emitCompGC e2L n2 st3 with
+            match emitCompGC e2L (CapSlot.none :: caps) n2 st3 with
             | (.unsup r, st') => (.unsup r, st')
             | (.ok b2, st4) =>
                 let payload := s!"(struct.get $sum $payload (ref.cast (ref $sum) (local.get {scL})))"
                 (.ok (seqBlock s!"(local.set {scL} {ev})\n    (if (result (ref null $val)) (i32.eqz (struct.get $sum $tag (ref.cast (ref $sum) (local.get {scL}))))\n      (then (local.set {e1L} (struct.new $env {payload} (local.get {envL}))) {b1})\n      (else (local.set {e2L} (struct.new $env {payload} (local.get {envL}))) {b2}))"), st4)
   | .split v n =>
-      match emitValGC envL v st with
+      match emitValGC envL caps v st with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok ev, st1) =>
           let (scL, st1a) := st1.fresh tyVal
           let (e1L, st1b) := st1a.fresh tyEnv
           let (e2L, st2) := st1b.fresh tyEnv
-          match emitCompGC e2L n st2 with
+          -- split binds fst at index 1, snd at index 0 (snd::fst::env) ⇒ two `.none` cap slots.
+          match emitCompGC e2L (CapSlot.none :: CapSlot.none :: caps) n st2 with
           | (.unsup r, st') => (.unsup r, st')
           | (.ok bn, st3) =>
               let fst := s!"(struct.get $pair 0 (ref.cast (ref $pair) (local.get {scL})))"
               let snd := s!"(struct.get $pair 1 (ref.cast (ref $pair) (local.get {scL})))"
               (.ok (seqBlock s!"(local.set {scL} {ev})\n    (local.set {e1L} (struct.new $env {fst} (local.get {envL})))\n    (local.set {e2L} (struct.new $env {snd} (local.get {e1L})))\n    {bn}"), st3)
-  | .unfold v => emitValGC envL v st
-  -- RUNG 5: state `get`/`put` on the GC path (design (b) Candidate 1). The cap `vvar i` resolves via
+  | .unfold v => emitValGC envL caps v st
+  -- RUNG 5 S1: state `get`/`put` on the GC path (design (b) Candidate 1). The cap `vvar i` resolves via
   -- `$lookup` to the `$ref` mutable box the enclosing `handle (state …)` minted; `get` reads it,
   -- `put` mutates in place (one-shot resume, ADR-0025 D1 — no unwind, no reified continuation). Unlike
   -- the inline path (unit has no i64 rep, so `put` MUST fuse with its `letC`), the GC path boxes unit
@@ -853,38 +890,69 @@ partial def emitCompGC (envL : Nat) (c : Comp) (st : GCState) : EmitGC × GCStat
       -- get: read the box's current $val (the kernel returns the stored `s`, resume in place).
       (.ok s!"(struct.get $ref 0 (ref.cast (ref $ref) {lookupGC envL i}))", st)
   | .perform (.vvar i) "put" v =>
-      match emitValGC envL v st with
+      match emitValGC envL caps v st with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok ev, st1) =>
           -- struct.set the box in place, then leave boxed unit (put returns `ret .vunit`). Wrapped in
           -- a seqBlock so the statement + value compose as one value expression.
           (.ok (seqBlock s!"(struct.set $ref 0 (ref.cast (ref $ref) {lookupGC envL i}) {ev})\n    {boxI "(i64.const 0)"}"), st1)
-  | .perform _ _ _ => (.unsup "perform: only `get`/`put` (state) lower on the GC path so far (rung-5 S1); throws/txn/custom are S2-S4", st)
+  -- RUNG 5 S2: raise on the GC path. `perform (vvar i) "raise" v` where index `i` is a `throws` cap
+  -- (compile-time tag `t` in `caps`) emits `(throw $exn{t} <boxed payload>)` — a zero-shot abort that
+  -- wasm unwinds to exactly the `try_table (catch $exn{t})` the lexically-enclosing `handle (throws)`
+  -- minted (tag identity = lexical/identity dispatch, the inline `.cap t` image). The payload is a
+  -- boxed $val (throws carries any value, unlike the inline path's i64-only tag).
+  | .perform (.vvar i) "raise" v =>
+      match caps[i]? with
+      | some (.throwsTag t) =>
+          match emitValGC envL caps v st with
+          | (.unsup r, st') => (.unsup r, st')
+          | (.ok ev, st1) => (.ok s!"(throw $exn{t} {ev})", st1)
+      | some .none => (.unsup s!"raise target vvar {i} is not a throws capability (binds a value/state slot)", st)
+      | none => (.unsup s!"raise target vvar {i} is free (open term) or not a throws cap", st)
+  | .perform _ _ _ => (.unsup "perform: `get`/`put` (state, S1) and `raise` (throws, S2) lower on the GC path; txn/custom are S3-S4", st)
   -- RUNG 5 S1: handle (state s₀) M on the GC path. Mint a $ref box holding s₀, PREPEND it as env slot
   -- 0 (so M's index-0 cap-binder resolves to the box via $lookup — exactly the inline `.state` Slot,
   -- now a heap box reachable by closures). The handle's value is M's value (handler return = identity,
-  -- Eval.lean:65). Fuse the box construction into the env via a fresh env local, like `letC`.
+  -- Eval.lean:65). Fuse the box construction into the env via a fresh env local, like `letC`. The
+  -- state cap is NOT a compile-time throws tag ⇒ push `.none` (its dispatch is the runtime $ref box).
   | .handle (.state _ s₀) M =>
-      match emitValGC envL s₀ st with
+      match emitValGC envL caps s₀ st with
       | (.unsup r, st') => (.unsup s!"state init value: {r}", st')
       | (.ok es₀, st1) =>
           let (e2L, st2) := st1.fresh tyEnv
-          match emitCompGC e2L M st2 with
+          match emitCompGC e2L (CapSlot.none :: caps) M st2 with
           | (.unsup r, st') => (.unsup r, st')
           | (.ok bM, st3) =>
               -- env slot 0 = a fresh $ref box wrapping s₀; M runs under (box :: envL).
               (.ok (seqBlock s!"(local.set {e2L} (struct.new $env (struct.new $ref {es₀}) (local.get {envL})))\n    {bM}"), st3)
-  | .handle _ _ => (.unsup "handle: only `state` lowers on the GC path so far (rung-5 S1); throws/txn/custom are S2-S4", st)
+  -- RUNG 5 S2: handle (throws ℓ) M on the GC path. Mint a fresh module-wide tag `t`, push `.throwsTag t`
+  -- for M's index-0 cap-binder (compile-time), wrap the body in `(block $h{t} (try_table (catch
+  -- $exn{t} $h{t}) <body>))`. The result type is `(ref null $val)` (the GC value rep), so both the
+  -- normal exit AND the caught payload are $val refs. Rep-agnostic control flow (rung-5 design (a)):
+  -- try_table/throw port verbatim from rung 2 — only the result TYPE changed from i64 to $val. M still
+  -- needs a runtime $env slot for its cap-binder (indices line up); the box holds nothing meaningful
+  -- (the cap is dispatched by the compile-time tag), so push a null-carrying $env slot.
+  | .handle (.throws _) M =>
+      let (t, st1) := st.freshTag
+      let (e2L, st2) := st1.fresh tyEnv
+      match emitCompGC e2L (CapSlot.throwsTag t :: caps) M st2 with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok bM, st3) =>
+          -- env slot 0 = a placeholder (the throws cap has no runtime value — dispatch is the tag);
+          -- a boxed unit keeps the $env slot well-typed and the de-Bruijn depth aligned.
+          (.ok (seqBlock s!"(local.set {e2L} (struct.new $env {boxI "(i64.const 0)"} (local.get {envL})))\n    (block $h{t} (result (ref null $val))\n      (try_table (result (ref null $val)) (catch $exn{t} $h{t})\n        {bM}))"), st3)
+  | .handle _ _ => (.unsup "handle: `state` (S1) and `throws` (S2) lower on the GC path; transaction/custom are S3-S4", st)
   | .oom => (.unsup "oom", st)
   | .wrong s => (.unsup s!"wrong: {s}", st)
 
-/-- `letC m n`: compute m, bind its value at index 0 in a fresh env local, run n. -/
-partial def emitLetGC (envL : Nat) (m n : Comp) (st : GCState) : EmitGC × GCState :=
-  match emitCompGC envL m st with
+/-- `letC m n`: compute m, bind its value at index 0 in a fresh env local, run n. n's index-0 binder
+is a VALUE (m's result) ⇒ push `.none` in the cap context. -/
+partial def emitLetGC (envL : Nat) (caps : List CapSlot) (m n : Comp) (st : GCState) : EmitGC × GCState :=
+  match emitCompGC envL caps m st with
   | (.unsup r, st') => (.unsup r, st')
   | (.ok em, st1) =>
       let (e2L, st2) := st1.fresh tyEnv
-      match emitCompGC e2L n st2 with
+      match emitCompGC e2L (CapSlot.none :: caps) n st2 with
       | (.unsup r, st') => (.unsup r, st')
       | (.ok en, st3) =>
           (.ok (seqBlock s!"(local.set {e2L} (struct.new $env {em} (local.get {envL})))\n    {en}"), st3)
@@ -1083,13 +1151,19 @@ def elemDeclare (n : Nat) : String :=
   if n = 0 then "" else
     "\n  (elem declare func" ++ (List.range n).foldl (fun acc i => acc ++ s!" $fn{i}") "" ++ ")"
 
+/-- RUNG 5 S2: `(tag $exn{t} (param (ref null $val)))` — one per minted `handle (throws)` tag. Each
+throws handler carries a $val payload (unlike the inline path's i64-only tag). Emitted before any
+function that `throw`s/`catch`es it. Empty when the program has no throws handler. -/
+def tagDecls (n : Nat) : String :=
+  (List.range n).foldl (fun acc t => acc ++ s!"\n  (tag $exn{t} (param (ref null $val)))") ""
+
 /-- Whole-module GC emission: preamble + lifted fns + `$main`. `$main` runs the body under env-local
 `base=0`, `next=1` (local 0 = the initial env, set to a null cons — `ref.null $env`). Returns full
 `.wat` or a refusal. -/
 def emitModuleGC (M : Comp) : EmitGC :=
-  -- main: local 0 = env (starts null), fresh locals from 1.
+  -- main: local 0 = env (starts null), fresh locals from 1. caps=[] (top-level, no open handler).
   let st0 : GCState := { base := 0, next := 1, localTys := [tyEnv] }
-  match emitCompGC 0 M st0 with
+  match emitCompGC 0 [] M st0 with
   | (.unsup r, _) => .unsup r
   | (.ok body, stF) =>
           let fnsOrdered := stF.fns.reverse
@@ -1100,7 +1174,8 @@ def emitModuleGC (M : Comp) : EmitGC :=
             s!"(func $main (export \"main\") (result i64){mainLocals}\n    (local.set 0 (ref.null $env))\n    (call $unbox\n    {body}))"
           -- $unbox extracts the final i64 answer (main returns i64 for the harness diff).
           let unboxFn := "(func $unbox (param $v (ref null $val)) (result i64)\n    (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v))))"
-          .ok s!"(module\n  {gcPreamble}\n  {unboxFn}{elemDeclare fnCount}{fnsText}\n  {mainFn}\n)"
+          -- RUNG 5 S2: throws tags (if any) declared right after the type block, before any function.
+          .ok s!"(module\n  {gcPreamble}{tagDecls stF.tagCount}\n  {unboxFn}{elemDeclare fnCount}{fnsText}\n  {mainFn}\n)"
 
 /-- Whole-module GC emission with the `$val` READBACK (rung-5 Part 1): identical to `emitModuleGC`
 except the entry is a WASI `_start` command that computes the body `$val`, walks it with `$render`
@@ -1111,7 +1186,7 @@ bytes ARE `examples/<name>/expected.txt`, so ONE readback gates the whole corpus
 `wasmtime run <mod.wat>` (WASI command), NOT `--invoke main`. -/
 def emitModuleGCPrint (M : Comp) : EmitGC :=
   let st0 : GCState := { base := 0, next := 1, localTys := [tyEnv] }
-  match emitCompGC 0 M st0 with
+  match emitCompGC 0 [] M st0 with
   | (.unsup r, _) => .unsup r
   | (.ok body, stF) =>
           let fnsOrdered := stF.fns.reverse
@@ -1121,9 +1196,9 @@ def emitModuleGCPrint (M : Comp) : EmitGC :=
           -- `_start` renders the body value + a trailing newline, then flushes to stdout.
           let startFn :=
             s!"(func $_start (export \"_start\"){mainLocals}\n    (local.set 0 (ref.null $env))\n    (call $render\n    {body})\n    (call $emitByte (i32.const 10))\n    (call $flush))"
-          -- Order matters (wat: imports before functions): types · WASI imports · GC helpers ·
-          -- readback fns · lifted fns · `_start`.
-          .ok s!"(module\n  {gcTypes}\n  {renderImports}\n  {gcHelpers}\n  {renderFns}{elemDeclare fnCount}{fnsText}\n  {startFn}\n)"
+          -- Order matters (wat: imports before functions/tags): types · WASI imports · S2 throws tags ·
+          -- GC helpers · readback fns · lifted fns · `_start`.
+          .ok s!"(module\n  {gcTypes}\n  {renderImports}{tagDecls stF.tagCount}\n  {gcHelpers}\n  {renderFns}{elemDeclare fnCount}{fnsText}\n  {startFn}\n)"
 
 end -- public section
 

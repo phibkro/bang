@@ -102,8 +102,11 @@ S0  [DONE] $env effect slots   add a $ref (mutable box) $val subtype; the emitte
 S1  [DONE] state on GC path   port the rung-2b `.state` arm to $env: handle (state s₀) mints a $ref box,
                           get/put read/write it; closures capture it for free (the S0 witness).
                           LANDED: `state` example emits emitModuleGC + runs 5 == bang run on wasmtime 45.
-S2  throws on the GC path port rung-2's try_table/throw verbatim (control flow, rep-agnostic); the
-                          cap slot carries the tag identity. The first GC program mixing raise + a closure.
+S2  [DONE] throws on GC path port rung-2's try_table/throw verbatim (control flow, rep-agnostic); the
+                          cap slot carries the tag identity (a compile-time `CapSlot` context threaded
+                          alongside the runtime $env). LANDED: `handle` example (raise 7 caught) emits
+                          emitModuleGC + runs 7 == bang run; result type is $val not i64. Tag decls
+                          `(tag $exnT (param (ref null $val)))` per minted handle.
 S3  transaction (GC heap) TVar heap = a GC array of $ref cells (rung-3 Q1 option B); newTVar appends,
                           read/write index, rollback drops the journal. catch_all_ref/throw_ref reused.
 S4  custom (user effects) clause body lifted to a $fn; one-shot resume = call_ref into the continuation
