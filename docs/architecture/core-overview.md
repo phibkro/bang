@@ -28,7 +28,7 @@ graph TD
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>6850L · fan-in 0"]
-    Backend_EnvMachine["Backend.EnvMachine<br/>3583L · fan-in 0"]
+    Backend_EnvMachine["Backend.EnvMachine<br/>3584L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1648L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2894L · fan-in 0"]
     Backend_WasmEmit["Backend.WasmEmit<br/>600L · fan-in 0"]
@@ -90,7 +90,7 @@ graph TD
 | `Frontend.Surface` | ? | 3180 | 1 |
 | `Audit` | Apex | 60 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
-| `Backend.EnvMachine` | ? | 3583 | 0 |
+| `Backend.EnvMachine` | ? | 3584 | 0 |
 | `Backend.U5bComplete` | ? | 1648 | 0 |
 | `Backend.Wasm` | ? | 2894 | 0 |
 | `Backend.WasmEmit` | ? | 600 | 0 |
