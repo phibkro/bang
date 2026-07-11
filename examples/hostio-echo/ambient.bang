@@ -1,0 +1,23 @@
+-- ambient.bang — the H1 companion to main.bang (ADR-0104 §4, #126, the host-provision reach).
+--
+-- NOT part of the sim corpus (check-examples.sh iterates `examples/*/main.bang` only — this file's
+-- different name keeps it out of that loop by construction, no --skip-list needed). It CANNOT be:
+-- the ambient `Io.print`/`Io.readLine` spelling below has no enclosing `with`, so it reaches ONLY
+-- the driver's outermost grant surface — under the DEFAULT engine (no --env, what check-examples.sh
+-- runs), that surface does not exist, so the perform hits the DEFINED `escapedCap` terminal
+-- (ADR-0063) immediately. That is not a bug to work around; it IS the shipped contract this file
+-- demonstrates: an ambient host perform needs `--env=real --allow=<label>` (or `--replay`) to
+-- resolve at all — see tools/test-hostio-seam.sh for the driver-side exercise.
+--
+-- Contrast with main.bang: that program's `with Io_Console as con { … }` catches every op
+-- LEXICALLY, so it never reaches the driver even under `--env=real` (measured, ADR-0104's
+-- correction) — the two files are the two HALVES of "same paradigm, different runtime" post-H1:
+-- `cap.op` = ask THIS installed handler (main.bang, corpus-green, driver-independent); `Mod.op` =
+-- ask the RUNTIME (this file, driver-dependent, --env=real is what makes it resolve).
+import Io
+let main =
+  let prompt = SCons(Char(63), SNil) in    -- "?"
+  let u1 = Io.print(prompt) in
+  let line = Io.readLine(()) in
+  let u2 = Io.print(line) in
+  $reverse line

@@ -40,6 +40,12 @@ effects + handlers, record/replay conformance, the least-authority module + gran
 the v1 IMPLEMENTATION is the Console/Clock wedge — `Fs` read-only and `Net` are named-but-deferred
 (§Scope). Nothing in the kernel or `Spec.lean` changes (invariants #4/#5).
 
+**H1 (the reach, #126, hostio-reach lane, 2026-07-11) LANDED**: `Io.print`/`Clock.now`-style
+module-qualified host performs now elaborate and reach the driver — see §4's "LANDED — the
+host-provision reach" for the mechanism, and its "CORRECTION" for the nearness claim this ADR
+originally made and later RETRACTED by measurement (label-only ambient dispatch ships; lexical
+nearness is H1b, a named follow-up, not shipped here).
+
 ## Context
 
 Programs need filesystem/network/ambient IO. The moat thesis (ADR-0084) already answers HOW in
@@ -188,7 +194,71 @@ mechanism; B2's sibling is explicitly temporary (its banner says so). A future s
 see B as "the right v1 wedge" and A as "deferred to the concurrency era," NOT B as permanent or A as
 wrong.
 
-**OPEN — the host-provision reach (H1, the NEXT slice; live host IO does NOT ship in this slice).**
+**LANDED — the host-provision reach (H1, #126, hostio-reach lane).** This ADR's original text
+(below, preserved for the trail) framed H1 as OPEN and predicted a "user `with Io_Console` wins by
+NEARNESS" property. That prediction was **REFUTED BY MEASUREMENT** once H1 was implemented — see
+the correction immediately below before reading the historical framing.
+
+**CORRECTION (nearness retracted, measured 2026-07-11).** H1 ships with **label-only AMBIENT
+dispatch, no lexical nearness**: `Io.print x` reaches the driver UNCONDITIONALLY whenever its
+label is granted (`--env=real --allow=Console`), even when the call sits textually INSIDE an
+enclosing `handle … with Io_Console as con { … }`. Measured directly: wrapping `Io.print(x)` in
+such a block still yields `escapedCap` under `--engine=oracle` — the enclosing handler does NOT
+intercept it. **Root cause (the get/put analogy was WRONG, not merely unimplemented):**
+`get`/`put`'s nearness is NAME-based — `Surface.lowerC` pushes a reserved sentinel (`capState`)
+onto the ordinary lowering `env : List String`, and `get`/`put` lower to `perform (vvar (lookup
+env capState)) …` — an ordinary de-Bruijn `vvar` that SHIFTS with each enclosing binder, so it
+resolves to whichever `state`/`with` handler is textually nearest, exactly like any other bound
+name. `hostPerformS` (H1's mechanism, priced correctly in the original text below) instead lowers
+to a LITERAL capability value `perform (vcap hostCapId ℓ) op arg` — a FIXED, generative-counter-
+independent identity, not a name resolved through `env`. Dispatch is **identity-first**
+(glossary: "typing is by label, dispatch is by identity") — `evalE`/`evalEHost`'s perform arm
+checks `σ.get? n`/`τ.get? n`/`κ.get? n` for the SPECIFIC id `n` a cap carries, never "the nearest
+frame whose label matches." A `with Io_Console as con { … }` mints a FRESH generative id at
+install (`handle`'s `g`-counter, ADR-0055); `hostPerformS`'s literal cap carries the unrelated
+FIXED id `hostCapId`. No lexical position can make `hostCapId == g` — the two identities are
+independent by construction, so nearness is not "not yet wired," it is **structurally
+unreachable under the shipped mechanism**. The get/put analogy in the original text (below)
+compared the SURFACE ergonomics (no named cap at the call site) without checking the underlying
+DISPATCH mechanism each relies on — a genuine finding, not a bug in the implementation.
+
+**Shipped semantics (what a reader can rely on):** a module-qualified host perform (`Io.print`,
+`Clock.now`, …) is ambient in the Deno sense — it ALWAYS reaches the runtime's outermost grant
+surface (`--env`/`--allow`), never a program's own `with`. In-program swappability of a host
+effect's behavior still exists, exactly as before this slice: bind the effect explicitly via
+`with Io_Console as con { … }` and call `con.print(x)` (the pre-existing `.dotPerform` path,
+unaffected) — that program never reaches the driver at all, its own handler serves every
+performed op, matching `examples/hostio-echo`'s shape. The two spellings are DELIBERATELY
+different constructs post-correction: `Mod.op` = "ask the runtime," `cap.op` = "ask this specific
+installed handler" — not two paths to the same nearness-resolved call.
+
+**The `#guard` gap this correction also surfaces.** `Bang/Backend/EnvMachine.lean`'s host-seam
+`#guard` (~line 3568, "a cap for label 9 is captured in a thunk under a `handle` then FORCED
+AFTER the handler returns") proves the ESCAPE case — a cap that outlives its installing handler.
+It does NOT exercise "a handler is still lexically enclosing when the host cap performs" (there
+was no such case to test: the pre-H1 codebase had no literal-cap construction at all). So the
+runtime-half "PROVEN" claim in the original text below was accurate for what it tested (the seam
+services a genuinely-escaped host cap), but never claimed — and could not have claimed — the
+enclosure/nearness property; that gap was carried entirely by the elaboration-side prose analogy,
+which is what this correction retracts.
+
+**H1b — lexical nearness for module-qualified host performs (NAMED, filed at merge, NOT this
+slice).** If nearness is wanted later, the change is NOT a ripple: it needs `Surface.lowerC`'s
+`env : List String` to carry PER-LABEL alias information (so `.handleCustomS`'s install can push
+a reserved per-label sentinel — mirroring `capState`/`capStm` — that `hostPerformS`'s lowering
+searches for BEFORE falling back to the literal cap), i.e. a genuine env-SHAPE change threaded
+through the whole `lowerC`/`lowerV` mutual, not an additive arm. It is also a live DESIGN
+question, not just an implementation gap: whether a `with` should be able to intercept an ambient
+module-qualified call at all touches the same cap-soundness territory ADR-0063's escape work
+settled (identity-first dispatch is there FOR a reason — see the glossary entry) — deciding that
+inside an implementation lane would be scope creep past what this ADR ratified. H1b gets its own
+design pass before implementation.
+
+---
+
+*The original OPEN framing (2026-07-11, pre-H1), preserved for the trail — read the correction
+above first; the nearness sentence below is the one that was refuted.*
+
 This slice ships the SIM runtime + the proven engine/driver MECHANISM; it does NOT ship live host IO.
 "Mechanism ready, reach pending" is the honest statement — a normal program installs its OWN
 `with Io_Console as con {…}`, which catches every Console op LEXICALLY, so the host seam (the outermost
@@ -204,13 +274,17 @@ host effect UNHANDLED and the RUNTIME to provide the outer handler.
 - **The chosen reach = H1, a module-qualified host perform** (`Io.print x` → a perform on a host-labelled
   cap the RUNTIME provides), following the get/put BUILT-IN-AMBIENT precedent: bang's built-ins already
   perform against the nearest handler with no named cap; H1 is a host effect behaving like a built-in
-  whose OUTERMOST handler is the driver. The row still carries the label (the manifest stays honest); a
+  whose OUTERMOST handler is the driver. The row still carries the label (the manifest stays honest); ~~a
   user `with Io_Console` wins by NEARNESS (mints a real frame that catches first — the seam fires only
-  past it). So the SAME program is sim-in-corpus (user `with`) and real-under-`--env=real` (no user
-  handler → driver), zero body changes.
+  past it)~~ **[RETRACTED — see the correction above: get/put's nearness is name-lookup, H1's mechanism
+  is a fixed-identity literal; the two are incompatible as designed, not merely unimplemented]**. So the
+  SAME program is sim-in-corpus (user `with`) and real-under-`--env=real` (no user handler → driver) ~~,
+  zero body changes~~ **[still true for the AMBIENT `Mod.op` spelling — the retraction is about `with`
+  ever catching it, not about needing body changes for the `--env=real` path itself]**.
 - **The runtime half is PROVEN** (compiled `#guard`): a literal host cap on a granted label
   (`perform (vcap reservedId ℓ) op arg`) misses all stores → reaches the seam → surfaces a `HostReq`,
-  and with a queued response RESUMES. So the driver + seam are ready.
+  and with a queued response RESUMES. So the driver + seam are ready. **[Confirmed accurate — this
+  guard proves the ESCAPE case only, see the `#guard` gap paragraph above; it never claimed enclosure.]**
 - **The elaboration half is the irreducible floor**: the label ℓ isn't available at `Surface.lowerC`
   (which threads only the binder env), and there is NO literal-cap Surf former (verified: cap values come
   only from a `handle`/`with` mint binder). So H1 needs a new INTERNAL Surf former (a `hostPerformS`
@@ -219,6 +293,8 @@ host effect UNHANDLED and the RUNTIME to provide the outer handler.
   (`mergeModules`). That former ripples the codebase's Surf-traversal completeness discipline (~8 sites:
   `qualifyDotAccess`/`eraseLettMulti`/`firstPrivateDotAccess`/`callSitesOf`/…) — a bounded but
   shared-inductive surface/elaboration slice, deferred to its own lane (one-writer-coordinated).
+  **[Confirmed accurate, and measured wider in practice: ~18 arms across 5 files — Surface.lean,
+  TypeCheck.lean, Query.lean, Rewrite.lean, Format.lean — still each mechanical/1-line.]**
 
 *Rejected for the reach:*
 - **H2 — recording the SIM's own performs.** VACUOUS (verified live): a deterministic sim has no host
@@ -251,19 +327,19 @@ lowering slot), not general GC-frame resumption.
 
 ## Scope (v1 = the Console/Clock wedge)
 
-**WHAT THIS SLICE SHIPS — stated plainly.** This slice ships: (1) the SIM runtime — `import Io` +
-`with Io_* {…}` sim handlers, corpus-green on both engines; (2) the PROVEN engine/driver MECHANISM —
-the `evalEHost` seam + its drift gate, the `Main.lean` replay-prefix driver (`--env`/`--allow`/
-`--record`/`--replay`/`--max-host-requests`), the record/replay battery. **It does NOT ship LIVE host
-IO**: a normal program's own `with` catches its host ops lexically, so reaching the outermost host seam
-needs the H1 elaboration affordance (§4, "the host-provision reach") — the NAMED NEXT slice, filed as its
-own issue (a surface-engineer elaboration slice; the mechanism here waits for it). "Mechanism ready, reach
-pending" is true; "real IO ships" would not be — and H2 (the sim-recording shortcut) is a vacuous gate
-(§4), so it is NOT shipped as a stand-in.
+**WHAT THIS SLICE SHIPS — stated plainly (updated post-H1 landing).** This ADR's base slice shipped:
+(1) the SIM runtime — `import Io` + `with Io_* {…}` sim handlers, corpus-green on both engines;
+(2) the PROVEN engine/driver MECHANISM — the `evalEHost` seam + its drift gate, the `Main.lean`
+replay-prefix driver (`--env`/`--allow`/`--record`/`--replay`/`--max-host-requests`), the
+record/replay battery. **H1 (#126, LANDED)** added the elaboration affordance: a module-qualified
+host perform (`Io.print x`) now elaborates and reaches the driver — see §4's "LANDED" section for
+the mechanism and its shipped (label-only ambient, no lexical nearness) semantics. H2 (the
+sim-recording shortcut) stays a vacuous gate (§4), not shipped as a stand-in. H1b (lexical
+nearness) is NAMED but NOT shipped — a future design pass, §4.
 
 | tier | effect | v1 status |
 |---|---|---|
-| **wedge** | `Console` + `Clock` | THIS ADR — no resource handles, pure Sendable ops, host side ~3 lines of Lean IO (SIM + mechanism; live IO gated on H1) |
+| **wedge** | `Console` + `Clock` | THIS ADR + #126 — no resource handles, pure Sendable ops, host side ~3 lines of Lean IO; SIM + mechanism + the H1 reach ALL LANDED, ambient `Mod.op` dispatch (label-only, H1b nearness deferred) |
 | next | `Rand` | identical shape to `Choice.pick`; reuses the ndet-dst seeded handler as its sim. Free once the wedge lands |
 | next | `Fs` read-only | one resource kind (opaque-`Int` handle), fixed-map sim; deferred |
 | last | `Net` | ADR-0084 slice B; needs connection handles + (post-v1) `listen`/`accept` = the concurrency substrate |

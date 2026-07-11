@@ -320,6 +320,11 @@ public def surfUsesVar (nm : String) : Surf → Bool
   | .dotPerform r _ .none          => surfUsesVar nm r
   | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
   | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
+  -- ADR-0104 §4 the host-provision reach (#126, landed post-copy): `hostPerformS` mirrors
+  -- `TypeCheck.surfUsesVar`'s own arm — no binder, ordinary structural recursion.
+  | .hostPerformS _lbl n _ .none      => surfUsesVar nm n
+  | .hostPerformS _lbl n _ (.one a)   => surfUsesVar nm n || surfUsesVar nm a
+  | .hostPerformS _lbl n _ (.two a b) => surfUsesVar nm n || surfUsesVar nm a || surfUsesVar nm b
   | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
   | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
   -- ADR-0095 (landed post-copy, #21 s7probe rebase fix): `handleCustomS` mirrors

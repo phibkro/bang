@@ -409,6 +409,19 @@ partial def fmtSurf (need : SPrec) : Surf → Format
       | .none      => fmtSurf .atom recv ++ Format.text s!".{op}"
       | .one a     => fmtSurf .atom recv ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a]
       | .two a b   => fmtSurf .atom recv ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a, fmtSurf .cmp b]
+  -- ADR-0104 §4 the reach (#126): `hostPerformS` is INTERNAL (never parsed — only synthesized by
+  -- `qualifyDotAccess` from a source `Mod.op(args)`) — printed defensively in the SAME dotted shape
+  -- as `.dotPerform` (the `.foldS`/`.unfoldS` "INTERNAL; printed defensively" precedent immediately
+  -- above), reading `effRef` (the qualified effect name, e.g. `Io_Console`) as the receiver. This
+  -- does NOT round-trip back to a `hostPerformS` node (the parser has no such production — printing
+  -- it re-parses as an ordinary `.dotPerform`, which is fine: `hostPerformS` only ever exists
+  -- post-`mergeModules`, a stage the printer's callers never re-feed through `mergeModules`).
+  | .hostPerformS _lbl effRef op args =>
+      fParenIf need .dotted <|
+      match args with
+      | .none      => fmtSurf .atom effRef ++ Format.text s!".{op}"
+      | .one a     => fmtSurf .atom effRef ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a]
+      | .two a b   => fmtSurf .atom effRef ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a, fmtSurf .cmp b]
   | .letRecS f ty body b =>
       fParenIf need .cmp <|
         Format.group (nestD (Format.text s!"let rec {f} : {showTy ty} = " ++ fmtSurf .cmp body ++ Format.line ++ Format.text "in")

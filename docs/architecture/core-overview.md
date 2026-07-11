@@ -48,14 +48,14 @@ graph TD
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
     Frontend_DiagCodes["Frontend.DiagCodes<br/>262L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>1092L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>1105L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>213L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>921L · fan-in 0"]
-    Frontend_Rewrite["Frontend.Rewrite<br/>308L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3180L · fan-in 1"]
+    Frontend_Query["Frontend.Query<br/>926L · fan-in 0"]
+    Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
+    Frontend_Surface["Frontend.Surface<br/>3238L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>8239L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>8451L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -88,7 +88,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 3180 | 1 |
+| `Frontend.Surface` | ? | 3238 | 1 |
 | `Audit` | Apex | 60 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3584 | 0 |
@@ -112,14 +112,14 @@ graph TD
 | `Frontend.Annotate` | ? | 252 | 0 |
 | `Frontend.DiagCodes` | ? | 262 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
-| `Frontend.Format` | ? | 1092 | 0 |
+| `Frontend.Format` | ? | 1105 | 0 |
 | `Frontend.Lint` | ? | 213 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 921 | 0 |
-| `Frontend.Rewrite` | ? | 308 | 0 |
+| `Frontend.Query` | ? | 926 | 0 |
+| `Frontend.Rewrite` | ? | 313 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 8239 | 0 |
+| `Frontend.TypeCheck` | ? | 8451 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1745 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |
