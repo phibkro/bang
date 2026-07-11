@@ -161,6 +161,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **docs** — unblock the doc-gen4 build (plan 010) — UnicodeBasic fork pin + the generated BangDocs barrel (`43676ce2`)
 - **stdlib** — migrate injected prelude to Prelude.bang module, auto-used (#106) (`3856b0e6`)
 - **emit** — rung-3 transaction journal/rollback on wasm — A11 abort runs on wasmtime (`07f5c0ad`)
+- **ctors** — type-namespaced constructors — resolveCtor + B012 (#108, ADR-0099) (`ec6c7f35`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

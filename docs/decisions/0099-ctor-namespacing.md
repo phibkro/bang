@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: A data constructor's true identity is `(dataName, ctorName)`, not `ctorName` alone
   (issue #108, operator-ruled option (a) 2026-07-11 — the ML/Rust convention). **`env.ctors`
   changes from a flat `List (String × CtorInfo)` keyed on the bare name to a table that PERMITS
@@ -36,7 +36,7 @@
 
 ## Status
 
-Proposed (2026-07-11) — a design probe for #108, not an implementation. Every claim below is
+Accepted (2026-07-11) — implementation LANDED on main (merge of feat-ctor-namespacing @ ec6c7f35): resolveCtor + B012 + the Type_Ctor qualified form; all 4 witnesses flipped as designed (w2's B012 message byte-identical to this ADR's prediction); zero corpus regression, confirming the census claim. Formerly Proposed (2026-07-11) — a design probe for #108, not an implementation. Every claim below is
 either machine-checked against the real `bang` binary (witnesses in `docs/decisions/
 witness-0099/`, built from a clean `lake build bang` on `design-ctor-namespacing` @ `dd60564f`) or
 explicitly marked as an implementation-time decision this ADR pins but does not build.
