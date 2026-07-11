@@ -19,12 +19,19 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 #     its loud error, the record/replay driver path is TRANSPARENT (record then replay
 #     reproduces the run byte-identically), and the `--max-host-requests` ceiling exists.
 #
-# SCOPE NOTE (ADR-0104 §4, the open host-provision reach): a v1 program installs its OWN `with
-# Io_* {…}` sim handler, which catches every host op lexically — so the HOST seam (the outermost
-# fallback) is not reached by a normal program yet; that needs the module-qualified-host-perform
-# surface affordance (the named next, cross-lane slice). Until then the REAL-host + non-trivial
-# trace legs live in the #guards (which exercise the seam directly on Comp AST); this file gates
-# the driver's SIM-path transparency + flag surface, which IS reachable today.
+# SCOPE NOTE (ADR-0104 §4, the H1 reach, #126 — LANDED): a v1 program can EITHER install its own
+# `with Io_* {…}` handler (catches every host op lexically, driver-independent — examples/hostio-echo/
+# main.bang, section 1-5 below) OR use the module-qualified AMBIENT spelling (`Io.print`, no `with` —
+# examples/hostio-echo/ambient.bang, section 6 below), which reaches the driver's outermost grant
+# surface UNCONDITIONALLY. MEASURED CORRECTION to this ADR's original nearness claim: a `with
+# Io_Console` does NOT intercept an ambient `Io.print` call even when lexically enclosing it (see the
+# ADR-0104 §4 "CORRECTION" section + the `#guard` refutation witness in TypeCheck.lean) — the two
+# spellings are deliberately SEPARATE constructs post-correction, not two paths to one nearness-
+# resolved call. Section 6 is the FIRST leg of this battery that reaches REAL host IO through the
+# ambient path (sections 1-5 exercise the SIM-catches-lexically path + the driver's flag/record/
+# replay surface, which never actually reaches real IO for hostio-echo's own program — verified: its
+# `with Io_Console` catches every op even under `--env=real`, so those sections test the DRIVER's
+# transparency, not a live host boundary).
 #
 # PIPEFAIL GOTCHA (guarded throughout): every fallible command feeding a `$(...)` capture is
 # followed by `&& code=0 || code=$?` — a guard-free failing command under `set -e`/`-o pipefail`
@@ -88,6 +95,46 @@ check "replay-exit"            "$pcode" "0"
 got="$("$bang" run --env=real --allow=Console --max-host-requests 8 "$echo_main" 2>/dev/null)" && code=0 || code=$?
 check "max-host-requests-accepted-stdout" "$got" "ih"
 check "max-host-requests-accepted-exit"   "$code" "0"
+
+# ── 6 · THE H1 REACH (#126) — the ambient `Io.print`/`Io.readLine` spelling, which sections 1-5
+#        above never exercise (hostio-echo's own `with Io_Console` catches every op lexically, so
+#        it never reaches the driver even under --env=real, measured). ambient.bang has NO `with` —
+#        it can ONLY resolve via the driver's grant surface. This is the FIRST leg of this battery
+#        that touches a REAL host boundary end-to-end (real stdin → the program's own $reverse). ──
+ambient_main="examples/hostio-echo/ambient.bang"
+
+# 6a · no --env at all ⟹ the DEFINED escapedCap terminal (ADR-0063), not silently swallowed —
+#      pins the "mechanism ready, driver-gated" contract this file's header now documents.
+err="$("$bang" run "$ambient_main" 2>&1 >/dev/null)" && code=0 || code=$?
+check "ambient-no-env-nonzero-exit" "$code" "5"
+check_contains "ambient-no-env-names-the-collapse" "$err" "escaped-capability"
+
+# 6b · --env=real --allow=Console with REAL stdin ⟹ the driver services `Io.print`/`Io.readLine`
+#      for REAL: the printed "?" prompt, the ECHOED real stdin line, and the reversed line all come
+#      from the actual host boundary (Lean's `IO.println`/stdin), not a sim clause.
+got="$(printf 'hi\n' | "$bang" run --env=real --allow=Console "$ambient_main" 2>/dev/null)" && code=0 || code=$?
+check "ambient-real-env-stdout" "$got" "$(printf '?\nhi\nih')"
+check "ambient-real-env-exit"   "$code" "0"
+
+# 6c · a DIFFERENT real stdin line reverses differently — proves 6b wasn't a coincidental match
+#      against a hardcoded expectation (the same structural distinctness `check-examples.sh`'s own
+#      byte-diff relies on, applied here since ambient.bang isn't in that corpus loop).
+got="$(printf 'go\n' | "$bang" run --env=real --allow=Console "$ambient_main" 2>/dev/null)" && code=0 || code=$?
+check "ambient-real-env-different-input" "$got" "$(printf '?\ngo\nog')"
+
+# 6d · record → replay is transparent for the AMBIENT path too (invariant-#1 at the driver level,
+#      now proven over a run that touched REAL IO, not just the sim-transparent case sections 1-5
+#      covered). REPLAY does NO real IO (the pure oracle, `--replay`'s whole point) — `Io.print`'s
+#      `Unit` results and `Io.readLine`'s recorded `hi` are fed back from the trace, so ONLY the
+#      program's RETURN value (`ih`, the reversed line) prints; the "?"/"hi" lines 6b saw were the
+#      REAL handler's own `IO.println`/echo side effects, absent on replay by construction — this
+#      is the invariant-#1 CONTRACT (replay reproduces the program's observable OUTPUT, not the
+#      world's side effects, host-io-design.md §3 "honest limits"), not a gap in this leg.
+printf 'hi\n' | "$bang" run --env=real --allow=Console --record "$workdir/ambient.ndjson" "$ambient_main" >/dev/null 2>&1 && rcode=0 || rcode=$?
+replayed="$("$bang" run --replay "$workdir/ambient.ndjson" "$ambient_main" 2>/dev/null)" && pcode=0 || pcode=$?
+check "ambient-record-succeeds"       "$rcode" "0"
+check "ambient-replay-reproduces-run" "$replayed" "ih"
+check "ambient-replay-exit"           "$pcode" "0"
 
 echo "──────────────────────────────"
 echo "hostio: $pass passed, $fail failed"
