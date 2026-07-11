@@ -6,12 +6,13 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (63)
+## active (64)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
 - [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) — Open questions — the design-question ledger
 - [`actor-sendable-design.md`](actor-sendable-design.md) — Actor-send (`!`) sendable fragment — design (G7, POST-V1)
+- [`calcjson-compiled-diagnosis.md`](calcjson-compiled-diagnosis.md) — calc / json on the compiled + emitted paths — diagnosis
 - [`calculated-typer-survey.md`](calculated-typer-survey.md) — Calculated type CHECKING — design inputs for a future ADR
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture

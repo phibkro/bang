@@ -1,0 +1,8 @@
+effect Trace { log : Int -> Int }
+let rec go : Cap Trace -> Int -> Int ! {Div, Trace} =
+  fun tr =>
+    fun n =>
+      let s = tr.log(1) in
+      if n == 0 then s else s + $go tr (n - 1)
+let main =
+  handle (($go) tr 3) with Trace as tr { log(x) => 1 }

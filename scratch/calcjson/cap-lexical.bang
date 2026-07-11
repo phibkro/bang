@@ -1,0 +1,3 @@
+effect Trace { log : Int -> Int }
+let main =
+  handle (let a = tr.log(1) in let b = tr.log(1) in a + b) with Trace as tr { log(x) => 1 }
