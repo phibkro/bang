@@ -72,8 +72,12 @@ with NO preservation and NO logical relation — it never approaches the parked 
 
 ## Consequences
 
-- `effect_sound`'s axiom set: `[sorryAx, Trace, traceWithin, Source.evalTrace]` → `[propext, sorryAx]`
-  (the three bare axioms retired; `sorryAx` = the Phase-2 body, discharged separately).
+- `effect_sound`'s axiom set: `[sorryAx, Trace, traceWithin, Source.evalTrace]` → `[propext, Quot.sound]`
+  (the three bare axioms retired AND the body discharged; ⊆ trusted-3, fully clean).
+- The discharge (`runTrace_traceWithin`, `Bang/Core/Semantics/Eval.lean`) is a machine induction via
+  `Config.runTrace.induct` — NO preservation, NO logical relation, never approaching the parked `lr_*`.
+  The `HasCTy` premise is NOT needed (the runtime bound is typing-independent); it stays on the
+  statement for the intended reading.
 - Q14 moves from OPEN to RESOLVED (this ADR).
 - The trace is now a usable artifact for downstream tooling (the dynamic counterpart of the static
   effect discipline).

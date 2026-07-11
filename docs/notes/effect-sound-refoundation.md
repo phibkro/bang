@@ -117,11 +117,16 @@ effect_sound  AFTER:  [propext, sorryAx]        -- 3 bare axioms retired
 
 The `sorryAx` is the theorem body (Phase 2); the three type/def axioms are gone.
 
-## Phase-2 plan (after operator ack of the statement change)
+## Phase-2 — DISCHARGED (`runTrace_traceWithin`, axiom-clean)
 
-The earlier (i)-vs-(ii) fork is RESOLVED by the runtime bound: `runTrace` records
-`(ℓ, liveBound K e)` where `liveBound` is folded from the stack (config-side), so no
-per-config typing thread is needed. The two remaining pieces:
+`effect_sound` is now proven: `[propext, Quot.sound]` (⊆ trusted-3, `sorryAx` dropped). The
+discharge is `runTrace_traceWithin` in `Bang/Core/Semantics/Eval.lean`, a machine induction via
+`Config.runTrace.induct` — three ~10-line lemmas (`liveBound_splitAtId`,
+`labelEff_le_liveBound_of_step`, `traceWithin_append`) + the fuel induction, NO preservation, NO LR,
+HARD-RAIL clear of `lr_*`. The `HasCTy` premise is NOT used (the bound is typing-independent); it
+stays on the statement for the intended reading. The plan below is the record of how it went.
+
+### The discharge structure (as landed)
 
 1. **Value-agreement differential guard.** `Source.eval` stays the oracle. A generic
    lemma (NOT a `#guard` on the value — the kernel is abstract over `Eff`; the WITNESS

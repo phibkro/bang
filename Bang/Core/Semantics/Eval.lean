@@ -470,6 +470,102 @@ def traceWithin {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff
     (t : Trace Eff) : Prop :=
   ∀ p ∈ t, EffSig.labelEff (Eff := Eff) (Mult := Mult) p.1 ≤ p.2
 
+/-! ### Effect-soundness discharge (Q14, ADR-0105) — `traceWithin` holds for every `evalTrace` run.
+
+The runtime-bound design makes the discharge a MACHINE induction, no preservation / no LR: a dispatched
+label resolves to a `handleF` frame on the stack whose label IS the label (`handlesOp_label`), and a
+frame's label-row is `≤ liveBound` (`liveBound_splitAtId`). So each recorded `(ℓ, liveBound K e)` is
+`traceWithin`-good, and the accumulator invariant threads through `Config.runTrace.induct`. -/
+
+/-- `traceWithin` of the empty trace is vacuous. -/
+theorem traceWithin_nil {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult] :
+    traceWithin (Eff := Eff) (Mult := Mult) [] := by intro p hp; simp at hp
+
+/-- The matched handler's label-row is `≤ liveBound K e`: a `splitAtId` frame contributes its label to
+the `liveBound` fold. -/
+theorem liveBound_splitAtId {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    {n : Nat} {e : Eff} :
+    ∀ {K Kᵢ Kₒ : EvalCtx} {h : Handler},
+    splitAtId K n = some (Kᵢ, h, Kₒ) →
+    EffSig.labelEff (Eff := Eff) (Mult := Mult) h.label ≤ liveBound (Mult := Mult) K e := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ h hsp; simp [splitAtId] at hsp
+  | cons fr K ih =>
+    intro Kᵢ Kₒ h hsp
+    cases fr with
+    | handleF m hh =>
+      simp only [splitAtId] at hsp
+      by_cases hm : m = n
+      · simp only [hm, if_pos] at hsp
+        obtain ⟨-, rfl, -⟩ := Prod.mk.injEq .. ▸ (Option.some.injEq _ _ ▸ hsp)
+        simp only [liveBound]; exact le_sup_left
+      · simp only [if_neg hm, Option.map_eq_some_iff] at hsp
+        obtain ⟨⟨Kᵢ', hh', Kₒ'⟩, hsp', heq⟩ := hsp
+        obtain ⟨-, rfl, -⟩ := Prod.mk.injEq .. ▸ heq
+        simp only [liveBound]; exact le_sup_of_le_right (ih hsp')
+    | letF N => simp only [splitAtId, Option.map_eq_some_iff] at hsp
+                obtain ⟨⟨Kᵢ', hh', Kₒ'⟩, hsp', heq⟩ := hsp
+                obtain ⟨-, rfl, -⟩ := Prod.mk.injEq .. ▸ heq
+                simp only [liveBound]; exact ih hsp'
+    | appF v => simp only [splitAtId, Option.map_eq_some_iff] at hsp
+                obtain ⟨⟨Kᵢ', hh', Kₒ'⟩, hsp', heq⟩ := hsp
+                obtain ⟨-, rfl, -⟩ := Prod.mk.injEq .. ▸ heq
+                simp only [liveBound]; exact ih hsp'
+
+/-- At a RECORDING dispatch (the `perform (vcap n ℓ)` step succeeds), `labelEff ℓ ≤ liveBound K e` —
+the dispatched label's row is within the runtime bound. Combines `capResolves_of_idDispatch` (step
+success ⟹ a matching frame), `handlesOp_label` (its label is `ℓ`), and `liveBound_splitAtId`. -/
+theorem labelEff_le_liveBound_of_step {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
+    [EffSig Eff Mult] {g n : Nat} {ℓ : Label} {op : OpId} {vv : Val}
+    {K : EvalCtx} {cfg' : Config} {e : Eff}
+    (hstep : Source.step (g, K, Comp.perform (Val.vcap n ℓ) op vv) = some cfg') :
+    EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ liveBound (Mult := Mult) K e := by
+  simp only [Source.step] at hstep
+  have hid : idDispatch K n ℓ op vv ≠ none := by intro h; rw [h] at hstep; simp at hstep
+  obtain ⟨Kᵢ, h, Kₒ, hsplit, hho⟩ := capResolves_of_idDispatch hid
+  have hlbl : h.label = ℓ := handlesOp_label hho
+  have hle := liveBound_splitAtId (Eff := Eff) (Mult := Mult) (e := e) hsplit
+  rw [hlbl] at hle; exact hle
+
+/-- `traceWithin` is preserved by appending a `traceWithin`-good entry. -/
+theorem traceWithin_append {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    {t : Trace Eff} {p : Label × Eff}
+    (ht : traceWithin (Eff := Eff) (Mult := Mult) t)
+    (hp : EffSig.labelEff (Eff := Eff) (Mult := Mult) p.1 ≤ p.2) :
+    traceWithin (Eff := Eff) (Mult := Mult) (t ++ [p]) := by
+  intro q hq; rw [List.mem_append] at hq
+  cases hq with
+  | inl h => exact ht q h
+  | inr h => simp only [List.mem_singleton] at h; subst h; exact hp
+
+/-- **The soundness core**: `Config.runTrace` preserves `traceWithin` from its accumulator to its
+result. Every recorded `(ℓ, liveBound K e)` is `traceWithin`-good (`labelEff_le_liveBound_of_step`),
+so the invariant threads through the machine induction. NO preservation, NO LR. -/
+theorem runTrace_traceWithin {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    (n : Nat) (cfg : Config) (e : Eff) (t : Trace Eff) (v : Val) (t' : Trace Eff)
+    (hrun : Config.runTrace (Mult := Mult) n cfg e t = Result.done (v, t'))
+    (ht : traceWithin (Eff := Eff) (Mult := Mult) t) :
+    traceWithin (Eff := Eff) (Mult := Mult) t' := by
+  induction n, cfg, e, t using Config.runTrace.induct (Eff := Eff) (Mult := Mult) generalizing v t' with
+  | case1 cfg e t => simp only [Config.runTrace] at hrun; exact absurd hrun (by simp)
+  | case2 n g w e t =>
+      simp only [Config.runTrace, Result.done.injEq, Prod.mk.injEq] at hrun
+      obtain ⟨-, rfl⟩ := hrun; exact ht
+  | case3 n cfg e t hnd a ℓ op arg hperf cfg' hstep ih =>
+      obtain ⟨g, K, M⟩ := cfg
+      simp only at hperf; subst hperf
+      simp only [Config.runTrace, hstep] at hrun
+      exact ih v t' hrun (traceWithin_append ht (labelEff_le_liveBound_of_step hstep))
+  | case4 n cfg e t hnd a ℓ op arg hperf hstep =>
+      simp only [Config.runTrace, hperf, hstep] at hrun; exact absurd hrun (by simp)
+  | case5 n cfg e t hnd cfg' hstep hnp ih =>
+      simp only [Config.runTrace, hstep] at hrun; exact ih v t' hrun ht
+  | case6 n cfg e t hnd hstep hperf hnp =>
+      simp only [Config.runTrace, hstep] at hrun; exact absurd hrun (by simp)
+  | case7 n cfg e t hnd hstep hperf hnp =>
+      simp only [Config.runTrace, hstep] at hrun; exact absurd hrun (by simp)
+
 /-- isReturn: a Comp is "returned" iff it's `ret v` for some v. -/
 def isReturn : Comp → Prop
   | .ret _ => True
