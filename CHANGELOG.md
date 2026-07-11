@@ -169,6 +169,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — wildcard match arm `_` (#101) (`5577fd5b`)
 - **types** — ADR-0103 monomorphization pre-pass for bound-free let rec (`f4919063`)
 - **prelude** — ADR-0103 List-consumer payoff — take/drop + the auto-use alias fix (`47101cfe`)
+- **landing** — the bang landing page — one static page over the ruled copy kit (`23f2f366`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
