@@ -27,9 +27,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build vocs docs site (→ site/dist/public, basePath /bang)
+      - name: Build vocs docs site (→ web/docs/dist/public, basePath /bang)
         run: |
-          cd site
+          cd web/docs
           bun install --frozen-lockfile
           # mmdc (mermaid-cli) pre-renders diagrams to static SVG — needs a headless
           # browser. bun blocks postinstall, so install it explicitly (site's puppeteer,
@@ -42,13 +42,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 tools/gen-dashboard.py           # writes _site/ (dashboard + PWA files, relative paths)
-          mkdir -p site/dist/public/dashboard
-          cp -r _site/* site/dist/public/dashboard/
+          mkdir -p web/docs/dist/public/dashboard
+          cp -r _site/* web/docs/dist/public/dashboard/
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site/dist/public
+          path: web/docs/dist/public
 
   deploy:
     needs: build

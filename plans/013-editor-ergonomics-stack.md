@@ -5,7 +5,7 @@
 > verification command. STOP conditions binding. The reviewer maintains the index. Reply in
 > the standard report format.
 >
-> **Drift check (run first)**: `git log --oneline -2 -- Bang/Frontend/Surface.lean Bang/Frontend/Query.lean site/ tools/gen-reference.py`
+> **Drift check (run first)**: `git log --oneline -2 -- Bang/Frontend/Surface.lean Bang/Frontend/Query.lean web/docs/ tools/gen-reference.py`
 > and compare "Current state" below.
 
 ## Status
@@ -37,7 +37,7 @@ and a thin JSON-RPC transport over the Query API.
   (keyword forms) from `Bang/Frontend/Surface.lean` — reuse its extraction functions.
 - Reserved words (parser-enforced): `get put raise new read write resume with param` — extract
   from source, don't hand-list (grep `pIdent`'s reserved list; a hand-copy is drift).
-- The site aliases `bang`→`text` fences at the sync seam (`site/sync-docs.mjs` — the comment
+- The site aliases `bang`→`text` fences at the sync seam (`web/docs/sync-docs.mjs` — the comment
   block there names THIS plan's slice 1 as the deletion trigger).
 - `Bang/Frontend/Query.lean` — Tier-1 public API: check/holes/impact/refs/dump JSON functions.
   `Main.lean` — the CLI verb arms (the exemplar for wiring).

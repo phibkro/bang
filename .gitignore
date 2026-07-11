@@ -36,9 +36,9 @@ oracle/_build/
 _site/
 # vocs docs site: commit sources only (package.json, vocs.config.ts, sync-docs.mjs, bun.lock);
 # node_modules, build output, cache, and the generated page farm are derived
-site/node_modules/
-site/dist/
-site/.vocs/
-site/src/
-site/public/
+web/docs/node_modules/
+web/docs/dist/
+web/docs/.vocs/
+web/docs/src/
+web/docs/public/
 docbuild/BangDocs.lean
