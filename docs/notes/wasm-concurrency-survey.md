@@ -309,6 +309,118 @@ lowering is still the Q(conc-3) spike. Hand-written WAT `record` lift did not va
 on this toolchain (wasm-tools 1.249 quirk); `tuple<u32,u32>` is the ABI-identical flat
 proxy used for the small-message row.
 
+## §G8-SPIKE — WASI-0.3 async ↔ CBPV lowering (Q(conc-3), the ADR-0101 gate) (2026-07-11)
+
+The one leg §G2-MEASURED left open. ADR-0101 §G8 named WASI-0.3 async as the
+first production concurrency backend, gated on **one spike**: does the async ABI
+(`async func`/`stream<T>`/`future<T>`, the task/subtask canon builtins) actually
+build+run on today's toolchain, and does its shape fit scheduler-as-handler?
+Measured on **wasmtime 45.0.0** (CLI, the end-to-end RUN) / **wasmtime crate
+45.0.3** (Cranelift, `component-model` + `component-model-async` + `async` on, a
+current-thread Tokio runtime for the event loop) / **wasm-tools 1.249.0**; single
+machine (workstation, x86-64, Linux 6.18). Re-runnable: `tools/bench/wasi-async/run.sh`.
+
+**(Q1) TOOLING REALITY 2026 — GO, runnable today.** Three independent proofs, all
+green on this toolchain (not reasoned — RUN):
+
+| layer | evidence |
+|---|---|
+| WIT type system | `next: async func() -> u32`, `stream<u8>`, `future<u32>` round-trip through `wasm-tools component wit` → binary → print: `(func async (result u32))`, `(stream u8)`, `(future u32)` are real validated types |
+| async lift + `task.return` | a `(canon lift … async (callback …))` export with `(canon task.return (result u32))` **validates** (`--features all`) — the validator has real async-type semantics (it *rejects* async-lift on a non-async func type) |
+| **END-TO-END RUN** | `wasmtime run -W component-model-async=y --invoke 'run()'` on that component **returns 42** — wasmtime 45 instantiated it, drove the host event loop, ran the guest to `task.return`, and produced the result. First async component run for this project. |
+
+wasm-tools 1.249 implements the **full** async canon-builtin vocabulary (from the
+parser's own enumeration): `task.return`/`task.cancel`, `context.get/set`,
+`thread.yield`, `subtask.drop/cancel`, `stream.{new,read,write,cancel-read,
+cancel-write,drop-readable,drop-writable}`, `future.{new,read,write,…}`,
+`error-context.{new,debug-message,drop}`, `waitable-set.{new,wait,poll,drop}`,
+`waitable.join`, `backpressure.{inc,dec}`. wasmtime 45 gates it behind
+`-W component-model-async=y` (CLI) / `Config::wasm_component_model_async(true)`
+(crate); WASIp3 host APIs behind `-S p3`. **No missing tooling for the ABI itself.**
+
+**(Q2) ASYNC LIFT/LOWER OVERHEAD** — µs/call, engine+component built once, the
+driver times only the call; N=500 000, 3 repeats, correctness (`=42`) checked
+every call:
+
+| call | µs/call (settled) |
+|---|---|
+| sync-lifted export (`() -> u32`) | ~0.47–0.49 µs |
+| async-lifted export, completes immediately (`task.return` in the initial call) | ~1.16–1.22 µs |
+| **async bookkeeping delta** | **~0.7 µs/call (~2.4× the sync floor)** |
+
+The delta is the task allocation + host-event-loop drive + `task.return` +
+subtask teardown for a task that completes without suspending. It is a *fixed
+per-async-call tax*, **not** per-element like the G2 copy tax — the async
+machinery is control-flow bookkeeping, orthogonal to the payload copy (which the
+async call still pays on top, at the same ~4 ns/elem G2 rate). For a
+green-thread/actor scheduler this ~0.7 µs is the cost of a *suspendable* call;
+sub-µs, three orders below a ms — cheap enough to back cooperative scheduling.
+*(`stream<T>` per-chunk throughput was NOT measured — see caveats.)*
+
+**(Q3) MODEL FIT — the platform's shape IS scheduler-as-handler, confirmed against
+the ABI, not just the blog.** The canonical-ABI async model (reasoned from the
+builtin surface above + [BA-WASI03][medium-hypercharge]):
+
+- The **host owns the event loop** (`waitable-set.wait`/`poll` block the *task*,
+  not the instance; the host resumes it). This is exactly bang's picture: the
+  *runtime* (a handler installed at the use site) owns scheduling; the program
+  `perform`s `spawn`/`await`/`yield` and the handler decides. The event loop is
+  the handler's interpreter loop.
+- A bang scheduler-handler **can BE the coordinator** at the language level: the
+  `conc`/`Sched` ops (ADR-0101 §G1) elaborate to `task.return` (return a result),
+  `waitable-set.wait` (await), `thread.yield` (yield), subtask spawn (spawn). The
+  canonical ABI's built-in task queue does **not** preempt the handler — it is
+  *cooperative* (no preemption; a task runs until it yields/awaits), so the
+  handler's `pick` (the scheduling decision) stays the bang program's, exactly as
+  the seeded sim-scheduler does today. The ABI provides the *suspend/resume
+  mechanism*; the *policy* stays in the handler. That is the clean split
+  scheduler-as-handler needs.
+- **Resumption is one-shot** (a subtask/waitable is consumed on completion; no
+  clone) — matches ADR-0101 §G5 (one-shot suffices; the survey §1.3 fact). No
+  multi-shot requirement surfaces; Q22/Q27 stay parked.
+- **Grade-directed lowering fit (ADR-0059):** the resumption grade 0/1/ω maps
+  onto the ABI cleanly — grade-0 (no resume) = a sync lift (no async tax);
+  grade-1 (one-shot) = an async lift + one `task.return` (the ~0.7 µs path
+  measured); grade-ω (multi-shot) has **no ABI path** (one-shot by construction),
+  which is *correct* — bang doesn't need it for concurrency. The lowering is a
+  grade→lift-mode dispatch, the same shape as the existing pure→native /
+  abort→exn / tail→call table. **No lowering wall found.**
+
+**(Q4) VERDICT — GO.** WASI-0.3 async is viable as the first production
+concurrency backend. The ABI is *shipped and runnable today* (Q1, three green
+proofs), its per-call tax is sub-µs and payload-orthogonal (Q2), and its
+host-owned-cooperative-loop shape is scheduler-as-handler at the platform level
+with a clean grade→lift-mode lowering and no multi-shot demand (Q3). ADR-0101
+§G8's default answer **holds under the spike**; the "one lowering spike" gate is
+**met**. This does not change v1 scope (concurrency is post-v1); it de-risks the
+named post-v1 production target.
+
+**Caveats / what was NOT measured (honest lower bounds).**
+- **The async export completes immediately** (`task.return` in the initial call,
+  callback reports EXIT). A *suspending* task (real `waitable-set.wait` on a
+  pending future, host wakeup) adds a suspend/resume round-trip the ~0.7 µs figure
+  does **not** include — the measured delta is the *floor* of the async tax, not a
+  suspend-cycle cost.
+- **`stream<T>`/`future<T>` runtime throughput was NOT measured.** The *type layer*
+  round-trips (Q1) and the `stream.read/write` builtins exist, but exercising a
+  real stream producer needs a guest with `wasm32-wasip3` std — see the blocker.
+- **The guest was hand-written WAT**, not a bang-compiled component (bang has no
+  concurrency backend yet — this spike de-risks building one, it does not build it).
+- Single machine, 3 repeats, current-thread Tokio (a multi-thread executor would
+  change the absolute async number but not the sync-vs-async *shape*). The sync
+  floor here (~0.47 µs) is higher than G2's ~0.15 µs because the async-enabled
+  crate-45 config carries more per-call setup than G2's crate-34 sync-only config;
+  the load-bearing figure is the **delta within one config**, not cross-config.
+
+**Toolchain blocker (named, for the stream-throughput follow-up).** The nixpkgs
+`rustc` (1.95) lists `wasm32-wasip2`/`wasm32-wasip3` as targets but ships **no
+prebuilt std** for them (only `wasm32-unknown-unknown`); `cargo-component` 0.21.1
+is in nixpkgs but a real async *guest* needs the wasip3 std component (rustup's
+`rust-std-wasm32-wasip3`, or a from-source std build). That is the one gap
+between "the ABI runs" (proven, via hand-WAT) and "a high-level guest emits a
+stream" (blocked on guest std packaging, not on the ABI). Re-check when nixpkgs
+ships a wasip3 rust-std, or build std-from-source in the follow-up.
+
 ## Citations
 
 **bang-side** (ADR/note): ADR-0007 (force explicit; `!` = actor-send) · ADR-0016/0059 (two-hop arch;
@@ -333,4 +445,6 @@ tail→call; WasmFX = post-std fast-path; U grade 0/1/ω; closures = only heap e
 - [why-cm] "Why the Component Model?" (shared-nothing, copy-crossing) — https://component-model.bytecodealliance.org/design/why-component-model.html
 - [ss-linking] Component-model shared-nothing linking — https://github.com/WebAssembly/component-model/blob/main/design/mvp/Linking.md
 - [road-cm10] "The Road to Component Model 1.0" (BA milestone ≠ W3C phase) — https://bytecodealliance.org/articles/the-road-to-component-model-1-0
+- [canon-abi] Component Model Canonical ABI (`canon lift async`, `task.return`, callback codes, waitable) — https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md
+- [wt-async] wasmtime `Config::wasm_component_model_async` / `-W component-model-async` / `-S p3` (verified on the CLI+crate 45, this spike) — https://docs.rs/wasmtime/45.0.2/wasmtime/struct.Config.html
 - [medium-hypercharge] "Why WASI 0.3 and Composable Concurrency" (arbitrary tasks / same instance) — https://medium.com/wasm-radar/hypercharge-through-components-why-wasi-0-3-and-composable-concurrency-are-a-game-changer-0852e673830a
