@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Stranger test — round 4
 
 A developer with a strong general-PL background, never having seen bang, clones
