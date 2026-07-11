@@ -57,6 +57,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
 - [`refinement-types-survey.md`](refinement-types-survey.md) — Refinement types vs grades — design survey (R5, ROADMAP §Pre-v1 research ladder)
 - [`rung5-s5-proofgrade-refutation.md`](rung5-s5-proofgrade-refutation.md) — Rung-5 S5 proof-grade — the obligation, RE-FRAMED (one half done, one half unstateable in v1)
+- [`sched-library-demo.md`](sched-library-demo.md) — Scheduler-as-handler, as ordinary library code — the ADR-0101 flagship demo
 - [`spanned-surf-design.md`](spanned-surf-design.md) — Spanned-Surf design — located errors + LSP-hover tier (#52)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
 - [`spec-proof-discipline.md`](spec-proof-discipline.md) — Spec proof discipline

@@ -1,0 +1,30 @@
+-- Task.bang — a "task" as a THUNK, not a captured continuation (ADR-0025 D1: v1 has
+-- no reified continuations; a `handle` clause is implicit-tail-resume only, ADR-0095
+-- D5). A cooperative coroutine that can genuinely suspend mid-body and resume later
+-- at the same point needs a first-class continuation to capture — that machinery
+-- does not exist on the v1 surface. `Step` is the honest v1 substitute: a task's
+-- unit of work is represented as DATA, and "yielding" means returning control to the
+-- driver by returning a `More` value carrying the NEXT step as a fresh thunk, rather
+-- than suspending an in-flight call frame. See ../../docs/notes/sched-library-demo.md
+-- §"why Step, not a continuation" for the full argument.
+--
+-- `Fin(u)`   — the task has finished (its result, here just `Unit`: the demos care
+--              about the ORDER tasks interleave in, not a return value).
+-- `More(k)`  — the task is not done; `k : Unit -> Step` is the thunk for its next
+--              step. Forcing and calling `k` runs the task until its NEXT yield
+--              point — exactly one step, cooperatively, then control returns to
+--              whoever called `k`. The driver (main.bang) decides whether to call
+--              `k` again immediately (letting one task run to completion) or to
+--              round-robin across several tasks' `k`s (true interleaving) — the
+--              driver's OWN loop shape is therefore also part of the "runtime",
+--              alongside the Sched handler's picks (see the design note §"two
+--              independent knobs").
+pub data Step = Fin(Unit) | More((Unit -> Step ! {Div}))
+
+-- makeTask tid stepsLeft: a task that yields `stepsLeft` times (via `More`), then
+-- finishes. Each step is otherwise a no-op — the interleaving TRACE (which task ran
+-- when, built by the driver) is the thing under test, not the task's own payload.
+pub let rec makeTask : Int -> Int -> Step ! {Div} =
+  fun tid => fun stepsLeft =>
+    if stepsLeft == 0 then Fin(())
+    else More(({fun u => ($makeTask) tid (stepsLeft - 1)} : Thunk (Unit -> Step ! {Div})))

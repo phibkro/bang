@@ -1,0 +1,31 @@
+-- Sched.bang — cooperative scheduling as an ORDINARY user effect (ADR-0101 §G1).
+--
+-- A scheduler is a HANDLER, not a language feature: this file declares one effect
+-- with two ops and stops there. Every scheduling POLICY (round-robin, depth-first,
+-- seeded-random) is a `with Sched as sched { … }` block at the use site — see
+-- ../sched-roundrobin/main.bang vs. ../sched-swap-dfs/main.bang for the same
+-- driver body under two different installed handlers.
+--
+-- NOT a bundled `std/` module (ADR-0104's `stdModules` table in Main.lean):
+-- registering a new bundled name is a Main.lean/driver change, out of this lane's
+-- write scope (a LIBRARY-CODE lane touches only .bang files). `import Sched`
+-- resolves this file via the ORDINARY same-dir-then-root file probe
+-- (`resolveModulePath`, ADR-0093 D1) — no compiler change needed. See
+-- ../../docs/notes/sched-library-demo.md §"why a plain file, not std/".
+--
+-- `spawn : Int -> Int` — register a task, argument/result both carry a caller-chosen
+-- task id (v1 has no dynamic id allocator in a pure handler clause without carried
+-- state, ADR-0092 D5 open; the id is supplied by the caller and echoed back, which
+-- is enough for a handler to observe/veto every spawn — e.g. a resource-limited
+-- handler could refuse ids past a cap by returning a sentinel, though none of the
+-- demos here exercise refusal).
+--
+-- `next : Int -> Int` — the scheduling decision. The driver calls `sched.next(round)`
+-- once per round, passing a ROUND COUNTER (not a mutable "whose turn" register — the
+-- handler param is read-only in v1, ADR-0095 D4/ADR-0092 D5, so state cannot live in
+-- the handler; see the design note's §"stateless seed-splitting"). The handler
+-- returns which runnable task index advances next; the DRIVER interprets the number
+-- (0/1/2 for a 3-task queue here). A policy is a PURE function of the round counter —
+-- round-robin: `round mod N`; depth-first: the constant `0`; seeded: an LCG of the
+-- round — three different pure functions, three different runtimes, one effect.
+pub effect Sched { spawn : Int -> Int, next : Int -> Int }
