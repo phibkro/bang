@@ -22,6 +22,8 @@ public import Mathlib.Algebra.Order.Ring.Defs
 
 namespace Bang
 
+/-- The QTT multiplicity grade `{zero, one, omega}`: the quantitative-type-theory
+rig (Atkey 2018, McBride 2016) that is bang-lang's default `Mult` instance. -/
 public inductive QTT : Type where
   | zero | one | omega
   deriving DecidableEq, Repr, Inhabited

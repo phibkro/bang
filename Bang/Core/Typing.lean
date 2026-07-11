@@ -36,6 +36,8 @@ Torczon's `T_Let` types its continuation under the bound-var multiplicity
 `0` purely because the *outer* usage `q2` is `0`; sequencing still forces the
 bound computation once. We define it directly via `DecidableEq Mult`. -/
 
+/-- The `let`-coeffect floor `q ↦ if q = 0 then 1 else q` (Torczon's `T_Let`):
+sequencing forces the bound computation once even when its outer usage is `0`. -/
 def q_or_1 {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] (q : Mult) : Mult :=
   if q = 0 then 1 else q
 
@@ -61,6 +63,8 @@ predicate is `Prop`-valued (no new decidability burden on the typing judgment); 
 nonetheless DECIDABLE whenever `Eff` has a decidable `≤` (e.g. `EffRow`) — see the
 `Decidable` instance after the typing block. -/
 mutual
+/-- Label `ℓ` is mentioned in value type `A` — as a `cap ℓ` or latently in a row
+inside a `U φ C` sub-term (ADR-0057). -/
 def VTy.labelOccurs (ℓ : Label) : VTy Eff Mult → Prop
   | .unit      => False
   | .int       => False
@@ -70,6 +74,7 @@ def VTy.labelOccurs (ℓ : Label) : VTy Eff Mult → Prop
   | .prod A B  => VTy.labelOccurs ℓ A ∨ VTy.labelOccurs ℓ B
   | .mu A      => VTy.labelOccurs ℓ A
   | .tvar _    => False
+/-- Label `ℓ` is mentioned in computation type `C` (recurses into its value payloads). -/
 def CTy.labelOccurs (ℓ : Label) : CTy Eff Mult → Prop
   | .F _ A     => VTy.labelOccurs ℓ A
   | .arr _ A B => VTy.labelOccurs ℓ A ∨ CTy.labelOccurs ℓ B
@@ -100,6 +105,8 @@ pins the bound var's grade and shadows positionally. `q_or_1` (the let coeffect
 floor) survives — it is grade arithmetic, not a binder side-condition. -/
 
 mutual
+/-- The value typing judgment: `HasVTy γ Γ v A` says value `v` has type `A` under
+context `Γ` consuming resources `γ`. Values are inert (no effect grade). -/
 inductive HasVTy : GradeVec Mult → TyCtx Eff Mult → Val → VTy Eff Mult → Prop where
   -- T_Unit: `γ = 0s` (length matches Γ).
   | vunit  : ∀ {Γ}, HasVTy (GradeVec.zeros Γ.length) Γ Val.vunit VTy.unit
@@ -135,6 +142,8 @@ inductive HasVTy : GradeVec Mult → TyCtx Eff Mult → Val → VTy Eff Mult →
   | fold : ∀ {γ Γ v A},
       HasVTy γ Γ v (VTy.unrollMu A) →
       HasVTy γ Γ (Val.fold v) (VTy.mu A)
+/-- The computation typing judgment: `HasCTy γ Γ M e C` says computation `M` has
+type `C` under `Γ` consuming `γ`, with running effect grade `e`. -/
 inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff Mult → Prop where
   -- T_Ret: `γ = q Q* γ'`; the produced value's budget `q` is recorded in `F q A`.
   | ret    : ∀ {γ γ' Γ v A q},
@@ -354,6 +363,9 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
 -- adapt (the answer-grade obligation the mono system can't source). φ ("does effectful work before
 -- resuming") + param-mutation are the D5/first-class-k generalization, already deferred. Since `w` is a
 -- VALUE (inert), no ambient-effect row is needed — `HasClauses` carries no `φ`/`e_op`.
+/-- The clause-list typing for a custom handler (ADR-0092): `HasClauses ℓ P clauses`
+holds iff every `(op, body)` is a return-shaped clause `ret w` with `op` in `ℓ`'s
+interface and the resumed value typed under `[opArg, P]`. -/
 inductive HasClauses : Label → VTy Eff Mult → List (OpId × Comp) → Prop where
   | nil : ∀ {ℓ P}, HasClauses ℓ P []
   | cons : ∀ {ℓ P op w rest} {opA opR : VTy Eff Mult} {qa qp : Mult},
@@ -378,6 +390,9 @@ the corresponding `HasCTy` premises:
     interface premises of `handleThrows` (ADR-0023). `handleF (state …)` / `handleF (transaction …)`
     frames mirror `handleState`/`handleTransaction` — the `stateF`/`transactionF` rules below (ADR-0025/0030). -/
 
+/-- The CK-machine stack typing (ADR-0023): `HasStack K e_in C_in e_out C_out` says
+plugging a focus of type `(e_in, C_in)` into frame stack `K` yields a whole program
+of type `(e_out, C_out)`. -/
 inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult → Prop where
   | nil : ∀ {e C}, HasStack [] e C e C
   | letF : ∀ {K N e₁ e₂ eo q qk A B Co},

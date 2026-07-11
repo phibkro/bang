@@ -50,6 +50,7 @@ def capsV : Val → List (Nat × Label)
   | .fold v     => capsV v
   | _           => []
   termination_by v => sizeOf v
+/-- Collect every `(identity, label)` of a `vcap` node in a computation. -/
 def capsC : Comp → List (Nat × Label)
   | .ret v        => capsV v
   | .letC M N     => capsC M ++ capsC N
@@ -67,6 +68,7 @@ def capsC : Comp → List (Nat × Label)
   | .oom          => []
   | .wrong _      => []
   termination_by c => sizeOf c
+/-- Collect every `(identity, label)` of a `vcap` node in a handler. -/
 def capsH : Handler → List (Nat × Label)
   | .state _ s  => capsV s
   | .throws _   => []
@@ -109,6 +111,7 @@ theorem capsCls_find? {cls : List (OpId × Comp)} {op : OpId} {c : OpId × Comp}
     (hf : cls.find? (·.1 == op) = some c) : ∀ q ∈ capsC c.2, q ∈ capsCls cls :=
   capsCls_mem (List.mem_of_find?_eq_some hf)
 
+/-- Collect every `(identity, label)` of a `vcap` node in an evaluation context. -/
 def capsK : EvalCtx → List (Nat × Label)
   | []                  => []
   | .letF N :: K        => capsC N ++ capsK K
@@ -717,6 +720,7 @@ open Bang (Val Comp Handler)
 @[expose] public section
 
 mutual
+/-- A computation contains no `Handler.custom` node anywhere in it. -/
 def CFComp : Comp → Prop
   | .ret v            => CFVal v
   | .letC M N         => CFComp M ∧ CFComp N
@@ -731,11 +735,13 @@ def CFComp : Comp → Prop
   | .binop _ a b      => CFVal a ∧ CFVal b
   | .oom              => True
   | .wrong _          => True
+/-- A value contains no `Handler.custom` node anywhere in it. -/
 def CFVal : Val → Prop
   | .vunit | .vint _ | .vvar _ | .vcap _ _ => True
   | .vthunk c         => CFComp c
   | .inl v | .inr v | .fold v => CFVal v
   | .pair a b         => CFVal a ∧ CFVal b
+/-- A handler is not `Handler.custom` and its carried values are `CustomFree`. -/
 def CFHandler : Handler → Prop
   | .state _ v        => CFVal v
   | .throws _         => True

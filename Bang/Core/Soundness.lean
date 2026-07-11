@@ -388,6 +388,7 @@ generalized so binders can grow the prefix. -/
 abbrev insG (γ : GradeVec Mult) (k : Nat) : GradeVec Mult :=
   γ.take k ++ (0 : Mult) :: γ.drop k
 
+/-- Insert type `A'` at cutoff `k` in a typing context (the `insG` companion). -/
 abbrev insT (Γ : TyCtx Eff Mult) (k : Nat) (A' : VTy Eff Mult) : TyCtx Eff Mult :=
   Γ.take k ++ A' :: Γ.drop k
 

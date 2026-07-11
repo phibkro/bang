@@ -57,6 +57,7 @@ def Val.shiftFrom (c : Nat) : Val → Val
   | .inr w       => .inr (Val.shiftFrom c w)
   | .pair w₁ w₂  => .pair (Val.shiftFrom c w₁) (Val.shiftFrom c w₂)
   | .fold w      => .fold (Val.shiftFrom c w)
+/-- Increment a computation's free indices (`≥ c`) by 1, crossing each binder. -/
 def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .ret w       => .ret (Val.shiftFrom c w)
   | .letC M N    => .letC (Comp.shiftFrom c M) (Comp.shiftFrom (c + 1) N)  -- N binds 0
@@ -72,6 +73,7 @@ def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .binop op w₁ w₂ => .binop op (Val.shiftFrom c w₁) (Val.shiftFrom c w₂)  -- δ-rule: operands are values, no binders
   | .oom         => .oom
   | .wrong s     => .wrong s
+/-- Increment a handler's carried free indices (`≥ c`) by 1; handlers do not bind. -/
 def Handler.shiftFrom (c : Nat) : Handler → Handler
   | .state ℓ s   => .state ℓ (Val.shiftFrom c s)
   | .throws ℓ    => .throws ℓ
@@ -91,6 +93,7 @@ end
 
 /-- `Val.shift = Val.shiftFrom 0` — push a closed-ish value under one binder. -/
 abbrev Val.shift  : Val → Val  := Val.shiftFrom 0
+/-- `Comp.shift = Comp.shiftFrom 0` — push a computation under one binder. -/
 abbrev Comp.shift : Comp → Comp := Comp.shiftFrom 0
 
 mutual
@@ -109,6 +112,8 @@ def Val.substFrom (k : Nat) (v : Val) : Val → Val
   | .inr w       => .inr (Val.substFrom k v w)
   | .pair w₁ w₂  => .pair (Val.substFrom k v w₁) (Val.substFrom k v w₂)
   | .fold w      => .fold (Val.substFrom k v w)
+/-- Substitute `v` for de Bruijn level `k` in a computation, shifting `v` under
+each crossed binder and renumbering free indices `> k`. -/
 def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .ret w       => .ret (Val.substFrom k v w)
   | .letC M N    => .letC (Comp.substFrom k v M) (Comp.substFrom (k + 1) (Val.shift v) N)
@@ -128,6 +133,7 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .binop op w₁ w₂ => .binop op (Val.substFrom k v w₁) (Val.substFrom k v w₂)  -- δ-rule: operands are values, no binders
   | .oom         => .oom
   | .wrong s     => .wrong s
+/-- Substitute `v` for level `k` in a handler's carried values; handlers do not bind. -/
 def Handler.substFrom (k : Nat) (v : Val) : Handler → Handler
   | .state ℓ s   => .state ℓ (Val.substFrom k v s)
   | .throws ℓ    => .throws ℓ
@@ -144,6 +150,7 @@ end
 /-- The head-redex substitution `c[v]`: fill the nearest binder (index 0)
 with `v`, renumbering. β / let reduce with this. -/
 abbrev Comp.subst (v : Val) : Comp → Comp := Comp.substFrom 0 v
+/-- Fill a value's nearest binder (index 0) with `v`, renumbering. -/
 abbrev Val.subst  (v : Val) : Val  → Val  := Val.substFrom 0 v
 
 /-! ### 1.3b Subst-after-shift cancellation (the autosubst β-identity)
