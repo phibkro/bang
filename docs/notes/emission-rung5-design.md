@@ -125,7 +125,19 @@ S4  [DONE] custom effects   clause body lifted to a lam-style $fn capturing (p :
                           a closure as an arg — stage-swap) has no GC $val rep in v1; refused loudly.
 S5  proof-grade           extend the wexec≡Source.eval obligation with the $env-slot↔store bijection;
                           per-former, same seam as rungs 1-4 (tested stratum until then).
+                          RE-FRAMED (`rung5-s5-proofgrade-refutation.md`): the obligation SPLITS —
+                          the effectful wexec≡Source.eval half is ALREADY PROVEN axiom-clean on the
+                          proof-carrying backend (compileC→wexec: exec_wexec_sim_ok +
+                          compile_forward_sim cover state/throws/txn/custom), re-exported in
+                          `Bang/Backend/Rung5ProofGrade.lean`; the $env-slot↔store bijection half is
+                          UNSTATEABLE in v1 (emitModuleGC is a Comp→String text emitter with no Lean
+                          machine — needs the post-v1 ADR-0059 GC machine, CALCULATED not verified-
+                          after per inv#4). emitModuleGC stays differential-tested (inv#1).
 ```
+
+> **S5 status (2026-07-11): re-framed and landed.** See
+> [`rung5-s5-proofgrade-refutation.md`](rung5-s5-proofgrade-refutation.md) for the full split (proven
+> half vs unstateable half), the axiom evidence, and the host-IO/`VcapFree` premise boundary.
 
 `S0`–`S2` are the small win (state + throws + closures coexisting); `S3`–`S4` finish the v1 effect set
 on one rep. NO frame-chain slice appears — it is post-v1 (multi-shot, ADR-0015). Corpus target: the

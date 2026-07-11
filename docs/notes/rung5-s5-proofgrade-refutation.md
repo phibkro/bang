@@ -62,6 +62,25 @@ Both cover the WHOLE v1 handler set. The `CustomFree` drop means user-defined/cu
 S4 fragment — are INSIDE this theorem already. `Bang/Backend/Rung5ProofGrade.lean` re-exports both
 under the S5 name (`s5_effectful_forward_sim`, `s5_exec_wexec_lockstep`), both re-checked axiom-clean.
 
+### What `VcapFree` excludes — the host-IO boundary, named precisely
+
+`VcapFree c := capsC c = []` (`Bang/Core/Freshness.lean:129`) forbids a `vcap` LITERAL in the source
+term. It does NOT restrict any effect FORMER — `capsH` recurses INTO `.custom`/`.state`/
+`.transaction` handler payloads (`Freshness.lean:84`), so a program using the full v1 effect set is
+`VcapFree` as long as it contains no raw `vcap` node. The natural question is what emits such a node.
+Since #126 (ADR-0104 §4), exactly ONE program class does: an ambient module-qualified host perform
+(`Io.print`, `Clock.now`, …) lowers via `hostPerformS` to a literal `perform (vcap hostCapId ℓ) op …`
+(`Bang/Frontend/Surface.lean:213`, `hostCapId = 999999999999`). Such a program is therefore NOT
+`VcapFree` (`capsC` returns `[(hostCapId, ℓ)]`) and sits OUTSIDE `compile_forward_sim`'s class — BY
+CONSTRUCTION, which is the correct and intended behaviour: host-IO is the deliberate ADR-0104 tested-
+stratum boundary. It never reaches `compileC`/`wexec`/`emitModuleGC` at all — its runtime is
+`evalEHost` (`Bang/Backend/EnvMachine.lean:3323`), a byte-for-byte sibling of `evalE` gated by
+`test-hostio-seam.sh` + the `hostReplay_agrees_pure` `#guard`s, and the rung-5 emitter independently
+lists `hostio-echo` as a named refusal. So the coverage claim holds not because "the elaborator never
+emits a `vcap`" (it does, for host-IO — that phrasing is retired) but because `VcapFree` is precisely
+the predicate that excludes the one class that does, keeping it on the tested stratum where ADR-0104
+places it. The exclusion is now a visible PREMISE CONSEQUENCE, not only a design intention.
+
 ## Half 2 — the `$env`-slot↔store bijection over `emitModuleGC` is UNSTATEABLE in v1
 
 The obligation the note literally names would read (informally):

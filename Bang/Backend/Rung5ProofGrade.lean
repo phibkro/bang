@@ -87,7 +87,13 @@ open Bang
 backend.** This is `compile_forward_sim` under the S5 name: for the whole v1 effect set
 (state · throws · transaction · custom, all carried by `compileC`→`wexec`'s handler opcodes), a
 `Source.eval` success is matched by a `Wasmfx.run` of the compiled module. Premised on `VcapFree c`
-(vacuous for every elaborator-produced program). Axiom-clean — inherits `compile_forward_sim`'s
+(= `capsC c = []`, i.e. the source term carries no `vcap` LITERAL). This holds for ordinary
+elaborator output (which binds caps as `vvar` and mints identities only at runtime `handle`) but is
+NOT vacuous: since #126, an ambient module-qualified host perform (`hostPerformS`) lowers to a
+literal `perform (vcap hostCapId ℓ) …` (`Bang/Frontend/Surface.lean`), so a host-IO program is NOT
+`VcapFree` and sits OUTSIDE this theorem's class by construction — the deliberate ADR-0104 tested-
+stratum boundary (host-IO runs on `evalEHost`, never `compileC`), now visible as a premise
+consequence rather than only a design intention. Axiom-clean — inherits `compile_forward_sim`'s
 {propext, Classical.choice, Quot.sound}. The `$env`-slot↔store bijection is NOT part of this
 statement: the `wexec` HStack SHARES the CalcVM `Handler`, so state/txn/custom cells are the SAME
 objects, related by the identity injection (`injHStack`), not a bijection. -/

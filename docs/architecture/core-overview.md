@@ -29,7 +29,7 @@ graph TD
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>6871L · fan-in 0"]
     Backend_EnvMachine["Backend.EnvMachine<br/>3624L · fan-in 0"]
-    Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>136L · fan-in 0"]
+    Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>142L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1648L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 0"]
     Backend_WasmEmit["Backend.WasmEmit<br/>1360L · fan-in 0"]
@@ -80,7 +80,7 @@ graph TD
     Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
   subgraph tier_Apex["Apex — verification spine + gate"]
-    Audit["Audit<br/>60L · fan-in 0"]
+    Audit["Audit<br/>69L · fan-in 0"]
     Distribution["Distribution<br/>67L · fan-in 0"]
     Spec["Spec<br/>344L · fan-in 0"]
   end
@@ -90,10 +90,10 @@ graph TD
 | module | tier | LOC | fan-in |
 |---|---|---|---|
 | `Frontend.Surface` | ? | 3238 | 1 |
-| `Audit` | Apex | 60 | 0 |
+| `Audit` | Apex | 69 | 0 |
 | `Backend.AbstractMachine` | ? | 6871 | 0 |
 | `Backend.EnvMachine` | ? | 3624 | 0 |
-| `Backend.Rung5ProofGrade` | ? | 136 | 0 |
+| `Backend.Rung5ProofGrade` | ? | 142 | 0 |
 | `Backend.U5bComplete` | ? | 1648 | 0 |
 | `Backend.Wasm` | ? | 2931 | 0 |
 | `Backend.WasmEmit` | ? | 1360 | 0 |
