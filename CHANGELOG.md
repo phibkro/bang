@@ -202,5 +202,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **modules** — `use Mod (f)` hoists a self-recursive `pub let rec` (#97 item 3) (`225f3f42`)
 - **surface** — #95 knot-sharing — buildLetRec self-arg fold #g not sv (route i) (`ae0f0df6`)
 - **traits** — law on an unreachable impl reports SKIPPED, not a misleading PASS (#113) (`8de80a8e`)
+- **traits** — self- and backward-recursive impl ops resolve via knot dispatch (#112) (`faafaa09`)
 
 <!-- END GENERATED changelog -->
