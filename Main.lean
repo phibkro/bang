@@ -113,6 +113,76 @@ def stripFuelFlag : List String → List String
   | a :: rest             => a :: stripFuelFlag rest
   | []                    => []
 
+/-! ### Host-IO flag parsing (ADR-0104) — `--env`, `--allow`, `--record`/`--replay`, `--max-host-requests`. -/
+
+/-- The default host-request ceiling (ADR-0104 §4): the replay-prefix driver re-evaluates once per
+host request (O(n²)), so this bounds the quadratic. Generous for the Console/Clock wedge (a handful
+of ops); a program exceeding it fails LOUD naming `--max-host-requests`, not a silent slowdown. -/
+def defaultMaxHostRequests : Nat := 1024
+
+/-- `--env=real` present ⟹ the real host environment (do actual IO). Absent / `--env=sim` ⟹ the
+pure sim (today's default engine path). `--replay <file>` also implies the host driver (pure, but the
+answers come from the trace, not IO). -/
+def wantsHostEnv (flags : List String) : Bool :=
+  flags.contains "--env=real" || (flags.any (· == "--record")) ||
+  (flags.any (fun a => a == "--replay" || "--replay=".isPrefixOf a)) ||
+  flags.any (fun a => "--record=".isPrefixOf a)
+
+/-- Parse a `--flag=value` (single-token, `=`-joined) out of the flag list; `none` if absent. -/
+def parseEqFlag (key : String) (flags : List String) : Option String :=
+  (flags.find? (fun a => (key ++ "=").isPrefixOf a)).map (fun a => (a.drop (key.length + 1)).toString)
+
+/-- `--allow=A,B` or `--allow A,B` → `some ["A","B"]`; absent → `none` (grant ALL, ADR-0104 §2). -/
+def parseAllow (flags : List String) : Option (List String) :=
+  match parseEqFlag "--allow" flags <|> (do
+      let rec go : List String → Option String
+        | "--allow" :: v :: _ => some v
+        | _ :: rest           => go rest
+        | []                  => none
+      go flags) with
+  | some s => some ((s.splitOn ",").filterMap (fun t => let t := t.trim; if t.isEmpty then none else some t))
+  | none   => none
+
+/-- `--max-host-requests N` (two-token) or `--max-host-requests=N`; `defaultMaxHostRequests` otherwise. -/
+def parseMaxHostRequests (flags : List String) : Nat :=
+  match parseEqFlag "--max-host-requests" flags <|> (do
+      let rec go : List String → Option String
+        | "--max-host-requests" :: v :: _ => some v
+        | _ :: rest                       => go rest
+        | []                              => none
+      go flags) with
+  | some v => v.toNat?.getD defaultMaxHostRequests
+  | none   => defaultMaxHostRequests
+
+/-- `--record <file>` / `--record=<file>` → the trace output path (`none` if absent). -/
+def parseRecord (flags : List String) : Option String :=
+  parseEqFlag "--record" flags <|> (do
+    let rec go : List String → Option String
+      | "--record" :: v :: _ => if "--".isPrefixOf v then none else some v
+      | _ :: rest            => go rest
+      | []                   => none
+    go flags)
+
+/-- `--replay <file>` / `--replay=<file>` → the trace input path (`none` if absent). -/
+def parseReplay (flags : List String) : Option String :=
+  parseEqFlag "--replay" flags <|> (do
+    let rec go : List String → Option String
+      | "--replay" :: v :: _ => if "--".isPrefixOf v then none else some v
+      | _ :: rest            => go rest
+      | []                   => none
+    go flags)
+
+/-- Strip every host-IO TWO-TOKEN flag's value token (`--allow V`, `--max-host-requests V`,
+`--record V`, `--replay V`) so a bare value doesn't leak as a stray positional (mirrors
+`stripFuelFlag`). Single-token `=`-joined forms are removed by the ordinary `--`-prefix filter. -/
+def stripHostFlags : List String → List String
+  | "--allow" :: _ :: rest              => stripHostFlags rest
+  | "--max-host-requests" :: _ :: rest  => stripHostFlags rest
+  | "--record" :: v :: rest             => if "--".isPrefixOf v then "--record" :: stripHostFlags (v :: rest) else stripHostFlags rest
+  | "--replay" :: v :: rest             => if "--".isPrefixOf v then "--replay" :: stripHostFlags (v :: rest) else stripHostFlags rest
+  | a :: rest                           => a :: stripHostFlags rest
+  | []                                  => []
+
 /-- A `Str` value (ADR-0074, #49) — `SNil = fold (inl ())`, `SCons(Char cp, …) = fold (inr (fold cp,
 …))` — rendered to its glyphs (code points → chars). `none` if the value is not a char-list. Only a
 NON-EMPTY result is treated as a string by `valPretty` (an EMPTY char-list `fold (inl ())` is
@@ -239,10 +309,31 @@ leaf) — the pure half (`mergeModules`, `Bang.TypeCheck`) already exists and ta
 RESOLVED `List (String × Prog)`; this section's only job is to WALK the import graph and produce
 that list, loudly erroring on a missing file or a cycle before `mergeModules` ever runs. -/
 
+/-! ### Bundled `std/` modules (ADR-0104) — a SECOND search root, baked into the binary.
+
+`import Io` resolves to `std/Io.bang` WITHOUT a filesystem probe: the source is `include_str`-baked
+into the executable at compile time, exactly as `Prelude.bang` is (`TypeCheck.preludeSrc`). This is
+the robust convention — a bundled stdlib module works for an installed `bang` binary regardless of
+CWD (a `std/`-relative-to-CWD probe would only work from the repo root), and `test-modules.sh`'s
+`bang check std/Io.bang` leg keeps the baked bytes ≡ the on-disk file. Unlike the prelude (auto-
+injected into EVERY program), an `std/` module is served ONLY on an explicit `import`/`use` — the
+least-authority discipline (host-io-design §1): a program must name `Io` to get IO into its row.
+
+std modules resolve BEFORE the same-dir/root filesystem probe (`resolveModulePath` /
+`resolveModule`), so a stray local `Io.bang` cannot silently shadow the bundled one. -/
+def stdModules : List (String × String) :=
+  [("Io", include_str "std/Io.bang")]
+
+/-- The bundled source for std module `modName`, or `none` if it is not a bundled std module. -/
+def stdModuleSrc (modName : String) : Option String :=
+  (stdModules.find? (·.1 = modName)).map (·.2)
+
 /-- Resolve `import name`/`use name` module NAME to a file path: try `<dir of the importing
 file>/name.bang` first, then `<root>/name.bang` (D1's fixed, documented order). `none` on a miss in
 BOTH — the caller names both probed paths in its error (a miss must be loud AND specific, ADR-0046:
-"the fix is obvious from the message" is the bar, not just "file not found"). -/
+"the fix is obvious from the message" is the bar, not just "file not found"). A bundled `std/` module
+(`stdModuleSrc`) is served by `resolveModule` directly, ahead of this path probe, so it never reaches
+here — callers check `stdModuleSrc` first. -/
 def resolveModulePath (root : System.FilePath) (importingDir : System.FilePath) (modName : String) :
     IO (Option System.FilePath) := do
   let sameDir := importingDir / s!"{modName}.bang"
@@ -296,6 +387,23 @@ partial def resolveModule (root : System.FilePath) (allowed : AllowedRoots) (mod
   if (st.resolved.map Prod.fst).contains modName then return .ok st   -- already resolved (diamond import)
   if st.visiting.contains modName then
     return .error s!"import cycle: {String.intercalate " → " (st.visiting ++ [modName])}"
+  -- ADR-0104: a bundled `std/` module (e.g. `Io`) is served from `include_str`-baked source,
+  -- BEFORE the filesystem probe — trusted, compiled-in, no containment check (it isn't a
+  -- user path). Its OWN transitive imports still resolve normally (relative to `dir` = `root`).
+  if let some src := stdModuleSrc modName then
+    match Bang.Surface.parseProg src with
+    | .error m => return .error s!"bundled std module '{modName}': parse error: {m}"
+    | .ok prog =>
+        let mut st' := { st with visiting := st.visiting ++ [modName] }
+        for imp in prog.imports do
+          match ← resolveModule root allowed imp.modName (Id.run <| root / s!"{imp.modName}.bang") st' with
+          | .error e  => return .error e
+          | .ok stNew => st' := stNew
+        for u in prog.uses do
+          match ← resolveModule root allowed u.modName (Id.run <| root / s!"{u.modName}.bang") st' with
+          | .error e  => return .error e
+          | .ok stNew => st' := stNew
+        return .ok { st' with resolved := st'.resolved ++ [(modName, prog)], visiting := st.visiting }
   if ¬ (← path.pathExists) then
     return .error s!"could not read module '{modName}' at '{path}'"
   let pathReal ← match ← containedRealPath allowed path with
@@ -364,6 +472,13 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
       let allowed : AllowedRoots := { entryDir := entryDirReal, root := rootReal }
       let mut st : ResolveState := {}
       for imp in entryProg.imports do
+        -- ADR-0104: a bundled `std/` module resolves via `resolveModule`'s baked-source branch,
+        -- ahead of the filesystem probe (`path` is unused for it — pass a placeholder).
+        if (stdModuleSrc imp.modName).isSome then
+          match ← resolveModule root allowed imp.modName root st with
+          | .error e  => return .error e
+          | .ok stNew => st := stNew
+        else
         match ← resolveModulePath root dir imp.modName with
         | none =>
             let probed1 := dir / s!"{imp.modName}.bang"
@@ -374,6 +489,11 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
             | .error e  => return .error e
             | .ok stNew => st := stNew
       for u in entryProg.uses do
+        if (stdModuleSrc u.modName).isSome then
+          match ← resolveModule root allowed u.modName root st with
+          | .error e  => return .error e
+          | .ok stNew => st := stNew
+        else
         match ← resolveModulePath root dir u.modName with
         | none =>
             let probed1 := dir / s!"{u.modName}.bang"
@@ -427,6 +547,154 @@ def runResolvedProg (typecheck : Bool) (engine : Engine) (fuel : Nat) (prog : Pr
     match Bang.TypeCheck.elaborateToCompProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
     | .ok c    => runComp engine fuel c
+
+/-! ## Host-IO driver (ADR-0104) — the replay-prefix seam's IO shell
+
+The ONLY IO site. `evalEHost` (`Bang.EnvMachine`, pure) surfaces a host request; this driver does the
+real IO, records a trace row, and RE-RUNS with the answer accumulated — the replay-prefix (ADR-0104
+§4). Record and replay share ONE response-supply: `HostEnv.answer` is `real-IO + record` under
+`--env=real`, and `read-the-next-trace-row` under `--replay` — the SAME driver loop, only the answer
+source differs (condition 4). Both stay on the PURE `evalEHost`; the pure-oracle equality that makes
+this invariant-#1-compliant is the replay leg reproducing the recorded run. -/
+
+/-- Build a `Str` kernel `Val` from a Lean string (the inverse of `asString`): `SNil = fold (inl ())`,
+`SCons(Char cp, rest) = fold (inr (pair (fold (vint cp)) rest))` (ADR-0074). Used by the host
+`readLine` handler to lift a real input line into the value the program resumes with. -/
+partial def strToVal (s : String) : Val :=
+  match s.data with
+  | []      => .fold (.inl .vunit)
+  | c :: cs => .fold (.inr (.pair (.fold (.vint (Int.ofNat c.toNat))) (strToVal (String.mk cs))))
+
+/-- A host request's op → the effect it belongs to, for the wedge (Console/Clock op names are
+disjoint, ADR-0104 §2 — so op-name dispatch is unambiguous). Unknown op ⇒ `none` (fail-loud). -/
+def hostServiceReal (op : Bang.OpId) (payload : Val) : IO (Option Val) := do
+  match op with
+  | "print"    => match asString payload with
+                  | some s => IO.println s; pure (some .vunit)
+                  | none   => pure none                       -- print of a non-Str ⇒ fail-loud
+  | "readLine" => let line ← (← IO.getStdin).getLine
+                  pure (some (strToVal (line.dropRightWhile (· == '\n'))))
+  | "now"      => let ms ← IO.monoMsNow; pure (some (.vint (Int.ofNat ms)))
+  | _          => pure none
+
+/-- One recorded trace row (ADR-0104 §3): a satisfied host perform, ndJSON. All fields Sendable
+(`op`/`payload`/`result` — `label`/`id` are `Nat`), so it serializes faithfully. Payload/result are
+rendered via `valPretty` (the SAME rendering the run oracle uses) — for the wedge (Str/Int/Unit)
+`valPretty` is injective enough to replay by POSITION (the row order IS the replay prefix). -/
+def traceRow (req : Bang.EnvMachine.HostReq) (result : Val) : String :=
+  "{\"label\":" ++ toString req.label ++ ",\"op\":\"" ++ req.op ++
+  "\",\"payload\":\"" ++ valPretty req.payload ++ "\",\"result\":\"" ++ valPretty result ++ "\"}"
+
+/-- The replay-prefix DRIVER (ADR-0104 §4). Runs `M` under `evalEHost` at the granted `hostLabels`
+with the response prefix built SO FAR (`rsRev`, reversed for O(1) append); on a host request, calls
+`answer` (the shared response-supply — real IO under record, trace-read under replay), optionally
+records via `onRow`, appends the answer, and re-runs. `hdone` → print + 0; `hstuck` → fail-loud;
+the O(n²) re-eval is bounded by `maxReq` (a LOUD ceiling naming `--max-host-requests`, ADR-0104 §4). -/
+partial def runHostLoop (hostLabels : List Bang.EffectRow.Label) (fuel maxReq : Nat)
+    (answer : Bang.EnvMachine.HostReq → IO (Option Val))
+    (onRow : Bang.EnvMachine.HostReq → Val → IO Unit)
+    (M : Comp) : IO UInt32 := do
+  let rec loop (rsRev : List Bang.EnvMachine.MVal) (nReq : Nat) : IO UInt32 := do
+    if nReq > maxReq then
+      IO.eprintln s!"error: host-request ceiling exceeded ({maxReq}) — the program performed more \
+        host operations than --max-host-requests allows. The v1 replay-prefix driver re-evaluates \
+        once per host request (O(n²) total), so this ceiling is a fail-loud guard, not a hard limit; \
+        raise it with --max-host-requests N. (A future suspendable engine, ADR-0101, removes the \
+        re-eval and this ceiling.)"
+      return 6
+    match Bang.EnvMachine.stepHost hostLabels fuel rsRev.reverse M with
+    | .hdone v  => IO.println (valPretty v); return 0
+    | .hstuck   =>
+        IO.eprintln "error: the host run produced no first-order value — an escaped capability on an \
+          UNGRANTED host label (add it to --allow), a non-host raise, out of fuel, or a function \
+          terminal. Re-run under --engine=oracle for the specific diagnosis."
+        return 5
+    | .hreq req =>
+        match ← answer req with
+        | none   =>
+            IO.eprintln s!"error: no host handler for op '{req.op}' on label {req.label} — the v1 \
+              wedge services Console (print/readLine) and Clock (now) only (ADR-0104)."
+            return 7
+        | some result =>
+            onRow req result
+            loop (Bang.EnvMachine.readbackIn result :: rsRev) (nReq + 1)
+  loop [] 0
+
+/-- Resolve `--allow=A,B` (or `--allow A,B`) NAMES to the labels the elaborator allocated, via the
+program's effect map. An allow-name not in the map (not a declared effect) ⇒ a LOUD error naming it
+(ADR-0104 §2 — an under/mis-granting flag is caught before the run). Empty/absent `--allow` under
+`--env=real` grants ALL declared effect labels (the "grant everything" shorthand, ADR-0104 §2). -/
+def resolveAllow (effMap : List (String × Bang.EffectRow.Label)) (allow : Option (List String)) :
+    Except String (List Bang.EffectRow.Label) :=
+  match allow with
+  | none       => .ok (effMap.map (·.2))                 -- no --allow ⇒ all declared labels granted
+  | some names =>
+      -- A grant name matches an effect by its EXACT name OR its unqualified tail: a program that
+      -- `import Io`s sees the effect as `Io_Console` (ADR-0093 module-qualification), but a user
+      -- writes `--allow=Console` naturally — accept both (`Io_Console` ends in `_Console`).
+      let nameMatches (nm en : String) : Bool := en == nm || en.endsWith ("_" ++ nm)
+      names.foldlM (init := []) (fun acc nm =>
+        match effMap.find? (fun p => nameMatches nm p.1) with
+        | some (_, ℓ) => .ok (acc ++ [ℓ])
+        | none        => .error s!"--allow names '{nm}', which is not a declared effect in this program \
+                          (declared: {String.intercalate ", " (effMap.map (·.1))})")
+
+/-- Parse a `--replay` trace's `result` fields, in order, into the response prefix the sim run
+consumes (ADR-0104 §3). A trace row is `{…,"result":"<valPretty>"}`; for the wedge the results are
+`()` (unit), an int, or a Str glyph-string, which `parseTraceResult` lifts back to a `Val`. The row
+ORDER is the replay prefix (positional), matching how record appended them. -/
+def parseTraceResult (s : String) : Option Val :=
+  if s == "()" then some .vunit
+  else match s.toInt? with
+    | some n => some (.vint n)
+    | none   => some (strToVal s)      -- a Str glyph-string (the only remaining Sendable wedge shape)
+
+/-- Extract the ordered `result` values from an ndJSON trace file's rows (one row per line). A line
+without a `"result":"…"` field is skipped (blank lines, trailing newline). ADR-0104 §3. -/
+def loadTraceResults (contents : String) : List Val :=
+  (contents.splitOn "\n").filterMap (fun line =>
+    let marker := "\"result\":\""
+    match (line.splitOn marker) with
+    | _ :: rest :: _ => parseTraceResult (rest.takeWhile (· != '"')).toString
+    | _              => none)
+
+/-- The host-IO entry (ADR-0104): run a resolved `Prog` under the replay-prefix driver. Resolves
+`--allow` names→labels via the program's effect map, then drives `evalEHost`. Record and REPLAY share
+ONE loop (`runHostLoop`) — only the `answer` supply differs (real IO+record vs trace-read), condition
+4. `--replay` runs on the PURE engine (no real IO), the invariant-#1 leg. -/
+def runHostProg (fuel maxReq : Nat) (allow : Option (List String))
+    (record : Option String) (replay : Option String) (prog : Prog) : IO UInt32 := do
+  match Bang.TypeCheck.checkAndLowerProgWithEffects prog with
+  | .error e => IO.eprintln s!"error: {e}"; pure 1
+  | .ok (c, effMap) =>
+    match resolveAllow effMap allow with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok hostLabels =>
+      match replay with
+      | some tracePath =>
+        -- REPLAY: the answer supply is the pre-loaded trace, consumed in order. Pure (no IO).
+        let contents ← IO.FS.readFile ⟨tracePath⟩
+        let results := loadTraceResults contents
+        let queue ← IO.mkRef results
+        runHostLoop hostLabels fuel maxReq
+          (answer := fun _ => do
+            match ← queue.get with
+            | []      => pure none                                   -- trace exhausted ⇒ fail-loud (divergence)
+            | r :: rs => queue.set rs; pure (some r))
+          (onRow := fun _ _ => pure ())
+          c
+      | none =>
+        -- REAL (+ optional record): the answer supply is real IO; a row is appended per satisfied op.
+        let recRef ← IO.mkRef (#[] : Array String)
+        let code ← runHostLoop hostLabels fuel maxReq
+          (answer := fun req => hostServiceReal req.op req.payload)
+          (onRow := fun req result => do
+            if record.isSome then recRef.modify (·.push (traceRow req result)))
+          c
+        match record with
+        | some path => IO.FS.writeFile ⟨path⟩ (String.intercalate "\n" (← recRef.get).toList ++ "\n")
+        | none      => pure ()
+        pure code
 
 /-- Run `bang fmt`: format a whole program (decls + body, `Bang.Format.fmtProg`) and print the
 canonical form to stdout. `.error` → stderr + exit 1, the SAME convention `runSource`'s parse-error
@@ -1574,11 +1842,17 @@ def main (args : List String) : IO UInt32 := do
       let engine     := parseEngine rest
       let typecheck  := !rest.contains "--no-typecheck"
       let fuel       := parseFuel rest
-      match stripFuelFlag rest |>.filter (fun a => !("--".isPrefixOf a)) with
+      match stripHostFlags (stripFuelFlag rest) |>.filter (fun a => !("--".isPrefixOf a)) with
       | [arg] =>
         match ← resolveEntryFile arg with
         | .error e   => IO.eprintln s!"error: {e}"; pure 1
-        | .ok merged => runResolvedProg typecheck engine fuel merged
+        | .ok merged =>
+          -- ADR-0104: `--env=real` / `--record` / `--replay` route through the host-IO driver;
+          -- otherwise the ordinary pure run (sim = the default engine).
+          if wantsHostEnv rest then
+            runHostProg fuel (parseMaxHostRequests rest) (parseAllow rest)
+              (parseRecord rest) (parseReplay rest) merged
+          else runResolvedProg typecheck engine fuel merged
       | _ => IO.eprintln usage; pure 1
     else if cmd == "eval" then
       let engine     := parseEngine rest
