@@ -1,0 +1,9 @@
+-- TARGET (post-#108): the #105/#108 acceptance case. A prelude-shaped `List a` and a user's
+-- own `IntList` coexist; each is matched via its OWN qualified ctor names (`List_Nil`/
+-- `List_Cons` vs `IntList_Nil`/`IntList_Cons`) since a bare `Nil`/`Cons` would be ambiguous
+-- (both types are in scope). This is the MIGRATION baseline every corpus program that shares a
+-- ctor name across two DIFFERENT co-present types falls back to, mechanically.
+data List a = Nil | Cons(a, List a)
+data IntList = Nil | Cons(Int, IntList)
+let xs = IntList_Cons(7, IntList_Nil) in
+match xs { IntList_Nil -> 0, IntList_Cons(h, t) -> h }

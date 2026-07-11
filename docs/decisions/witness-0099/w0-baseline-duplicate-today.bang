@@ -1,0 +1,7 @@
+-- BASELINE (today, pre-#108): two `data` decls sharing a bare ctor name is a LOUD error even
+-- with no ambiguous USE anywhere in the program. Run: `error: duplicate constructor 'Nil'`.
+-- Post-#108 target: this program TYPES + RUNS (no bare `Nil`/`Cons` use exists, so nothing is
+-- ambiguous) — the registration-time refusal must move to use-time.
+data List a = Nil | Cons(a, List a)
+data IntList = Nil | Cons(Int, IntList)
+0

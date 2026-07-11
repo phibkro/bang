@@ -1,0 +1,5 @@
+-- TARGET (post-#108): a BARE ambiguous ctor reference is a LOUD B012 error naming both owning
+-- types and the qualified spellings — not a silent pick of "whichever data decl came first".
+data List a = Nil | Cons(a, List a)
+data IntList = Nil | Cons(Int, IntList)
+Nil
