@@ -1,0 +1,6 @@
+effect Log { emit : Int -> Int }
+handle
+  (let a = log.emit(1) in (let b = log.emit(2) in a + b))
+with Log as log {
+  emit(n) => n
+}

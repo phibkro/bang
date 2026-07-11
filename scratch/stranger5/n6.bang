@@ -1,0 +1,2 @@
+data Qux = Zed | Wam(Int)
+match Zed { Qux_Zed -> 7, Qux_Wam(x) -> x }

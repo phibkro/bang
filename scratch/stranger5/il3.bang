@@ -1,0 +1,5 @@
+data Lst = Empty | Node(Int, Lst) deriving (Eq, Ord)
+let a = Node(1, Node(2, Empty)) in
+let b = Node(1, Node(2, Empty)) in
+let c = Node(1, Node(3, Empty)) in
+if a == b then (if a < c then 1 else 2) else 0

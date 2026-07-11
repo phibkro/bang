@@ -1,0 +1,2 @@
+effect KV { lookup : Int -> Int, store : Int -> Int }
+handle (kv.store(7)) + (kv.lookup(1)) with KV as kv { lookup(n) => n * 100, store(n) => n }

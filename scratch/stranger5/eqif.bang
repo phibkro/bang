@@ -1,0 +1,4 @@
+data Pt = Mk(Int, Int) deriving (Eq)
+let a = Mk(1, 2) in
+let b = Mk(1, 2) in
+if a == b then 42 else 0

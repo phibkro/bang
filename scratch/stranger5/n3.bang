@@ -1,0 +1,2 @@
+data Foo = A | B(Int)
+match B(3) { Foo_A -> 0, Foo_B(x) -> x }

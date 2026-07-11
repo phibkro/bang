@@ -1,0 +1,6 @@
+effect Check { test : Int -> Int }
+handle
+  chk.test(5)
+with Check as chk {
+  test(n) => if n < 10 then raise 99 else n
+}

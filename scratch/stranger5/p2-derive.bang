@@ -1,0 +1,5 @@
+data IntList = Nil | Cons(Int, IntList) deriving (Eq, Ord)
+let a = Cons(1, Cons(2, Nil)) in
+let b = Cons(1, Cons(2, Nil)) in
+let c = Cons(1, Cons(3, Nil)) in
+if a == b then (if a == c then 0 else (if a < c then 1 else 2)) else 9

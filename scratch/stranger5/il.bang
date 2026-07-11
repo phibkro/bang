@@ -1,0 +1,4 @@
+data IntList = Nil | Cons(Int, IntList) deriving (Eq, Ord)
+let a = IntList_Cons(1, IntList_Nil) in
+let b = IntList_Cons(1, IntList_Nil) in
+if a == b then 1 else 0

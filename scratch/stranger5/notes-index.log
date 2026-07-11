@@ -1,0 +1,12 @@
+bang-lang — Lean 4 dev shell
+
+  just                 # list available recipes
+  just verify          # selfcheck + build + audit (default gate)
+  just check [FILE]    # fast per-file error check
+  just burndown        # Phase B burndown chart
+  just loogle QUERY    # Mathlib type-signature search
+  just install-hooks   # one-time: link git pre-commit
+
+Fresh? Read ONBOARDING.md → CLAUDE.md → ROADMAP.md → CONTEXT.md
+python3 tools/gen-notes-index.py
+notes-index: regenerated docs/notes/README.md.

@@ -1,0 +1,6 @@
+-- sum a list of Ints — the first "real program" a newcomer writes
+data List a = Nil | Cons(a, List a)
+let rec sum : List Int -> Int =
+  fun xs => match (xs : List Int) { Nil -> 0, Cons(h, t) -> h + (($sum) t) }
+let nums = (Cons(1, Cons(2, Cons(3, Cons(4, Nil)))) : List Int) in
+($sum) (nums : List Int)

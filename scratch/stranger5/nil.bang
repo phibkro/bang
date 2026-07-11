@@ -1,0 +1,2 @@
+data Foo = Nil | Bar(Int)
+match Bar(3) { Foo_Nil -> 0, Foo_Bar(x) -> x }

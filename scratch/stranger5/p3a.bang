@@ -1,0 +1,6 @@
+effect Net { fetch : Int -> Int }
+handle
+  (net.fetch(1)) + (net.fetch(2))
+with Net as net {
+  fetch(n) => n * 10
+}

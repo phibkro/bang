@@ -1,0 +1,3 @@
+let rec isEven : Int -> Int = fun n => if n == 0 then 1 else ($isOdd)(n - 1)
+    and isOdd : Int -> Int = fun n => if n == 0 then 0 else ($isEven)(n - 1)
+in ($isEven) 10

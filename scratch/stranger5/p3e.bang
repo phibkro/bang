@@ -1,0 +1,2 @@
+effect KV { get : Int -> Int, set : Int -> Int }
+handle (kv.set(7)) + (kv.get(1)) with KV as kv { get(n) => n * 100, set(n) => n }
