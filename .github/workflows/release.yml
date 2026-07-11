@@ -1,8 +1,10 @@
 name: Release
 
 # Binary distribution for `bang` — fires on a version tag (`v*`), builds the native
-# runner, strips it, smoke-tests the stripped artifact, and attaches it to a GitHub
-# Release. The install line in README (`tools/install.sh`) downloads this artifact.
+# runner for each Tier-1 platform (a 3-row matrix: x86_64-linux, aarch64-linux,
+# aarch64-darwin), strips + smoke-tests each stripped artifact, and attaches all three
+# to ONE GitHub Release. install.sh (README install line) picks the right asset by
+# `uname`. The three rows share the tag; the create-vs-upload race is handled below.
 #
 # The BUILD half mirrors verify.yml exactly (nix installer + the elan/Mathlib-olean
 # cache + `nix develop` for the toolchain) — the single sanctioned first-setup path,
@@ -28,20 +30,32 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
 
-    # Single-target this unit. When darwin lands, promote to a matrix:
-    #   strategy:
-    #     matrix:
-    #       include:
-    #         - { os: ubuntu-latest, triple: x86_64-linux }
-    #         - { os: macos-latest,  triple: aarch64-darwin }
-    #   runs-on: ${{ matrix.os }}
-    # and thread ${{ matrix.triple }} into ASSET below (the strip/smoke steps are
-    # already platform-agnostic — `strip` and the smoke set run the same on darwin).
+    # Three Lean Tier-1 targets (distribution-survey.md rung 0). The build half is
+    # platform-agnostic: `nix develop` → elan reads lean-toolchain and fetches the
+    # RIGHT platform's Lean release, so the same steps produce a native binary on each
+    # runner. release-artifact.sh guards the de-nix step by TRIPLE (ELF interp rewrite
+    # on *-linux, strip-only + linkage-report on *-darwin — Mach-O has no ELF interp).
+    #
+    # fail-fast:false — the three artifacts are independent; one platform's failure must
+    # not cancel a green build on the others (a partial release is better than none).
+    #
+    # Cold-build cost per row: ~2 min olean fetch + ~4 min lake build (README §cold-start),
+    # so ~10 min/row warm-cache-miss. The actions/cache below warms elan + .lake per
+    # (runner.os, TRIPLE); a cachix/magic-nix-cache layer would cut the nix-store rebuild
+    # but needs an auth secret — flagged for the operator, NOT added here (no secrets).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, triple: x86_64-linux }
+          - { os: ubuntu-24.04-arm, triple: aarch64-linux }
+          - { os: macos-latest, triple: aarch64-darwin }
+
     env:
-      TRIPLE: x86_64-linux
+      TRIPLE: ${{ matrix.triple }}
 
     steps:
       - uses: actions/checkout@v4
@@ -59,8 +73,8 @@ jobs:
           path: |
             ~/.elan
             .lake
-          key: lean-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}
-          restore-keys: lean-${{ runner.os }}-
+          key: lean-${{ matrix.triple }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}
+          restore-keys: lean-${{ matrix.triple }}-
 
       - name: Fetch Mathlib oleans (build-time dep — see README packaging note)
         run: nix develop --command lake exe cache get
@@ -95,14 +109,22 @@ jobs:
           path: ${{ steps.artifact.outputs.path }}
           if-no-files-found: error
 
-      - name: Create GitHub Release with the binary attached
+      - name: Create the Release (once) and upload this row's asset
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
           ASSET_PATH: ${{ steps.artifact.outputs.path }}
         run: |
-          gh release create "$VERSION" "$ASSET_PATH" \
-            --title "bang $VERSION" \
-            --generate-notes \
-            --notes "Native \`bang\` runner for x86_64-linux (glibc + libgcc_s only; see the install line in the README). Install: \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${VERSION}/tools/install.sh | sh\`"
+          # All three matrix rows share ONE tag → one Release. Whichever row lands first
+          # creates it; the rest see "already exists" and just upload their asset. `gh
+          # release create` is not idempotent, so create-if-absent then upload, rather
+          # than racing three creates. `--clobber` lets a re-run replace a stale asset.
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release create "$VERSION" \
+              --title "bang $VERSION" \
+              --generate-notes \
+              --notes "Native \`bang\` runner — prebuilt for x86_64-linux, aarch64-linux, and aarch64-darwin (Apple Silicon). Linux binaries link glibc + libgcc_s only and are de-nixed to the distro-standard loader (glibc 2.26+). The darwin binary is stripped but its dylib linkage is UNVERIFIED off the CI runner until the first real macOS install — see the asset's build log. Install: \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${VERSION}/tools/install.sh | sh\`" \
+            || echo "release create raced with another row; falling through to upload"
+          fi
+          gh release upload "$VERSION" "$ASSET_PATH" --clobber

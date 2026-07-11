@@ -25,28 +25,56 @@ ASSET="bang-${VERSION}-${TRIPLE}"
 OUT="$ROOT/dist/$ASSET"
 mkdir -p "$ROOT/dist"
 
-# --- 1. strip + de-nix the ELF loader path -----------------------------------------
-# The Lean/nix-built binary hardcodes NIX-STORE ABSOLUTE PATHS in its ELF interpreter
-# (`/nix/store/…/ld-linux-x86-64.so.2`) and RPATH. It links only glibc + libgcc_s (the
-# ldd-verified fact), but by nix-store PATH — so on a generic-glibc distro (Ubuntu,
-# Debian, Fedora: the very strangers install.sh targets) it fails "No such file or
-# directory" because that loader path doesn't exist off a nix store. Re-point the
-# interpreter at the DISTRO-STANDARD loader and drop the nix RPATH so the standard
-# library search path resolves libc/libgcc_s. This is what makes the Release binary
-# portable, not just runnable-on-the-CI-runner. (The smoke set below runs on the
-# resulting binary, so a de-nix that broke it would fail loud before any upload.)
-size() { stat -c %s "$1"; }
+# --- 1. strip + de-nix the loader path (platform-guarded) --------------------------
+# `stat` byte-size differs on BSD/macOS (`-c %s` is GNU; `-f %z` is BSD). Detect once.
+size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 UNSTRIPPED_SRC_BYTES="$(size "$BUILT")"
 cp "$BUILT" "$OUT"
-strip "$OUT"
-patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath "$OUT"
+
+# The de-nix step is ELF-specific. A Lean/nix-built ELF hardcodes NIX-STORE ABSOLUTE
+# PATHS in its interpreter (`/nix/store/…/ld-linux-x86-64.so.2`) and RPATH; it links
+# only glibc + libgcc_s (ldd-verified) but by nix-store PATH — so off a nix store it
+# fails "No such file or directory". Re-point the interpreter at the distro-standard
+# loader and drop the nix RPATH so libc/libgcc_s resolve on Ubuntu/Debian/Fedora. This
+# is what makes the Release binary portable, not just runnable-on-the-CI-runner.
+#
+# Mach-O has NO ELF interpreter field, so patchelf does not apply on darwin. What a
+# nix-`lake build` Mach-O needs to be portable off a nix store is dylib-path de-nixing
+# (`install_name_tool -change /nix/store/…/lib*.dylib @rpath/…`) — but the EXACT set of
+# nix-store dylibs a `bang` Mach-O carries is UNVERIFIED here (no darwin machine in this
+# lane). The honest posture: on darwin we strip + smoke ONLY, and print the linked libs
+# so the FIRST real macos runner shows whether any /nix/store dylib leaked. If the smoke
+# set passes on the runner, the binary is self-consistent there; the open risk is a
+# nix-store dylib that resolves on the runner but not on a stranger's Mac. That risk is
+# named loudly in the release note and the survey, NOT silently assumed away.
+case "$TRIPLE" in
+  *-linux)
+    strip "$OUT"
+    patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath "$OUT"
+    DENIX_NOTE="ELF interp: $(patchelf --print-interpreter "$OUT")  (distro-standard, de-nixed)"
+    ;;
+  *-darwin)
+    # `strip` on macOS is the cctools strip; it accepts a bare path. No interp rewrite.
+    strip "$OUT"
+    # Surface the linkage so the first darwin run reveals any /nix/store leak (see above).
+    if command -v otool >/dev/null 2>&1; then
+      DENIX_NOTE="dylibs:
+$(otool -L "$OUT" | sed 's/^/    /')"
+    else
+      DENIX_NOTE="dylibs: (otool unavailable — cannot report linkage)"
+    fi
+    ;;
+  *)
+    echo "FAIL: unknown TRIPLE '$TRIPLE' — expected *-linux or *-darwin"; exit 1
+    ;;
+esac
 STRIPPED_BYTES="$(size "$OUT")"
 
 human() { numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1 bytes"; }
 echo "── artifact size ──"
 echo "  unstripped: $(human "$UNSTRIPPED_SRC_BYTES")  ($UNSTRIPPED_SRC_BYTES bytes)"
 echo "  stripped:   $(human "$STRIPPED_BYTES")  ($STRIPPED_BYTES bytes)"
-echo "  ELF interp: $(patchelf --print-interpreter "$OUT")  (distro-standard, de-nixed)"
+echo "  $DENIX_NOTE"
 
 # --- 2. smoke the STRIPPED + de-nixed binary ---------------------------------------
 # The proof that stripping + the interpreter rewrite preserved behaviour. Each check is
