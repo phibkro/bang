@@ -1,0 +1,24 @@
+-- The #61 hang-class shape (scratch/hang61/sib2.bang, verbatim): outer let rec
+-- with 2 sibling nested let recs, each Div-declared, each calling the outer
+-- knot. Regression witness: must stay fast/correct on `bang run` after any
+-- mutual-rec change (this is NOT the mutual-rec feature; it's the pre-existing
+-- workaround shape that must not regress).
+let rec outer : Str -> Int ! {Div} = fun s =>
+    let rec a : Str -> Int ! {Div} = fun t =>
+        match (t : Str) {
+          SNil -> 0,
+          SCons(c, rest) -> $outer rest
+        }
+      in
+    let rec b : Str -> Int ! {Div} = fun t =>
+        match (t : Str) {
+          SNil -> 1,
+          SCons(c, rest) -> $outer rest
+        }
+      in
+    match (s : Str) {
+      SNil -> 0,
+      SCons(c, rest) -> $a rest + $b rest
+    }
+  in
+$outer "ab"
