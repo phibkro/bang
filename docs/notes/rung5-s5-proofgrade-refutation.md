@@ -73,7 +73,10 @@ Since #126 (ADR-0104 §4), exactly ONE program class does: an ambient module-qua
 (`Bang/Frontend/Surface.lean:213`, `hostCapId = 999999999999`). Such a program is therefore NOT
 `VcapFree` (`capsC` returns `[(hostCapId, ℓ)]`) and sits OUTSIDE `compile_forward_sim`'s class — BY
 CONSTRUCTION, which is the correct and intended behaviour: host-IO is the deliberate ADR-0104 tested-
-stratum boundary. It never reaches `compileC`/`wexec`/`emitModuleGC` at all — its runtime is
+stratum boundary. The raw-vcap Comp is emitted UNCONDITIONALLY (not host-mode-gated), so it CAN
+reach `compileC` — measured: `--compiled` on `ambient.bang` collapses fail-loud (exit 5, no value)
+and the oracle gives `escapedCap` (exit 3, ADR-0063) — the theorem simply says nothing about that
+class, and the runtime never lies about it. Its CORRECT runtime is
 `evalEHost` (`Bang/Backend/EnvMachine.lean:3323`), a byte-for-byte sibling of `evalE` gated by
 `test-hostio-seam.sh` + the `hostReplay_agrees_pure` `#guard`s, and the rung-5 emitter independently
 lists `hostio-echo` as a named refusal. So the coverage claim holds not because "the elaborator never

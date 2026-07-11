@@ -317,8 +317,10 @@ theorem compile_well_typed
 -- κ-threaded over custom frames and the WASM lowering's OP arm resolves custom clause-services as a
 -- real lockstep (`wCustomUpdate_comm`), so no `CustomFree` scaffolding is needed. `VcapFree` persists
 -- until #21 (scoped capability types) makes a raw source `vcap` untypeable; it is vacuous for every
--- elaborator-produced program (the elaborator emits `vvar`, never raw `vcap`), so ◊5's product-facing
--- meaning is unchanged. The PURE arm routes through the always-sorry-free `compile_forward_sim_pure`;
+-- elaborator-produced program EXCEPT ambient host-IO — since #126, `hostPerformS` lowers `Mod.op` to a
+-- literal `vcap hostCapId`, so that one class is non-`VcapFree` and premise-excluded (it fails LOUD on
+-- the compiled path per ADR-0063 and runs correctly only on the `evalEHost` tested-stratum driver,
+-- ADR-0104). ◊5's product-facing meaning is unchanged. The PURE arm routes through the always-sorry-free `compile_forward_sim_pure`;
 -- the handler/custom arm through the U5b completeness spine (`evalD_complete_gen`,
 -- `Bang.Backend.U5bComplete`).
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :

@@ -92,8 +92,10 @@ elaborator output (which binds caps as `vvar` and mints identities only at runti
 NOT vacuous: since #126, an ambient module-qualified host perform (`hostPerformS`) lowers to a
 literal `perform (vcap hostCapId ℓ) …` (`Bang/Frontend/Surface.lean`), so a host-IO program is NOT
 `VcapFree` and sits OUTSIDE this theorem's class by construction — the deliberate ADR-0104 tested-
-stratum boundary (host-IO runs on `evalEHost`, never `compileC`), now visible as a premise
-consequence rather than only a design intention. Axiom-clean — inherits `compile_forward_sim`'s
+stratum boundary, now visible as a premise consequence rather than only a design intention. The
+raw-vcap Comp CAN reach `compileC` (e.g. `--compiled`), where this theorem says nothing about it and
+the runtime fails LOUD (no-value collapse / oracle `escapedCap`, ADR-0063) — never silently wrong;
+it runs CORRECTLY only on the `evalEHost` driver (`--env=real`/`--record`/`--replay`). Axiom-clean — inherits `compile_forward_sim`'s
 {propext, Classical.choice, Quot.sound}. The `$env`-slot↔store bijection is NOT part of this
 statement: the `wexec` HStack SHARES the CalcVM `Handler`, so state/txn/custom cells are the SAME
 objects, related by the identity injection (`injHStack`), not a bijection. -/

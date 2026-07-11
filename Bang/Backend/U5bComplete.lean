@@ -1577,7 +1577,8 @@ are STATEMENT/DEFINITIONAL, not proof gaps (surfaced to the manager):
    at K=[] — a top-level raise under the EMPTY context escapes (`dispatchRun` on `[]` → escapedCap),
    contradicting `= done v`. Provable (needs a `dispatchRun_nil_ne_done` helper), left for the wiring.
 
-The full spine `evalD_complete_gen_full` (above, ONE sorry = custom stage-1) is the deliverable; this
+The full spine `evalD_complete_gen_full` (above, sorry-free — the custom stage-1 sorry was
+discharged; `#print axioms` is the gate, not this prose) is the deliverable; this
 derivation is the thin adapter. Obligation (2) is discharged by the manager's ruling (option (a)):
 the consumer's `c` is a compiled SOURCE program, hence cap-free — threaded as a `capsC c = []`
 premise on the K=[] instance (the frozen `evalD_complete_gen` at Wasm.lean:1970 is the general form;
