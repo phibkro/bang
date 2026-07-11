@@ -6,6 +6,7 @@ module
 public import Bang.Spec
 public import Bang.Frontend.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
 public import Bang.Backend.AbstractMachine    -- ◊3: the calculated-machine compile_correct (verification spine)
+public import Bang.Backend.Rung5ProofGrade    -- rung-5 S5: the effectful-obligation re-exports (durable axiom pin)
 
 /-!
   Audit.lean — the ungameable guard.
@@ -33,6 +34,14 @@ open Bang
 -- non-pure GAP 2 branch of `compile_forward_sim`, Milestone B).
 #print axioms Bang.compile_forward_sim_pure
 #print axioms Bang.source_eval_to_exec
+-- rung-5 S5 (durable pin): the effectful `wexec ≡ Source.eval` obligation re-exported under the
+-- S5 name. `s5_effectful_forward_sim` = `compile_forward_sim` (trusted-3); `s5_exec_wexec_lockstep`
+-- = `exec_wexec_sim_ok` ([propext, Quot.sound]). Gating them here means the CustomFree-drop /
+-- whole-v1-effect-set coverage can't silently regress. (The `$env`-slot↔store GC-bijection half is
+-- UNSTATEABLE in v1 — no GC machine to state against — so it has no theorem to enrol; see
+-- `docs/notes/rung5-s5-proofgrade-refutation.md`.)
+#print axioms Bang.Rung5ProofGrade.s5_effectful_forward_sim
+#print axioms Bang.Rung5ProofGrade.s5_exec_wexec_lockstep
 #print axioms compile_well_typed
 #print axioms handler_compiles
 #print axioms zero_grade_no_code
