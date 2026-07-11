@@ -335,6 +335,31 @@ effect performed) is fine (`fetch(n) => n * 10`, `fetch(n) => n + 1`); a clause 
 `new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is
 a loud parse/elaboration error naming the conflict, not a silent shadow.
 
+**Passing a capability to a helper function (issue #90/#123).** The `net`/`h` bound by
+`as` is an ordinary VALUE once bound — it can be passed to a helper like any other
+argument, typed `Cap Name` (`Cap Net`, naming the effect). The catch: a bare inline
+ascription on the PARAMETER (`fun e => (e : Cap Fail).fail(9)`) does not parse as a cap
+type there — `Cap Name` must be spelled inside the enclosing THUNK's own arrow-and-row
+annotation, cap position included, exactly like every other parameter type:
+
+```
+effect Fail { fail : Int -> Int }
+let apply = ( {fun cap => fun x => cap.fail(x)} : Thunk (Cap Fail -> Int -> Int ! {Fail}) )
+handle (($apply) net) 9 with Fail as net { fail(n) => n }
+-- ⟹ 9 — `net`, threaded as an ordinary Cap-typed argument, still dispatches by identity
+```
+
+Every effect row a threaded cap's own ops perform must appear in the THUNK's row (`!
+{Fail}` above) — the same row-composition rule an inline `handle` needs, just spelled
+once on the helper instead of at the call site.
+
+**An effect or op name that collides with a prelude Result/Option constructor name**
+(`Err`/`Ok`/`Some`/`None`) is read as that CONSTRUCTOR at an ascription site, not the
+effect — `(e : Cap Err)` parses `Err` as the `Result` constructor, not an effect name,
+and fails with the unrelated-looking `constructor 'Err' expects 1 argument(s)`. Name a
+custom effect something that does not collide with a prelude constructor (e.g. `Fail`,
+not `Err`) until effect/op names get their own namespace (tracked, issue #123).
+
 See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/` (now reading its
 carried param through `param` for real, issue #87), and
 `examples/handle-custom-abort-coexist/` (a `raise` inside a nested `handle` still aborts
