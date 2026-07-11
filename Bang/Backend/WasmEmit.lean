@@ -1,4 +1,8 @@
-/-
+module
+
+public import Bang.Backend.AbstractMachine
+
+/-!
   WasmEmit.lean — the ◊5.5 EMISSION rung-1 SPIKE (pure ⊥-row arithmetic → real `.wat`).
   ─────────────────────────────────────────────────────────────────────────────────────
   STATUS: TESTED-stratum SPIKE (not proof-bearing). This is the first module that turns a
@@ -30,9 +34,6 @@
   named in the note, NOT emitted here. `app`/`lam`/`force` are the stretch (non-recursive call);
   the note maps them, the spike emits arithmetic only (ONE running program > five half-mapped).
 -/
-module
-
-public import Bang.Backend.AbstractMachine
 
 namespace Bang.WasmEmit
 

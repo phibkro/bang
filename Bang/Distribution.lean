@@ -1,4 +1,8 @@
-/-
+module
+
+public import Bang.Spec
+
+/-!
   Distribution.lean — cashing the semilattice asset.
   NOT part of the verification spine (Spec.lean). This connects the effect
   algebra to the DISTRIBUTION axis of the Trinity. Two claims, clearly tiered:
@@ -15,9 +19,7 @@
   freedom is the left end. Idempotence is what places bang-lang's `+` at the
   left.
 -/
-module
 
-public import Bang.Spec
 namespace Bang
 
 variable {Eff : Type} [Semiring Eff]

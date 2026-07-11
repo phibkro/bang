@@ -1,4 +1,13 @@
-/-
+module
+
+-- `#guard`s (§7, below) run `parseProg`/`parse` at the META phase → `meta import` (the cross-module
+-- `#guard` codegen wall; mirrors `TypeCheck.lean`/`Examples.lean`). `public import` re-exports the
+-- same module for ordinary def-level use (`fmtSurf`, `showTy`, …) — the dual-import idiom every
+-- other leaf that both DEFINES over `Surf` and `#guard`s against it already uses.
+meta import Bang.Frontend.Surface
+public import Bang.Frontend.Surface
+
+/-!
   Bang/Frontend/Format.lean — the canonical formatter (`bang fmt`, issue #58).
   ─────────────────────────────────────────────────────────────────────────
   Agent-first lens (operator ruling, 2026-07-09): bang has zero training data, so an
@@ -31,14 +40,6 @@
   tested-superset side of the ADR-0026 seam — the verified kernel never imports it). No
   kernel/typing-rule change.
 -/
-module
-
--- `#guard`s (§7, below) run `parseProg`/`parse` at the META phase → `meta import` (the cross-module
--- `#guard` codegen wall; mirrors `TypeCheck.lean`/`Examples.lean`). `public import` re-exports the
--- same module for ordinary def-level use (`fmtSurf`, `showTy`, …) — the dual-import idiom every
--- other leaf that both DEFINES over `Surf` and `#guard`s against it already uses.
-meta import Bang.Frontend.Surface
-public import Bang.Frontend.Surface
 
 namespace Bang.Format
 

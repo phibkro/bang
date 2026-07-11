@@ -1,4 +1,10 @@
-/-
+module
+
+-- `#guard roundtrips …` runs `Source.eval` (compiled Operational) at the META phase → meta import.
+meta import Bang.Core.Semantics
+public import Bang.Core.Semantics
+
+/-!
   Bang/Frontend/NamedCore.lean — the canonical core, made writable (ADR-0046 ①).
   ────────────────────────────────────────────────────────────────────────────
   ADR-0046 decided a THREE-seam pipeline:
@@ -35,12 +41,6 @@
   `wrong` payload print as bare tokens (no embedded whitespace) — an identifier-like
   assumption the rung programs satisfy; the typed form will carry a quoted-string reader.
 -/
-
-module
-
--- `#guard roundtrips …` runs `Source.eval` (compiled Operational) at the META phase → meta import.
-meta import Bang.Core.Semantics
-public import Bang.Core.Semantics
 
 namespace Bang.Frontend
 

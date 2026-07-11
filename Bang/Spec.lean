@@ -1,4 +1,14 @@
-/-
+module
+
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+public import Bang.Meta.LR
+public import Bang.Backend.Wasm
+public import Bang.Core.Soundness
+public import Bang.Meta.BinaryLR   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
+
+/-!
   Bang/Spec.lean — THE PRD.
   ──────────────────────────────────────────────────────────────────────
   Re-exports all submodules; carries every frozen theorem STATEMENT.
@@ -17,15 +27,6 @@
   See also `Bang/Audit.lean` for #print axioms per theorem.
 -/
 
-module
-
-public import Bang.Core.IR
-public import Bang.Core.Typing
-public import Bang.Core.Semantics
-public import Bang.Meta.LR
-public import Bang.Backend.Wasm
-public import Bang.Core.Soundness
-public import Bang.Meta.BinaryLR   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
                      -- frozen `lr_fundamental`/`lr_sound` statements below via `:= …_proof`
 
 namespace Bang

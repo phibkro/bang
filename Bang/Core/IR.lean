@@ -1,4 +1,13 @@
-/-
+module
+
+public import Mathlib.Algebra.Order.Ring.Defs
+public import Mathlib.Algebra.Group.Defs
+public import Mathlib.Order.Lattice
+public import Mathlib.Data.Finset.Basic
+public import Mathlib.Data.List.Basic
+public import Bang.Core.EffectRow
+
+/-!
   Bang/Core.lean — type-level kernel.
   ──────────────────────────────────────
   The substrate every other Bang module imports:
@@ -13,15 +22,6 @@
   semantics, typing judgments, LR machinery, compilation are in their own
   modules. Theorem STATEMENTS live in Bang/Spec.lean.
 -/
-
-module
-
-public import Mathlib.Algebra.Order.Ring.Defs
-public import Mathlib.Algebra.Group.Defs
-public import Mathlib.Order.Lattice
-public import Mathlib.Data.Finset.Basic
-public import Mathlib.Data.List.Basic
-public import Bang.Core.EffectRow
 
 namespace Bang
 

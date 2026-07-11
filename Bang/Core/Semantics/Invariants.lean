@@ -1,4 +1,8 @@
-/-
+module
+
+public import Bang.Core.Semantics.Eval
+
+/-!
   Bang/Operational/Invariants.lean — the WellCounted freshness invariant (ADR-0055).
   ─────────────────────────────────────────────────────────────────────────
     StackBelow · WellCounted · the global-fresh-counter freshness theory
@@ -10,10 +14,6 @@
   preserved by Source.step). Split out of Bang/Operational.lean per
   core-overview.md §6; behavior-preserving MOVE.
 -/
-
-module
-
-public import Bang.Core.Semantics.Eval
 
 namespace Bang
 

@@ -1,4 +1,9 @@
-/-
+module
+
+public import Bang.Core.Soundness
+public import Bang.Core.Grade
+
+/-!
   Bang/BoccRegress.lean — B-occ regression oracle (ADR-0057).
   ─────────────────────────────────────────────────────────────────────────────────
   The ADR-0056 cap-escape gap was: `escapeB` (a `{get}`-thunk capturing its `state 1` handler's
@@ -23,10 +28,6 @@
   records the stuck run — that file is pre-existing RED on the ADR-0055 `Config` reshape, so we do
   not depend on it). `sigU` is the same `{get,put} : unit → unit` signature as `CapEscapeWitness.sigU`.
 -/
-module
-
-public import Bang.Core.Soundness
-public import Bang.Core.Grade
 
 namespace Bang.BoccRegress
 

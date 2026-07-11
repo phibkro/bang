@@ -1,4 +1,24 @@
-/-
+module
+
+-- The `#guard`s run COMPILED code (`Source.eval` / `runYieldsInt`) at the META
+-- (elaboration) phase, so the modules providing it must be `meta import`ed in
+-- addition to the runtime import — the cross-module `#guard` codegen wall
+-- (Lean v4.30, Phase-1a finding). Mirrors `Bang/Frontend/NamedCore.lean`:41 and
+-- `Bang/Witness/LWRegress.lean`:23.
+meta import Bang.Frontend.Surface
+public import Bang.Frontend.Surface
+-- §C runs the CALCULATED machine `exec ∘ compile` (Bang.CalcVM) as the second
+-- engine in the differential `#guard`s. Apex (this file) may import Backend.
+meta import Bang.Backend.AbstractMachine
+public import Bang.Backend.AbstractMachine
+-- §D (issue #95 regression) needs the TYPED elaborator (`let rec`'s `letRecS` desugar
+-- lives in `TypeCheck.elabS`/`buildLetRec` — the untyped `Surface.lower` §C already
+-- imports cannot reach it, per `TypeCheck.lean`'s own `letRecS` arm: "reaching the
+-- checker means elabProg didn't run"). Apex may import Frontend freely.
+meta import Bang.Frontend.TypeCheck
+public import Bang.Frontend.TypeCheck
+
+/-!
   Bang/Examples.lean — the behavioral-conformance corpus (#80 layer A).
   ────────────────────────────────────────────────────────────────────
   A curated, READABLE set of Bang programs, each paired with a build-gated
@@ -25,26 +45,6 @@
   lambda β · exceptions · state (resumptive) · reactive cell · STM commit/abort ·
   sum/case · product/split · μ stack (LIFO) · capability escape (fail-loud).
 -/
-
-module
-
--- The `#guard`s run COMPILED code (`Source.eval` / `runYieldsInt`) at the META
--- (elaboration) phase, so the modules providing it must be `meta import`ed in
--- addition to the runtime import — the cross-module `#guard` codegen wall
--- (Lean v4.30, Phase-1a finding). Mirrors `Bang/Frontend/NamedCore.lean`:41 and
--- `Bang/Witness/LWRegress.lean`:23.
-meta import Bang.Frontend.Surface
-public import Bang.Frontend.Surface
--- §C runs the CALCULATED machine `exec ∘ compile` (Bang.CalcVM) as the second
--- engine in the differential `#guard`s. Apex (this file) may import Backend.
-meta import Bang.Backend.AbstractMachine
-public import Bang.Backend.AbstractMachine
--- §D (issue #95 regression) needs the TYPED elaborator (`let rec`'s `letRecS` desugar
--- lives in `TypeCheck.elabS`/`buildLetRec` — the untyped `Surface.lower` §C already
--- imports cannot reach it, per `TypeCheck.lean`'s own `letRecS` arm: "reaching the
--- checker means elabProg didn't run"). Apex may import Frontend freely.
-meta import Bang.Frontend.TypeCheck
-public import Bang.Frontend.TypeCheck
 
 namespace Bang.Examples
 

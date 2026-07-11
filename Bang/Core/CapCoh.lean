@@ -1,4 +1,11 @@
-/-
+module
+
+-- task #82 Phase 1b: CapCoh consumes ONLY the caps/freshness layer, which now lives in
+-- `Bang/Freshness.lean` (extracted from the old `Bang/Model.lean`). Importing Freshness (not
+-- Model) SEVERS the `Audit→CalcVM→CapCoh→Model` edge — Model leaves the gated closure.
+public import Bang.Core.Freshness
+
+/-!
 inc-6 U3 route-A — the label-coherence forward-invariant (Bang.CapCoh), build-arbitrated, axiom-clean, #35-FREE.
 
 The label-coherence forward-invariant `CapLabelCoh` + its `Source.step` preservation `capLabelCoh_step`,
@@ -18,12 +25,7 @@ the gap is bridged by THREADING this invariant, not by mirroring dispatch. `Weak
 escape LABEL FACTOR of `CapResolves` (Operational:438) — `WeakCoh + store-supplied resolution ⟹
 CapResolves`, reassembled at the bridge perform arm. Imports `Bang.Freshness` for the caps/freshness
 layer (task #82 Phase 1b extracted it from the old `Bang/Model.lean`; this severs CapCoh→Model). -/
-module
 
--- task #82 Phase 1b: CapCoh consumes ONLY the caps/freshness layer, which now lives in
--- `Bang/Freshness.lean` (extracted from the old `Bang/Model.lean`). Importing Freshness (not
--- Model) SEVERS the `Audit→CalcVM→CapCoh→Model` edge — Model leaves the gated closure.
-public import Bang.Core.Freshness
 open Bang Bang.Model
 open Bang.EffectRow (Label)
 

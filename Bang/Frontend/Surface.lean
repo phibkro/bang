@@ -1,4 +1,13 @@
-/-
+module
+
+-- Surface's remaining #guards run `Source.eval` (compiled Operational) at the META phase
+-- → meta import. (The Plausible `#test` STACK-LAWS block — meta generators that build
+-- runtime values — could NOT live in a module; it was extracted to the non-module
+-- `Bang/Surface/PropTest.lean`, the documented tested-superset seam. Phase-1a finding.)
+meta import Bang.Core.Semantics
+public import Bang.Core.Semantics
+
+/-!
   Bang/Surface.lean — the tracer-bullet surface layer (PATH-tracer-bullet).
   ─────────────────────────────────────────────────────────────────────────
   The thinnest end-to-end slice that makes bang-lang RUN a program:
@@ -21,15 +30,6 @@
   K-ADR), so the "pure" demo is `let`/binding-shaped, not `x + y`. See the
   FINDING in `paths/PATH-tracer-bullet.md`.
 -/
-
-module
-
--- Surface's remaining #guards run `Source.eval` (compiled Operational) at the META phase
--- → meta import. (The Plausible `#test` STACK-LAWS block — meta generators that build
--- runtime values — could NOT live in a module; it was extracted to the non-module
--- `Bang/Surface/PropTest.lean`, the documented tested-superset seam. Phase-1a finding.)
-meta import Bang.Core.Semantics
-public import Bang.Core.Semantics
 
 namespace Bang.Surface
 

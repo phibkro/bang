@@ -1,15 +1,15 @@
 module
 
-/-
+public import Bang.Backend.AbstractMachine
+public import Bang.Core.Freshness
+
+/-!
   Bang/Backend/U5bComplete.lean — the U5b-handler completeness spine (converse of run_evalD).
   Extracted from Wasm.lean (ADR-0086 wire-in): the store-threaded strong-fuel-induction converse
   that discharges evalD_complete_gen premised on VcapFree + CustomFree. sorryAx-free.
   Kept a standalone Backend module so its SStore/THeap/txnService reductions elaborate in a clean
   import environment (Wasm.lean's accumulated module-reveal state made the abbrevs non-reducing).
 -/
-
-public import Bang.Backend.AbstractMachine
-public import Bang.Core.Freshness
 
 /-! ═══════════════════════════════════════════════════════════════════════════════════
     U5b completeness spine (converse of run_evalD) — the route-B replacement for the walled

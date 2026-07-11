@@ -1,4 +1,10 @@
-/-
+module
+
+public import Bang.Core.Semantics
+public import Bang.Core.Grade
+public import Bang.Witness.LWRegress
+
+/-!
   Bang/CapEscapeWitness.lean — ADR-0054 escape witness (finding artifact, re-keyed to identity dispatch).
   ─────────────────────────────────────────────────────────────────────────────────
   THE FINDING (carried onto identity dispatch): a capability that ESCAPES its handler via the RESULT
@@ -19,11 +25,6 @@
 
   Imports ONLY `Bang.Semantics` (+ `Bang.Grade`, `Bang.LWRegress`).
 -/
-module
-
-public import Bang.Core.Semantics
-public import Bang.Core.Grade
-public import Bang.Witness.LWRegress
 
 namespace Bang.CapEscapeWitness
 

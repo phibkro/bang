@@ -1,4 +1,17 @@
-/-
+module
+
+-- `#guard`s run the COMPILED checker over parsed source at the META phase → meta import
+-- (the cross-module `#guard` codegen wall; mirrors `Examples.lean`).
+meta import Bang.Frontend.Surface
+meta import Bang.Core.Semantics     -- runTypedYieldsInt's #guards execute Source.eval (Trait.lean precedent)
+meta import Bang.Core.Grade         -- QTT.omega must be META-accessible for the #guards
+meta import Bang.Frontend.Format    -- lawInstancesOf (#60) reuses showSurf to render a law body to source text
+public import Bang.Frontend.Surface
+public import Bang.Core.Typing
+public import Bang.Core.Grade      -- QTT (the concrete grade rig)
+public import Bang.Frontend.Format  -- ditto (public: lawInstancesOf's OWN signature stays Surf/Ty-free; the import is internal plumbing)
+
+/-!
   Bang/Frontend/TypeCheck.lean — ADR-0066 stage ③: the bidirectional-checker SPIKE.
   ───────────────────────────────────────────────────────────────────────────────
   De-risks the surface type layer: does a bidirectional checker (`synth ⇒` / `check ⇐`)
@@ -13,18 +26,6 @@
     · a `HasCTy` example — the kernel AGREES with the checker's type (the spec connection).
   A LEAF module (nothing imports it; outside the soundness closure), like `Examples.lean`.
 -/
-module
-
--- `#guard`s run the COMPILED checker over parsed source at the META phase → meta import
--- (the cross-module `#guard` codegen wall; mirrors `Examples.lean`).
-meta import Bang.Frontend.Surface
-meta import Bang.Core.Semantics     -- runTypedYieldsInt's #guards execute Source.eval (Trait.lean precedent)
-meta import Bang.Core.Grade         -- QTT.omega must be META-accessible for the #guards
-meta import Bang.Frontend.Format    -- lawInstancesOf (#60) reuses showSurf to render a law body to source text
-public import Bang.Frontend.Surface
-public import Bang.Core.Typing
-public import Bang.Core.Grade      -- QTT (the concrete grade rig)
-public import Bang.Frontend.Format  -- ditto (public: lawInstancesOf's OWN signature stays Surf/Ty-free; the import is internal plumbing)
 
 namespace Bang.TypeCheck
 open Bang

@@ -31,10 +31,10 @@ graph TD
     Backend_EnvMachine["Backend.EnvMachine<br/>3338L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1648L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2894L · fan-in 0"]
-    Backend_WasmEmit["Backend.WasmEmit<br/>477L · fan-in 0"]
-    Core_CapCoh["Core.CapCoh<br/>564L · fan-in 0"]
+    Backend_WasmEmit["Backend.WasmEmit<br/>478L · fan-in 0"]
+    Core_CapCoh["Core.CapCoh<br/>566L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
-    Core_Freshness["Core.Freshness<br/>826L · fan-in 0"]
+    Core_Freshness["Core.Freshness<br/>827L · fan-in 0"]
     Core_Grade["Core.Grade<br/>82L · fan-in 0"]
     Core_IR["Core.IR<br/>416L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
@@ -45,30 +45,30 @@ graph TD
     Core_Soundness["Core.Soundness<br/>3399L · fan-in 0"]
     Core_Typing["Core.Typing<br/>495L · fan-in 0"]
     Examples["Examples<br/>418L · fan-in 0"]
-    Frontend_Annotate["Frontend.Annotate<br/>251L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>209L · fan-in 0"]
-    Frontend_Diagnostics["Frontend.Diagnostics<br/>226L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>1057L · fan-in 0"]
-    Frontend_Lint["Frontend.Lint<br/>212L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>903L · fan-in 0"]
-    Frontend_Rewrite["Frontend.Rewrite<br/>294L · fan-in 0"]
+    Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>210L · fan-in 0"]
+    Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>1058L · fan-in 0"]
+    Frontend_Lint["Frontend.Lint<br/>213L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>904L · fan-in 0"]
+    Frontend_Rewrite["Frontend.Rewrite<br/>295L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>3013L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>6188L · fan-in 0"]
-    Meta_BinaryLR["Meta.BinaryLR<br/>1853L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>6189L · fan-in 0"]
+    Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
     Reify_CalcReifyRef["Reify.CalcReifyRef<br/>163L · fan-in 0"]
     Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
     Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 0"]
     Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
-    Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
-    Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
+    Witness_BoccRegress["Witness.BoccRegress<br/>261L · fan-in 0"]
+    Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
-    Witness_LWRegress["Witness.LWRegress<br/>99L · fan-in 0"]
+    Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
     Witness_LawTest["Witness.LawTest<br/>607L · fan-in 0"]
     Witness_ProofExport["Witness.ProofExport<br/>349L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
@@ -76,9 +76,9 @@ graph TD
     Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
   subgraph tier_Apex["Apex — verification spine + gate"]
-    Audit["Audit<br/>58L · fan-in 0"]
-    Distribution["Distribution<br/>65L · fan-in 0"]
-    Spec["Spec<br/>343L · fan-in 0"]
+    Audit["Audit<br/>60L · fan-in 0"]
+    Distribution["Distribution<br/>67L · fan-in 0"]
+    Spec["Spec<br/>344L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
@@ -86,15 +86,15 @@ graph TD
 | module | tier | LOC | fan-in |
 |---|---|---|---|
 | `Frontend.Surface` | ? | 3013 | 1 |
-| `Audit` | Apex | 58 | 0 |
+| `Audit` | Apex | 60 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3338 | 0 |
 | `Backend.U5bComplete` | ? | 1648 | 0 |
 | `Backend.Wasm` | ? | 2894 | 0 |
-| `Backend.WasmEmit` | ? | 477 | 0 |
-| `Core.CapCoh` | ? | 564 | 0 |
+| `Backend.WasmEmit` | ? | 478 | 0 |
+| `Core.CapCoh` | ? | 566 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
-| `Core.Freshness` | ? | 826 | 0 |
+| `Core.Freshness` | ? | 827 | 0 |
 | `Core.Grade` | ? | 82 | 0 |
 | `Core.IR` | ? | 416 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
@@ -104,33 +104,33 @@ graph TD
 | `Core.Semantics.Subst` | ? | 940 | 0 |
 | `Core.Soundness` | ? | 3399 | 0 |
 | `Core.Typing` | ? | 495 | 0 |
-| `Distribution` | Apex | 65 | 0 |
+| `Distribution` | Apex | 67 | 0 |
 | `Examples` | ? | 418 | 0 |
-| `Frontend.Annotate` | ? | 251 | 0 |
-| `Frontend.DiagCodes` | ? | 209 | 0 |
-| `Frontend.Diagnostics` | ? | 226 | 0 |
-| `Frontend.Format` | ? | 1057 | 0 |
-| `Frontend.Lint` | ? | 212 | 0 |
+| `Frontend.Annotate` | ? | 252 | 0 |
+| `Frontend.DiagCodes` | ? | 210 | 0 |
+| `Frontend.Diagnostics` | ? | 227 | 0 |
+| `Frontend.Format` | ? | 1058 | 0 |
+| `Frontend.Lint` | ? | 213 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 903 | 0 |
-| `Frontend.Rewrite` | ? | 294 | 0 |
+| `Frontend.Query` | ? | 904 | 0 |
+| `Frontend.Rewrite` | ? | 295 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 6188 | 0 |
-| `Meta.BinaryLR` | ? | 1853 | 0 |
+| `Frontend.TypeCheck` | ? | 6189 | 0 |
+| `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1745 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 343 | 0 |
+| `Spec` | Apex | 344 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
 | `Witness.BinopTyping` | ? | 70 | 0 |
-| `Witness.BoccRegress` | ? | 260 | 0 |
-| `Witness.CapEscapeWitness` | ? | 71 | 0 |
+| `Witness.BoccRegress` | ? | 261 | 0 |
+| `Witness.CapEscapeWitness` | ? | 72 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |
-| `Witness.LWRegress` | ? | 99 | 0 |
+| `Witness.LWRegress` | ? | 100 | 0 |
 | `Witness.LawTest` | ? | 607 | 0 |
 | `Witness.ProofExport` | ? | 349 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |

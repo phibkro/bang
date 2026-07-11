@@ -1,4 +1,11 @@
-/-
+module
+
+public import Bang.Core.Semantics.Subst
+public import Bang.Core.Semantics.Dispatch
+public import Bang.Core.Semantics.Eval
+public import Bang.Core.Semantics.Invariants
+
+/-!
   Bang/Operational.lean — the operational-semantics hub (re-exporting barrel).
   ─────────────────────────────────────────────────────────────────────────
   The former 969-line fan-in-11 hub, split into four deep submodules per the
@@ -15,10 +22,3 @@
   Theorem STATEMENTS (preservation, progress, type_safety, effect_sound,
   zero_usage_erasable) live in Bang/Spec.lean.
 -/
-
-module
-
-public import Bang.Core.Semantics.Subst
-public import Bang.Core.Semantics.Dispatch
-public import Bang.Core.Semantics.Eval
-public import Bang.Core.Semantics.Invariants
