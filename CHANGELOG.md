@@ -198,6 +198,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — bare imported-effect names — the Mod_Eff ergonomics fix (`d3941d9e`)
 - **sched** — scheduler-as-handler as ordinary library code (ADR-0101 §G1 demo) (`cb021012`)
 - **frontend** — lift B011's v1 ctor-payload arity-2 cap (#144) (`f1f09bcf`)
+- **stdlib** — tier-2 additions — zip/range/replicate + strLength (#144) (`e452ab04`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
