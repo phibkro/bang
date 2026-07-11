@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: A `data Foo = … deriving (Eq, Ord)` clause runs an elaboration-level handler
   (mirroring Lean 4's own `DerivingHandler`) that reads the carrier's resolved constructor/payload
   shape and EMITS an ordinary `impl` — same-tag structural equality for `Eq`, decl-order
@@ -34,9 +34,11 @@
 
 ## Status
 
-Proposed (2026-07-11). Design consult for #110; the recursive-carrier finding is a genuine surprise
-this design session surfaced and reshapes tier-1's scope — flagged for operator ruling before #109
-implementation starts (§Recursive wall names the fallback options).
+Accepted (2026-07-11) — the #109 implementation LANDED on main (merge `ed235bee`, full verify green,
+34/34 examples both engines): the deriving clause + structural-fold handler, RECURSIVE carriers
+included (the §Recursive wall was dissolved same-day by #112's knot-based dispatch, §3a), the
+inline-stopgap trait fallback invoked as this ADR named it (migration to Prelude.bang = the tracked
+follow-up issue). Originally Proposed as the #110 design consult.
 
 - **Layer:** F (frontend — parser + elaborator). Kernel untouched by construction (invariant #5):
   a derive handler emits an ordinary `Decl.implD`, indistinguishable at the kernel boundary from a
