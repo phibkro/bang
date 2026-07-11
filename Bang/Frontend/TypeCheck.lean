@@ -3767,7 +3767,15 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let e' ← elabS env Γ e
       match elabBind Γ e' env.effects with      -- report the RHS's REAL error, not a downstream unbound (#41)
       | .ok (some sch) => return .lett x e' (← elabS env ((x, sch) :: Γ) b)
-      | .ok none       => throw s!"let-binding '{x}': value is not a returner — force it (${x}) or bind a value"
+      | .ok none       =>
+          -- #121: a bare `fun` RHS is the single most common trigger of "not a returner" (a
+          -- functional programmer's most natural `let f = fun x => …`) — name the REAL fix (thunk
+          -- the RHS) instead of the generic `$x` suggestion, which doesn't even parse at this
+          -- position (`$` forces a THUNK to a value; a bare `fun` is already a computation, not a
+          -- thunk, so there is nothing here for `$` to force).
+          match e with
+          | .lam .. => throw s!"let-binding '{x}': a bare function is a computation (a \"returner\"), not a value — a top-level `let` binds a VALUE, so wrap it in a thunk: `let {x} = \{fun … => …}` (see `examples/caesar`)"
+          | _        => throw s!"let-binding '{x}': value is not a returner — wrap it in a thunk (\{…}), or bind a value"
       | .error m       => throw s!"let-binding '{x}': {m}"
   | Γ, .matchS s xl el xr er => do
       let s' ← elabS env Γ s

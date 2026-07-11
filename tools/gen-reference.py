@@ -363,6 +363,22 @@ def render():
     L.append("`;`-chain matches the nested chain's binder-shadowing exactly).")
     L.append("")
 
+    if "a bare function is a computation" not in diagcodes:
+        sys.exit(
+            "gen-reference: the B015 'bare function' anchor not found in DiagCodes.lean — the "
+            "'Binding a function' note below is keyed off it (issue #121)."
+        )
+    L.append("### Binding a function (issue #121)")
+    L.append("")
+    L.append("`let f = e in body` binds a VALUE — `e` must be a value, not a bare computation.")
+    L.append("`fun x => …` is a COMPUTATION (a \"returner\") in bang's CBPV core (ADR-0007), so")
+    L.append("binding one directly — `let f = fun x => … in body`, the single most natural thing a")
+    L.append("functional programmer reaches for — is a type error (`B015`): a bare function is a")
+    L.append("computation, not a value. **Suspend it in a thunk** to bind it: `let f = {fun x => …}")
+    L.append("in body`; **force it to call it**: `($f) arg`. This applies at every `let`, not only")
+    L.append("top-level ones. `examples/caesar` follows this idiom throughout (`encode`/`decode`).")
+    L.append("")
+
     if '"-\' :: \'-\' :: rest' not in surf and "'-' :: '-' :: rest" not in surf:
         sys.exit(
             "gen-reference: `tokenize`'s `--` line-comment arm not found in Surface.lean — "

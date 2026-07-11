@@ -190,7 +190,18 @@ def registry : List DiagEntry := [
         ++ "constructor arm before it to name the match's data type, and must cover at least one "
         ++ "constructor (a wildcard over an already-exhaustive match is dead code). Move it last, "
         ++ "add an explicit arm to anchor the type, or drop it if every constructor is already named."
-    example? := some "data Color = Red | Green | Blue\nmatch Red { _ -> 1, Green -> 2 }" }
+    example? := some "data Color = Red | Green | Blue\nmatch Red { _ -> 1, Green -> 2 }" },
+  { code := "B015"
+    anchors := ["a bare function is a computation"]
+    summary := "a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121)"
+    teaching :=
+      "`fun x => …` is a COMPUTATION (a \"returner\"), not a value, but a top-level `let` binds a "
+        ++ "VALUE — bang's CBPV core (ADR-0007) draws this line at every `let`, not only top-level "
+        ++ "ones. Suspend the function in a thunk: `let f = {fun x => …}`, then call it forced: "
+        ++ "`($f) arg`. This is the single most common trigger of the older generic \"not a "
+        ++ "returner\" message, which suggested `$f` — that doesn't parse here (`$` forces a THUNK "
+        ++ "to a value; a bare `fun` was never a thunk to begin with)."
+    example? := some "let double = fun x => x + x\nlet main = double" }
 ]
 
 /-! ## 3. The two total functions over the registry. -/
@@ -233,6 +244,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "wildcard arm '_' must be the LAST arm in a match — arms after it can never fire (unreachable)" == some "B014"
 #guard codeForMsg "wildcard arm '_' needs at least one explicit constructor arm to name the match's data type" == some "B014"
 #guard codeForMsg "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)" == some "B014"
+#guard codeForMsg "let-binding 'double': a bare function is a computation (a \"returner\"), not a value — a top-level `let` binds a VALUE, so wrap it in a thunk: `let double = {fun … => …}` (see `examples/caesar`)" == some "B015"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none
@@ -241,6 +253,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard (explain "B004").map (·.code) == some "B004"
 #guard (explain "b004").map (·.code) == some "B004"
 #guard (explain "B999").isNone
+#guard (explain "B015").map (·.code) == some "B015"
 
 -- codes are UNIQUE (a duplicate would make `explain` ambiguous).
 #guard (registry.map (·.code)).eraseDups.length == registry.length

@@ -119,6 +119,16 @@ x + 1 in x` collapses to `let x = 1; x = x + 1 in x` — verified, not assumed: 
 grammar imposes no duplicate-name restriction, and sequential scoping through the
 `;`-chain matches the nested chain's binder-shadowing exactly).
 
+### Binding a function (issue #121)
+
+`let f = e in body` binds a VALUE — `e` must be a value, not a bare computation.
+`fun x => …` is a COMPUTATION (a "returner") in bang's CBPV core (ADR-0007), so
+binding one directly — `let f = fun x => … in body`, the single most natural thing a
+functional programmer reaches for — is a type error (`B015`): a bare function is a
+computation, not a value. **Suspend it in a thunk** to bind it: `let f = {fun x => …}
+in body`; **force it to call it**: `($f) arg`. This applies at every `let`, not only
+top-level ones. `examples/caesar` follows this idiom throughout (`encode`/`decode`).
+
 ### Lexical notes
 
 **Line comments**: `--` runs to end-of-line (or end-of-input) and is dropped by the
@@ -1092,4 +1102,5 @@ and docs can reference it durably.
 | `B013` | a nested `let rec` forward-references a sibling `let rec` bound later in the same block | yes |
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
 | `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
+| `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
 
