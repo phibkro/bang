@@ -70,14 +70,23 @@ throws→try_table · state→locals; 66 programs wasmtime==Source.eval; rung 3 
 named). #95 fixed (~115×, knot sharing); #96 fixed (the missing printer tier); #97 partially (use-hoist;
 Mod_Eff mechanism traced). The 013 ergonomics menu: S1 grammar (site highlights bang) · S5 codes+explain ·
 S7/8/9 new/update/watch LANDED. **In flight**: nothing — the (β)
-lane ran to its STOP-trigger and the census unit is CLOSED-AS-PARKED (above). The 2026-07-10/11 wave
-also landed: `bang query hover` (#52 slice 5 — the probe
-overturned the Spanned-Surf ripple framing), the #105 prelude first slice (11 fns; the List family
-blocked on #108 ctor-namespacing, machine-arbitrated), the stdlib survey (#105–#107), examples
-nqueens + dst-rounds pair, and findings #98–#104. **Queued**: #108 ctor-namespacing ruling (gates the
-List prelude) · #106 Prelude.bang ruling (gates on #97-3) · banner sweep + 010 (docs build waits on
-Lake upstream or a fork-pin ruling) · Mod_Eff slice · 013-S2 LSP + S6 fixits · rung-3 design · #83
-dedup · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
+lane ran to its STOP-trigger and the census unit is CLOSED-AS-PARKED (above). The 2026-07-10/11 waves
+landed: **the stdlib IS a module** (#106 CLOSED, ADR-0098 Accepted: `Prelude.bang` embedded +
+fuel-filtered auto-use, string buckets deleted — invariant #5 realized on the stdlib itself) · **plan
+010 FULLY DONE** (UnicodeBasic fork-pin, the generated BangDocs barrel — a rootless-glob false-green
+renderer caught, 51 API pages live — and the 40-banner `/-!` sweep) · `bang query hover` (#52 slice 5;
+the probe overturned the Spanned-Surf ripple framing) · the #105 prelude first slice (11 fns; List
+family gated on #108, machine-arbitrated) · TWO design pins ready for implementation dispatches:
+**derive-handler ADR-0097** (tier-1 Eq/Ord, non-recursive carriers until #112's buildEnv two-pass fix;
+laws auto-attach verified free) and **mutual-rec H2** (tuple-of-thunks knot spike-verified; H1 Bekić
+refuted twice; H3 diagnostic ships independently) · the stdlib + traits surveys (#105–#107, #109–#111)
+· examples nqueens + dst-rounds pair · findings #98–#104, #112–#113. Rulings 2026-07-11: #108
+namespaced ctors (design probe queued) · #106 mechanism B (landed same day) · 010 fork · mutual-rec
+probe-now · #78 park ratified. **Queued**: #108 ctor-namespacing design probe → the List prelude ·
+the H2 mutual-rec implementation (5-slice map in `mutual-rec-design.md`) + H3 diagnostic · #109
+derive implementation (post-#110 ADR, non-recursive scope) · #112 buildEnv two-pass · Mod_Eff slice ·
+013-S2 LSP + S6 fixits · rung-3 design · #83 dedup · ADR-0089. Design ledger:
+**`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
 
