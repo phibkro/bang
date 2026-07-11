@@ -1,0 +1,7 @@
+-- w3: does a user's OWN differently-named list type (IntList) coexist safely with prelude `take`
+-- once take's `data List a` is ALSO in scope (simulating unconditional injection)? Probes B012.
+data List a = Nil | Cons(a, List a)
+data IntList = INil | ICons(Int, IntList)
+let xs = (Cons(1, Cons(2, Nil)) : List Int) in
+let two = ($take 2) (xs : List Int) in
+match (two : List Int) { Nil -> 0, Cons(h, t) -> h }

@@ -1,0 +1,3 @@
+data List = Nil | Cons(Int, List)
+let rec sum : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> h + ($sum t) } in
+match (($mapOption) {fun z => z + 1} (Some(10))) { None -> 0, Some(v) -> v + ($sum (Cons(1, Cons(2, Nil)))) }

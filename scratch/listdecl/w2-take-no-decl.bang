@@ -1,0 +1,4 @@
+-- w2: does `take` work with NO user `data List a` at all? (tests whether List/Nil/Cons resolve
+-- from the prelude's OWN type-only mentions, absent a kernel-provided List injection)
+let xs = Cons(1, Cons(2, Cons(3, Nil)))
+in match ($take 2 xs) { Nil -> 0, Cons(h, t) -> h }

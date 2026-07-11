@@ -1,0 +1,3 @@
+data Option = NoneX | SomeX(Int)
+let o = SomeX(7) in
+match o { NoneX -> 0, SomeX(x) -> x }

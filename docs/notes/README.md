@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (59)
+## active (60)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -42,6 +42,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`lambda-cube-ascent-survey.md`](lambda-cube-ascent-survey.md) — Lambda-cube ascent — design survey (R6, ROADMAP §Pre-v1 research ladder)
 - [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
+- [`listdecl-injection-design.md`](listdecl-injection-design.md) — List-decl injection design — should the prelude ship `data List a`?
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
 - [`memory-management-survey.md`](memory-management-survey.md) — Memory-management — design survey: param-passing handlers, the CBPV stack/heap split, and the heap ladder
 - [`multishot-survey.md`](multishot-survey.md) — Multi-shot resumption — empirical design inputs for the Q22 cap-rep fork

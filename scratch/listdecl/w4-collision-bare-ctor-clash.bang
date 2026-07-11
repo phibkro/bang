@@ -1,0 +1,9 @@
+-- w4: the REAL collision case — user declares their OWN List-shaped type using the SAME bare
+-- ctor names (Nil/Cons) as the prelude's `data List a` would use, and references them bare.
+-- This is the ADR-0099 B012 ambiguity case, simulated by hand-declaring BOTH types with
+-- colliding ctor names (as unconditional injection of `data List a = Nil | Cons(a, List a)`
+-- would force on every program that separately declares e.g. `data IntList = Nil | Cons(...)`).
+data IntList = Nil | Cons(Int, IntList)
+data List a = Nil | Cons(a, List a)
+let s = Cons(7, Nil) in
+match s { Nil -> 0, Cons(h, t) -> h }

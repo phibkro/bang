@@ -1,0 +1,5 @@
+-- w6: does mentioning `length` in a program with a LOCAL length-like helper of the same
+-- name shadow correctly per ADR-0098 D4 (per-name shadow), or does it still pay prelude
+-- injection fuel tax (ADR-0103's claimed residual issue)?
+let rec length : Int -> Int = fun n => if n == 0 then 0 else 1 + ($length (n - 1)) in
+$length 3

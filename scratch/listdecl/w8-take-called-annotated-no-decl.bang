@@ -1,0 +1,1 @@
+($take 2) (Cons(1, Cons(2, Nil)) : List Int)

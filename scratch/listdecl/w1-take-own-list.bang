@@ -1,0 +1,5 @@
+-- w1: today's WORKING shape — program declares its OWN List, calls prelude `take`
+data List a = Nil | Cons(a, List a)
+let xs = (Cons(1, Cons(2, Cons(3, Nil))) : List Int) in
+let two = ($take 2) (xs : List Int) in
+match (two : List Int) { Nil -> 0, Cons(h, t) -> h }
