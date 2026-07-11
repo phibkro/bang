@@ -147,6 +147,16 @@ def registry : List DiagEntry := [
         ++ "`Node((a, b), c)` instead of `Node(a, b, c)`. The cap keeps the elaboration's tuple "
         ++ "descent bounded (structOK / #50)."
     example? := some "data T = C(Int, Int, Int)\nlet main = 3" },
+  { code := "B012"
+    anchors := ["ambiguous constructor"]
+    summary := "a bare constructor name is owned by two or more co-present `data` types"
+    teaching :=
+      "A constructor's true identity is `(dataName, ctorName)`, not the bare name alone (ADR-0099). "
+        ++ "A bare reference resolves when exactly ONE in-scope `data` type owns that ctor name; two "
+        ++ "or more sharing it is ambiguous. Write the type-qualified form `Type_Ctor` (e.g. "
+        ++ "`IntList_Nil`) to disambiguate — an ordinary identifier, the same `Mod_Type` convention "
+        ++ "module qualification already uses."
+    example? := some "data List a = Nil | Cons(a, List a)\ndata IntList = Nil | Cons(Int, IntList)\nNil" },
   -- B006 is the BROAD constructor-arity family — listed LAST of the constructor cluster so the
   -- specific families above (B007 unknown, B011 payload) win their own messages before this
   -- `"constructor '"`-anchored catch-all would shadow them (registry order = specificity).
@@ -190,6 +200,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "unknown constructor 'Foo' in match" == some "B007"
 -- the specific constructor families are NOT shadowed by B006's broad `"constructor '"` anchor.
 #guard codeForMsg "constructor 'C': payload arity ≤ 2 in v1 (nest tuples)" == some "B011"
+#guard codeForMsg "ambiguous constructor 'Nil' — candidates: IntList (as 'IntList_Nil'), List (as 'List_Nil')" == some "B012"
 #guard codeForMsg "trailing tokens after expression: [2]" == some "B008"
 #guard codeForMsg "error: a capability escaped its handler — it was forced" == some "B009"
 #guard codeForMsg "no impl of 'Eq' for 'Option' — the bound 'Eq a' is unsatisfied" == some "B010"

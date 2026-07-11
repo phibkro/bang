@@ -56,6 +56,9 @@ trigger_carries_code 'let x = 3 in $x'                            'B004'
 trigger_carries_code '1, 2'                                       'B008'
 trigger_carries_code 'data T = C(Int, Int, Int)
 let main = 3'                                                     'B011'
+trigger_carries_code 'data List a = Nil | Cons(a, List a)
+data IntList = Nil | Cons(Int, IntList)
+Nil'                                                               'B012'
 
 # ── the HUMAN path prefixes the stable code (rustc `error[B004]:` shape) ──
 human_err="$(printf 'let x = 3 in $x' | "$bang" check 2>&1 >/dev/null)" || true
@@ -120,7 +123,7 @@ check "explain-no-arg-exit-1" "$noarg_exit" "1"
 
 echo "──────────────────────────────"
 echo "explain: $pass passed, $fail failed"
-want_total=19
+want_total=20
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"
