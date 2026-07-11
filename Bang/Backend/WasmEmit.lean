@@ -698,6 +698,14 @@ Pushed identically to the `$env` at every binder so index `i` agrees between the
 inductive CapSlot where
   | none      : CapSlot
   | throwsTag : Nat → CapSlot
+  -- RUNG 5 S4: a `handle (custom p cls)` cap-binder. `clauses` maps each op NAME to its POSITION in the
+  -- cap's clause-closure list (a $env of lam-style `$clos`, built at the handle site capturing
+  -- `p :: handlerEnv`, held in a $txbox stored in the cap's ENV slot — so a nested closure that
+  -- performs the op reaches it via $lookup, NOT a compile-time local). A matching `perform op v`
+  -- `call_ref`s the clause at that position with arg `v` ⇒ body env `(v :: p :: handlerEnv)` — the
+  -- image of `subst p (subst (shift v) clause.2)`. An unhandled op raises (kernel: no matching clause ⇒
+  -- `.raised`), refused loudly here (v1 has no runtime raise-forward on the GC path).
+  | custom    : List (String × Nat) → CapSlot
   deriving Inhabited
 
 /-- Wrap a statement-prefixed sequence (`local.set …`s followed by a value expression) in a
@@ -881,65 +889,79 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
               let snd := s!"(struct.get $pair 1 (ref.cast (ref $pair) (local.get {scL})))"
               (.ok (seqBlock s!"(local.set {scL} {ev})\n    (local.set {e1L} (struct.new $env {fst} (local.get {envL})))\n    (local.set {e2L} (struct.new $env {snd} (local.get {e1L})))\n    {bn}"), st3)
   | .unfold v => emitValGC envL caps v st
-  -- RUNG 5 S1: state `get`/`put` on the GC path (design (b) Candidate 1). The cap `vvar i` resolves via
-  -- `$lookup` to the `$ref` mutable box the enclosing `handle (state …)` minted; `get` reads it,
-  -- `put` mutates in place (one-shot resume, ADR-0025 D1 — no unwind, no reified continuation). Unlike
-  -- the inline path (unit has no i64 rep, so `put` MUST fuse with its `letC`), the GC path boxes unit
-  -- as a $val, so `put` is an ordinary value-producing arm: mutate, then return boxed unit.
-  | .perform (.vvar i) "get" _ =>
-      -- get: read the box's current $val (the kernel returns the stored `s`, resume in place).
-      (.ok s!"(struct.get $ref 0 (ref.cast (ref $ref) {lookupGC envL i}))", st)
-  | .perform (.vvar i) "put" v =>
-      match emitValGC envL caps v st with
-      | (.unsup r, st') => (.unsup r, st')
-      | (.ok ev, st1) =>
-          -- struct.set the box in place, then leave boxed unit (put returns `ret .vunit`). Wrapped in
-          -- a seqBlock so the statement + value compose as one value expression.
-          (.ok (seqBlock s!"(struct.set $ref 0 (ref.cast (ref $ref) {lookupGC envL i}) {ev})\n    {boxI "(i64.const 0)"}"), st1)
-  -- RUNG 5 S3: transaction STM ops on the GC heap. The cap `vvar i` resolves via `$lookup` to the
-  -- heap box `H` (a `$ref` holding the `$env` journal of cells). All three ops one-shot resume in place.
-  -- newTVar v (kernel `ret (vint Θ.length)`, heap `Θ ++ [v]`): return the OLD length (the index) then
-  -- PREPEND a fresh $ref cell to H's list. Wrapped in a seqBlock; the returned boxed index flows to letC.
-  | .perform (.vvar i) "newTVar" v =>
-      match emitValGC envL caps v st with
-      | (.unsup r, st') => (.unsup r, st')
-      | (.ok ev, st1) =>
-          let hbox := s!"(ref.cast (ref $txbox) {lookupGC envL i})"
-          let hlist := s!"(struct.get $txbox 0 {hbox})"
-          -- boxed index = $txlen(list) BEFORE the prepend; then H := cons(new $ref v, list).
-          (.ok (seqBlock s!"{boxI s!"(call $txlen {hlist})"}\n    (struct.set $txbox 0 {hbox} (struct.new $env (struct.new $ref {ev}) {hlist}))"), st1)
-  -- readTVar (vint j) (kernel `ret Θ[j]`): fetch the cell for index j via $txcell, read its $val.
-  | .perform (.vvar i) "readTVar" v =>
-      match emitValGC envL caps v st with
-      | (.unsup r, st') => (.unsup r, st')
-      | (.ok ev, st1) =>
-          let hlist := s!"(struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i}))"
-          (.ok s!"(struct.get $ref 0 (call $txcell {hlist} {unboxI ev}))", st1)
-  -- writeTVar (pair (vint j) w) (kernel `storeSet Θ j w`, `ret .vunit`): struct.set the j-th cell,
-  -- then leave boxed unit. The payload is a pair; project index (fst) and value (snd) from it.
-  | .perform (.vvar i) "writeTVar" (.pair jv w) =>
-      match emitValGC envL caps jv st with
-      | (.unsup r, st') => (.unsup r, st')
-      | (.ok ej, st1) =>
-        match emitValGC envL caps w st1 with
-        | (.unsup r, st') => (.unsup r, st')
-        | (.ok ew, st2) =>
-            let hlist := s!"(struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i}))"
-            (.ok (seqBlock s!"(struct.set $ref 0 (call $txcell {hlist} {unboxI ej}) {ew})\n    {boxI "(i64.const 0)"}"), st2)
-  -- RUNG 5 S2: raise on the GC path. `perform (vvar i) "raise" v` where index `i` is a `throws` cap
-  -- (compile-time tag `t` in `caps`) emits `(throw $exn{t} <boxed payload>)` — a zero-shot abort that
-  -- wasm unwinds to exactly the `try_table (catch $exn{t})` the lexically-enclosing `handle (throws)`
-  -- minted (tag identity = lexical/identity dispatch, the inline `.cap t` image). The payload is a
-  -- boxed $val (throws carries any value, unlike the inline path's i64-only tag).
-  | .perform (.vvar i) "raise" v =>
+  -- RUNG 5 S1-S4: a `perform (vvar i) op v` dispatches CAP-KIND-FIRST (the faithful image of the kernel's
+  -- per-store, identity-keyed dispatch — AbstractMachine.lean:287-313). `caps[i]` decides:
+  --   · `.custom clauseMap` : a user-effect op — `call_ref` the op's lifted clause closure with `v` (S4).
+  --       (matches the kernel operator ruling: a custom frame keyed with a built-in-like name IS serviced
+  --       by its clause, so the custom check precedes the built-in state/txn routing.)
+  --   · `.throwsTag t`      : `raise` → `(throw $exn{t} v)` (S2, zero-shot abort).
+  --   · `.none`             : a state/txn cap dispatched by its RUNTIME box (`get`/`put`, S1; the three
+  --       stm ops, S3) — the box is looked up via `$lookup` and the op routed by name.
+  | .perform (.vvar i) op v =>
       match caps[i]? with
+      | some (.custom clauseMap) =>
+          -- S4: user op. Find its clause POSITION; look up the cap's $txbox (env-reachable), walk its
+          -- clause list to that position, `call_ref` with the op-value v (one-shot resume, κ unchanged).
+          match clauseMap.find? (·.1 == op) with
+          | some (_, pos) =>
+              match emitValGC envL caps v st with
+              | (.unsup r, st') => (.unsup r, st')
+              | (.ok ev, st1) =>
+                  let (tmpL, st2) := st1.fresh tyVal
+                  let cloE := s!"(call $clausecell (struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i})) (i64.const {pos}))"
+                  (.ok (callClosGC tmpL cloE ev), st2)
+          | none => (.unsup s!"custom op {op} unhandled by the handler's clause list (kernel: raises; no GC raise-forward in v1)", st)
       | some (.throwsTag t) =>
-          match emitValGC envL caps v st with
-          | (.unsup r, st') => (.unsup r, st')
-          | (.ok ev, st1) => (.ok s!"(throw $exn{t} {ev})", st1)
-      | some .none => (.unsup s!"raise target vvar {i} is not a throws capability (binds a value/state slot)", st)
-      | none => (.unsup s!"raise target vvar {i} is free (open term) or not a throws cap", st)
-  | .perform _ _ _ => (.unsup "perform: `get`/`put` (state, S1) and `raise` (throws, S2) lower on the GC path; txn/custom are S3-S4", st)
+          if op = "raise" then
+            match emitValGC envL caps v st with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok ev, st1) => (.ok s!"(throw $exn{t} {ev})", st1)
+          else (.unsup s!"op {op} on a throws cap (only `raise` is a throws op)", st)
+      | some .none =>
+          -- S1 state / S3 txn: the cap is a runtime box in the env; route by op name.
+          if op = "get" then
+            (.ok s!"(struct.get $ref 0 (ref.cast (ref $ref) {lookupGC envL i}))", st)
+          else if op = "put" then
+            match emitValGC envL caps v st with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok ev, st1) =>
+                (.ok (seqBlock s!"(struct.set $ref 0 (ref.cast (ref $ref) {lookupGC envL i}) {ev})\n    {boxI "(i64.const 0)"}"), st1)
+          else if op = "newTVar" then
+            match emitValGC envL caps v st with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok ev, st1) =>
+                let hbox := s!"(ref.cast (ref $txbox) {lookupGC envL i})"
+                let hlist := s!"(struct.get $txbox 0 {hbox})"
+                -- boxed index = $txlen(list) BEFORE the prepend; then H := cons(new $ref v, list).
+                (.ok (seqBlock s!"{boxI s!"(call $txlen {hlist})"}\n    (struct.set $txbox 0 {hbox} (struct.new $env (struct.new $ref {ev}) {hlist}))"), st1)
+          else if op = "readTVar" then
+            match emitValGC envL caps v st with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok ev, st1) =>
+                let hlist := s!"(struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i}))"
+                (.ok s!"(struct.get $ref 0 (call $txcell {hlist} {unboxI ev}))", st1)
+          else if op = "writeTVar" then
+            match v with
+            | .pair jv w =>
+                match emitValGC envL caps jv st with
+                | (.unsup r, st') => (.unsup r, st')
+                | (.ok ej, st1) =>
+                  match emitValGC envL caps w st1 with
+                  | (.unsup r, st') => (.unsup r, st')
+                  | (.ok ew, st2) =>
+                      let hlist := s!"(struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i}))"
+                      (.ok (seqBlock s!"(struct.set $ref 0 (call $txcell {hlist} {unboxI ej}) {ew})\n    {boxI "(i64.const 0)"}"), st2)
+            | _ => (.unsup s!"writeTVar payload not a (pair index value)", st)
+          else
+            -- The cap-binder at index `i` is `.none` (a value slot / a lam-arg), but the op is neither a
+            -- built-in state/txn op nor a lexically-known custom op. This is the RUNTIME-CAP wall: a
+            -- capability threaded as a first-class $val (a `vcap`) — e.g. a handler passed INTO a closure
+            -- as an argument (`app (force performer) capArg`), so dispatch is by the runtime cap value,
+            -- not a lexical CapSlot. v1's GC path has no `vcap` $val rep; refuse LOUDLY (fail-loud,
+            -- invariant #1), never a wrong emission. (Lexically-scoped custom/state/txn/throws all work.)
+            (.unsup s!"perform op `{op}` on a cap threaded as a runtime VALUE (vvar {i} = a value/arg slot, not a lexical handler cap) — the first-class-capability rep is a rung-5+ wall, not lowered on the GC path", st)
+      | none => (.unsup s!"perform target vvar {i} is free (open term) — no capability in scope", st)
+  | .perform _ _ _ => (.unsup "perform on a non-vvar target (runtime cap / malformed — out of the GC-path fragment)", st)
   -- RUNG 5 S1: handle (state s₀) M on the GC path. Mint a $ref box holding s₀, PREPEND it as env slot
   -- 0 (so M's index-0 cap-binder resolves to the box via $lookup — exactly the inline `.state` Slot,
   -- now a heap box reachable by closures). The handle's value is M's value (handler return = identity,
@@ -990,9 +1012,52 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
         | (.ok bM, st3) =>
             -- H := new empty box; env slot 0 = H; body under a txcommit/txab rollback wrapper.
             (.ok (seqBlock s!"(local.set {hL} (struct.new $txbox (ref.null $env)))\n    (local.set {e2L} (struct.new $env (local.get {hL}) (local.get {envL})))\n    (block $txc{hL} (result (ref null $val))\n      (block $txa{hL} (result exnref)\n        (try_table (result (ref null $val)) (catch_all_ref $txa{hL})\n          {bM})\n        (br $txc{hL}))\n      (struct.set $txbox 0 (local.get {hL}) (ref.null $env))\n      (throw_ref))"), st3)
-  | .handle _ _ => (.unsup "handle: `state` (S1), `throws` (S2), `transaction` (S3) lower on the GC path; custom is S4", st)
+  -- RUNG 5 S4: handle (custom p cls) M on the GC path — user-defined effects (ADR-0085 Stage 4). A
+  -- custom op runs `subst p (subst (shift v) clause.2)` INLINE (κ unchanged, param read-only, one-shot
+  -- resume — no reified continuation, rung-5 design (c)). Image: build a local `pEnvL = (p ::
+  -- handlerEnv)`, lambda-lift EACH clause body as a lam-style `$clos` capturing pEnvL (so the clause's
+  -- index 0 = the op-arg the fn prepends, index 1 = p, index ≥2 = handlerEnv — exactly the subst
+  -- order). A matching `perform op v` `call_ref`s that closure with `v`. The CapSlot.custom carries the
+  -- op→closure-local map (compile-time dispatch). M's cap-binder gets a placeholder $env slot; the
+  -- clause closures are built (local.set) in the prefix, before M runs.
+  | .handle (.custom _ p cls) M =>
+      match emitValGC envL caps p st with
+      | (.unsup r, st') => (.unsup s!"custom handler param: {r}", st')
+      | (.ok ep, st1) =>
+          let (pEnvL, st2) := st1.fresh tyEnv
+          -- Build the clause-closure list expression (clause 0 FRONTMOST) + the op→position map.
+          match emitClauses pEnvL caps 0 cls st2 with
+          | (.error r, _) => (.unsup r, st2)
+          | (.ok (clauseMap, listExpr), st3) =>
+              let (boxL, st3a) := st3.fresh "(ref $txbox)"    -- a $txbox holding the clause-closure list
+              let (capL, st4) := st3a.fresh tyEnv
+              match emitCompGC capL (CapSlot.custom clauseMap :: caps) M st4 with
+              | (.unsup r, st') => (.unsup r, st')
+              | (.ok bM, st5) =>
+                  -- pEnvL := (p :: handlerEnv); box the clause list; cap env slot := the box; run M. The
+                  -- cap is now ENV-REACHABLE (via $lookup), so a nested closure that performs an op works.
+                  (.ok (seqBlock s!"(local.set {pEnvL} (struct.new $env {ep} (local.get {envL})))\n    (local.set {boxL} (struct.new $txbox {listExpr}))\n    (local.set {capL} (struct.new $env (local.get {boxL}) (local.get {envL})))\n    {bM}"), st5)
   | .oom => (.unsup "oom", st)
   | .wrong s => (.unsup s!"wrong: {s}", st)
+
+/-- RUNG 5 S4: lambda-lift each custom clause body as a `$clos` capturing `pEnvL = (p :: handlerEnv)`,
+and BUILD an `$env` list of the closures with clause 0 FRONTMOST (so op-position `k` = `k` steps from
+the front). Returns the op→position map and the list-building expression (a nested `struct.new $env`).
+`pos` counts the current clause's position. `Except String` on refusal (a clause body that can't lower). -/
+partial def emitClauses (pEnvL : Nat) (caps : List CapSlot) (pos : Nat) :
+    List (String × Comp) → GCState → Except String (List (String × Nat) × String) × GCState
+  | [], st => (.ok ([], "(ref.null $env)"), st)
+  | (op, body) :: rest, st =>
+      -- lam-style lift: the fn prepends its arg (the op-value v) at index 0; the captured env is
+      -- (p :: handlerEnv), so index 1 = p, index ≥2 = handlerEnv (the subst (shift v)/subst p order).
+      match emitCloVal false pEnvL (CapSlot.none :: caps) body st with
+      | (.unsup r, st') => (.error r, st')
+      | (.ok cloE, st1) =>
+          match emitClauses pEnvL caps (pos + 1) rest st1 with
+          | (.error r, st') => (.error r, st')
+          | (.ok (restMap, restList), st2) =>
+              -- cons this clause's closure at the front of the rest of the list.
+              (.ok ((op, pos) :: restMap, s!"(struct.new $env {cloE} {restList})"), st2)
 
 /-- `letC m n`: compute m, bind its value at index 0 in a fresh env local, run n. n's index-0 binder
 is a VALUE (m's result) ⇒ push `.none` in the cap context. -/
@@ -1071,7 +1136,17 @@ def gcHelpers : String :=
   "      (local.set $h (struct.get $env $tl (local.get $h)))\n" ++
   "      (local.set $k (i64.sub (local.get $k) (i64.const 1)))\n" ++
   "      (br $l)))\n" ++
-  "    (ref.cast (ref $ref) (struct.get $env $hd (local.get $h))))"
+  "    (ref.cast (ref $ref) (struct.get $env $hd (local.get $h))))\n" ++
+  -- RUNG 5 S4: $clausecell walks `k` steps from the FRONT of a custom cap's clause-closure list,
+  -- returning that clause's $clos $val. The cap is a $txbox holding this list (built at the handle
+  -- site, clause 0 frontmost), reachable via $lookup so a nested closure that performs the op works.
+  "  (func $clausecell (param $h (ref null $env)) (param $k i64) (result (ref null $val))\n" ++
+  "    (block $d (loop $l\n" ++
+  "      (br_if $d (i64.eqz (local.get $k)))\n" ++
+  "      (local.set $h (struct.get $env $tl (local.get $h)))\n" ++
+  "      (local.set $k (i64.sub (local.get $k) (i64.const 1)))\n" ++
+  "      (br $l)))\n" ++
+  "    (struct.get $env $hd (local.get $h)))"
 
 /-- The fixed WASM-GC type + helper preamble every rung-4 module shares (types then helper funcs). -/
 def gcPreamble : String := gcTypes ++ "\n" ++ gcHelpers
