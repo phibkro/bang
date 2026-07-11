@@ -154,6 +154,14 @@ test-modules:
 test-explain:
     bash tools/test-explain.sh
 
+# The --compiled differential gate for the dogfood programs (#135): calc + json run on the compiled
+# engine (exec∘compile) byte-identically to their expected.txt AND to `--engine=env` (the
+# differential). Makes the diagnosis's "both pass compiled" a STANDING gate, so a compiled-path
+# regression (the #95-class re-entrant-parser slowdown, a lowering drift) fails verify instead of
+# rotting into a stale finding. Enrolled in tools/run-batteries.sh's array.
+test-compiled-dogfood:
+    bash tools/test-compiled-dogfood.sh
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:
