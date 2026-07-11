@@ -1,4 +1,8 @@
-/-
+module
+
+public import Bang.Core.Semantics.Subst
+
+/-!
   Bang/Operational/Dispatch.lean — effect dispatch (ADR-0054 identity dispatch).
   ─────────────────────────────────────────────────────────────────────────
     handlesOp · splitAt · splitAtId · dispatchOn · idDispatch
@@ -9,10 +13,6 @@
   invariant under substFrom). Split out of Bang/Operational.lean per
   core-overview.md §6; behavior-preserving MOVE.
 -/
-
-module
-
-public import Bang.Core.Semantics.Subst
 
 namespace Bang
 

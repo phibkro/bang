@@ -1,4 +1,6 @@
-/-
+module
+
+/-!
   Bang/Frontend/DiagCodes.lean — stable diagnostic CODES + the `bang explain` registry (plan 013 s5).
   ─────────────────────────────────────────────────────────────────────────────────────────────────
   The rustc `error[E0499]` pattern: a diagnostic gets a STABLE, teachable code that outlives its
@@ -27,7 +29,6 @@
   behavior. The wording of a message may change freely; as long as its anchors survive, the code
   stays stable (that is the whole point of a code).
 -/
-module
 
 public section
 

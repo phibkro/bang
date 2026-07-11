@@ -1,4 +1,11 @@
-/-
+module
+
+meta import Bang.Frontend.TypeCheck
+public import Bang.Frontend.TypeCheck
+meta import Bang.Frontend.DiagCodes
+public import Bang.Frontend.DiagCodes
+
+/-!
   Bang/Frontend/Diagnostics.lean — agent-facing structured diagnostics (`bang check --json`, #59).
   ─────────────────────────────────────────────────────────────────────────────────────────────
   Agent-first lens (operator ruling 2026-07-09): the cheapest "LSP for agents" is not a server —
@@ -26,12 +33,6 @@
   ALREADY-PUBLIC `checkAndLower`/`parseProgLocated`/`Span` and produces only a JSON string. No
   kernel/typing-rule change, no new checking behavior — a pure re-rendering of an existing `Except`.
 -/
-module
-
-meta import Bang.Frontend.TypeCheck
-public import Bang.Frontend.TypeCheck
-meta import Bang.Frontend.DiagCodes
-public import Bang.Frontend.DiagCodes
 
 open Bang
 

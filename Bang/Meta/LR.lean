@@ -1,4 +1,10 @@
-/-
+module
+
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+
+/-!
   Bang/LR.lean — logical relations + observational equivalence + recovery.
   ─────────────────────────────────────────────────────────────────────────
     §5 helpers — Stack, BaseRel, asThunk, asReturner, raise (opArg/opRes → EffSig, ADR-0022)
@@ -8,12 +14,6 @@
 
   Theorem STATEMENTS (lr_sound, lr_fundamental, seq_unit, group_recovers)
   live in Bang/Spec.lean. -/
-
-module
-
-public import Bang.Core.IR
-public import Bang.Core.Typing
-public import Bang.Core.Semantics
 
 namespace Bang
 

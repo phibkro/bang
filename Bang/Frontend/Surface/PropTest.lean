@@ -1,4 +1,7 @@
-/-
+import Bang.Frontend.Surface
+import Plausible
+
+/-!
   Bang/Surface/PropTest.lean — the STACK LAWS, property-tested via `plausible`.
 
   Extracted from Surface.lean (Phase-1a modules-everywhere): this is the ADR-0028
@@ -18,9 +21,6 @@
   is fine) and re-opens its namespace, so the laws read `push`/`empty`/`pop`/`Source.eval`
   exactly as before. Behaviour is unchanged — the same three `#test`s, same generators.
 -/
-
-import Bang.Frontend.Surface
-import Plausible
 
 namespace Bang.Surface
 

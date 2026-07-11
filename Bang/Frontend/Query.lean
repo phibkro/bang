@@ -1,4 +1,9 @@
-/-
+module
+
+meta import Bang.Frontend.Diagnostics
+public import Bang.Frontend.Diagnostics
+
+/-!
   Bang/Frontend/Query.lean — the `bang query` fact base: a PUBLIC LIBRARY API + its CLI views (#80).
   ─────────────────────────────────────────────────────────────────────────────────────────────────
   Operator direction (2026-07-10, REFINED — API-first, three tiers): agents/users don't need a fixed
@@ -50,10 +55,6 @@
   produces only JSON strings (+ the plain `DeclFact`/`RefEdge` records Tier 1 exposes). No kernel/
   typing-rule change, no new checking behavior.
 -/
-module
-
-meta import Bang.Frontend.Diagnostics
-public import Bang.Frontend.Diagnostics
 
 open Bang
 open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Span Ty OpSig OpDef)

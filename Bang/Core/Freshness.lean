@@ -1,4 +1,10 @@
-/-
+module
+
+public import Bang.Core.Soundness
+-- (was Model's transitive Mathlib dep; now explicit across the module boundary.)
+public import Mathlib.Data.Option.NAry
+
+/-!
   Bang/Freshness.lean — the LIVE caps / generative-freshness layer (extracted from
   Bang/Model.lean, task #82 Phase 1b).
   ───────────────────────────────────────────────────────────────────────────────
@@ -19,11 +25,6 @@
   Namespace `Bang.Model` is PRESERVED so downstream `open Bang.Model` keeps resolving these
   names; the symbols simply have a new home.
 -/
-module
-
-public import Bang.Core.Soundness
--- (was Model's transitive Mathlib dep; now explicit across the module boundary.)
-public import Mathlib.Data.Option.NAry
 
 namespace Bang.Model
 open Bang

@@ -1,4 +1,10 @@
-/-
+module
+
+meta import Bang.Frontend.Query
+public import Bang.Frontend.Query
+public import Bang.Frontend.Format
+
+/-!
   Bang/Frontend/Lint.lean — the `bang lint` rule package (#82 item 2): rules as QUERIES over the
   dump fact base, no new analysis machinery.
   ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -47,11 +53,6 @@
   `Finding`/`LintReport` values (or a JSON string). No kernel/typing-rule change, no new checking
   behavior.
 -/
-module
-
-meta import Bang.Frontend.Query
-public import Bang.Frontend.Query
-public import Bang.Frontend.Format
 
 open Bang
 open Bang.Surface (Decl Prog)

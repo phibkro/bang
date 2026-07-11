@@ -1,4 +1,8 @@
-/-
+module
+
+public import Mathlib.Algebra.Order.Ring.Defs
+
+/-!
   Bang/Mult.lean — QTT multiplicity grade.
   ─────────────────────────────────────────
   The concrete `Bang.QTT` instance of the `Mult` parameter used in
@@ -15,10 +19,6 @@
   See ROADMAP.md / docs/notes/spec-handover.md for the multiplicity-
   grade design rationale; ADR-0018 for the row-algebra context.
 -/
-
-module
-
-public import Mathlib.Algebra.Order.Ring.Defs
 
 namespace Bang
 

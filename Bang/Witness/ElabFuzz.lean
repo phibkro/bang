@@ -1,4 +1,15 @@
-/-
+module
+
+meta import Bang.Frontend.TypeCheck
+meta import Bang.Frontend.Format
+meta import Bang.Frontend.Surface
+meta import Bang.Witness.Fuzz
+public import Bang.Frontend.TypeCheck
+public import Bang.Frontend.Format
+public import Bang.Frontend.Surface
+public import Bang.Witness.Fuzz
+
+/-!
   Bang/Witness/ElabFuzz.lean — FUZZ THE ELABORATOR (tier ③, `docs/notes/calculated-typer-survey.md`
   §trust-map). `Bang/Frontend/TypeCheck.lean` (~4100 lines, `Infer`-monad unification + holes +
   generalization + the μ-knot/module elaboration) is the trust gap the survey REFUTED a calculated
@@ -27,17 +38,6 @@
   of drowning in `.error` (an elaborator fuzzer swamped by ill-typed input tests only the error paths,
   the same "make the bad state unrepresentable" lesson `Fuzz.lean`'s header names).
 -/
-
-module
-
-meta import Bang.Frontend.TypeCheck
-meta import Bang.Frontend.Format
-meta import Bang.Frontend.Surface
-meta import Bang.Witness.Fuzz
-public import Bang.Frontend.TypeCheck
-public import Bang.Frontend.Format
-public import Bang.Frontend.Surface
-public import Bang.Witness.Fuzz
 
 namespace Bang.ElabFuzz
 

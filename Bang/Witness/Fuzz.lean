@@ -1,4 +1,11 @@
-/-
+module
+
+meta import Bang.Backend.AbstractMachine
+meta import Bang.Witness.AgreeOutcome
+public import Bang.Backend.AbstractMachine
+public import Bang.Witness.AgreeOutcome
+
+/-!
   Bang/Witness/Fuzz.lean — differential fuzz: `Source.eval` vs `exec ∘ compile` (#14).
 
   The proven equivalence (`compile_correct` + `evalD_agrees_source`, AbstractMachine.lean)
@@ -24,13 +31,6 @@
   index-out-of-range / wrong-op stuck noise unrelated to the property under test — the same
   "make the bad state unrepresentable" move the kernel itself uses for capability dispatch.
 -/
-
-module
-
-meta import Bang.Backend.AbstractMachine
-meta import Bang.Witness.AgreeOutcome
-public import Bang.Backend.AbstractMachine
-public import Bang.Witness.AgreeOutcome
 
 namespace Bang.Fuzz
 

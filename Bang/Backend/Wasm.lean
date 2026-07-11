@@ -1,4 +1,13 @@
-/-
+module
+
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+public import Bang.Backend.AbstractMachine
+public import Bang.Core.Freshness
+public import Bang.Backend.U5bComplete
+
+/-!
   Bang/Compile.lean — WasmFX target + compilation primitives (◊5, ADR-0035).
   ─────────────────────────────────────────────────────────────
     §7 Wasmfx.* — Ty, Val, Instr, Module, run, WellTyped, MentionsLocal,
@@ -33,15 +42,6 @@
   lands with no AST migration. The tracer effect maps to a generator
   suspend/resume (NOT `throws`→`resume_throw`, unimplemented in Wasmtime
   #10248) — Milestone B. -/
-
-module
-
-public import Bang.Core.IR
-public import Bang.Core.Typing
-public import Bang.Core.Semantics
-public import Bang.Backend.AbstractMachine
-public import Bang.Core.Freshness
-public import Bang.Backend.U5bComplete
 
 namespace Bang
 

@@ -1,4 +1,9 @@
-/-
+module
+
+public import Bang.Core.IR
+public import Bang.Core.Typing
+
+/-!
   Bang/Operational/Subst.lean — de Bruijn substitution + shift (ADR-0020).
   ─────────────────────────────────────────────────────────────────────────
     §1.3a  Val/Comp/Handler.shiftFrom · substFrom · subst · shift (mutual)
@@ -8,11 +13,6 @@
   Eval, Invariants. Split out of the former monolithic Bang/Operational.lean
   (the fan-in-11 hub) per core-overview.md §6; behavior-preserving MOVE.
 -/
-
-module
-
-public import Bang.Core.IR
-public import Bang.Core.Typing
 
 namespace Bang
 

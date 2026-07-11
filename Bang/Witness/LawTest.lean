@@ -1,4 +1,13 @@
-/-
+module
+
+meta import Bang.Frontend.TypeCheck
+meta import Bang.Core.Semantics
+meta import Bang.Witness.Fuzz
+public import Bang.Frontend.TypeCheck
+public import Bang.Core.Semantics
+public import Bang.Witness.Fuzz
+
+/-!
   Bang/Witness/LawTest.lean — `bang test`'s CORE (#60): the law runner + derived generators +
   shrinking, as a plain module with NO CLI wiring (that is a follow-up slice, exactly like
   `fmt`/`check`'s own subcommand landings).
@@ -28,15 +37,6 @@
   PRNG (one construct per problem), and stays a plain `module` (no `Plausible.Gen`, which is
   `public meta section` and cannot call the runtime frontend entries in the same phase).
 -/
-
-module
-
-meta import Bang.Frontend.TypeCheck
-meta import Bang.Core.Semantics
-meta import Bang.Witness.Fuzz
-public import Bang.Frontend.TypeCheck
-public import Bang.Core.Semantics
-public import Bang.Witness.Fuzz
 
 namespace Bang.LawTest
 

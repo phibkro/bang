@@ -1,4 +1,13 @@
-/-
+module
+
+-- The #guards below run `Source.eval` (compiled Operational code) at the META phase,
+-- so Operational must be `meta import`ed in addition to the runtime import (Phase-1a
+-- escape for the cross-module #guard codegen wall).
+meta import Bang.Core.Semantics
+public import Bang.Core.Semantics
+public import Bang.Core.Grade
+
+/-!
   Bang/LWRegress.lean — ADR-0054 behavioral regression suite (NonEscape's operational oracle).
   ─────────────────────────────────────────────────────────────────────────────────
   Carries the cap-assignment witnesses forward onto the IDENTITY-dispatch kernel (ADR-0054). The old
@@ -18,14 +27,6 @@
 
   Imports ONLY `Bang.Semantics` + `Bang.Grade`.
 -/
-module
-
--- The #guards below run `Source.eval` (compiled Operational code) at the META phase,
--- so Operational must be `meta import`ed in addition to the runtime import (Phase-1a
--- escape for the cross-module #guard codegen wall).
-meta import Bang.Core.Semantics
-public import Bang.Core.Semantics
-public import Bang.Core.Grade
 
 namespace Bang.LWRegress
 

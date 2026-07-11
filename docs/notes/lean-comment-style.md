@@ -32,9 +32,12 @@
 
 - **Convention: adopted now** (this file; referenced from `CLAUDE.md` and the
   `codebase-maintenance` instance — docs rung). New/edited declarations follow it.
-- **Banner promotion (`/- → /-!`): DEFERRED** — a mechanical ~20-module sweep that touches
-  every `Bang/*.lean` banner. Do it as one discrete pass once the LR re-index settles (it
-  would otherwise collide with in-flight proof edits). Optional enforcement later: Mathlib's
-  `docBlame`/`docBlameThm` linters for docstring coverage, and/or a banner-form check.
+- **Banner promotion (`/- → /-!`): LANDED** (plan 010, sweep lane). 40 `Bang/**/*.lean`
+  banners promoted to `/-!` module docstrings so every §-map renders in `just docs` / hover.
+  NOTE the module-system subtlety this sweep uncovered: under `module` + `public import`, a
+  `/-!` docstring is a COMMAND and must sit AFTER the imports (a `/-!` before `import` is a
+  parse error). So the sweep RELOCATED each banner to just below the import header — it was
+  not a pure delimiter swap. Optional enforcement later: Mathlib's `docBlame`/`docBlameThm`
+  linters for docstring coverage, and/or a banner-form check.
 - **Pairs with doc-gen4 / lean-lsp-mcp** (the Lean symbol-intelligence path): both consume
   `/--` + `/-!`, so this convention is what makes those tools' output rich.

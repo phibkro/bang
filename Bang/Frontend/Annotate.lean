@@ -1,4 +1,9 @@
-/-
+module
+
+meta import Bang.Frontend.Query
+public import Bang.Frontend.Query
+
+/-!
   Bang/Frontend/Annotate.lean — the `bang annotate` rewrite (#82 item 1): infer types AND effect
   rows for top-level decls, emit explicit ascriptions.
   ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -78,10 +83,6 @@
   change, no new checking behavior — every fact consumed here is already computed by the existing
   pipeline `bang query` exposes.
 -/
-module
-
-meta import Bang.Frontend.Query
-public import Bang.Frontend.Query
 
 open Bang
 open Bang.Surface (Decl Prog Surf Ty)

@@ -1,4 +1,10 @@
-/-
+module
+
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+
+/-!
   Bang/Metatheory.lean — syntactic metatheory over the de Bruijn graded CBPV (ADR-0020).
   ──────────────────────────────────────────────────────────────────────────────
   The pre-ADR-0020 NAMED metatheory (Finsupp `single`/`erase`, `(x,A) ∈ Γ` membership,
@@ -7,12 +13,6 @@
   substitution. Layout: A grade-arithmetic · B length invariant · C weakening/shift ·
   D substitution · E the STD block (preservation/progress/type_safety) · F abstraction-safety.
 -/
-
-module
-
-public import Bang.Core.IR
-public import Bang.Core.Typing
-public import Bang.Core.Semantics
 
 namespace Bang
 

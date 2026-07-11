@@ -1,4 +1,12 @@
-/-
+module
+
+meta import Bang.Frontend.Query
+public import Bang.Frontend.Query
+public import Bang.Frontend.Format
+meta import Bang.Frontend.Annotate
+public import Bang.Frontend.Annotate
+
+/-!
   Bang/Frontend/Rewrite.lean — the `bang rewrite` command side: pure `Prog → Prog` transforms
   over the QUERY fact base (#81, the CQS command half over #80's query/read-model half).
   ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -57,13 +65,6 @@
   type checker itself (that is the PRESERVATION GATE's job, at the CLI layer, over the ALREADY-
   EXISTING `checkAndLowerProg`).
 -/
-module
-
-meta import Bang.Frontend.Query
-public import Bang.Frontend.Query
-public import Bang.Frontend.Format
-meta import Bang.Frontend.Annotate
-public import Bang.Frontend.Annotate
 
 open Bang
 open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Ty)

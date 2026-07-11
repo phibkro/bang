@@ -1,4 +1,12 @@
-/-
+module
+
+-- `#guard` runs at the META phase (same seam Fuzz.lean's header documents), so the
+-- runtime `public import` needs a matching `meta import` for the constructors used
+-- inside `#guard` terms to be visible there too.
+meta import Bang.Backend.AbstractMachine
+public import Bang.Backend.AbstractMachine
+
+/-!
   Bang/Witness/AgreeOutcome.lean — differential-over-OUTCOMES (#54, ⭐ half).
 
   `Agree` (AbstractMachine.lean) and `FuzzAgree`/`fuzzAgree` (Fuzz.lean) both compare the
@@ -25,14 +33,6 @@
   Scope: OBSERVING the calculated machine, never patching it. Zero edits to
   AbstractMachine.lean/Fuzz.lean/Core/Frontend/TypeCheck (out of this lane's remit).
 -/
-
-module
-
--- `#guard` runs at the META phase (same seam Fuzz.lean's header documents), so the
--- runtime `public import` needs a matching `meta import` for the constructors used
--- inside `#guard` terms to be visible there too.
-meta import Bang.Backend.AbstractMachine
-public import Bang.Backend.AbstractMachine
 
 namespace Bang.AgreeOutcome
 

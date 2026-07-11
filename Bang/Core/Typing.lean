@@ -1,4 +1,8 @@
-/-
+module
+
+public import Bang.Core.IR
+
+/-!
   Bang/Syntax.lean — typing judgments + grade discipline + row well-formedness.
   ─────────────────────────────────────────────────────────────────────────────
   Sits between Bang.IR (raw types) and Bang.Semantics (executes terms).
@@ -9,10 +13,6 @@
 
   Theorem STATEMENTS live in Bang/Spec.lean.
 -/
-
-module
-
-public import Bang.Core.IR
 
 namespace Bang
 

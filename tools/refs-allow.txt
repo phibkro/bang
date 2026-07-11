@@ -95,6 +95,13 @@ scratch/DecompFreshStrip.lean
 scratch/KrelSLengthProbe.lean
 scratch/CrelKUpVacuityProbe.lean
 
+# ── I. The generated doc-gen4 barrel (plan 010) ───────────────────────────────────
+# docbuild/BangDocs.lean is REGENERATED on every `just docs` run and git-ignored
+# (.gitignore:44) — a doc-only barrel that gives doc-gen4 a rooted module set (the
+# parent Bang lib is a rootless glob → "0 root modules"). plans/README.md row 010
+# names it in prose. Intentionally absent from the tracked tree; not stale.
+docbuild/BangDocs.lean
+
 # ── H. #52 hover design-probe spike, adopted then deleted ──────────────────────────
 # docs/notes/spanned-surf-design.md §5 narrates Bang/Frontend/HoverSpike.lean, the working
 # spike that PROVED decl-granularity hover composes before slice 5 (bang query hover) was

@@ -1,4 +1,15 @@
-/-
+module
+
+-- The lexical-cap regression `#guard`s (capMigrate*) run `Source.eval` (compiled
+-- code) at the META phase, so the modules providing the compiled call-chain —
+-- Subst (Comp.substFrom) and Dispatch (idDispatch/dispatchOn) — must be `meta
+-- import`ed in addition to the runtime `public import` (the Phase-1a escape for
+-- the cross-module #guard codegen wall; same shape as Bang/LWRegress.lean).
+meta import Bang.Core.Semantics.Subst
+meta import Bang.Core.Semantics.Dispatch
+public import Bang.Core.Semantics.Dispatch
+
+/-!
   Bang/Operational/Eval.lean — the CK machine (ADR-0023/0055).
   ─────────────────────────────────────────────────────────────────────────
     §2   Result · Source.step · StepStar · NonEscape(') · HasConfig(')
@@ -12,17 +23,6 @@
   live in Bang/Spec.lean. Split out of Bang/Operational.lean per
   core-overview.md §6; behavior-preserving MOVE.
 -/
-
-module
-
--- The lexical-cap regression `#guard`s (capMigrate*) run `Source.eval` (compiled
--- code) at the META phase, so the modules providing the compiled call-chain —
--- Subst (Comp.substFrom) and Dispatch (idDispatch/dispatchOn) — must be `meta
--- import`ed in addition to the runtime `public import` (the Phase-1a escape for
--- the cross-module #guard codegen wall; same shape as Bang/LWRegress.lean).
-meta import Bang.Core.Semantics.Subst
-meta import Bang.Core.Semantics.Dispatch
-public import Bang.Core.Semantics.Dispatch
 
 namespace Bang
 

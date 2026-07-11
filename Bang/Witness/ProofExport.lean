@@ -1,4 +1,17 @@
-/-
+module
+
+-- `meta import`s bring the COMPILED frontend/witness code into the elaboration phase so the `#guard`
+-- gates below can NATIVELY evaluate `exportGoal` (which calls `elaborateToComp`/`typeStringOfProg`/
+-- `wrapLawBody`); `public import`s re-export the same modules for this file's own public signatures.
+-- Same two-phase pattern as `ElabFuzz.lean`/`LawTest.lean` (a leaf over the public frontend).
+meta import Bang.Frontend.TypeCheck
+meta import Bang.Core.Semantics
+meta import Bang.Witness.LawTest
+public import Bang.Frontend.TypeCheck
+public import Bang.Core.Semantics
+public import Bang.Witness.LawTest
+
+/-!
   Bang/Witness/ProofExport.lean — Q43 R1: a bang `law` becomes a Lean PROOF GOAL (arm B, with
   `sorry`). The GOAL EMITTER only — no proof discharge, no cache infra (those are R2/R3).
   ───────────────────────────────────────────────────────────────────────────────────────────
@@ -28,19 +41,6 @@
   (`Bang.Surface.{exn,state,stm,div}Label`). (The earlier string-suffix reading of `typeStringOfProg`
   is retired — the structured `EffRow` decision replaces it.)
 -/
-
-module
-
--- `meta import`s bring the COMPILED frontend/witness code into the elaboration phase so the `#guard`
--- gates below can NATIVELY evaluate `exportGoal` (which calls `elaborateToComp`/`typeStringOfProg`/
--- `wrapLawBody`); `public import`s re-export the same modules for this file's own public signatures.
--- Same two-phase pattern as `ElabFuzz.lean`/`LawTest.lean` (a leaf over the public frontend).
-meta import Bang.Frontend.TypeCheck
-meta import Bang.Core.Semantics
-meta import Bang.Witness.LawTest
-public import Bang.Frontend.TypeCheck
-public import Bang.Core.Semantics
-public import Bang.Witness.LawTest
 
 namespace Bang.ProofExport
 

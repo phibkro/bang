@@ -1,10 +1,3 @@
-/-
-  Compat.lean — the Phase-B target list.
-  `lr_fundamental` (Spec.lean) = induction over the typing derivation, one case
-  per rule, each discharged by the matching lemma below. Proving all of these
-  (in PROOF_ORDER) IS proving the fundamental theorem.
-
--/
 -- Compat is a proof module UPSTREAM of Spec (sibling to Metatheory): Spec wires its frozen
 -- `lr_fundamental`/`lr_sound` statements to the proofs assembled here (`:= lr_fundamental_proof`,
 -- exactly as `preservation := preservation_proof`). So we import the DEFINITION layers, not Spec
@@ -17,6 +10,14 @@ public import Bang.Core.Typing
 public import Bang.Core.Semantics
 public import Bang.Meta.LR
 public import Bang.Core.Soundness
+
+/-!
+  Compat.lean — the Phase-B target list.
+  `lr_fundamental` (Spec.lean) = induction over the typing derivation, one case
+  per rule, each discharged by the matching lemma below. Proving all of these
+  (in PROOF_ORDER) IS proving the fundamental theorem.
+
+-/
 
 namespace Bang
 

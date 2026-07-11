@@ -1,4 +1,12 @@
-/-
+module
+
+-- Trait's #guards/#eval run the law checkers (`runPair`, `Law.isVerified`, `fullReport`),
+-- which execute `Source.eval` (compiled Operational) at the META phase → meta import it
+-- (transitive dep via Surface).
+meta import Bang.Core.Semantics
+public import Bang.Frontend.Surface
+
+/-!
   Bang/Surface/Trait.lean — first-class, enforced, algebraic-interface LAWS.
   ─────────────────────────────────────────────────────────────────────────
   THE surface for traits-with-laws (design-space #5; ADR-0026/0027). A trait is
@@ -33,14 +41,6 @@
   This module is ADDITIVE surface sugar over the existing kernel — zero kernel
   edits. Direct dispatch = a direct call; a `law` = a discharged `Prop`.
 -/
-
-module
-
--- Trait's #guards/#eval run the law checkers (`runPair`, `Law.isVerified`, `fullReport`),
--- which execute `Source.eval` (compiled Operational) at the META phase → meta import it
--- (transitive dep via Surface).
-meta import Bang.Core.Semantics
-public import Bang.Frontend.Surface
 
 namespace Bang.Surface.Trait
 
