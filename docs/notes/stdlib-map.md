@@ -71,7 +71,8 @@ List a             functor/monoid/fold laws      HM/HKT      ◑ generic `List a
                                                               no ∀a top-level generalization; #105 list-prelude
                                                               lane, 2026-07-11, machine-confirmed
                                                               `unknown type name 'a'` — see
-                                                              `stdlib-prelude-survey.md` §2 gate-map correction).
+                                                              `stdlib-prelude-survey.md` §2 gate-map correction
+                                                              and **issue #120** (the escalated fork).
                                                               Only the trait-BOUNDED `fold` (ADR-0080, needs
                                                               e.g. `Monoid a`) and the MONOMORPHIC-per-program
                                                               idiom (`let rec length : List Int -> Int = …`,

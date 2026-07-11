@@ -95,7 +95,8 @@ elements). **Every row below is re-classed (b), gated on this wall** — the "cl
 that follow are the STALE per-program-only reasoning, kept for their `! {Div}`/arity/shape
 analysis (still correct once a real ∀-generalization or a bound-free ADR-0080 relaxation exists)
 but WRONG about prelude-level supplyability. See `stdlib-map.md`'s List-a row for the corrected
-status and the filed issue this wall was escalated to.
+status and **issue #120** (the ∀a-generalization-vs-bound-free-`where` fork) this wall was
+escalated to — a kernel-adjacent typing-rule decision, out of this survey's/this lane's scope.
 
 ```
 construct           class  wall / note (all citing docs/reference/language.md unless marked)
