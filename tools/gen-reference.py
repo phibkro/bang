@@ -187,7 +187,7 @@ def extract_result_ctors(text):
 # carries NO section markers (it is comment-free, matching the examples/*.bang convention: `bang
 # fmt` strips `--` comments, so a commented module permanently fails `bang lint`'s
 # `fmt-divergence` check), so the split is this fixed NAME set instead of a text boundary.
-STDLIB_NAMES = {"concat", "reverse", "eq"}
+STDLIB_NAMES = {"concat", "reverse", "eq", "strLength"}
 
 
 def extract_prelude_decl_names(prelude_text):
@@ -770,6 +770,15 @@ def render():
     for name, sig in extract_generic_prelude(prelude_text, prelude_sigs):
         cell = f"`{sig}`" if sig else "— (see `Prelude.bang`)"
         L.append(f"| `{name}` | {cell} |")
+    L.append("")
+    L.append("**Bound-free generics** (`take`/`drop`/`length`/`append`/`zip`/`range`/`replicate` — no")
+    L.append("trait bound, a free element-type variable) need their instantiation ANCHORED at each call")
+    L.append("site by an explicit annotation on the argument that DIRECTLY carries the free variable")
+    L.append("(ADR-0103 — a monomorphization pre-pass, never a guess, R6's finiteness discipline): a")
+    L.append("`List a`-typed argument needs `(xs : List Int)`, a bare `a`-typed argument (`replicate`'s")
+    L.append("element) needs `(x : Int)` directly, not an annotation on the CALL'S result. An")
+    L.append("un-annotated call that leaves a free variable unresolved is a loud, self-teaching error")
+    L.append("naming the fix, never a silent guess.")
     L.append("")
 
     L.append("## Examples")

@@ -5468,6 +5468,7 @@ Prelude.bang` flag every one). Consistency with the RUNNING code is enforced by 
 signature drifting from reality breaks a `#guard`, not silently. -/
 def preludeSigs : List (String × String) :=
   [ ("concat", "Str -> Str -> Str"),
+    ("strLength", "Str -> Int"),
     ("eq", "Str -> Str -> Unit + Unit"),
     ("mapOption", "(a -> b) -> Option a -> Option b"),
     ("mapResult", "(a -> b) -> Result e a -> Result e b"),
@@ -5493,7 +5494,10 @@ def preludeSigs : List (String × String) :=
     ("length", "List a -> Int"),
     ("append", "List a -> List a -> List a"),
     ("head", "List a -> Option a"),
-    ("tail", "List a -> Option (List a)") ]
+    ("tail", "List a -> Option (List a)"),
+    ("zip", "List a -> List b -> List (a * b)"),
+    ("range", "Int -> Int -> List Int"),
+    ("replicate", "Int -> a -> List a") ]
 
 /-- Auto-`use` the prelude into `p` (ADR-0098): merge a TRIMMED `preludeProg` — containing only the
 decls the program actually MENTIONS (`progUsesVar`) — in as a resolved module named `"Prelude"`,
@@ -7097,6 +7101,24 @@ close; `reverse` staying `Div` here is the CORRECT conservative verdict, not a b
 #guard runTypedYieldsInt 3000 "if (($eq) \"ab\" \"ba\") then 1 else 0" 0
 #guard runTypedYieldsInt 3000 "if (($eq) \"a\" \"ab\") then 1 else 0" 0
 #guard runTypedYieldsInt 3000 "if (($eq) \"\" \"\") then 1 else 0" 1
+-- `strLength` — the PRELUDE'S OWN entry (distinct from `lengthDef`'s local test fixture above,
+-- which every `List`-family guard in this file uses for a DIFFERENT reason — `length : List a ->
+-- Int` already owns the bare `length` name, so a `Str`-specific counterpart needed a non-colliding
+-- name, `strLength`, #144). Same structural-fold shape as `lengthDef`, now shipped for real.
+#guard runTypedYieldsInt 3000 "($strLength) \"abc\"" 3
+#guard runTypedYieldsInt 3000 "($strLength) \"\"" 0
+#guard runTypedYieldsInt 3000 "($strLength) (($concat) \"ab\" \"cd\")" 4
+-- `strLength` certifies `Div` (conservative, NOT the `lengthDef` fixture's TOTAL verdict a few
+-- guards above — that fixture's own `let rec length : Str -> Int = fun s => match s { … }` has a
+-- BARE `s` scrutinee, its type known directly from `length`'s OWN top-level ascription, no
+-- `.annotS` wrapper). `Prelude.bang`'s `strLength` NEEDS the `(s : Str)` ascription (a `pub let
+-- rec`'s body has no per-caller-visible domain to fall back on the same way — same reason
+-- `take`/`drop`/`append`/`length`'s OWN `List a` entries all ascribe their scrutinee too) — and
+-- `scrutMatch` (this file) only recognizes a BARE `.var` scrutinee, never an `.annotS`-wrapped one,
+-- so `structOK` correctly stays conservative rather than guess through the ascription — the EXACT
+-- same documented gap `reverse`'s own doc comment names a few lines up, not a new mystery. Still
+-- runs CORRECTLY (the guards above); just Div-typed, like `reverse`.
+#guard (match checkProg "($strLength) \"abc\"" with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
 -- ADR-0091: USING `concat` no longer forces `Div` — the checker now certifies its curried-accumulator
 -- shape directly (slot 0 descends on `a`'s strict subterm `t`; slot 1's `b` rides free every call).
 -- FALSIFIED (documented, not asserted here — see the multi-arg regression corpus below for the
@@ -7613,6 +7635,23 @@ free `a` unresolved — `monomorphizeLetRec` only visits `.letRecS` nodes). -/
    "{ None -> 0 - 1, Some(t) -> $length (t : List Int) }") 1
 #guard runTypedYieldsInt 400
   "match ($tail ((Nil : List Int) : List Int)) { None -> 0 - 1, Some(t) -> $length (t : List Int) }" (0 - 1)
+-- `range` — build `[lo, hi)`, verify via `length` (the empty range AND a non-empty one).
+#guard runTypedYieldsInt 400 "$length ((($range 0) 0 : List Int) : List Int)" 0
+#guard runTypedYieldsInt 800 "$length ((($range 0) 5 : List Int) : List Int)" 5
+-- `replicate` — the annotation anchors on the ELEMENT argument directly (`(x : Int)`), NOT the
+-- call's result — `replicate`'s free tyvar sits in a BARE (non-`List`-wrapped) argument position,
+-- the one shape `take`/`drop`/`append`'s own `List a`-wrapped anchor doesn't cover; verified via
+-- `length` (count) and `head` (every element is the replicated value).
+#guard runTypedYieldsInt 800 "$length (($replicate 3) (7 : Int) : List Int)" 3
+#guard runTypedYieldsInt 800
+  "match ($head (($replicate 3) (7 : Int) : List Int)) { None -> 0 - 1, Some(v) -> v }" 7
+-- `zip` — TWO free tyvars, one per `List`-wrapped argument (both need their OWN annotation, not
+-- one on the shared result) — pairs elementwise, truncating to the shorter list; verified by
+-- summing both components of a `Cons`'d-together result via `head`+`fst`/`snd`.
+#guard runTypedYieldsInt 1200
+  ("let xs = (($range 0) 3 : List Int) in let ys = (($replicate 3) (10 : Int) : List Int) in " ++
+   "match ($head (($zip (xs : List Int)) (ys : List Int) : List (Int * Int))) " ++
+   "{ None -> 0 - 1, Some(p) -> let (a, b) = p in a + b }") 10
 -- a DIFFERENTLY-named list-shaped type with the SAME bare `Nil`/`Cons` ctor names collides with the
 -- injected `List` (B012, ADR-0099) — the ratified migration cost, not a silent break (qualified
 -- form still resolves, `IntList_Nil`/`IntList_Cons`, mirroring Validation ⑨a's `collidingListsProg`).
