@@ -7,7 +7,7 @@ pub let rec lookup : Str -> Ast_Env -> Int ! {Div} =
         EnvNil -> 0,
         EnvCons(k, p) -> let (v, rest) = p in if $eq k name then v else $lookup name rest
       }
-pub let rec eval : Cap Eval_Trace -> Ast_Env -> Ast_Expr -> Int ! {Div, Eval_Trace} =
+pub let rec eval : Cap Trace -> Ast_Env -> Ast_Expr -> Int ! {Div, Trace} =
   fun tr =>
     fun env =>
       fun e =>
@@ -21,7 +21,7 @@ pub let rec eval : Cap Eval_Trace -> Ast_Env -> Ast_Expr -> Int ! {Div, Eval_Tra
           ENeg(a) -> 0 - $eval tr env a,
           EErr -> 0
         }
-pub let rec countSteps : Cap Eval_Trace -> Ast_Expr -> Int ! {Div, Eval_Trace} =
+pub let rec countSteps : Cap Trace -> Ast_Expr -> Int ! {Div, Trace} =
   fun tr =>
     fun e =>
       let self = tr.log(1)
