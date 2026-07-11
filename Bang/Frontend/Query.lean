@@ -226,13 +226,27 @@ provenance post-merge — `Main.lean`'s resolver-aware dump threads it in separa
 `moduleOfDecl` usage at the CLI layer) — `declFactsOf` alone (single-file, no resolver) is honest
 with `module := none` throughout. -/
 public structure DeclFact where
+  /-- The decl's top-level name (`Decl.name`). -/
   name      : String
+  /-- Which of the 7 `Decl` constructors this is (`DeclKind.of`). -/
   kind      : DeclKind
+  /-- The decl's rendered type, `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
+  type-checks — see this structure's own doc comment for the full `type`/`row`/`typeError`
+  three-way split. -/
   type      : Option String
+  /-- The decl's rendered effect row, alongside `type` (`some` under the same condition). -/
   row       : Option String
+  /-- The checker's error message, `some` when a value-typed decl's `type`/`row` came back `none`
+  because type-checking FAILED (as opposed to `none` because this decl kind has no value-level
+  type at all) — the disambiguation this structure's own doc comment names. -/
   typeError : Option String
+  /-- The non-value kinds' structural summary (`declShapeJson`), or a bounded `fnD`'s header;
+  `none` for a plain `let`/`letRec`. -/
   shape     : Option String   -- pre-rendered JSON (already a value, not a raw string — see `toJson`)
+  /-- Is this decl `pub` (exported)? -/
   pub       : Bool
+  /-- The decl's owning module name, `none` at this layer (a flat `Prog` has no per-decl module
+  provenance post-merge) — `Main.lean`'s resolver-aware dump overlays it separately. -/
   module    : Option String
   deriving Repr
 
@@ -294,61 +308,16 @@ public def declBodies : Decl → List Surf
   | .letD _ _ e         => [e]
   | .letRecD _ _ e      => [e]
 
-/-! Does `e` mention variable `nm` anywhere in its tree? Mirrors `TypeCheck.surfUsesVar`/
-`dArmsUseVar`/`letBindingsUseVar` arm-for-arm (the #73-walk precedent, `TypeCheck.lean`) — copied
-rather than imported since the source is a private `TypeCheck.lean` internal and this is a small,
-CLOSED structural recursion over an already-public inductive (zero typing logic, so a copy cannot
-drift into a different SEMANTICS the way a re-derived TYPE rule could). Covers EVERY `Surf`/
-`DArms`/`SurfArgs`/`LetBindings` constructor, `lettMulti` included.
-
-`surfUsesVar` itself is `public` (a #82 `bang lint` need: dead-decl detection needs the program's
-OWN trailing `body`'s references, which `nameRefEdgesOf`'s decl-to-decl edges alone don't cover —
-a pure additive-visibility change, the SAME move `declMentionsVar`/`EffectInfo` already made, no
-new logic). -/
-mutual
-public def surfUsesVar (nm : String) : Surf → Bool
-  | .var x                         => x == nm
-  | .lit _ | .getS | .unitS        => false
-  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => surfUsesVar nm e
-  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
-  | .binopS _ a b                  => surfUsesVar nm a || surfUsesVar nm b
-  | .matchS s _ l _ r              => surfUsesVar nm s || surfUsesVar nm l || surfUsesVar nm r
-  | .ifS c t e                     => surfUsesVar nm c || surfUsesVar nm t || surfUsesVar nm e
-  | .matchD s arms                 => surfUsesVar nm s || dArmsUseVar nm arms
-  | .withCapS _ i _ b              => surfUsesVar nm i || surfUsesVar nm b
-  | .dotPerform r _ .none          => surfUsesVar nm r
-  | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
-  | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
-  -- ADR-0104 §4 the host-provision reach (#126, landed post-copy): `hostPerformS` mirrors
-  -- `TypeCheck.surfUsesVar`'s own arm — no binder, ordinary structural recursion.
-  | .hostPerformS _lbl n _ .none      => surfUsesVar nm n
-  | .hostPerformS _lbl n _ (.one a)   => surfUsesVar nm n || surfUsesVar nm a
-  | .hostPerformS _lbl n _ (.two a b) => surfUsesVar nm n || surfUsesVar nm a || surfUsesVar nm b
-  | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
-  | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
-  -- ADR-0095 (landed post-copy, #21 s7probe rebase fix): `handleCustomS` mirrors
-  -- `TypeCheck.surfUsesVar`'s own arm — `x`/`h` are binders (a clause's arg / the cap name),
-  -- NOT modeled for shadowing, matching every other binder site in this copy.
-  | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
-  | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
-  | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
-  -- #97 item 2 (landed post-copy): `letRecMultiS` mirrors `TypeCheck.surfUsesVar`'s own arm —
-  -- sibling names are binders, not modeled for shadowing, matching this copy's own discipline.
-  | .letRecMultiS binds b          => letRecBindingsUseVar nm binds || surfUsesVar nm b
-def dArmsUseVar (nm : String) : DArms → Bool
-  | .nil             => false
-  | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
-def letBindingsUseVar (nm : String) : LetBindings → Bool
-  | .nil            => false
-  | .cons _ e rest  => surfUsesVar nm e || letBindingsUseVar nm rest
-def hClausesUseVar (nm : String) : HClauses → Bool
-  | .nil               => false
-  | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
-def letRecBindingsUseVar (nm : String) : LetRecBindings → Bool
-  | .nil               => false
-  | .cons _ _ e rest   => surfUsesVar nm e || letRecBindingsUseVar nm rest
-end
+/-- **PUBLIC (issue #83):** does `e` mention variable `nm` anywhere in its tree? A thin RE-EXPORT of
+`Bang.TypeCheck.surfUsesVar` — ONE authoritative structural-walk home, not a second implementation.
+This module used to carry a byte-identical COPY (the #73-walk precedent) on the belief that
+importing `TypeCheck.lean`'s private original back here would cycle — but `Query.lean` already
+imports `TypeCheck.lean` TRANSITIVELY (`Query.lean` → `Diagnostics.lean` → `TypeCheck.lean`), so
+that import direction was never circular; only the ORIGINAL's own visibility (`private def`) was
+the blocker, fixed by marking it `public` at its one true home. A copy's failure mode was silent
+skew (`Stage-7`'s `handleCustomS` broke this file's exhaustive match on its own copy — fail-loud
+caught it, but at the cost of a hand-sync every constructor addition now avoids). -/
+public def surfUsesVar (nm : String) : Surf → Bool := Bang.TypeCheck.surfUsesVar nm
 
 #guard surfUsesVar "x" (.var "x") == true
 #guard surfUsesVar "x" (.var "y") == false
@@ -363,8 +332,10 @@ public def declMentionsVar (nm : String) (d : Decl) : Bool :=
 /-- **PUBLIC (TIER 1) library API:** ONE name-reference EDGE — `from` is a REFERENCING decl's own
 name, `to` is the referenced name. DECL granularity (position-addressing is OUT, #52). -/
 public structure RefEdge where
-  src : String   -- the REFERENCING decl's own name (avoids the `from`/`to` reserved-word clash)
-  tgt : String   -- the REFERENCED name
+  /-- The REFERENCING decl's own name (`src`/`tgt` avoid the `from`/`to` reserved-word clash). -/
+  src : String
+  /-- The REFERENCED name. -/
+  tgt : String
   deriving Repr
 
 -- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
@@ -646,7 +617,9 @@ def atOrAfter (line col : Nat) (sp : Span) : Bool :=
 `symbols`/`dump` use — zero new checking) paired with the `Span` of its NAME TOKEN, the anchor a
 cursor query compares against. `public`: the return type of `hoverAtP`, a Tier-1 entry. -/
 public structure HoverFact where
+  /-- The decl's fact record — the SAME per-decl type/error/kind rendering `symbols`/`dump` use. -/
   fact     : DeclFact
+  /-- The `Span` of the decl's NAME TOKEN — the anchor a cursor-position query compares against. -/
   nameSpan : Span
   deriving Repr
 

@@ -53,11 +53,21 @@ def contains (hay needle : String) : Bool :=
 diagnostic (so the battery can run it and assert the code appears); `none` for a runtime-only
 terminal (e.g. escaped-cap) whose trigger needs `bang run`, not `bang check`, noted in `teaching`. -/
 structure DiagEntry where
+  /-- The stable code (`"B012"`, …) — outlives the message wording, the rustc `error[E0499]`
+  pattern this registry retrofits onto every existing diagnostic message. -/
   code     : String
-  anchors  : List String   -- ALL must be substrings of a message for it to carry this code
-  summary  : String        -- one line
-  teaching : String        -- the explanation `bang explain` prints
-  example? : Option String  -- a minimal triggering source string (for `check`), or none (runtime)
+  /-- ALL of these substrings must appear in a diagnostic message for it to carry this entry's
+  `code` (`DiagEntry.matches`) — stable across the message's own dynamic interpolation. -/
+  anchors  : List String
+  /-- The one-line summary `bang explain` prints as its header, alongside `code`. -/
+  summary  : String
+  /-- The full explanation `bang explain` prints below `summary` — why the diagnostic fires and
+  how to resolve it. -/
+  teaching : String
+  /-- A minimal source string that TRIGGERS this diagnostic (so the battery can run it and assert
+  the code appears), or `none` for a runtime-only terminal (e.g. escaped-cap) whose trigger needs
+  `bang run`, not `bang check` — noted in `teaching` when `none`. -/
+  example? : Option String
   deriving Repr
 
 /-- The registry — the SINGLE SOURCE OF TRUTH for diagnostic codes. ORDER IS SPECIFICITY: an entry
@@ -201,7 +211,20 @@ def registry : List DiagEntry := [
         ++ "`($f) arg`. This is the single most common trigger of the older generic \"not a "
         ++ "returner\" message, which suggested `$f` — that doesn't parse here (`$` forces a THUNK "
         ++ "to a value; a bare `fun` was never a thunk to begin with)."
-    example? := some "let double = fun x => x + x\nlet main = double" }
+    example? := some "let double = fun x => x + x\nlet main = double" },
+  { code := "B016"
+    anchors := ["looks like it was folded in as an application argument"]
+    summary := "a top-level `let` with no `in` absorbed the next line as an application (issue #129)"
+    teaching :=
+      "A top-level `let name = e` with no trailing `in` parses `e` with the SAME juxtaposition-"
+        ++ "application grammar an ordinary call site uses — a bare newline carries no meaning "
+        ++ "(ADR-0046). So `let x = 3` followed on the next line by `let y = 4` followed by `x + y` "
+        ++ "folds `4` against the following line's leading token before that line's own `let` "
+        ++ "boundary is found, producing `4 x` (`.app`) instead of two separate declarations. Add a "
+        ++ "trailing `in` to end the RHS on the SAME line (`let name = e in …`, script mode), or make "
+        ++ "sure the value after `=` is followed IMMEDIATELY by the next `let`/decl keyword with "
+        ++ "nothing else on that line (top-level-decl mode, ADR-0093)."
+    example? := some "let x = 3\nlet y = 4\nx + y" }
 ]
 
 /-! ## 3. The two total functions over the registry. -/
@@ -245,6 +268,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "wildcard arm '_' needs at least one explicit constructor arm to name the match's data type" == some "B014"
 #guard codeForMsg "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)" == some "B014"
 #guard codeForMsg "let-binding 'double': a bare function is a computation (a \"returner\"), not a value — a top-level `let` binds a VALUE, so wrap it in a thunk: `let double = {fun … => …}` (see `examples/caesar`)" == some "B015"
+#guard codeForMsg "app: callee is not a function — '4' is a literal, never a callable; the next line's `x` looks like it was folded in as an application argument. A top-level `let` needs `in` to end its RHS on the SAME line" == some "B016"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none
@@ -254,6 +278,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard (explain "b004").map (·.code) == some "B004"
 #guard (explain "B999").isNone
 #guard (explain "B015").map (·.code) == some "B015"
+#guard (explain "B016").map (·.code) == some "B016"
 
 -- codes are UNIQUE (a duplicate would make `explain` ambiguous).
 #guard (registry.map (·.code)).eraseDups.length == registry.length

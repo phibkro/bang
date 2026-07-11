@@ -47,16 +47,16 @@ graph TD
     Core_Typing["Core.Typing<br/>510L · fan-in 0"]
     Examples["Examples<br/>510L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>262L · fan-in 0"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>287L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>1116L · fan-in 0"]
-    Frontend_Lint["Frontend.Lint<br/>213L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>926L · fan-in 0"]
+    Frontend_Lint["Frontend.Lint<br/>289L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>899L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3238L · fan-in 1"]
-    Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
+    Frontend_Surface["Frontend.Surface<br/>3349L · fan-in 1"]
+    Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>8617L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>8744L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1998L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 0"]
@@ -89,7 +89,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 3238 | 1 |
+| `Frontend.Surface` | ? | 3349 | 1 |
 | `Audit` | Apex | 69 | 0 |
 | `Backend.AbstractMachine` | ? | 6871 | 0 |
 | `Backend.EnvMachine` | ? | 3624 | 0 |
@@ -112,16 +112,16 @@ graph TD
 | `Distribution` | Apex | 67 | 0 |
 | `Examples` | ? | 510 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
-| `Frontend.DiagCodes` | ? | 262 | 0 |
+| `Frontend.DiagCodes` | ? | 287 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
 | `Frontend.Format` | ? | 1116 | 0 |
-| `Frontend.Lint` | ? | 213 | 0 |
+| `Frontend.Lint` | ? | 289 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 926 | 0 |
+| `Frontend.Query` | ? | 899 | 0 |
 | `Frontend.Rewrite` | ? | 313 | 0 |
-| `Frontend.Surface.PropTest` | ? | 125 | 0 |
+| `Frontend.Surface.PropTest` | ? | 127 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 8617 | 0 |
+| `Frontend.TypeCheck` | ? | 8744 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1998 | 0 |
 | `Reify.CalcReify` | ? | 283 | 0 |

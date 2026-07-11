@@ -68,6 +68,8 @@ public inductive Severity where
   | info | warning
   deriving Repr, DecidableEq
 
+/-- The lowercase rendering `Main.lean`'s human-table output and `--json` schema both use for a
+`Severity` — `"info"` or `"warning"`, matching the constructor names verbatim. -/
 public def Severity.toString : Severity → String
   | .info    => "info"
   | .warning => "warning"
@@ -76,9 +78,17 @@ public def Severity.toString : Severity → String
 finding like `fmt-divergence`), with a human-readable message. DECL granularity throughout
 (matches `Query.RefEdge`'s own documented ceiling, #52 — no per-node span exists yet). -/
 public structure Finding where
-  rule     : String        -- the stable machine key: "dead-private" | "unused-pub" | "fmt-divergence"
+  /-- The stable machine key identifying which rule fired: `"dead-private"` | `"unused-pub"` |
+  `"fmt-divergence"` — the `explainCode`-style stable identifier a scripted caller matches on,
+  independent of `message`'s free-text wording. -/
+  rule     : String
+  /-- How urgently this finding should be acted on — `.warning` counts toward `bang lint`'s
+  nonzero-exit contract, `.info` does not. -/
   severity : Severity
-  decl     : Option String  -- the flagged decl's name, or `none` for a whole-file finding
+  /-- The flagged decl's name, or `none` for a WHOLE-FILE finding (`fmt-divergence` — the file's
+  own layout, not any one decl, is what diverges). -/
+  decl     : Option String
+  /-- The human-readable explanation rendered in `bang lint`'s table and `--json` output. -/
   message  : String
   deriving Repr
 
@@ -152,6 +162,72 @@ public def deadPrivateFindings (p : Prog) : List Finding :=
               parked case (nothing in this rule distinguishes the two, matching DeadCode.lean's \
               own advisory reading — see docs/reference/language.md's `bang lint` section)"⟩
     else none)
+
+/-! ## 2b. The `dead-private` FIXIT (plan 013 slice 6) — the mechanical edit `bang lint --fix`
+applies, GATED on `Main.lean`'s `preservationCheck` (the SAME differential oracle `bang rewrite
+rename` already uses: parse → elaborate/typecheck → `Source.eval` both programs → agree). Deleting
+a decl is NOT an AST no-op by construction the way `Rewrite.fmt` is — this rule's own doc comment
+names the theoretical risk (a sibling-typeError under-report); building the fixit surfaced a REAL,
+LIVE one instead: `declMentionsVar`'s scan walks `Surf` (`.var` leaves) only, never `Ty` — so a
+`dataD`/`traitD`/`implD`/`effectD` decl referenced SOLELY by its NAME (a ctor call `Mk(1,2)`
+references the ctor `Mk`, never the TYPE `Pair` that owns it; `impl Greet for Int` references
+`Greet` only in a decl HEADER, never a `Surf` node) is UNCONDITIONALLY flagged `dead-private` even
+when genuinely load-bearing — confirmed live: `data Pair = Mk(Int,Int) deriving (Eq)` +
+`Mk(1,2)==Mk(1,2)` flags `Pair` dead, and deleting it breaks elaboration (`preservationCheck`
+correctly aborts: `'deriving' names 'Pair', which is not a 'data' decl`). The FIX is deletion-side,
+not detection-side (narrowing `dead-private`'s FINDING would need a full `Ty`-name-reference walk,
+a larger scope than this fixit slice prices — the finding still fires, informationally correct
+that "nothing TEXTUALLY mentions this name", just not safe to auto-apply): `applyDeadPrivateFix`
+refuses every type-level decl kind, restricting deletion to `letD`/`letRecD`/`fnD` — every kind
+whose ONLY legitimate reference shape is a `.var` leaf, which IS what `surfUsesVar` tracks. -/
+
+/-- Is `d` safe for `applyDeadPrivateFix` to delete outright — i.e. is EVERY legitimate reference
+to `d`'s name a `.var` leaf `surfUsesVar` would see? `letD`/`letRecD`/`fnD` bind ordinary VALUES,
+referenced only by name at a use site (`$name`/`name args`) — exactly `.var`. `dataD`/`traitD`/
+`implD`/`effectD` are TYPE-LEVEL: their name appears in `Ty` nodes (`tName`/`tApp`) and decl
+headers (`impl N for τ`) that `declMentionsVar` never scans — `false` for all four (this rule's
+own §2b doc comment names the confirmed live false-positive on `dataD`). -/
+def safeToAutoDelete : Decl → Bool
+  | .letD ..    => true
+  | .letRecD .. => true
+  | .fnD ..     => true
+  | .dataD ..   => false
+  | .traitD ..  => false
+  | .implD ..   => false
+  | .effectD .. => false
+
+#guard safeToAutoDelete (.letD "x" none (.lit 1))
+#guard safeToAutoDelete (.letRecD "x" .tInt (.lit 1))
+#guard safeToAutoDelete (.fnD "x" [] .tInt "T" "a" (.lit 1))
+#guard ! safeToAutoDelete (.dataD "Pair" [] [("Mk", [.tInt, .tInt])])
+#guard ! safeToAutoDelete (.traitD "Greet" [] [] [])
+#guard ! safeToAutoDelete (.implD "Greet" .tInt [])
+#guard ! safeToAutoDelete (.effectD "KV" [("get2", .tInt)])
+
+/-- **PUBLIC:** remove the top-level decl named `declName` from `p`, or `none` if no such decl
+exists (a fixit applied to a stale/renamed finding — `Main.lean` reports this as a usage error,
+never silently no-ops) OR the named decl is not `safeToAutoDelete` (a type-level decl `dead-
+private` flags but this fixit refuses to touch — `Main.lean` reports it as "not fixable", the SAME
+"skipped, never partial" contract `--fix`'s empty-diff case already documents). Structural only
+when it DOES fire: `p.pubNames`/`derivesFor`/`body` are untouched — a `dead-private` finding is BY
+DEFINITION a non-`pub`, non-body-referenced decl (the rule's own root-set contract), so removing a
+safe one never needs to touch anything else. -/
+public def applyDeadPrivateFix (p : Prog) (declName : String) : Option Prog :=
+  match p.decls.find? (·.name == declName) with
+  | some d => if safeToAutoDelete d then some { p with decls := p.decls.filter (·.name != declName) } else none
+  | none   => none
+
+#guard (applyDeadPrivateFix
+  ({ decls := [.letD "unused" none (.lit 1), .letD "main" none (.lit 2)],
+     body := .lit 0 } : Prog) "unused").map (fun p => p.decls.map Decl.name) == some ["main"]
+#guard (applyDeadPrivateFix
+  ({ decls := [.letD "main" none (.lit 2)], body := .lit 0 } : Prog) "nonexistent") == none
+-- the confirmed-live false-positive: a `dataD` fixit request is REFUSED (`none`), never a wrong
+-- deletion — `Main.lean`'s caller treats this identically to "no such decl" (both report unfixable,
+-- neither silently no-ops the WHOLE `--fix` pass on a request it can't safely honor).
+#guard (applyDeadPrivateFix
+  ({ decls := [.dataD "Pair" [] [("Mk", [.tInt, .tInt])], .letD "main" none (.lit 0)],
+     body := .lit 0 } : Prog) "Pair") == none
 
 /-! ## 3. `unused-pub` — a `pub` decl no OTHER decl (or `body`) references. -/
 

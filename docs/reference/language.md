@@ -588,6 +588,7 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### #118 — the bare-fun-param hole gap: `fun p => … p == derivedCarrierValue …`. `elabS`'s
 
 - `effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }` ⟹ `32`
+- `effect KV { set : Int -> Int } handle kv.set(7) with KV as kv { set(n) => n }` ⟹ `7`  — fixed parse) still runs end to end — confirms `pOpName` didn't just silently swallow real errors.
 ### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
 
 - `let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 41` ⟹ `42`  — the checkSC thunk arm (thunk in COMPUTATION position): an annotated thunk at top level, forced+applied.
@@ -1219,4 +1220,5 @@ and docs can reference it durably.
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
 | `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
 | `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
+| `B016` | a top-level `let` with no `in` absorbed the next line as an application (issue #129) | yes |
 
