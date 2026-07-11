@@ -17,6 +17,10 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # These need `-W exceptions=y` on wasmtime (see the invocation below). §rung-2 of the same note.
 # rung-2b additions: `state` handlers → in-place resume (the store cell = a mutable wasm local;
 # get/put = straight-line local.get/local.set, no unwind). CORE wasm — no extra flag. §rung-2b.
+# rung-3 additions: `transaction` handlers → journal/snapshot over linear MEMORY (the TVar heap;
+# newTVar/readTVar/writeTVar = alloc/load/store; rollback = catch_all_ref+throw_ref snapshot-restore
+# so a foreign raise crossing the txn boundary drops the writes). Needs `-W exceptions=y` (throw_ref)
+# + `(memory 1)` (core wasm). See docs/notes/emission-rung3-design.md.
 #
 # FALSE-GREEN DEFENSES (repo bash conventions): the emitted count is ASSERTED (a silently-empty
 # corpus or a mid-run generator refusal fails LOUD), no unguarded `$(a|b)` capture drives control
@@ -31,7 +35,7 @@ trap 'rm -rf "$outdir"' EXIT
 
 # Minimum number of emittable programs the corpus MUST run (hand anchors + rung-1.5 + rung-2 throws
 # + rung-2b state + generated). A run below this is a FALSE GREEN (empty/short corpus) and fails loud.
-MIN_EMITTED="${MIN_EMITTED:-60}"
+MIN_EMITTED="${MIN_EMITTED:-66}"
 
 echo "── building the emit-rung1 spike exe ──"
 lake build emit-rung1 >/dev/null 2>&1
