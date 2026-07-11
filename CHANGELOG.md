@@ -189,6 +189,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **prelude** — unconditional List a injection (ADR-0103 Amendment ①) (`178e4c67`)
 - **prelude** — #105 List-family batch — length/append/head/tail (`b170b6fd`)
 - **prelude** — add id + fix a real bang-fmt printer bug it surfaced (`a3ade3a4`)
+- **backend** — B1 bignum rep + decimal readback — big literals round-trip on the WasmGC path (#132) (`82117536`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
