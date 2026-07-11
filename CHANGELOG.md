@@ -160,6 +160,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **stdlib** — #105 first-slice prelude — fst/snd/abs/min/max/withDefault/const + char kit (`8578590a`)
 - **docs** — unblock the doc-gen4 build (plan 010) — UnicodeBasic fork pin + the generated BangDocs barrel (`43676ce2`)
 - **stdlib** — migrate injected prelude to Prelude.bang module, auto-used (#106) (`3856b0e6`)
+- **surface** — parse+format optional `deriving (…)` clause on data decls (#109 slice 1) (`857ec39b`)
+- **traits** — deriving (Eq, Ord) structural fold handler (#109, ADR-0097) (`3afc82c8`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
