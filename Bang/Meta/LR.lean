@@ -915,6 +915,201 @@ where
     | .handleF n hh, h => by
         simp only [Frame.CapsBelow] at h ⊢; exact ⟨by omega, Handler.CapsBelow_mono hgg h.2⟩
 
+
+/-! ### 5.0a⁗ Focus-uniform reshape + `seq_unit` machinery (proof-debt lane, task #133).
+
+`seq_unit` is purely OPERATIONAL: both foci `seqComp (ret v) c` and `c` reshape (same `C`) to configs
+that share stack + counter and differ only by the 2-step left-unit head reduction. The strengthening
+over `reshape_focus`/`reshape_counter` is FOCUS-UNIFORMITY — the accumulated cap-list `L` and stack `K'`
+are determined by `C`'s frames alone (minted ids are counter-form, focus-independent), so the two foci
+cap-substitute under the SAME `L`. The `applyCaps`-past-`shift` step needs a shift-BELOW-subst
+commutation for the closed `vcap` fillers (the mirror of `Comp.shiftFrom_substFrom_closed`). -/
+
+/-- A cap-substitution list is CLOSED-filler when every filler value is `Val.Closed`. Every `L` the
+reshape accumulates has this property — the fillers are minted `vcap`s (closed identities). -/
+def ClosedL (L : List (Nat × Val)) : Prop := ∀ p ∈ L, Val.Closed p.2
+
+/-- A `vcap` is a closed identity (shift-fixed at every cutoff). -/
+theorem Val.Closed_vcap (n : Nat) (ℓ : Label) : Val.Closed (Val.vcap n ℓ) := fun _ => rfl
+
+theorem closedL_bumpL {L : List (Nat × Val)} (h : ClosedL L) : ClosedL (bumpL L) := by
+  intro p hp
+  simp only [bumpL, List.mem_map] at hp
+  obtain ⟨q, hq, rfl⟩ := hp
+  -- filler is `Val.shift q.2`; q.2 closed ⇒ shift fixes it ⇒ still closed.
+  have hqc : Val.Closed q.2 := h q hq
+  simpa [hqc.shift] using hqc
+
+theorem closedL_snoc {L : List (Nat × Val)} {k : Nat} {u : Val}
+    (hL : ClosedL L) (hu : Val.Closed u) : ClosedL (L ++ [(k, u)]) := by
+  intro p hp
+  rcases List.mem_append.mp hp with h | h
+  · exact hL p h
+  · simp only [List.mem_singleton] at h; subst h; exact hu
+
+/-- FULL focus-uniform reshaped config: the counter (`g + handlerCount C`), the stack `K'`, and the
+focus-substitution list `L` are ALL determined by `C`/`g`/`K` alone — independent of the hole `c` — AND
+`L` is closed-filler (all fillers are minted `vcap`s). This is the shape `seq_unit` consumes: the two
+foci (`seqComp (ret v) c` vs `c`) reshape to configs sharing stack + counter, so `seqComp_ret_run`
+bridges them. Each `stepReshape` frame stores the FRAME's comp, never the focus. -/
+theorem reshape_uniform (C : EvalCtx) : ∀ (g : Nat) (K : EvalCtx),
+    ∃ K' L, ClosedL L ∧ ∀ (c : Comp), reshape g K C c = (g + handlerCount C, K', applyCaps L c) := by
+  induction C with
+  | nil => intro g K; exact ⟨K, [], fun _ h => absurd h (by simp),
+      fun c => by simp [reshape, handlerCount, applyCaps]⟩
+  | cons fr C' ih =>
+    intro g K
+    obtain ⟨K', L, hClosed, hKL⟩ := ih g K
+    cases fr with
+    | letF N =>
+      refine ⟨.letF (applyCaps (bumpL L) N) :: K', L, hClosed, fun c => ?_⟩
+      rw [reshape_cons, hKL (Frame.wrapStep (Frame.letF N) c)]
+      rw [stepReshape_letC _ (applyCaps L c) (applyCaps (bumpL L) N)
+            (by simp only [Frame.wrapStep]; exact applyCaps_letC L c N)]
+      simp only [handlerCount]
+    | appF v =>
+      refine ⟨.appF (applyCapsV L v) :: K', L, hClosed, fun c => ?_⟩
+      rw [reshape_cons, hKL (Frame.wrapStep (Frame.appF v) c)]
+      rw [stepReshape_app _ (applyCaps L c) (applyCapsV L v)
+            (by simp only [Frame.wrapStep]; exact applyCaps_app L c v)]
+      simp only [handlerCount]
+    | handleF m h =>
+      refine ⟨.handleF (g + handlerCount C') (applyCapsH L h) :: K',
+              bumpL L ++ [(0, .vcap (g + handlerCount C') (applyCapsH L h).label)],
+              closedL_snoc (closedL_bumpL hClosed) (Val.Closed_vcap _ _), fun c => ?_⟩
+      rw [reshape_cons, hKL (Frame.wrapStep (Frame.handleF m h) c)]
+      rw [stepReshape_handle _ (applyCapsH L h) (applyCaps (bumpL L) c)
+            (by simp only [Frame.wrapStep]; exact applyCaps_handle L h c)]
+      rw [applyCaps_snoc]
+      simp only [handlerCount, Nat.add_assoc]
+
+/-! Shift-BELOW-subst commutation for a CLOSED filler (the mirror of `_shiftFrom_substFrom_closed`,
+which is shift-AT-OR-ABOVE-subst): for `j ≤ k`,
+  `substFrom (k+1) u (shiftFrom j t) = shiftFrom j (substFrom k u t)`.
+The closed `u` needs no re-shift. Mutual structural induction; the var case is an index split. -/
+mutual
+theorem Val.substFrom_shiftFrom_closed_below :
+    ∀ {u : Val}, Val.Closed u → ∀ (k j : Nat), j ≤ k → ∀ (t : Val),
+      Val.substFrom (k + 1) u (Val.shiftFrom j t) = Val.shiftFrom j (Val.substFrom k u t)
+  | _, _,  _, _, _,    .vunit => rfl
+  | _, _,  _, _, _,    .vint _ => rfl
+  | _, _,  _, _, _,    .vcap _ _ => rfl
+  | u, hu, k, j, hjk,  .vvar i => by
+      rcases Nat.lt_or_ge i j with hij | hij
+      · -- i < j ≤ k: shift j fixes vvar i; subst (k+1) fixes (i<k+1); RHS subst k fixes, shift j fixes.
+        rw [Val.shiftFrom, if_pos hij, Val.substFrom, if_neg (by omega), if_neg (by omega),
+          Val.substFrom, if_neg (by omega), if_neg (by omega), Val.shiftFrom, if_pos hij]
+      · -- i ≥ j: shift j bumps to vvar (i+1). Now split on i vs k for the subst.
+        rw [Val.shiftFrom, if_neg (by omega)]
+        rcases Nat.lt_trichotomy i k with hik | hik | hik
+        · -- i < k: subst (k+1) fixes vvar (i+1) (i+1<k+1); RHS subst k fixes vvar i (i<k), shift j bumps.
+          rw [Val.substFrom, if_neg (by omega), if_neg (by omega),
+            Val.substFrom, if_neg (by omega), if_neg (by omega), Val.shiftFrom, if_neg (by omega)]
+        · -- i = k: subst (k+1) hits vvar (k+1) → u; RHS subst k → u, shift j fixes u (closed).
+          subst hik
+          rw [Val.substFrom, if_pos rfl, Val.substFrom, if_pos rfl, hu.shiftFrom_eq]
+        · -- i > k: subst (k+1) → vvar i (i+1 renumbers down); RHS subst k → vvar (i-1), shift j bumps.
+          rw [Val.substFrom, if_neg (by omega), if_pos (by omega : i + 1 > k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : i > k),
+            Val.shiftFrom, if_neg (by omega), show i + 1 - 1 = i - 1 + 1 by omega]
+  | u, hu, k, j, hjk,  .vthunk M => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Comp.substFrom_shiftFrom_closed_below hu k j hjk M]
+  | u, hu, k, j, hjk,  .inl w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | u, hu, k, j, hjk,  .inr w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | u, hu, k, j, hjk,  .pair a b => by
+      simp only [Val.shiftFrom, Val.substFrom]
+      rw [Val.substFrom_shiftFrom_closed_below hu k j hjk a, Val.substFrom_shiftFrom_closed_below hu k j hjk b]
+  | u, hu, k, j, hjk,  .fold w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+
+theorem Comp.substFrom_shiftFrom_closed_below :
+    ∀ {u : Val}, Val.Closed u → ∀ (k j : Nat), j ≤ k → ∀ (t : Comp),
+      Comp.substFrom (k + 1) u (Comp.shiftFrom j t) = Comp.shiftFrom j (Comp.substFrom k u t)
+  | u, hu, k, j, hjk, .ret w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | u, hu, k, j, hjk, .binop op a b => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Val.substFrom_shiftFrom_closed_below hu k j hjk a, Val.substFrom_shiftFrom_closed_below hu k j hjk b]
+  | u, hu, k, j, hjk, .force w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | u, hu, k, j, hjk, .letC M N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.substFrom_shiftFrom_closed_below hu k j hjk M,
+        Comp.substFrom_shiftFrom_closed_below hu (k + 1) (j + 1) (by omega) N]
+  | u, hu, k, j, hjk, .lam M => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.substFrom_shiftFrom_closed_below hu (k + 1) (j + 1) (by omega) M]
+  | u, hu, k, j, hjk, .app M w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Comp.substFrom_shiftFrom_closed_below hu k j hjk M, Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | u, hu, k, j, hjk, .perform cp op w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Val.substFrom_shiftFrom_closed_below hu k j hjk cp, Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | u, hu, k, j, hjk, .handle h M => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Handler.substFrom_shiftFrom_closed_below hu k j hjk h,
+        Comp.substFrom_shiftFrom_closed_below hu (k + 1) (j + 1) (by omega) M]
+  | u, hu, k, j, hjk, .case w N₁ N₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w,
+        Comp.substFrom_shiftFrom_closed_below hu (k + 1) (j + 1) (by omega) N₁,
+        Comp.substFrom_shiftFrom_closed_below hu (k + 1) (j + 1) (by omega) N₂]
+  | u, hu, k, j, hjk, .split w N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w,
+        Comp.substFrom_shiftFrom_closed_below hu (k + 2) (j + 2) (by omega) N]
+  | u, hu, k, j, hjk, .unfold w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk w]
+  | _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, .wrong _ => rfl
+
+theorem Handler.substFrom_shiftFrom_closed_below :
+    ∀ {u : Val}, Val.Closed u → ∀ (k j : Nat), j ≤ k → ∀ (h : Handler),
+      Handler.substFrom (k + 1) u (Handler.shiftFrom j h) = Handler.shiftFrom j (Handler.substFrom k u h)
+  | u, hu, k, j, hjk, .state ℓ s => by
+      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.substFrom_shiftFrom_closed_below hu k j hjk s]
+  | _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, .custom _ _ _ => rfl
+end
+
+/-- `bumpL` commutes cap-substitution past a single `shift`, for CLOSED fillers: each filler needs no
+re-shift (`Val.Closed.shift`), and the shift-below-subst commutation supplies the `+1` cutoff. -/
+theorem applyCaps_bumpL_shift {L : List (Nat × Val)} (hL : ClosedL L) (c : Comp) :
+    applyCaps (bumpL L) (Comp.shift c) = Comp.shift (applyCaps L c) := by
+  induction L generalizing c with
+  | nil => rfl
+  | cons p L ih =>
+    obtain ⟨k, u⟩ := p
+    have hu : Val.Closed u := hL (k, u) (by simp)
+    have hLtail : ClosedL L := fun q hq => hL q (by simp [hq])
+    simp only [bumpL, List.map_cons, applyCaps]
+    -- head: substFrom (k+1) (shift u) (shift c) = shift (substFrom k u c). `shift u = u` (closed).
+    rw [hu.shift,
+      show Comp.substFrom (k + 1) u (Comp.shift c) = Comp.shift (Comp.substFrom k u c) from
+        Comp.substFrom_shiftFrom_closed_below hu k 0 (Nat.zero_le k) c]
+    exact ih hLtail (Comp.substFrom k u c)
+
+/-- Left-unit head reduction survives cap-substitution: `applyCaps L (seqComp (ret v) c)` is itself a
+`seqComp (ret v') c'` with `c' = applyCaps L c`, so `seqComp_ret_run` fires on the substituted focus and
+lands exactly at the `c`-reshaped focus. Needs `L` closed-filler (`applyCaps_bumpL_shift`). -/
+theorem applyCaps_seqComp {L : List (Nat × Val)} (hL : ClosedL L) (v : Val) (c : Comp) :
+    applyCaps L (seqComp (Comp.ret v) c)
+      = seqComp (Comp.ret (applyCapsV L v)) (applyCaps L c) := by
+  show applyCaps L (Comp.letC (Comp.ret v) (Comp.shift c))
+      = Comp.letC (Comp.ret (applyCapsV L v)) (Comp.shift (applyCaps L c))
+  rw [applyCaps_letC]
+  congr 1
+  · -- head: applyCaps L (ret v) = ret (applyCapsV L v)
+    clear hL
+    induction L generalizing v with
+    | nil => rfl
+    | cons p L ih => obtain ⟨k, u⟩ := p; simp only [applyCaps, applyCapsV, Comp.substFrom]; exact ih _
+  · -- tail: applyCaps (bumpL L) (shift c) = shift (applyCaps L c)
+    exact applyCaps_bumpL_shift hL c
+
 end RunPlugReshape
 
 /-- Loading `plug C c` and running it reaches the CANONICAL machine-shaped config `reshape 0 [] C c`
@@ -966,15 +1161,45 @@ theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n g : Nat) :
   show Config.run n (g, C, Comp.subst v (Comp.shift c)) = Config.run n (g, C, c)
   rw [Comp.subst_shift]
 
+/-- Both foci of `seq_unit` reshape (same `C`) to configs sharing counter + stack, focus `applyCaps L (·)`
+with a shared closed `L` (`RunPlugReshape.reshape_uniform`); the LHS focus `applyCaps L (seqComp (ret v) c)`
+IS a `seqComp (ret v') (applyCaps L c)` (`applyCaps_seqComp`), so the 2-step left-unit head reduction
+(`seqComp_ret_run`) lands exactly at the `c`-reshaped focus. -/
+theorem seqComp_capSubst_run (C : EvalCtx) (v : Val) (c : Comp) (n : Nat) :
+    Config.run (n + 2) (handlerCount C, RunPlugReshape.canonStack C (seqComp (Comp.ret v) c),
+        RunPlugReshape.capSubstInto C (seqComp (Comp.ret v) c))
+      = Config.run n (handlerCount C, RunPlugReshape.canonStack C c, RunPlugReshape.capSubstInto C c) := by
+  obtain ⟨K', L, hL, hKL⟩ := RunPlugReshape.reshape_uniform C 0 []
+  have hcap : ∀ x, RunPlugReshape.capSubstInto C x = RunPlugReshape.applyCaps L x := fun x => by
+    simp only [RunPlugReshape.capSubstInto, hKL x]
+  have hstk : ∀ x, RunPlugReshape.canonStack C x = K' := fun x => by
+    simp only [RunPlugReshape.canonStack, hKL x]
+  rw [hcap (seqComp (Comp.ret v) c), hcap c, hstk (seqComp (Comp.ret v) c), hstk c]
+  rw [RunPlugReshape.applyCaps_seqComp hL v c]
+  exact seqComp_ret_run (RunPlugReshape.applyCapsV L v) (RunPlugReshape.applyCaps L c) K' n (handlerCount C)
+
+-- ◊4.5b (g) + proof-debt task #133: PROVEN axiom-clean. The left-unit law is purely OPERATIONAL (no LR
+-- machinery): both foci `seqComp (ret v) c` and `c` reshape (same observation context `C`) to configs that
+-- share stack + counter and differ only by the 2-step head reduction, closed by `seqComp_capSubst_run`
+-- through `converges_plug_iff` in both `⊑` directions.
 theorem seq_unit_proof (v : Val) {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     ctxEquiv (e := e) (B := B) (seqComp (Comp.ret v) c) c := by
-  -- NAMED sorry. The bridges are now in place (`converges_plug_iff` machine-shaped + proven;
-  -- `seqComp_ret_run` proven), but connecting them needs the residual step: the reshape's focus is
-  -- `capSubstInto C (seqComp (ret v) c)`, and `capSubstInto`/`applyCaps` distributes through the `letC`
-  -- of `seqComp` (`applyCaps_letC`) into `seqComp (ret v') c'` — i.e. cap-substitution COMMUTES with the
-  -- left-unit head-reduction, so `seqComp_ret_run` fires on the substituted focus. Mechanical but fiddly;
-  -- off the diagonal critical path (recovery-algebra / group_recovers-adjacent). Deferred.
-  sorry
+  have dir : ∀ (x y : Comp),
+      (∀ C n w, Config.run (n + 2) (handlerCount C, RunPlugReshape.canonStack C x,
+          RunPlugReshape.capSubstInto C x) = Result.done w →
+        ∃ m w', Config.run m (handlerCount C, RunPlugReshape.canonStack C y,
+          RunPlugReshape.capSubstInto C y) = Result.done w') →
+      ctxApprox (e := e) (B := B) x y := by
+    intro x y hbridge C _eo _qo _Ao _hStack hconv
+    rw [Cxt.plug, converges_plug_iff] at hconv
+    rw [Cxt.plug, converges_plug_iff]
+    obtain ⟨nn, ww, hww⟩ := hconv
+    exact hbridge C nn ww (Config.run_done_add 2 nn _ ww hww)
+  refine ⟨dir _ _ (fun C n w h => ?_), dir _ _ (fun C n w h => ?_)⟩
+  · -- forward: seqComp converges (at n+2) ⇒ c converges (at n) via the head reduction.
+    exact ⟨n, w, (seqComp_capSubst_run C v c n) ▸ h⟩
+  · -- backward: c converges (at n+2) ⇒ seqComp converges (at (n+2)+2) via the head reduction.
+    exact ⟨(n + 2) + 2, w, (seqComp_capSubst_run C v c (n + 2)).symm ▸ h⟩
 
 
 /-! ## 5.1 LR helpers — concretized from the kernel + Biernacki popl18 §5.1.

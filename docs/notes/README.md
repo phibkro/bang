@@ -76,7 +76,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`verification-ladder.md`](verification-ladder.md) — The verification ladder — quality gates for agent-speed code
 - [`wasm-concurrency-survey.md`](wasm-concurrency-survey.md) — Wasm components + concurrency — how bang should model concurrent execution (design survey)
 
-## archival (11)
+## archival (12)
 
 _Spike / experiment / pivot record — input to a specific ADR; preserved, not current._
 
@@ -86,6 +86,7 @@ _Spike / experiment / pivot record — input to a specific ADR; preserved, not c
 - [`compiler-overview.md`](compiler-overview.md) — bang-lang compiler overview — how it works (for the Lexa comparison)
 - [`dispatch-verification-landscape.md`](dispatch-verification-landscape.md) — Effect-handler dispatch × verification — the landscape, and consequences for bang-lang
 - [`envsem-survey.md`](envsem-survey.md) — Environment / closure semantics — the design-space survey for #61's fix
+- [`flagged-headline-triage.md`](flagged-headline-triage.md) — Flagged-headline triage (proof-debt lane, 2026-07-11)
 - [`hang-61-diagnosis.md`](hang-61-diagnosis.md) — Issue #61 diagnosis — the "hang" is per-step `Comp.subst` cost, not term blowup
 - [`kernel-shell-library.md`](kernel-shell-library.md) — Kernel / Shell / Library — the layering of bang-lang
 - [`monadic-recast-spike-findings.md`](monadic-recast-spike-findings.md) — Feasibility spike: recasting CalcReify's bisimulation into the Bahr–Hutton 2022 monadic frame
