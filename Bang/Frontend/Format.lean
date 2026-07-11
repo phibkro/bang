@@ -143,9 +143,20 @@ partial def fmtTy (need : TyPrec) : Ty → String
       s!"{fmtTy .atom t} ! \{{String.intercalate ", " (ls.map (s!"#{·}"))}}"   -- same `tCap`
       -- defensive-rendering precedent: `Format.lean` has no `env.effects` to invert a label back
       -- to its declared name, so this form is NOT round-trippable — internal, printed for debugging.
+/-- One type-application ARGUMENT slot — stricter than `.atom` precedence: `pTyArgs` parses each
+argument via `pTyAtom1` (ONE atom, NO trailing application, `Surface.lean:1022`'s own comment:
+`List (Map k v)` needs parens), so a NESTED `.tApp` argument has no legal unparenthesized spelling
+— unlike every other precedence tier, `.atom` alone is not tight enough to round-trip here (`Option
+(List a)` would otherwise print as `Option List a`, which RE-PARSES as `Option` applied to TWO args
+`[List, a]`, not one — a silent AST change, not merely a redundant-paren question). Every other `Ty`
+former (`tInt`/`tName`/parenthesized-by-construction `tThunk`/etc.) is already a single `pTyAtom1`
+unit and needs no extra wrapping beyond ordinary `.atom` precedence. -/
+partial def fmtTyArg : Ty → String
+  | .tApp n args => s!"({n} " ++ String.intercalate " " (fmtTyArgs args) ++ ")"
+  | t            => fmtTy .atom t
 partial def fmtTyArgs : TyArgs → List String
-  | .one a   => [fmtTy .atom a]
-  | .two a b => [fmtTy .atom a, fmtTy .atom b]
+  | .one a   => [fmtTyArg a]
+  | .two a b => [fmtTyArg a, fmtTyArg b]
 end
 
 /-- Top-level entry: a type prints at the loosest tier (no defensive outer parens).

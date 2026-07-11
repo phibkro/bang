@@ -5310,6 +5310,7 @@ def preludeSigs : List (String × String) :=
     ("min", "Int -> Int -> Int"),
     ("max", "Int -> Int -> Int"),
     ("const", "a -> b -> a"),
+    ("id", "a -> a"),
     ("isDigit", "Char -> Unit + Unit"),
     ("isAlpha", "Char -> Unit + Unit"),
     ("toUpper", "Char -> Char"),
@@ -7278,6 +7279,13 @@ a free injected generic (ADR-0103 Amendment ①), landed after this slice. -/
 -- test-local `const` at ⑦b, proving the injected one generalizes the same way.
 #guard runTypedYieldsInt 400 "(($const) 5) 9" 5
 #guard runTypedYieldsInt 400 "(($const) 7) (1, 2)" 7
+-- `id x = x` — used at TWO distinct types in the SAME program (Int, then a pair): a non-recursive
+-- `pub let` (no self-call, no inline generic type annotation) rides ordinary let-generalization,
+-- unlike `head`/`tail` which need the ascribed-`let rec` shape (their body's OWN `match (xs : List
+-- a)` annotation is what needed the monomorphization pre-pass — `id`'s body has no such annotation).
+#guard runTypedYieldsInt 400 "($id) 5" 5
+#guard runTypedYieldsInt 400
+  "let n = ($id) 5 in let (a, b) = ($id) (3, 4) in n + a + b" 12
 -- `withDefault d o` — `Some` returns the payload, `None` returns the default (both arms, Option's
 -- two ctors — mirrors the `mapOption`/`mapResult` Err/Ok-both-arms discipline above).
 #guard runTypedYieldsInt 400 "(($withDefault) 0) (Some(9))" 9

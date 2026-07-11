@@ -471,6 +471,7 @@ binding of the same name shadows the injected one.
 | `min` | `Int -> Int -> Int` |
 | `max` | `Int -> Int -> Int` |
 | `const` | `a -> b -> a` |
+| `id` | `a -> a` |
 | `isDigit` | `Char -> Unit + Unit` |
 | `isAlpha` | `Char -> Unit + Unit` |
 | `toUpper` | `Char -> Char` |
@@ -648,6 +649,8 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `(($max) 7) 3` ⟹ `7`
 - `(($const) 5) 9` ⟹ `5`  — test-local `const` at ⑦b, proving the injected one generalizes the same way.
 - `(($const) 7) (1, 2)` ⟹ `7`
+- `($id) 5` ⟹ `5`  — a)` annotation is what needed the monomorphization pre-pass — `id`'s body has no such annotation).
+- `let n = ($id) 5 in let (a, b) = ($id) (3, 4) in n + a + b` ⟹ `12`
 - `(($withDefault) 0) (Some(9))` ⟹ `9`  — two ctors — mirrors the `mapOption`/`mapResult` Err/Ok-both-arms discipline above).
 - `(($withDefault) 42) (None : Option Int)` ⟹ `42`
 - `if (($isDigit) (Char 48)) then 1 else 0` ⟹ `1`  — CHAR KIT — `isDigit`: the '0'-'9' boundary (47 fails-low, 48/57 the inclusive ends, 58 fails-high).
