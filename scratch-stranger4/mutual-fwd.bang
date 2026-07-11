@@ -1,0 +1,3 @@
+let rec f : Int -> Int ! {Div} = fun n => ($g) n
+    and g : Int -> Int ! {Div} = fun n => n
+in ($f) 5

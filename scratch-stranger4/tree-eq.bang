@@ -1,0 +1,4 @@
+data Tree = Leaf | Node(Tree, Tree) deriving (Eq)
+let a = Node(Leaf, Leaf) in
+let b = Node(Leaf, Leaf) in
+if a == b then 1 else 0

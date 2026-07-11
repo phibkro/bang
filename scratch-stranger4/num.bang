@@ -1,0 +1,5 @@
+let rec numOf : Int -> Str -> Int ! {Div} = fun acc => fun s => match s {
+  SNil -> acc,
+  SCons(c, t) -> match c { Char(n) -> ($numOf) (acc * 10 + (n - 48)) t }
+}
+let main = ($numOf) 0 "123"

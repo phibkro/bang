@@ -1,0 +1,2 @@
+trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a }
+impl Add for (Int * Int) { fn add(p, q) = p }

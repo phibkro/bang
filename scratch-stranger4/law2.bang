@@ -1,0 +1,2 @@
+trait Eq2 { fn eq2(a, b) -> Int ; law refl(a): a == a }
+impl Eq2 for Int { fn eq2(p, q) = 0 }

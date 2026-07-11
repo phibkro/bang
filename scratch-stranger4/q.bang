@@ -1,0 +1,2 @@
+let double = fun x => x + x
+let main = ($double) 21

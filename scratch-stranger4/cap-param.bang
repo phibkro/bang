@@ -1,0 +1,3 @@
+effect Err { fail : Int -> Int }
+let useIt = {fun e => (e : Cap Err).fail(9)}
+let main = handle (($useIt) err) with Err as err { fail(c) => 0 - c }
