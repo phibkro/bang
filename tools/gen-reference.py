@@ -490,16 +490,25 @@ def render():
     L.append("asymmetry: trait/impl SIGNATURES use the paren-list form, law BODIES and ordinary")
     L.append("function calls elsewhere use curried application.")
     L.append("")
+    if "EXCLUSIVELY through the overloaded OPERATOR" not in typecheck:
+        sys.exit(
+            "gen-reference: the #74/ADR-0068 by-name-op-call diagnostic not found in "
+            "TypeCheck.lean — the Traits & Laws law-execution note below is keyed off it (issue #125)."
+        )
     L.append("`bang test [<file.bang>]` (issue #60) discovers every trait-law instance in a decls-only")
     L.append("program and sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible")
-    L.append("runs), reporting PASS/FAIL/ERROR/STUCK per law. **Known v1 limitation (tracked as issue")
-    L.append("#74):** a law's INVOCATION of its trait op through `bang test`'s discovery/dispatch path")
-    L.append("currently errors (`app: callee is not a function`) rather than reaching PASS/FAIL — the")
-    L.append("grammar above is stable and build-gated (every form is a `lake build`-verified `#guard` in")
-    L.append("`Bang/Frontend/Surface.lean`), but end-to-end law EXECUTION through the CLI is not yet")
-    L.append("wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws to")
-    L.append("discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch")
-    L.append("path that is still open.")
+    L.append("runs), reporting PASS/FAIL/ERROR/STUCK per law — end-to-end law EXECUTION through the CLI")
+    L.append("works (issue #74, closed): a law body written in the SUPPORTED shape (its trait ops")
+    L.append("reached only through the overloaded operator — `add a b == add b a`, not `add(a, b)` by")
+    L.append("name) samples and PASSes/FAILs for real.")
+    L.append("")
+    L.append("**A law body may not call its trait op BY NAME** (`eq(x, x)` or curried `add a b` where")
+    L.append("`add`/`eq` name a trait op directly): ADR-0068 wires trait-op resolution EXCLUSIVELY")
+    L.append("through the overloaded operator (`==`/`<`/`+`/…), never a direct call — even a sibling op")
+    L.append("of the SAME impl cannot call another op of that impl by name. `bang test` diagnoses this")
+    L.append("UP FRONT with a specific, fixable message (`law 'Trait.law' calls trait op 'op' directly —")
+    L.append("trait ops are invoked ONLY through their overloaded operator in v1 (ADR-0068; …)`) rather")
+    L.append("than the opaque runtime crash (`app: callee is not a function`) an earlier version gave.")
     L.append("")
 
     if "def pDerivingClause" not in surf:

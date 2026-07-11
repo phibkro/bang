@@ -218,14 +218,18 @@ function calls elsewhere use curried application.
 
 `bang test [<file.bang>]` (issue #60) discovers every trait-law instance in a decls-only
 program and sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible
-runs), reporting PASS/FAIL/ERROR/STUCK per law. **Known v1 limitation (tracked as issue
-#74):** a law's INVOCATION of its trait op through `bang test`'s discovery/dispatch path
-currently errors (`app: callee is not a function`) rather than reaching PASS/FAIL — the
-grammar above is stable and build-gated (every form is a `lake build`-verified `#guard` in
-`Bang/Frontend/Surface.lean`), but end-to-end law EXECUTION through the CLI is not yet
-wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws to
-discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch
-path that is still open.
+runs), reporting PASS/FAIL/ERROR/STUCK per law — end-to-end law EXECUTION through the CLI
+works (issue #74, closed): a law body written in the SUPPORTED shape (its trait ops
+reached only through the overloaded operator — `add a b == add b a`, not `add(a, b)` by
+name) samples and PASSes/FAILs for real.
+
+**A law body may not call its trait op BY NAME** (`eq(x, x)` or curried `add a b` where
+`add`/`eq` name a trait op directly): ADR-0068 wires trait-op resolution EXCLUSIVELY
+through the overloaded operator (`==`/`<`/`+`/…), never a direct call — even a sibling op
+of the SAME impl cannot call another op of that impl by name. `bang test` diagnoses this
+UP FRONT with a specific, fixable message (`law 'Trait.law' calls trait op 'op' directly —
+trait ops are invoked ONLY through their overloaded operator in v1 (ADR-0068; …)`) rather
+than the opaque runtime crash (`app: callee is not a function`) an earlier version gave.
 
 ## Deriving (ADR-0097, issue #109)
 
