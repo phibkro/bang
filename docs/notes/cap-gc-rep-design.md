@@ -222,6 +222,37 @@ headline (`calc`/`stage-swap` emit); `C4` is the tested→verified lift. No clos
 > not a one-arm change; and because v1 does NOT statically exclude escape (scoped-cap types are
 > post-v1, ADR-0063), so the runtime fail-loud is mandatory, not optional.
 
+## 8 · Implementation findings (feat-cap-gc-rep, 2026-07-12)
+
+Measured facts from the implementation lane that refine §6's slice map:
+
+- **The escape hole is LIVE in the shipping emitter, and spans ALL cap kinds.** Fed real escape
+  `Comp`s through `emitModuleGCPrint` (`rung4-shape --escape`): a STATE-cap escape (`{get}` thunk
+  forced past its handler) emits + prints `0`; a CUSTOM-cap escape (`{perform log}` thunk) emits +
+  prints `99` — both where the kernel `#guard`s `.escapedCap`. So C2's stamp is a **cross-cutting
+  liveness thread** through EVERY `handle`-mint and EVERY `perform` arm (state `get`/`put`, custom
+  `call_ref`, txn), not a first-class-cap-only change. This is wider than the #133 headline. The
+  escape-differential gate (`tools/emit-escape-diff.sh`, LANDED `cb512890`) makes it visible + pins
+  the regression class; `capEscape-get` is `XFAIL_UNTIL_STAMP` (known-red, build stays green) until
+  C2 removes the entry.
+- **The happy-path C0 is more surgical than §6 assumed — the `$txbox` IS already the runtime cap
+  value.** Reading the emitted lexical-custom dispatch (`logger-counting`): a `perform` does
+  `$clausecell (struct.get $txbox 0 (ref.cast (ref $txbox) ($lookup env i))) pos` + `call_ref`. A
+  FIRST-CLASS cap's env slot holds the SAME `$txbox` (passed in via `app`). So a `.none`-slot
+  perform on a CUSTOM op can REUSE the identical dispatch — no new `$cap` type needed for the happy
+  path; the only new thing is knowing the op's POSITION (no compile-time `CapSlot.custom` map).
+- **Single-op covers the entire shippable corpus.** The ONLY two first-class-cap programs are
+  `calc` (`Eval_Trace`, one op `log`) and `stage-swap` (`Net`, one op `fetch`) — both single-op ⇒
+  position 0. A MULTI-op first-class cap can be a NAMED refusal (invariant #1: fail loud, never a
+  wrong multi-op dispatch) without blocking anything currently shippable. The general multi-op
+  position needs the effect-decl op ordering threaded to the perform (a `$cap` carrying the op→pos
+  map, or the effect signature in `GCState`) — deferred behind the refusal.
+- **Revised slice order (proposed):** C0 (first-class happy path, single-op, stage-swap unlocks) is
+  INDEPENDENT of C2 (the escape stamp). Shipping C0 first banks the #133 headline (`stage-swap`/
+  `calc` emit) with escape honestly `XFAIL`'d; C2 then flips the escape gate green as its own slice.
+  This isolates the riskier cross-cutting stamp from the headline win. (Ordering is a
+  correctness-adjacent call — see the lane's messages to the manager.)
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two
