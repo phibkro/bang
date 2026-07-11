@@ -3262,7 +3262,7 @@ response prefix through `evalE` re-keys its result tuple (a 6th component), ripp
 `evalE_agrees_evalD_gen` (ADR-0094) across 22 destructure + 31 statement sites — a proven-spine
 re-key, not a mechanical re-green. Keeping `evalE` byte-identical and putting the host inject in a
 sibling makes the re-green trivial (the headline is untouched) at the cost of this ~1-leaf-different
-copy. The DRIFT is gated at CI: `test-hostio.sh` asserts `evalEHost … [] ≡ evalE …` on the corpus
+copy. The DRIFT is gated at CI: `test-hostio-seam.sh` asserts `evalEHost … [] ≡ evalE …` on the corpus
 (the `hostReplay_agrees_pure` `#guard`s below), so `evalEHost` can never silently diverge from the
 proven engine on the shared (non-host) fragment.
 
@@ -3544,8 +3544,9 @@ i.e. on the shared (non-host) fragment the sibling IS the proven engine. Compile
 reliable eval, `lean-eval-reliable-only-compiled`), run over the SAME witness battery as the mini-Agree
 above (pure · state · txn · txn-abort · custom · custom-abort · deep-closure), so any divergence on ANY
 arm turns this module RED. This is the derivation-ladder "test" rung standing in for the "generate" rung
-the tuple-re-key cost forecloses. `tools/test-hostio.sh` additionally re-checks it end-to-end on the
-corpus. -/
+the tuple-re-key cost forecloses. `tools/test-hostio-seam.sh` additionally exercises the seam + the
+driver's SIM-path/flag surface (NOT end-to-end real IO — live host IO ships with the H1 reach, ADR-0104
+§Scope). -/
 private def hostYieldsInt (s : HostStep) (n : Int) : Bool :=
   match s with | .hdone (.vint m) => m == n | _ => false
 

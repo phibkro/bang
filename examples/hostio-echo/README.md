@@ -37,7 +37,7 @@ faithful corpus oracle.
 The **real** path — `--env=real`, actual `IO.println`/`readLine`, then `--record` a
 trace and `--replay` it back under the sim on the pure oracle — is deliberately NOT a
 corpus entry: it needs a granted host environment and live stdin, which the sim-only
-harness cannot supply. It is exercised instead by **`tools/test-hostio.sh`** (enrolled
+harness cannot supply. It is exercised instead by **`tools/test-hostio-seam.sh`** (enrolled
 in `run-batteries.sh`): a scripted Console program recorded under `--env=real` then
 `--replay`'d reproduces byte-identical output — the invariant-#1 trace-replay gate
 (ADR-0104 §3). Splitting it this way keeps the corpus purely deterministic while the
