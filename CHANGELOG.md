@@ -180,6 +180,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **host-io** — slice 2b — host-IO driver plumbing + evalEHost conditions (`534e96f0`)
 - **host-io** — slice 3 — test-hostio.sh record/replay battery (`79688327`)
 - **tour** — /run playground exec service (door-2) — resource jail + smoke gate (`baa47309`)
+- **◊5.5** — rung-5 Part 1 — $val GC readback (valPretty image) → caesar's Str emits (`7348afe1`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

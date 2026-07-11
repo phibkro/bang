@@ -56,7 +56,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (20)
+## test (21)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -106,6 +106,14 @@ _Lane scripts — one-off orchestration helpers._
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
+
+## bench (1)
+
+__
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`bench/g2-components/run.sh`](bench/g2-components/run.sh) | `manual` | `docs/notes/wasm-concurrency-survey.md` | the G2 measurement harness (issue #116) |
 
 ## release (1)
 
