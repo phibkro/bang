@@ -60,8 +60,39 @@ def oraclePretty (M : Comp) : String :=
   | .done v => oracleValPretty v
   | _       => "ORACLE-DIVERGED-OR-STUCK"
 
+/-- The ESCAPE-differential catalog (#133 / cap-gc-rep). Capability-escape is NOT surface-expressible
+in v1 (it needs scoped-cap types, ADR-0063, post-v1), so the escape gate is driven from curated raw
+`Comp`s here — each a program whose kernel outcome is the DEFINED fail-loud `.escapedCap` (a cap used
+past its handler). The gate emits each, runs on wasmtime, and asserts the run ALSO fails loud (traps).
+A silent value = the naive-rep hole (the emitter reading a dead handler's box — witnessed printing 0
+TODAY). `stateLabel = 1` (Surface.lean:51); the shape mirrors `Bang.Examples.capEscape`
+(Examples.lean:258), reproduced inline because that `def` is not `public` cross-module. -/
+def escapeCatalog : List (String × Comp) :=
+  [ ("capEscape-get",
+     -- a {get} thunk captures its state handler's cap, is RETURNED out, then forced past the pop.
+     .letC
+       (.handle (.state 1 .vunit) (.ret (.vthunk (.perform (.vvar 0) "get" .vunit))))
+       (.force (.vvar 0)))
+  ]
+
 def main (args : List String) : IO Unit := do
   match args with
+  | "--escape" :: rest =>
+      -- Emit each escape-catalog Comp to `<outdir>/<name>.wat` (or print the verdict list). The
+      -- shell gate runs them on wasmtime and asserts fail-loud (kernel = .escapedCap for all).
+      let outdir := rest.head?.getD "."
+      for (name, c) in escapeCatalog do
+        let kernelEsc := match Source.eval 100000000 c with
+          | .escapedCap => "escapedCap"
+          | .done _ => "done"
+          | .stuck => "stuck"
+          | _ => "other"
+        match Bang.WasmEmit.emitModuleGCPrint c with
+        | .unsup r => IO.println s!"{name}\tKERNEL={kernelEsc}\tEMIT=REFUSED\t{r}"
+        | .ok wat =>
+            let path := s!"{outdir}/{name}.wat"
+            IO.FS.writeFile path wat
+            IO.println s!"{name}\tKERNEL={kernelEsc}\tEMIT=ok\t{path}"
   | "--shape" :: file :: _ =>
       let src ← IO.FS.readFile file
       match lowerEntry src with
