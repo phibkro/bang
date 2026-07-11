@@ -449,7 +449,12 @@ shake:
 # (network) and compiles it (tens of minutes cold).
 docs:
     bash tools/tool-log.sh docs
-    cd docbuild && lake build Bang:docs && echo "→ docbuild/.lake/build/doc/index.html"
+    # BangDocs.lean is a GENERATED doc-only barrel (regenerated every run — no
+    # staleness possible): the parent `Bang` lib is a rootless glob (the barrel
+    # was retired), and doc-gen4 renders root modules + transitive imports —
+    # a rootless lib renders "(0 root modules)", i.e. NOTHING (false-green).
+    find Bang -name '*.lean' | sort | sed 's|/|.|g; s|\.lean$||; s|^|import |' > docbuild/BangDocs.lean
+    cd docbuild && lake build BangDocs:docs && echo "→ docbuild/.lake/build/doc/index.html"
 
 # Deliberate snapshot acceptance for ONE example (plan 013 s8): re-run examples/<NAME>/main.bang
 # and rewrite its expected.txt from actual output, printing the old→new diff loudly. NAME is
