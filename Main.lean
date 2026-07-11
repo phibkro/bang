@@ -42,6 +42,7 @@ import Bang.Frontend.Rewrite
 import Bang.Frontend.Lint
 import Bang.Backend.AbstractMachine
 import Bang.Backend.EnvMachine
+import Bang.Backend.WasmEmit
 import Bang.Witness.LawTest
 
 open Bang
@@ -559,6 +560,30 @@ def runResolvedProg (typecheck : Bool) (engine : Engine) (fuel : Nat) (prog : Pr
     match Bang.TypeCheck.elaborateToCompProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
     | .ok c    => runComp engine fuel c
+
+/-- `bang emit <file> [-o out.wat]` — lower an entry FILE to a WasmGC `.wat` MODULE and print it (to
+stdout, or to `-o`/`--out` PATH). Shares the runner's `resolveEntryFile` (ADR-0093 D1-D5 module
+resolution + merge) so the emitter sees the SAME flat, module-resolved `Comp` `bang run` lowers —
+this is what makes an `import`-ing program (e.g. `examples/json`, whose `main` imports `Json`/`Parse`/
+`Print`) emit: the `rung4-shape` scratch exe couldn't, because it fed the emitter a single unresolved
+file (`calcjson-compiled-diagnosis.md` W3). The pipeline mirrors `runResolvedProg`'s type-checked leg
+exactly (`checkAndLowerProg`), then `emitModuleGCPrint` (the WASI-command printer form, so the emitted
+module prints its result and a differential harness can compare stdout to `bang run`). A program the
+GC path does not lower (effects on a first-class cap — `examples/calc`, #133; host-IO — hostio-echo,
+ADR-0104) yields a LOUD `EMIT-REFUSED` to stderr and exit 1, never a silent or wrong module. -/
+def runEmit (file : String) (out : Option String) : IO UInt32 := do
+  match ← resolveEntryFile file with
+  | .error e   => IO.eprintln s!"error: {e}"; pure 1
+  | .ok merged =>
+    match Bang.TypeCheck.checkAndLowerProg merged with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok c    =>
+      match Bang.WasmEmit.emitModuleGCPrint c with
+      | .unsup r => IO.eprintln s!"EMIT-REFUSED: {r}"; pure 1
+      | .ok wat  =>
+        match out with
+        | some path => IO.FS.writeFile ⟨path⟩ wat; pure 0
+        | none      => IO.println wat; pure 0
 
 /-! ## Host-IO driver (ADR-0104) — the replay-prefix seam's IO shell
 
@@ -1595,6 +1620,12 @@ def usage : String :=
   "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
   "  bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file\n" ++
   "             --json                  emit agent-facing structured JSON diagnostics on stdout\n\n" ++
+  "  bang emit <file.bang> [-o out.wat] lower to a WasmGC .wat MODULE (issue #136) — prints to stdout,\n" ++
+  "                                     or `-o`/`--out=` PATH. Module imports are resolved (same as\n" ++
+  "                                     `run`), so a multi-file program emits. Run the result on a\n" ++
+  "                                     WasmGC engine: `wasmtime run -W gc=y,function-references=y,\n" ++
+  "                                     exceptions=y out.wat`. A program the GC path cannot lower\n" ++
+  "                                     (a first-class-capability effect, or host-IO) refuses LOUDLY.\n\n" ++
   "  bang explain <CODE>                print the teaching entry for a stable diagnostic code\n" ++
   "                                     (the rustc `error[B004]` pattern, plan 013 s5): summary,\n" ++
   "                                     explanation, and a minimal triggering example. Codes appear\n" ++
@@ -1920,6 +1951,25 @@ def main (args : List String) : IO UInt32 := do
       | []      => runCheck json none        -- `bang check [--json]` with no file: read stdin
       | [arg]   => runCheck json (some arg)
       | _       => IO.eprintln usage; pure 1
+    else if cmd == "emit" then
+      -- `bang emit <file> [-o out.wat | --out=out.wat]` (#136): lower to a WasmGC .wat module,
+      -- print to stdout or `-o`. Module resolution is shared with `run` (`resolveEntryFile`), so an
+      -- import-ing program emits. `-o PATH` is a two-token flag; `--out=PATH` the `=` form.
+      let out : Option String :=
+        parseEqFlag "--out" rest <|> (do
+          let rec find : List String → Option String
+            | "-o" :: v :: _ => some v
+            | _ :: rst       => find rst
+            | []             => none
+          find rest)
+      -- strip the `-o PATH` pair before filtering positionals (PATH is not a `--`-prefixed token).
+      let rec stripOut : List String → List String
+        | "-o" :: _ :: rst => stripOut rst
+        | a :: rst         => a :: stripOut rst
+        | []               => []
+      match (stripOut rest).filter (fun a => !("--".isPrefixOf a)) with
+      | [arg] => runEmit arg out
+      | _     => IO.eprintln usage; pure 1
     else if cmd == "explain" then
       -- `bang explain <CODE>` (plan 013 s5): exactly one positional code; anything else is usage.
       match rest.filter (fun a => !("--".isPrefixOf a)) with
