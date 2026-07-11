@@ -192,6 +192,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **backend** — B1 bignum rep + decimal readback — big literals round-trip on the WasmGC path (#132) (`82117536`)
 - **backend** — B2 bignum add/sub/compare on the WasmGC path — full ℤ arithmetic (#132) (`e2f29cd1`)
 - **backend** — B3 bignum multiply — factorial past 2^63 on WasmGC (#132) (`e6804ad6`)
+- **lint** — plan 013 slice 6 — dead-private fixit, preservation-gated (`84cb31c5`)
 - **cli** — bang emit — module-resolved WasmGC emit; json compiles + runs on wasmtime (#136) (`d1fb4758`)
 
 ### Fixes
@@ -243,6 +244,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **elab** — #118 bare-fun-param hole gap — one-candidate-pins-the-hole dispatch (`25a99ad4`)
 - **modules** — the two #117 module-machinery gaps blocking trait-prelude migration (`b7e91ed2`)
 - **deriving** — #128 — type-qualify generated impl ctor names, doc the migration cost (`7de7ab12`)
+- **frontend** — #129 — top-level let-decl juxtaposition-absorption diagnostic (B016) (`8e0bca23`)
 - **backend** — Euclidean division on both emit paths — compiled path now matches the oracle (#132) (`5f566fd9`)
+- **frontend** — #130 — handler-clause op names accept reserved keywords, reach B002 (`563badd4`)
 
 <!-- END GENERATED changelog -->

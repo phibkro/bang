@@ -112,10 +112,25 @@ re-framed: census 18→20 clean** (the effectful forward-sim was already proven 
 adversarially AUDITED 5/5; the GC-bijection half = a priced post-v1 wall; the fmtTyArgs paren bug
 + the stale ONE-sorry comment killed en route) · docBlame 190→6 (non-Frontend) · **stranger round 5
 = 7/10 pre-tag QA** (F2 the List-injection regression CAUGHT+FIXED before public; #129/#130/#131
-open). **Queued**: the operator RELEASE LADDER (announcement review → matrix dry-run → deploy
-web/docs → landing taste pass → **tag v0.2** → post — NOTHING blocks the tag) · then #129 (top-level-
-let absorption) · #130 (B002 lexer routing) · #131 (mutual-rec reference prose + gate prose samples) ·
-#114 Frontend docBlame (143) · 013-S2/S6 · #83 · stranger round 6 (post-release, prose-sample-gated).
+open). **The FOURTH WAVE cleared the entire post-tag queue pre-tag (2026-07-11 night, ≤
+`742d6b3b`)**: #129 B016 diagnostic (the newcomer's-first-file misparse TEACHES now) · #130 pOpName
+(B002 fires) · #131 STRUCTURAL (every reference ```bang sample machine-gated in verify — 2 stale
+samples caught day-one; drift-by-construction closed) · #83 dedupe · 013-S6 `bang lint --fix` (its
+own would-delete-load-bearing-types bug caught pre-ship; S2 named-skip) · docBlame 138/143 Frontend
+(residuals parser-structural, verified) · **seq_unit DISCHARGED — census 21 clean · 6 flagged**
+(+ the missing shift-below-subst de Bruijn mirror) · **BIGNUM B0–B3: factorial 25 on wasmtime ==
+`bang run`** (first arbitrary-precision result outside Lean; B0 = the #132 Euclidean-div soundness
+fix; B4 defer-loud) · **`bang emit`** (module-resolved; json → WasmGC → wasmtime prints 163, GATED —
+GC corpus 18) · the compiled-dogfood battery (calc+json `--compiled` oracle+differential; the
+recorded dogfood hangs were STALE, #95 dissolved them; calc emit = #133 first-class-cap wall,
+priced) · **WASI-0.3 async spike: GO** (an async component RAN on wasmtime 45; ~0.7µs fixed tax;
+ADR-0101 Addendum ① — the spike gate MET) · #127 H1b CLOSED via ADR-0052 (nearness = the rejected
+nearest-label, witnessed). **Queued**: the operator RELEASE LADDER (announcement review → matrix
+dry-run → deploy web/docs → landing taste pass → **tag v0.2** → post — NOTHING blocks the tag, and
+the claims GREW: 21-clean census · dogfood runs compiled, gated · json on wasmtime, gated ·
+factorial-25 · the un-driftable reference) · post-release: stranger round 6 · #133 first-class-cap
+GC rep · B4 bignum div · S5's post-v1 `wgcexec` unlock · the #83-renameVars + 5-residual follow-ups ·
+effect_sound re-foundation · the explainer-series content lane (held for the landing taste pass).
 Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
