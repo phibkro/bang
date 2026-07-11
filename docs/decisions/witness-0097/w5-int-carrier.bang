@@ -1,0 +1,2 @@
+trait Eq { fn eq(a, b) -> (Unit + Unit) law refl(a): a == a }
+impl Eq for Int { fn eq(a, b) = a == b }

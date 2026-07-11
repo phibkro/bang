@@ -1,0 +1,14 @@
+data Box = BLeft(Int) | BRight(Int)
+
+trait Ord { fn lt(a, b) -> (Unit + Unit) law irrefl(a): 0 == 0 }
+
+impl Ord for Box {
+  fn lt(p, q) = match p {
+    BLeft(x) -> match q { BLeft(y) -> x < y, BRight(y) -> 0 == 0 },
+    BRight(x) -> match q { BLeft(y) -> 0 == 1, BRight(y) -> x < y }
+  }
+}
+
+let a = BLeft(3) in
+let b = BLeft(5) in
+a < b

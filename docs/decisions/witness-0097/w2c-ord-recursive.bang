@@ -1,0 +1,17 @@
+data IntList = Nil | Cons(Int, IntList)
+
+trait Ord { fn lt(a, b) -> (Unit + Unit) law irrefl(a): 0 == 0 }
+
+impl Ord for IntList {
+  fn lt(p, q) = match p {
+    Nil -> match q { Nil -> 0 == 1, Cons(hy, ty) -> 0 == 0 },
+    Cons(hx, tx) -> match q {
+      Nil -> 0 == 1,
+      Cons(hy, ty) -> if hx < hy then 0 == 0 else (if hy < hx then 0 == 1 else tx < ty)
+    }
+  }
+}
+
+let l1 = Cons(1, Nil) in
+let l2 = Cons(2, Nil) in
+l1 < l2

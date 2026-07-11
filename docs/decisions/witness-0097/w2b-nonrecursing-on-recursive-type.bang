@@ -1,0 +1,14 @@
+data IntList = Nil | Cons(Int, IntList)
+
+trait Eq { fn eq(a, b) -> (Unit + Unit) law refl(a): a == a }
+
+impl Eq for IntList {
+  fn eq(p, q) = match p {
+    Nil -> 0 == 0,
+    Cons(hx, tx) -> 0 == 0
+  }
+}
+
+let l1 = Cons(1, Nil) in
+let l2 = Cons(1, Nil) in
+l1 == l2
