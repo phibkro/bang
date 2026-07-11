@@ -4682,12 +4682,28 @@ unqualified, and a `data` decl's ctor list can rename each ctor independently �
 uniform renaming across one type's ctors) — the TYPE name itself still always qualifies (there is
 no unqualified-type-name analogue: `use tokenizer (Token)` hoists the CTORS `Token` carries per
 D2's "ctors travel with their type" wording, read literally as ctors, not the type name, which
-`qualifyTyName`'s OWN `usedNames` exclusion handles separately at ascription sites). -/
+`qualifyTyName`'s OWN `usedNames` exclusion handles separately at ascription sites).
+
+A `use`d TRAIT is the mirror of a `use`d ctor, not a `use`d type: unlike a type name (referenced
+only via `Ty` positions, handled separately by `qualifyTyName`) or a plain fn (referenced via
+`Surf.var`, handled by the `letD`-alias `usedPlainFns` wrap — semantically WRONG for a trait, since
+a trait name is never a first-class value a `let` can bind), a trait's declared name is referenced
+in EXACTLY ONE surface position: `Decl.implD`'s target-trait field (`n` in `.implD n t ops`,
+`qualifyDeclName`'s own arm below, deliberately left untouched — "already qualified via the
+trait's own decl"). That invariant only holds if the trait's OWN qualification and every `impl`
+naming it agree — for a `use`d trait declared in ANOTHER file, an entry-file `impl Eq for Box`
+still names the BARE `Eq`, so the trait itself must ALSO stay bare (`usedCtors.contains n`,
+reusing the same "keep bare" set `.dataD`'s ctors already ride — a trait is a flat top-level name
+exactly like a ctor, `moduleTopNames`'s own `d.name` fallback already includes it) — otherwise
+`impl Eq for Box` and `trait Eq`'s own now-qualified `ModName_Eq` diverge and `buildEnv` rejects the
+impl as targeting an undeclared trait (confirmed live before this fix: `error: impl of undeclared
+trait 'Eq'`, a two-file program importing a trait and implementing it in the entry file). -/
 def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .dataD n ps cs        =>
       .dataD (qualifyName modName n) ps (cs.map (fun (c, tys) => (if usedCtors.contains c then c else qualifyName modName c, tys)))
   | .effectD n ops        => .effectD (qualifyName modName n) ops
-  | .traitD n ps ops laws => .traitD (qualifyName modName n) ps ops laws
+  | .traitD n ps ops laws =>
+      .traitD (if usedCtors.contains n then n else qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
   | .fnD n ps ty tr tv b  => .fnD (qualifyName modName n) ps ty tr tv b
   | .letD n ty e          => .letD (qualifyName modName n) ty e
@@ -5356,9 +5372,21 @@ SAME name is the INNERMOST (later) binder and lexically SHADOWS the prelude one 
 retired `injectStdlib`'s all-or-nothing `declared.contains "Str"/"Option"` bucket gate: each of the
 21 prelude names shadows INDEPENDENTLY, not as two coarse bundles. A name COLLISION between the
 prelude and a module the user separately `use`s is the SAME loud multi-import error `mergeModules`
-already gives two colliding `use`s (ADR-0046) — no new error path. -/
+already gives two colliding `use`s (ADR-0046) — no new error path.
+
+**`p.derivesFor`, not just `progUsesVar` (#117's trait-prelude migration):** a `deriving (Eq)`
+clause names its trait ONLY in `Prog.derivesFor` (`List (String × List String)`, parsed
+separately from the `Surf`/decl-body trees `surfUsesVar`/`progUsesVar` walk) — a program with
+`data Foo = … deriving (Eq)` and NO other bare reference to `Eq` anywhere never "mentions" `Eq` by
+`progUsesVar`'s definition, so the mention-filter alone would silently drop the prelude's `Eq`
+trait for exactly the derive-only shape that needs it most. `derivesFor.flatMap Prod.snd` (every
+derive NAME across every `deriving` clause) is unioned into the mention set — this runs AFTER
+`expandDerives` (`elabProg`'s pipeline order), whose generated `impl <Trait> for <dataName>`
+targets the trait by this SAME bare name, so the two stay in lockstep by construction: whatever
+name a derive clause asks for is exactly the name its generated `impl` needs resolvable. -/
 def injectPrelude (p : Prog) : Except String Prog :=
-  let mentioned := preludePubNames.filter (progUsesVar · p)
+  let derivedTraitNames := p.derivesFor.flatMap Prod.snd
+  let mentioned := preludePubNames.filter (fun n => progUsesVar n p || derivedTraitNames.contains n)
   if mentioned.isEmpty then pure p
   else
     let trimmedPrelude := { preludeProg with
@@ -5377,37 +5405,16 @@ payload for `Ord`. §3a: recursive carriers (`Cons(Int, IntList)`) are IN SCOPE 
 `wrapPendingKnots`) any hand-written 2-param impl op does, so a self-referential `tx == ty` (on the
 carrier's own recursive field) resolves through real recursion, not a splice.
 
-**Trait sourcing (ADR-0097 §2's decision (a), scoped per §6/Revisit-if's stopgap):** rather than
-importing a `Prelude.bang`-declared `trait Eq`/`trait Ord` (deferred — see the two gaps this
-session found, not yet closed: `mergeModules`'s `qualifyDeclName` unconditionally qualifies a
-`.traitD`'s OWN name to `ModName_Name` with no `usedPlainFns`-style un-qualification alias for
-trait names, unlike a plain fn; and `bang test`'s law discovery, `lawInstancesOf`/
-`lawInstanceOpCallDiagnostics`, parses RAW source directly with no prelude/module-merge step at
-all, so a prelude-only trait declaration would be invisible to `bang test` on a decls-only derived
-program), the handler emits a MINIMAL inline `trait Eq`/`trait Ord` declaration itself — ONLY when
-the program doesn't already declare a trait of that name (a user's own hand-written `trait Eq`
-wins; the handler then targets IT instead, matching whatever op/law shape the user chose, mirroring
-how `#108`'s ctor namespacing needs no derive-handler awareness because the fold is always
-self-type-scoped). This keeps every derive-handler-touched program SELF-CONTAINED (no module merge,
-no qualification, no `bang test` blind spot) — the exact shape ADR-0097's own witnesses ran, and
-what `examples/trait-recursive-{eq,ord}` already encode by hand. Superseded once `Prelude.bang`
-ships a canonical `trait Eq`/`trait Ord` AND both gaps above are closed (ADR-0097's own "Revisit
-if"). -/
-
-/-- The canonical `Eq`/`Ord` trait declarations this handler targets — SAME shape ADR-0097 §2's
-worked examples and `examples/trait-recursive-{eq,ord}` hand-write, so a generated impl is
-behaviorally IDENTICAL to those (the differential oracle this handler is built to match). One law
-each (`refl`/`irrefl` — deliberately minimal, not the full `symm`/`trans`/total-order set ADR-0097
-§2 sketches for the eventual `Prelude.bang` version): a stopgap ships the SMALLEST law that still
-demonstrates `bang test`'s free law-discovery (ADR-0097 §5), not the full canonical law suite,
-which belongs on the (not-yet-shipped) prelude declaration this stands in for. -/
-def eqTraitDecl : Decl :=
-  .traitD "Eq" [] [⟨"eq", ["a", "b"], .tSum .tUnit .tUnit, .tArr .tSelf (.tArr .tSelf (.tSum .tUnit .tUnit))⟩]
-    [⟨"refl", ["a"], .binopS .eq (.var "a") (.var "a")⟩]
-
-def ordTraitDecl : Decl :=
-  .traitD "Ord" [] [⟨"lt", ["a", "b"], .tSum .tUnit .tUnit, .tArr .tSelf (.tArr .tSelf (.tSum .tUnit .tUnit))⟩]
-    [⟨"irrefl", [], .binopS .eq (.lit 0) (.lit 0)⟩]
+**Trait sourcing (ADR-0097 §2's decision (a), landed #117):** the handler targets `Prelude.bang`'s
+canonical `trait Eq`/`trait Ord` (the full `refl`/`symm`/`trans` and `irrefl`/`asym`/`trans` law
+suites, ADR-0097 §2's own sketch) — `injectPrelude`'s mention set now includes every derive NAME in
+`p.derivesFor` (not just a `progUsesVar` bare reference), so `deriving (Eq)` alone triggers the
+merge with zero other mention needed, closing the #117 gap that blocked this at ADR-0097 landing
+time. A user's own hand-written `trait Eq` still wins by ordinary lexical shadowing (D4, the SAME
+mechanism every other prelude entry shadows by) — the handler emits NO trait declaration itself,
+only the generated `impl <Trait> for <dataName>`, so there is nothing here to prefer one trait
+source over another; whichever `trait Eq` is in scope by the time `buildEnv` runs (the user's own,
+if declared, else the prelude's, via ordinary decl-order) is the one the impl targets. -/
 
 /-- `true`/`false` as the SAME `Unit + Unit` encoding every hand-written law/impl in the corpus
 uses (`0 == 0` / `0 == 1`, ADR-0097 §2's worked examples) — the derive handler's fold emits these
@@ -5458,15 +5465,25 @@ def eqArmBody (outerArity innerArity : Nat) : Surf :=
 /-- The full `Eq.eq` fold over ALL (outer, inner) ctor pairs of `cs` — a `matchD`-of-`matchD`
 diagonal, ADR-0097 §2's exact shape. Each outer arm's binders are `x0..`; each nested inner arm
 (one per ctor of `cs` again) is `y0..` when it's the SAME ctor as the outer arm (payload-wise
-fold), else `deriveFalseS` (payload unused, so its binders are irrelevant — bound but unread). -/
-def eqFoldBody (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
+fold), else `deriveFalseS` (payload unused, so its binders are irrelevant — bound but unread).
+**#128:** every `matchD` arm head is the TYPE-QUALIFIED ctor name (`qualifyName dataName ctor`,
+ADR-0099's `Type_Ctor` convention — `qualifyDeclName`'s own precedent, TypeCheck.lean:4686),
+UNCONDITIONALLY, not just when a collision is detected: a qualified reference resolves identically
+whether or not the bare name is ambiguous (verified live — `Box_BLeft` matches fine even with no
+colliding `Box`-named type in scope), so there is no cheaper "detect the collision, qualify only
+then" branch to earn — one spelling, always correct, mirrors the already-generated `impl`'s own
+target `Ty.tName dataName` (never bare-vs-qualified conditional either). Fixes the #128 regression
+(ADR-0103 Amendment ①'s unconditional `List` injection made every bare-`Nil`/`Cons` carrier's
+OWN generated derive body ambiguous, B012, since the generator emitted the SAME bare spelling a
+hand-written impl would need to qualify post-migration). -/
+def eqFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
   let outerArms := cs.map (fun (outerCtor, outerTys) =>
     let xs := deriveFieldNames "x" outerTys.length
     let innerArms := cs.map (fun (innerCtor, innerTys) =>
       let ys := deriveFieldNames "y" innerTys.length
       let body := if innerCtor == outerCtor then eqArmBody outerTys.length innerTys.length else deriveFalseS
-      (innerCtor, ys, body))
-    (outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
+      (qualifyName dataName innerCtor, ys, body))
+    (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
 /-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒
@@ -5492,64 +5509,56 @@ def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
 
 /-- The full `Ord.lt` fold over ALL (outer, inner) ctor pairs of `cs` — mirrors `eqFoldBody`'s
 `matchD`-of-`matchD` shape exactly, threading each ctor's DECL-ORDER INDEX (its position in `cs`,
-ADR-0069's ordinal) into `ordArmBody` instead of a same/different-ctor Bool. -/
-def ordFoldBody (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
+ADR-0069's ordinal) into `ordArmBody` instead of a same/different-ctor Bool. **#128:** every
+`matchD` arm head TYPE-QUALIFIED (`qualifyName dataName ctor`), same fix + rationale as
+`eqFoldBody`'s own doc comment. -/
+def ordFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
   let indexed := cs.zipIdx
   let outerArms := indexed.map (fun ((outerCtor, outerTys), outerIdx) =>
     let xs := deriveFieldNames "x" outerTys.length
     let innerArms := indexed.map (fun ((innerCtor, innerTys), innerIdx) =>
       let ys := deriveFieldNames "y" innerTys.length
-      (innerCtor, ys, ordArmBody outerIdx innerIdx outerTys.length innerTys.length))
-    (outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
+      (qualifyName dataName innerCtor, ys, ordArmBody outerIdx innerIdx outerTys.length innerTys.length))
+    (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
 /-- Expand ONE `(dataName, deriveList)` entry (`Prog.derivesFor`) into the `Decl`s it contributes:
-a stopgap `trait Eq`/`trait Ord` declaration IFF the program doesn't already declare a trait of
-that name (the "target the user's own trait if present" rule, this section's header comment), plus
-the generated `impl <Trait> for <dataName> { fn <op>(p, q) = <fold> }`. Refuses (LOUD error, ADR-0046)
-a function-typed payload slot anywhere in `cs` (ADR-0097 §4 — vacuous in v1 today, asserted anyway)
+the generated `impl <Trait> for <dataName> { fn <op>(p, q) = <fold> }`, targeting whichever
+`trait Eq`/`trait Ord` is in scope (the user's own, or `Prelude.bang`'s canonical one, resolved by
+ordinary lexical shadowing once `injectPrelude` merges it in — #117's migration; the handler itself
+emits no trait declaration, ADR-0097 §2's decision (a)). Refuses (LOUD error, ADR-0046) a
+function-typed payload slot anywhere in `cs` (ADR-0097 §4 — vacuous in v1 today, asserted anyway)
 and an unrecognized derive name (only `Eq`/`Ord` are tier-1, ADR-0097's own scope). -/
-def expandOneDerive (existingTraitNames : List String) (dataName : String)
-    (cs : List (String × List Ty)) (deriveName : String) : Except String (List Decl) := do
+def expandOneDerive (dataName : String) (cs : List (String × List Ty)) (deriveName : String) :
+    Except String (List Decl) := do
   if cs.any (fun (_, tys) => tys.any tyHasArrow) then
     throw s!"cannot derive '{deriveName}' for '{dataName}': a constructor payload is function-typed \
 (Eq/Ord are undecidable on functions, ADR-0097 §4)"
   match deriveName with
   | "Eq" =>
-      let traitDecl := if existingTraitNames.contains "Eq" then [] else [eqTraitDecl]
-      let implDecl := Decl.implD "Eq" (Ty.tName dataName)
-        [⟨"eq", ["p", "q"], eqFoldBody cs "p" "q"⟩]
-      pure (traitDecl ++ [implDecl])
+      pure [Decl.implD "Eq" (Ty.tName dataName) [⟨"eq", ["p", "q"], eqFoldBody dataName cs "p" "q"⟩]]
   | "Ord" =>
-      let traitDecl := if existingTraitNames.contains "Ord" then [] else [ordTraitDecl]
-      let implDecl := Decl.implD "Ord" (Ty.tName dataName)
-        [⟨"lt", ["p", "q"], ordFoldBody cs "p" "q"⟩]
-      pure (traitDecl ++ [implDecl])
+      pure [Decl.implD "Ord" (Ty.tName dataName) [⟨"lt", ["p", "q"], ordFoldBody dataName cs "p" "q"⟩]]
   | other => throw s!"unknown derive '{other}' for '{dataName}' — v1 supports only 'Eq'/'Ord' (ADR-0097 tier 1)"
 
-/-- **The derive handler's PUBLIC entry (#109, ADR-0097).** Expand every `Prog.derivesFor` entry
-into its `trait`/`impl` decls, APPENDING them AFTER `p.decls` — every derived `impl`'s target
-`data` decl (and, when the program hand-declares its own `trait Eq`/`trait Ord`, that trait too)
-textually PRECEDES it, matching `buildEnv`'s own "IN ORDER" contract (`buildEnv`'s doc comment,
-TypeCheck.lean: "a data type may reference itself + earlier decls; forward references fail loud")
-and mirroring hand-written impl placement in the ADR's own worked examples and
-`examples/trait-recursive-*`.
-
-A stopgap trait declaration (`eqTraitDecl`/`ordTraitDecl`) is added AT MOST ONCE per program even
-if multiple `data` decls derive the SAME trait (`Eq` on both `Box` and `IntList` in one program) —
-tracked via a running `traits already emitted or user-declared` set threaded through the fold,
-avoiding a `buildEnv` "duplicate trait" surprise (today unenforced, ADR-0097 doesn't want to be the
-first thing that trips it). Runs BEFORE `injectPrelude`/`eraseLettMultiProg` in `elabProg`'s
-pipeline, and is called directly by `lawInstancesOf`/`lawInstanceOpCallDiagnostics`/
-`unreachableIntImplDiagnostics` (via `parseProgWithDerives`, below) so `bang test`'s raw-source law
-discovery sees the SAME expanded decls `elabProg` does — closing the gap a `Prelude.bang`-sourced
-trait would have left open (this section's header comment). -/
+/-- **The derive handler's PUBLIC entry (#109, ADR-0097; #117 landed the trait-sourcing decision).**
+Expand every `Prog.derivesFor` entry into its generated `impl` decls, APPENDING them AFTER
+`p.decls` — every derived `impl`'s target `data` decl textually PRECEDES it, matching `buildEnv`'s
+own "IN ORDER" contract (`buildEnv`'s doc comment, TypeCheck.lean: "a data type may reference
+itself + earlier decls; forward references fail loud") and mirroring hand-written impl placement
+in the ADR's own worked examples and `examples/trait-recursive-*`. The trait itself is NEVER
+emitted here (§2's decision (a)) — `injectPrelude` merges `Prelude.bang`'s canonical `trait
+Eq`/`trait Ord` in whenever `p.derivesFor` names them (that mention-set widening, `injectPrelude`'s
+own doc comment, is what makes a derive-only program with zero other trait mention still resolve).
+Runs BEFORE `injectPrelude`/`eraseLettMultiProg` in `elabProg`'s pipeline, and is called directly by
+`lawInstancesOf`/`lawInstanceOpCallDiagnostics`/`unreachableIntImplDiagnostics` (via
+`parseProgWithDerives`, below) for the SINGLE-FILE law-discovery path; `bang test` on a MULTI-FILE
+program additionally routes through `lawTestSourceOfProg` (also below), which runs `injectPrelude`
+too — both paths see the SAME expanded decls `elabProg` does. -/
 public def expandDerives (p : Prog) : Except String Prog := do
   if p.derivesFor.isEmpty then pure p
   else
-    let existingTraitNames := p.decls.filterMap (fun d => match d with | .traitD n .. => some n | _ => none)
     let mut newDecls : List Decl := []
-    let mut seenStopgapTraits : List String := existingTraitNames
     for (dataName, derives) in p.derivesFor do
       match p.decls.find? (fun d => match d with | .dataD n _ _ => n == dataName | _ => false) with
       | none => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
@@ -5566,25 +5575,70 @@ v1's derive handler only targets MONOMORPHIC carriers (ADR-0097 §6). Either dro
 instantiation you need."
       | some (.dataD _ [] cs) =>
           for deriveName in derives do
-            let ds ← expandOneDerive seenStopgapTraits dataName cs deriveName
-            for d in ds do
-              match d with
-              | .traitD n .. => seenStopgapTraits := n :: seenStopgapTraits
-              | _ => pure ()
+            let ds ← expandOneDerive dataName cs deriveName
             newDecls := newDecls ++ ds
       | some _ => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
     pure { p with decls := p.decls ++ newDecls }
 
-/-- `parseProg` FOLLOWED by `expandDerives` (#109) — the ONE place law discovery
-(`lawInstancesOf`/`lawInstanceOpCallDiagnostics`/`unreachableIntImplDiagnostics`) and `elabProg`'s
-own `Bang.Surface.parseProg src >>= elabProg` callers should reach for instead of a bare
-`parseProg`, so a `deriving`-only decls file (no hand-written `trait`/`impl` at all) still
-discovers its derived impl's laws under `bang test` — `bang test`'s `runTest` (Main.lean) parses
-RAW source with zero module/prelude resolution, so if the derive expansion happened only inside
-`elabProg`'s deeper pipeline, `bang test` would see zero decls and report "no trait laws found"
-even though a `deriving`-generated impl (with a freely-attached law, ADR-0097 §5) exists. -/
+/-! ### Validation ⑨m — #117: the trait-prelude migration's own regression net, part 1 (part 2,
+the `checkProg`/`runTypedYieldsInt`-dependent derive-only scenario, lives further down where those
+helpers are defined). `trait Eq`/`trait Ord` now live in `Prelude.bang`, not an `expandDerives`
+stopgap. -/
+
+/-- **#117's gap 1:** a `use`d TRAIT resolves BARE at the impl site, symmetric with a
+`use`d ctor. Reproduced RED before the fix (`error: impl of undeclared trait 'Eq'`) via
+`qualifyModule`/`qualifyDeclName` directly (the ONE `Prog`-taking pure-function seam this file's
+own corpus convention exercises — no IO, so no `resolveEntryFile`/file-fixture needed to pin the
+regression: `mergeModules` is exactly what a real multi-file `use` drives). -/
+def eqModProg : Prog :=
+  { pubNames := ["Eq"],
+    decls := [.traitD "Eq" [] [⟨"eq", ["a", "b"], .tSum .tUnit .tUnit,
+      .tArr .tSelf (.tArr .tSelf (.tSum .tUnit .tUnit))⟩] [⟨"refl", ["a"], .binopS .eq (.var "a") (.var "a")⟩]],
+    body := .lit 0, isLibrary := true }
+#guard (match mergeModules [("EqMod", eqModProg)]
+    { uses := [⟨"EqMod", ["Eq"]⟩],
+      decls := [.dataD "Box" [] [("BLeft", [.tInt]), ("BRight", [.tInt])],
+                .implD "Eq" (.tName "Box")
+                  [⟨"eq", ["p", "q"], .binopS .eq (.var "p") (.var "q")⟩]],
+      body := .binopS .eq (.app (.var "BLeft") (.lit 3)) (.app (.var "BLeft") (.lit 3)), isLibrary := false } with
+    | .ok merged => merged.decls.any (fun d => match d with | .traitD "Eq" .. => true | _ => false)
+    | .error _   => false)
+
+/-- **Widened for #117's gap-2 fix.** Originally `parseProg >>= expandDerives` alone (so a
+`deriving`-only decls file, with no hand-written `trait`/`impl`, still discovers its derived
+impl's laws under `bang test` — `elabProg`'s own deeper pipeline runs `expandDerives` too, but
+`bang test`'s law-discovery callers below never reach it). NOW ALSO runs `injectPrelude`
+(`elabProg`'s NEXT pipeline step, same order): once `trait Eq`/`trait Ord` migrated OUT of
+`expandDerives`'s own stopgap emission and INTO `Prelude.bang` (#117), a `deriving (Eq)`-only
+program's trait genuinely lives OUTSIDE `p.decls` until `injectPrelude` merges it in — WITHOUT
+this widening, `lawInstancesOf`'s trait×impl walk finds no matching `.traitD` and silently reports
+"no trait laws found" (confirmed live: a decls-only `deriving (Eq, Ord)` file, zero other trait
+mention). `injectPrelude`'s OWN mention-set already covers a derive-only program (its doc comment:
+`p.derivesFor` names are unioned in, not just `progUsesVar`), so no further widening is needed
+here — this function just has to actually CALL it. -/
 def parseProgWithDerives (src : String) : Except String Prog :=
-  Bang.Surface.parseProg src >>= expandDerives
+  Bang.Surface.parseProg src >>= expandDerives >>= injectPrelude
+
+/-- **The MULTI-FILE gap-2 fix (#117):** `lawInstancesOf`/`lawInstanceOpCallDiagnostics`/
+`unreachableIntImplDiagnostics` (via `parseProgWithDerives`, above) now run `injectPrelude` too,
+but ONLY reach it after a bare `Bang.Surface.parseProg` — sound for a SINGLE file, but a
+multi-file program's `use Mod (Trait)`/`import Mod` header needs `Mod` RESOLVED first (a real
+`import`/`use` merge, `Main.lean`'s `resolveEntryFileRaw`, IO — file reads stay there) before
+`expandDerives`/`injectPrelude` can see anything from `Mod` at all. `Main.lean`'s multi-file
+resolver already produces a merged `Prog`; this function takes THAT `Prog`, runs the SAME
+`expandDerives` + `injectPrelude` steps `parseProgWithDerives` runs for the single-file case, then
+re-derives a SOURCE STRING via `Bang.Format.showProg` (`showProg`/`parseProg` already round-trip,
+`checkAndLowerProg`'s own precedent for why this needs no new re-parse-avoidance machinery) — the
+existing `lawInstancesOf`/`lawInstanceOpCallDiagnostics`/`unreachableIntImplDiagnostics`/
+`runLawsFromSource` (`Bang.Witness.LawTest`) then run UNCHANGED against that string (their OWN
+`parseProgWithDerives` re-parse is now a no-op re-derivation, since the string already has no
+`import`/`use` header left — `mergeModules` clears both, ADR-0093 D1-D4). One construct extended,
+not duplicated (mirrors `checkAndLower`/`checkAndLowerProg`'s existing split, ADR-0093 D4's own
+seam). -/
+public def lawTestSourceOfProg (p : Prog) : Except String String := do
+  let p ← expandDerives p
+  let p ← injectPrelude p
+  pure (Bang.Format.showProg p)
 
 /-- **#112 fix.** Wrap `body` in one `let rec` per PENDING 2-param impl-op knot (`env.pendingKnots`,
 DECL ORDER — each subsequent `let rec` nests OUTSIDE the previous, so it sees every earlier knot's
@@ -7362,6 +7416,37 @@ free `a` unresolved — `monomorphizeLetRec` only visits `.letRecS` nodes). -/
 #guard runTypedYieldsInt 600
   ("data List a = Nil | Cons(a, List a) " ++
    "$length ((Cons(1, Cons(2, Nil)) : List Int) : List Int)") 2
+
+/-! ### Validation ⑨m part 2 — #117: the trait-prelude migration's derive-only regression. A
+`deriving (Eq, Ord)` program with ZERO other bare mention of `Eq`/`Ord` still resolves — the exact
+shape `injectPrelude`'s widened mention-set (`p.derivesFor`, not just `progUsesVar`) exists for
+(part 1, gap 1's `use`d-trait guard, lives earlier in this file next to `mergeModules`). -/
+def derivePointProg : String := "data Point = Pt(Int, Int) deriving (Eq, Ord) "
+#guard (match checkProg (derivePointProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (derivePointProg ++ "if (Pt(3, 4) == Pt(3, 4)) then (if Pt(3, 4) < Pt(3, 5) then 1 else 0) else 0") 1
+-- the SAME `checkProg "3"` INERT-for-unused precedent (Validation ⑨k) applies to a program that
+-- derives NOTHING at all — `p.derivesFor.isEmpty` short-circuits `expandDerives`/the widened
+-- mention union before `injectPrelude` ever runs, so a non-deriving program pays nothing extra.
+#guard (match checkProg "3" with | .ok (_, ρ) => decide (ρ = ∅) | _ => false)
+
+/-! ### Validation ⑨n — #128: `deriving` on a carrier whose BARE ctor names collide with the
+injected `List a` (ADR-0103 Amendment ①) — RED before this fix (`B012 ambiguous constructor
+'Nil'`, confirmed live against the branch this ADR landed on: the GENERATED impl body used the
+same bare ctor spelling a hand-written impl would need to qualify post-migration). `eqFoldBody`/
+`ordFoldBody` now emit `Type_Ctor`-qualified ctor names UNCONDITIONALLY (ADR-0099's convention),
+so the generated impl resolves regardless of collision — a USER value of the SAME colliding
+carrier still needs the qualified spelling too (the ordinary B012 migration cost, unrelated to
+this fix), exercised here identically to `examples/trait-recursive-{eq,ord}`. -/
+def derivedIntListProg : String :=
+  "data IntList = Nil | Cons(Int, IntList) deriving (Eq, Ord) "
+#guard (match checkProg (derivedIntListProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (derivedIntListProg ++
+    "let l1 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in " ++
+    "let l2 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in " ++
+    "let l3 = IntList_Cons(1, IntList_Cons(3, IntList_Nil)) in " ++
+    "if l1 == l2 then (if l1 == l3 then 0 else (if l1 < l3 then 1 else 0)) else 0") 1
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic

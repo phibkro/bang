@@ -71,3 +71,15 @@ pub let rec head : List a -> Option a =
   fun xs => match (xs : List a) { Nil -> None, Cons(h, t) -> Some h }
 pub let rec tail : List a -> Option (List a) =
   fun xs => match (xs : List a) { Nil -> None, Cons(h, t) -> Some t }
+pub trait Eq {
+  fn eq(a, b) -> Unit + Unit;
+  law refl(a): a == a;
+  law symm(a, b): let #p = a == b in if #p then b == a else 0 == 0;
+  law trans(a, b, c): let #p = a == b in if #p then let #p = b == c in if #p then a == c else 0 == 0 else 0 == 0
+}
+pub trait Ord {
+  fn lt(a, b) -> Unit + Unit;
+  law irrefl(a): 0 == 0;
+  law asym(a, b): let #p = a < b in if #p then if b < a then 0 == 1 else 0 == 0 else 0 == 0;
+  law trans(a, b, c): let #p = a < b in if #p then let #p = b < c in if #p then a < c else 0 == 0 else 0 == 0
+}

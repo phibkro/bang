@@ -247,7 +247,13 @@ The generated `impl` is indistinguishable from a hand-written one — `==`/`<` d
 through it exactly like any other trait op, usable directly in a `match`. A
 SELF-RECURSIVE carrier (`data IntList = Nil | Cons(Int, IntList) deriving (Eq)`) is
 supported: the fold recurses through the SAME knot-based `let rec` dispatch (#112) a
-hand-written recursive impl rides.
+hand-written recursive impl rides. The GENERATED impl always uses the carrier's OWN
+type-qualified ctor names internally (`IntList_Nil`/`IntList_Cons`, ADR-0099's
+`Type_Ctor` form) — so if your carrier's bare ctor names collide with another
+co-present type's (e.g. the prelude's built-in `List a = Nil | Cons(a, List a)`,
+ADR-0103 Amendment ①), you construct/match VALUES of your own carrier with the SAME
+qualified spelling (`IntList_Cons(1, IntList_Nil)`, not bare `Cons(1, Nil)`) — B012
+catches the ambiguity loud, naming the fix.
 
 **Only `Eq`/`Ord` derive today** (tier 1 — their ops are binop-dispatched, so a
 derived impl is usable the moment it exists, no separate name-callability wiring).

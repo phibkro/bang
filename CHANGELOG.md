@@ -237,5 +237,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **diagnostics** — teach ascription instead of leaking an internal hole marker (#124) (`b63f01d2`)
 - **checker** — #119 row-subsumption asymmetry — checkSC catch-all now subsumption-aware (`48131c06`)
 - **elab** — #118 bare-fun-param hole gap — one-candidate-pins-the-hole dispatch (`25a99ad4`)
+- **modules** — the two #117 module-machinery gaps blocking trait-prelude migration (`b7e91ed2`)
 
 <!-- END GENERATED changelog -->
