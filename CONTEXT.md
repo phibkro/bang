@@ -34,13 +34,16 @@ the nested same-effect dispatch oracle — 23 examples. **#94 verdict (b)**: ann
 structurally (no open-row surface syntax exists); workaround posted to the issue — drop the ascription,
 let-generalization gives real ∀ρ reuse today; the subeffecting/Rémy/open-row-syntax fork DEFERRED.
 
-**The census wall is fully machine-characterized and the route is RULED** — four refute-first rounds
-(ADR-0096 amendments ①–③) killed every cheap shape; round 4's α-probe refuted the last def-change route
-at delivery (`krelS_hole_det` genuinely FALSE, axiom-clean falsifier KEPT as do-not-weaken). **Operator
-ruling (2026-07-10 night): the census unit stays PARKED; route (β) — the fuel-indexed LR re-index, the
-only route that closes the wall — runs as a BACKGROUND lane (`feat-lr-fuel-reindex`, sliced) parallel to
-the emission arc.** Census unchanged at 18; the landing shape unchanged — 18→20 via `lr_fundamental` +
-`lr_fundamental_closed`; the STILL-FLAGGED `lr_sound` additionally needs Q22 (HELD).
+**The lr_* census unit is CLOSED-AS-PARKED (operator ruling, 2026-07-11; ADR-0096 amendment ④)** —
+five machine-arbitrated rounds refuted EVERY route: both survivors, (α) def-conclusion strengthening
+AND (β) the fuel-indexed re-index, fail at the SAME inter-derivation ANSWER-DETERMINACY wall (a
+statement-level determinacy gap, not proof technique). BANKED on `feat-lr-carrier-stackinc-wip @
+5fbf0d79` (= `feat-lr-fuel-reindex`): the fuel twin `LRFuel.lean` (termination+location closed
+sorry-free) + the do-not-weaken falsifier set. **Resume bar (do-not-lower): only
+answer-determined-by-construction (answer-in-the-frame, kernel-adjacent) with its own kernel-engineer
+refute-first consult re-opens it — no background lane, no queue slot.** v1 ships the three `lr_*`
+flagged (census 18; nothing user-facing regresses — the soundness diagonal is `Crel`-free); the ◊4
+paper goes CPP-framed with one named residual.
 
 **The tooling/hygiene stratum jumped a rung** (the /improve loop: 11 plans, 9 landed — `plans/README.md` is
 the ledger): `just verify` 27s→~10s warm (concurrent batteries) + `test-modules` AND the env-engine
@@ -67,9 +70,8 @@ throws→try_table · state→locals; 66 programs wasmtime==Source.eval; rung 3 
 named). #95 fixed (~115×, knot sharing); #96 fixed (the missing printer tier); #97 partially (use-hoist;
 Mod_Eff mechanism traced). The 013 ergonomics menu: S1 grammar (site highlights bang) · S5 codes+explain ·
 S7/8/9 new/update/watch LANDED. **In flight**: nothing — the (β)
-fuel-reindex lane is PARKED at a clean gated boundary (`feat-lr-fuel-reindex @ 42cdc9d6`: fuel twin +
-crux reduction landed, fuel-preserving-strip map-change banked; resume = the nested-handleF WF strip,
-fresh session). The 2026-07-10/11 wave also landed: `bang query hover` (#52 slice 5 — the probe
+lane ran to its STOP-trigger and the census unit is CLOSED-AS-PARKED (above). The 2026-07-10/11 wave
+also landed: `bang query hover` (#52 slice 5 — the probe
 overturned the Spanned-Surf ripple framing), the #105 prelude first slice (11 fns; the List family
 blocked on #108 ctor-namespacing, machine-arbitrated), the stdlib survey (#105–#107), examples
 nqueens + dst-rounds pair, and findings #98–#104. **Queued**: #108 ctor-namespacing ruling (gates the
@@ -87,7 +89,7 @@ dedup · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 | decisions (why-we-chose-X) | `docs/decisions/` (generated `README.md` index) |
 | in-flight work | `paths/PATH-*.md` |
 | deferred proof-spine (◊4 `lr_sound` seam — #15 ruled D-now/A-later) | `paths/PATH-inc5-lr-reindex.md` |
-| the parked lr_* census unit (α REFUTED; (β) fuel-reindex = the live background lane) | `feat-lr-carrier-stackinc-wip @ 25f18ed2` · `feat-lr-fuel-reindex` (slice 1 in flight) · ADR-0096 amendments ①–③ |
+| the CLOSED-AS-PARKED lr_* census unit (α AND β both delivery-refuted at the answer-determinacy wall; resume bar = answer-in-the-frame + kernel consult) | `feat-lr-carrier-stackinc-wip @ 5fbf0d79` · ADR-0096 amendments ①–④ |
 | the advisor-plan backlog (findings → plans → executor → review loop) | `plans/README.md` |
 | deferred design questions | `docs/notes/OPEN_QUESTIONS.md` (generated ledger) |
 | subagent roles | `.claude/agents/` |
