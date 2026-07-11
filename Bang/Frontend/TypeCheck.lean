@@ -4682,12 +4682,28 @@ unqualified, and a `data` decl's ctor list can rename each ctor independently �
 uniform renaming across one type's ctors) — the TYPE name itself still always qualifies (there is
 no unqualified-type-name analogue: `use tokenizer (Token)` hoists the CTORS `Token` carries per
 D2's "ctors travel with their type" wording, read literally as ctors, not the type name, which
-`qualifyTyName`'s OWN `usedNames` exclusion handles separately at ascription sites). -/
+`qualifyTyName`'s OWN `usedNames` exclusion handles separately at ascription sites).
+
+A `use`d TRAIT is the mirror of a `use`d ctor, not a `use`d type: unlike a type name (referenced
+only via `Ty` positions, handled separately by `qualifyTyName`) or a plain fn (referenced via
+`Surf.var`, handled by the `letD`-alias `usedPlainFns` wrap — semantically WRONG for a trait, since
+a trait name is never a first-class value a `let` can bind), a trait's declared name is referenced
+in EXACTLY ONE surface position: `Decl.implD`'s target-trait field (`n` in `.implD n t ops`,
+`qualifyDeclName`'s own arm below, deliberately left untouched — "already qualified via the
+trait's own decl"). That invariant only holds if the trait's OWN qualification and every `impl`
+naming it agree — for a `use`d trait declared in ANOTHER file, an entry-file `impl Eq for Box`
+still names the BARE `Eq`, so the trait itself must ALSO stay bare (`usedCtors.contains n`,
+reusing the same "keep bare" set `.dataD`'s ctors already ride — a trait is a flat top-level name
+exactly like a ctor, `moduleTopNames`'s own `d.name` fallback already includes it) — otherwise
+`impl Eq for Box` and `trait Eq`'s own now-qualified `ModName_Eq` diverge and `buildEnv` rejects the
+impl as targeting an undeclared trait (confirmed live before this fix: `error: impl of undeclared
+trait 'Eq'`, a two-file program importing a trait and implementing it in the entry file). -/
 def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .dataD n ps cs        =>
       .dataD (qualifyName modName n) ps (cs.map (fun (c, tys) => (if usedCtors.contains c then c else qualifyName modName c, tys)))
   | .effectD n ops        => .effectD (qualifyName modName n) ops
-  | .traitD n ps ops laws => .traitD (qualifyName modName n) ps ops laws
+  | .traitD n ps ops laws =>
+      .traitD (if usedCtors.contains n then n else qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
   | .fnD n ps ty tr tv b  => .fnD (qualifyName modName n) ps ty tr tv b
   | .letD n ty e          => .letD (qualifyName modName n) ty e
@@ -5585,6 +5601,30 @@ RAW source with zero module/prelude resolution, so if the derive expansion happe
 even though a `deriving`-generated impl (with a freely-attached law, ADR-0097 §5) exists. -/
 def parseProgWithDerives (src : String) : Except String Prog :=
   Bang.Surface.parseProg src >>= expandDerives
+
+/-- **The gap-2 fix (#117):** `lawInstancesOf`/`lawInstanceOpCallDiagnostics`/
+`unreachableIntImplDiagnostics` all parse RAW source with `parseProgWithDerives` alone — no
+module merge, no `injectPrelude` auto-`use` — so a program whose `impl <Trait>` targets a
+PRELUDE-hosted `trait` (`Eq`/`Ord` in `Prelude.bang`, ADR-0097's "Revisit if" migration) has that
+trait invisible to `bang test`'s law discovery: the trait never enters `p.decls`, so the
+trait×impl walk finds no matching `.traitD` and silently reports "no trait laws found" (confirmed
+live: a two-file program `use`ing a trait and implementing it in the entry file). This mirrors
+`checkAndLower`/`checkAndLowerProg`'s existing split (ADR-0093 D4's own seam) rather than adding a
+FOURTH parallel resolution path: `Main.lean`'s multi-file resolver (`resolveEntryFile`, IO — file
+reads stay there) already produces a merged `Prog`; this function takes that `Prog`, runs the SAME
+`expandDerives` + `injectPrelude` steps `elabProg` itself runs (so a mentioned prelude trait
+merges in exactly as it would for `bang check`/`bang run`), then re-derives a SOURCE STRING via
+`Bang.Format.showProg` (`showProg`/`parseProg` already round-trip, `checkAndLowerProg`'s own
+precedent for why this needs no new re-parse-avoidance machinery) — the existing
+`lawInstancesOf`/`lawInstanceOpCallDiagnostics`/`unreachableIntImplDiagnostics`/
+`runLawsFromSource` (`Bang.Witness.LawTest`) then run UNCHANGED against that string, since they
+already accept a plain `.bang` source and this string is just a bigger, self-contained one (no
+`import`/`use` header — `mergeModules` clears both, ADR-0093 D1-D4 — so it never re-triggers a
+second resolution pass). One construct extended, not duplicated. -/
+public def lawTestSourceOfProg (p : Prog) : Except String String := do
+  let p ← expandDerives p
+  let p ← injectPrelude p
+  pure (Bang.Format.showProg p)
 
 /-- **#112 fix.** Wrap `body` in one `let rec` per PENDING 2-param impl-op knot (`env.pendingKnots`,
 DECL ORDER — each subsequent `let rec` nests OUTSIDE the previous, so it sees every earlier knot's

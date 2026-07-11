@@ -446,15 +446,20 @@ def applyEntryRule (p : Prog) : Except String Prog :=
   | true,  false => .error "both a `main` decl and a trailing expression are present — ADR-0093 D5 forbids silent precedence (remove one)"
   | false, true  => .error "this file is a library (no `main` decl, no trailing expression) — nothing to run; import it from an entry file instead"
 
-/-- The full D1 resolution + D2/D3/D4 merge, from an entry FILE: parse it, resolve every
-`import`/`use` it names (transitively, same-dir-then-root, cycle-checked), then `mergeModules` the
-result into ONE flat `Prog` ready for `checkAndLowerProg`. A resolved import's OWN path is
-re-probed via `resolveModulePath` (not the naive `dir/name.bang` `resolveModule` builds directly)
-ONLY at the top level, matching D1's exact documented search order; nested imports resolve relative
-to THEIR OWN file's directory (the natural reading of "same directory as the importing file" — a
-transitively-imported module's imports are relative to IT, not the original entry file). The D5
-entry rule (`applyEntryRule`) is applied LAST, to the fully-merged result. -/
-def resolveEntryFile (path : String) : IO (Except String Prog) := do
+/-- The D1 resolution + D2/D3/D4 merge, from an entry FILE, WITHOUT the D5 entry rule
+(`applyEntryRule`) applied — parse it, resolve every `import`/`use` it names (transitively,
+same-dir-then-root, cycle-checked), then `mergeModules` the result into ONE flat, UN-entry-ruled
+`Prog`. Factored out of `resolveEntryFile` (#117's gap-2 fix) so a caller that does NOT want the
+"must be runnable" D5 rule — `bang test`'s decls-only law discovery, which `applyEntryRule` would
+otherwise reject outright ("this file is a library… nothing to run", the SAME message `bang run`
+correctly gives for an unrunnable file but WRONG for `bang test`'s intentionally decls-only input)
+— can reuse the resolve+merge machinery without also inheriting a runnability check meant for a
+DIFFERENT subcommand. A resolved import's OWN path is re-probed via `resolveModulePath` (not the
+naive `dir/name.bang` `resolveModule` builds directly) ONLY at the top level, matching D1's exact
+documented search order; nested imports resolve relative to THEIR OWN file's directory (the
+natural reading of "same directory as the importing file" — a transitively-imported module's
+imports are relative to IT, not the original entry file). -/
+def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
   let entryPath : System.FilePath := ⟨path⟩
   let root ← IO.currentDir
   let some entrySrc ← (do let s ← IO.FS.readFile entryPath; pure (some s)) <|> pure none
@@ -462,7 +467,7 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
   match Bang.Surface.parseProg entrySrc with
   | .error m => return .error s!"parse error: {m}"
   | .ok entryProg =>
-      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return applyEntryRule entryProg
+      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return .ok entryProg
       let dir := entryPath.parent.getD root
       -- both containment trees realPath-resolved ONCE here (never per module). The entry dir
       -- exists (the entry file was just read from it); the `<|>` fallback to the root tree only
@@ -503,9 +508,16 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
             match ← resolveModule root allowed u.modName found st with
             | .error e  => return .error e
             | .ok stNew => st := stNew
-      match Bang.TypeCheck.mergeModules st.resolved entryProg with
-      | .error e     => return .error e
-      | .ok merged   => return applyEntryRule merged
+      return Bang.TypeCheck.mergeModules st.resolved entryProg
+
+/-- The full D1-D5 resolution + merge, from an entry FILE — `resolveEntryFileRaw` (the resolve+merge
+half) followed by the D5 entry rule (`applyEntryRule`), applied LAST to the fully-merged result.
+The `bang check`/`bang run` entry point; `bang test` uses `resolveEntryFileRaw` directly instead
+(see that function's own doc comment for why). -/
+def resolveEntryFile (path : String) : IO (Except String Prog) := do
+  match ← resolveEntryFileRaw path with
+  | .error e   => pure (.error e)
+  | .ok merged => pure (applyEntryRule merged)
 
 /-- Run one source string through the whole pipeline, printing the outcome and returning the process
 exit code. `typecheck` selects the pipeline (ADR-0076 #51):
@@ -1323,9 +1335,16 @@ def renderOutcome (o : Bang.LawTest.NamedOutcome) : String × Bool :=
 /-- `bang test [<file.bang>]` (#60's CLI wiring): discover EVERY trait-law instance in a program
 (`Bang.LawTest.runLawsFromSource`, the landed #60 discovery seam) and sample-check each one,
 reporting per-law PASS/FAIL/ERROR/STUCK. Reads a file if given, else stdin (mirrors `fmt`/`check`'s
-file-or-stdin convention). NOT resolver-aware (like `eval`/stdin `check`, not `run`'s file path) —
-`Bang.LawTest.runLawsFromSource` operates on a raw decls-string, and no multi-file law-discovery
-need has arisen yet; a resolver-aware upgrade is the natural follow-up if one does.
+file-or-stdin convention). RESOLVER-AWARE for a FILE with an `import`/`use` header (#117's gap-2
+fix — mirrors `runCheck`'s exact single-file-fast-path/resolver split): `resolveEntryFile` (the
+SAME multi-file resolver `bang check`/`bang run` use) produces the merged `Prog`, then
+`Bang.TypeCheck.lawTestSourceOfProg` runs `expandDerives`/`injectPrelude` on it and re-derives a
+source STRING — closing the gap where a prelude-hosted `trait Eq`/`trait Ord` (ADR-0097's
+migration) was invisible to law discovery, since `Bang.LawTest.runLawsFromSource` itself still
+operates on a raw decls-string, unchanged. Stdin (no file path — no resolver context to resolve
+relative imports against) and a file with NO `import`/`use` header stay on the exact prior
+zero-resolver fast path (`Bang.Surface.parseProg` directly) — no behavior change for the common
+single-file case.
 
 DECLS-ONLY INPUT, ENFORCED (a real footgun found while writing this slice's own manual test):
 `runLawsFromSource` appends ITS OWN throwaway `0` body for discovery, and its per-sample test
@@ -1336,21 +1355,43 @@ the SAME literal-adjacency trap `runCheck`'s own doc comment warns about elsewhe
 law silently reports STUCK (`0 (let a = ... in ...)`, applying a literal to a computation) with
 NO indication the input shape, not the law, is the problem. Pre-checked here via `parseProg` +
 `Prog.isLibrary` (true ⟺ no trailing body) BEFORE ever calling `runLawsFromSource`, so the error
-names the actual cause instead of a confusing blanket STUCK on every discovered law.
+names the actual cause instead of a confusing blanket STUCK on every discovered law. The
+resolver-aware path re-checks `isLibrary` on the MERGED `Prog` (not just the entry file's own
+header) — an imported module's own trailing expression cannot corrupt the merge (`mergeModules`
+never merges a non-entry module's body in), but this keeps the check symmetric with the fast path.
 
 EXIT CODES: `0` every discovered law holds (including the vacuous "no laws found" case — #60's own
 `runLawsFromSource "" ...` guard: zero laws is not a failure); `1` at least one law
-FAILED/ERRORED/STUCK, the input has a trailing body (the decls-only check above), OR the source
-didn't even elaborate for discovery (`lawInstancesOf`'s own error, e.g. malformed decls) — the
-SAME "usage/parse/elaboration error" code every other subcommand uses for a source-level failure;
-`2` the file could not be read (the `check`/`:load` convention: a tool error is not a diagnostic). -/
+FAILED/ERRORED/STUCK, the input has a trailing body (the decls-only check above), a resolution
+failure (missing import, cycle, private access — the SAME exit `bang check`/`bang run` give), OR
+the source didn't even elaborate for discovery (`lawInstancesOf`'s own error, e.g. malformed
+decls) — the SAME "usage/parse/elaboration error" code every other subcommand uses for a
+source-level failure; `2` the file could not be read (the `check`/`:load` convention: a tool error
+is not a diagnostic). -/
 def runTest (file : Option String) : IO UInt32 := do
+  -- Determine the source string to feed `runLawsFromSource`: stdin or a headerless file take the
+  -- exact prior zero-resolver path; a file WITH an `import`/`use` header routes through the SAME
+  -- resolver `bang check`/`bang run` use, then `lawTestSourceOfProg` (#117's gap-2 fix).
   let src ← match file with
     | none      => (← IO.getStdin).readToEnd
     | some path =>
       match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
       | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
-      | some s => pure s
+      | some s =>
+        match Bang.Surface.parseProgLocated s with
+        | .error (m, _) => IO.eprintln s!"error: parse error: {m}"; return 1
+        | .ok headerProg =>
+          if headerProg.imports.isEmpty && headerProg.uses.isEmpty then pure s
+          else
+            -- `resolveEntryFileRaw`, NOT `resolveEntryFile`: the D5 entry rule the latter applies
+            -- would reject a decls-only file outright ("nothing to run"), but decls-only is
+            -- EXACTLY `bang test`'s expected shape (the `!p.isLibrary` check below, unchanged).
+            match ← resolveEntryFileRaw path with
+            | .error e   => IO.eprintln s!"error: {e}"; return 1
+            | .ok merged =>
+              match Bang.TypeCheck.lawTestSourceOfProg merged with
+              | .error e   => IO.eprintln s!"error: {e}"; return 1
+              | .ok merged => pure merged
   match Bang.Surface.parseProg src with
   | .error e => IO.eprintln s!"error: parse error: {e}"; return 1
   | .ok p    =>
