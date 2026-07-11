@@ -396,15 +396,57 @@ theorem Config.run_done_add (k : Nat) :
           show Config.run (m + k) cfg' = Result.done w
           exact ih cfg' w h
 
--- Trace / evalTrace: still axiom; need concrete Eff to express
--- "label in row" (see `docs/notes/OPEN_QUESTIONS.md` Q1).
-/-- The trace of effects performed during an evaluation (opaque until a concrete
-`Eff` is fixed; see `docs/notes/OPEN_QUESTIONS.md` Q1). -/
-axiom Trace            : Type
-/-- Fuel-bounded evaluation returning both the value and the effect `Trace`. -/
-axiom Source.evalTrace : Nat → Comp → Result (Val × Trace)
-/-- The trace stays within effect row `Eff` (every performed label is in `Eff`). -/
-axiom traceWithin      {Eff : Type} : Trace → Eff → Prop
+/-! ### Effect trace (ADR-????, Q14 re-foundation) — concrete images of the three parked axioms.
+
+The three symbols `Trace`/`Source.evalTrace`/`traceWithin` were bare `axiom`s parked on Q1 (a
+concrete `Eff`). Q1 is now RESOLVED (`[Lattice Eff] [OrderBot Eff]`, ADR-0018), so they become
+concrete DEFINITIONS — the obvious images of the machine.
+
+The DESIGN choice is the trace SEMANTICS (Q14): a program's dispatched labels are NOT all `≤ e`,
+because a label handled by an in-program `handle` frame is DISCHARGED from the residual row
+`e` (the `handleThrows`/`handleState` typing rules remove `ℓ` from `φ`). So `trace ⊆ e` (naive) is
+FALSE, and "only-escaping labels ⊆ e" is VACUOUS (an escaping op runs to `escapedCap`, not `done`,
+so its trace is empty). We take Q14 option (1) — the INFORMATIVE bound: log at each DISPATCH the
+`(label, focus-effect)` pair, where the focus effect is the residual row bounding the config at the
+point the op is performed (preservation bounds it by `e`). `traceWithin` then checks each label
+against the effect it was performed at, not the discharged top-level `e`. -/
+
+/-- The effect trace: the labels dispatched during a run, each paired with the residual effect row
+`φ` bounding the focus at the point it was performed (a DISPATCH-site observation). -/
+abbrev Trace (Eff : Type) := List (Label × Eff)
+
+/-- Instrumented `Config.run`: identical control flow to `Config.run`, but accumulates the dispatched
+`(label, φ)` pairs. `φ` is the residual effect passed positionally (the config's typing bound; the
+statement supplies it from preservation). The VALUE component agrees with `Config.run` byte-for-byte
+(same step, same terminals) — the accumulator is a passenger. -/
+def Config.runTrace : Nat → Config → Eff → Trace Eff → Result (Val × Trace Eff)
+  | 0, _, _, _                    => .oom
+  | _ + 1, (_, [], .ret v), _, t  => .done (v, t)
+  | n + 1, cfg, φ, t              =>
+      match cfg.2.2, cfg.2.1 with
+      -- DISPATCH: record `(ℓ, φ)` before stepping. Other arms thread `t` unchanged.
+      | .perform (.vcap _ ℓ) _ _, _ =>
+          match Source.step cfg with
+          | some cfg' => Config.runTrace n cfg' φ (t ++ [(ℓ, φ)])
+          | none      => .escapedCap
+      | _, _ =>
+          match Source.step cfg with
+          | some cfg' => Config.runTrace n cfg' φ t
+          | none      =>
+              match cfg.2.2 with
+              | .perform (.vcap _ _) _ _ => .escapedCap
+              | _                        => .stuck
+
+/-- Fuel-bounded evaluation returning both the value and the effect `Trace`. Load into a fresh
+machine (`⟨0, [], c⟩`), run under the whole-program residual `e`, empty trace. -/
+def Source.evalTrace (fuel : Nat) (c : Comp) (e : Eff) : Result (Val × Trace Eff) :=
+  Config.runTrace fuel (0, [], c) e []
+
+/-- The trace stays within effect row `e` (INFORMATIVE bound, Q14 option 1): every dispatched label
+is `≤` the residual effect row it was performed at. Discharged (internally-handled) labels are
+checked against their own focus effect, not the top-level `e`. -/
+def traceWithin [EffSig Eff Mult] (t : Trace Eff) : Prop :=
+  ∀ p ∈ t, EffSig.labelEff (Eff := Eff) (Mult := Mult) p.1 ≤ p.2
 
 /-- isReturn: a Comp is "returned" iff it's `ret v` for some v. -/
 def isReturn : Comp → Prop

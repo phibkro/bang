@@ -188,12 +188,17 @@ theorem zero_usage_erasable
   sorry
 
 -- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
+-- Q14 RE-FOUNDATION (the three `Trace`/`evalTrace`/`traceWithin` axioms are now defs):
+-- the INFORMATIVE bound — each dispatched label is `≤` the residual effect it was performed
+-- at (`traceWithin t`, per-focus), NOT the discharged top-level `e` (the naive `t ⊆ e` is
+-- refuted: an in-program handler removes its label from `e`). `evalTrace` now takes the
+-- whole-program residual `e` as the initial focus bound. STATEMENT-CHANGE (operator-sanctioned).
 theorem effect_sound
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
-    {v : Val} {t : Trace} :
+    {v : Val} {t : Trace Eff} :
     HasCTy [] [] c e (CTy.F q A) →
-    Source.evalTrace fuel c = Result.done (v, t) →
-    traceWithin t e := sorry
+    Source.evalTrace fuel c e = Result.done (v, t) →
+    traceWithin (Mult := Mult) t := sorry
 
 
 /-! ## 5. Logical relation theorems -/
