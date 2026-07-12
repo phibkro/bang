@@ -313,6 +313,30 @@ flip the gate green) before C0 (the first-class headline).** The escape gate's `
 `XFAIL` is now understood as masking a surface-reachable defect, not a theoretical one — sharpening
 the urgency of removing it.
 
+### 8.2 · C2 LANDED — the `$liveTop` stamp closes #134
+
+**C2 is implemented and the escape gate is GREEN.** The `$liveTop`/`$nextId` globals + `$capMint`/
+`$capExit`/`$capGate` helpers (`gcHelpers`) are the runtime image of ADR-0055's global-fresh counter
++ `WellCounted`'s `< g` bound. Each cap-carrying type (`$ref` state cell, `$txbox` txn/custom cap)
+gained an `$id` field (field 0; the payload moved to field 1, `$box`/`$list`). Every `handle` arm
+(state/throws/custom/transaction) mints an id (`$capMint` bumps `$liveTop`), stamps its cap value,
+runs the body, saves the value, and restores `$liveTop` (`$capExit`); every `perform` on a state/txn/
+custom cap gates `$id < $liveTop` (`$capGate`) else traps. A throws handle bumps/restores too (so a
+nested state/custom cap gets a correctly-ordered id); a `raise` on an escaped throws cap traps
+naturally (its `try_table` has exited).
+
+Measured (wasmtime 45, `-W gc=y,function-references=y,exceptions=y`):
+- **All 4 escape witnesses now TRAP** (rc=134) where they previously silently returned a value —
+  `capEscape-get`, `surface:b3` (0→trap), `surface:c1` (7→trap), `surface:d2` (0→trap). The
+  `emit-escape-diff.sh` `XFAIL_UNTIL_STAMP` list is now EMPTY; the gate is hard-green.
+- **Zero regression**: the rung-5 effects corpus (40 programs, 22 effectful — state/stm/throws/
+  logger/custom/dst/ndet) all still == `bang run`. The stamp does not false-fire on legitimate
+  in-region perform (witnessed `structured-noescape-witness.wat` ⇒ 5, and the whole corpus).
+
+`lake build` EXIT 0 · `just fitness` EXIT 0 · axioms baseline unchanged (`emitModuleGC` is a
+tested-stratum text emitter, no proof headline). The tag-gating #134 miscompile is CLOSED. C0 (the
+first-class-cap headline — stage-swap/calc emit) rides this stamped infra next.
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two

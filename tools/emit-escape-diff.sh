@@ -25,16 +25,12 @@ cd "$(git rev-parse --show-toplevel)"
 outdir="$(mktemp -d)"
 trap 'rm -rf "$outdir"' EXIT
 
-# Programs the emitter does not yet fail-loud on (no $liveTop stamp). C2 removes these.
-# The `surface:*` entries are #134: LEGAL .bang programs that `bang check` clean, reach escapedCap on
-# the oracle, and silently miscompile on the emit path TODAY (b3 → 0, c1 → 7). These are the
-# tag-gating witnesses — a wasm binary computing a different answer than the verified oracle for a
-# program the typechecker blesses. C2's stamp closes them; the C2 commit removes these entries.
+# Programs the emitter does not yet fail-loud on (no $liveTop stamp). EMPTY as of #134 C2 (the
+# $liveTop watermark LANDED) — every escape witness now traps (rc=134) on wasmtime, matching the
+# kernel's escapedCap. The list is kept (not deleted) so a FUTURE escape shape the stamp misses can
+# be parked here with its number; a stale entry (a program that now traps but is still listed) is a
+# hard failure, so this map cannot silently mask a regression.
 declare -A XFAIL_UNTIL_STAMP=(
-  [capEscape-get]="no \$liveTop watermark yet (#133/#134 C2) — emits + silently returns a value"
-  [surface:b3]="#134 STATE-cap escape (legal surface program) silently returns 0 on emit"
-  [surface:c1]="#134 CUSTOM-cap escape (legal surface program) silently returns 7 on emit"
-  [surface:d2-sched-capture]="#134 SCHED-cap escape (dst-rounds idiom) silently returns 0 on emit"
 )
 
 echo "── building the rung4-shape emitter exe ──"
