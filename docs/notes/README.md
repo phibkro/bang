@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (71)
+## active (73)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -61,6 +61,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`refinement-types-survey.md`](refinement-types-survey.md) — Refinement types vs grades — design survey (R5, ROADMAP §Pre-v1 research ladder)
 - [`rung5-s5-proofgrade-refutation.md`](rung5-s5-proofgrade-refutation.md) — Rung-5 S5 proof-grade — the obligation, RE-FRAMED (one half done, one half unstateable in v1)
 - [`sched-library-demo.md`](sched-library-demo.md) — Scheduler-as-handler, as ordinary library code — the ADR-0101 flagship demo
+- [`scoped-cap-types-design.md`](scoped-cap-types-design.md) — Scoped capability types — the post-v1 door ADR-0063 named, now concretely motivated (#134)
 - [`spanned-surf-design.md`](spanned-surf-design.md) — Spanned-Surf design — located errors + LSP-hover tier (#52)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
 - [`spec-proof-discipline.md`](spec-proof-discipline.md) — Spec proof discipline
@@ -81,6 +82,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`type-power-entry-design.md`](type-power-entry-design.md) — Type-power wave — entry-slice design (Wave E, ROADMAP §Pre-v1 type-power ladder)
 - [`verification-ladder.md`](verification-ladder.md) — The verification ladder — quality gates for agent-speed code
 - [`wasm-concurrency-survey.md`](wasm-concurrency-survey.md) — Wasm components + concurrency — how bang should model concurrent execution (design survey)
+- [`wgcexec-calculation-plan.md`](wgcexec-calculation-plan.md) — The calculated `wgcexec` machine — calculation plan + tractability spike (Wave D, 2026-07-12)
 
 ## archival (12)
 

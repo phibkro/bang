@@ -361,6 +361,53 @@ sourced from the runtime value — gate the `$id` (#134 stamp), then `$clausecel
 `lake build` EXIT 0 · `just fitness` EXIT 0 · both emission harnesses green. #133 headline DONE for
 the single-op first-class case (the whole current corpus).
 
+### 8.4 · C3 LANDED — calc emits (the capstone: a 5-module program with a first-class cap on wasm)
+
+**`examples/calc` — a 5-module program (Ast/Lexer/Parser/Eval/Print) with a first-class `Cap Trace`
+woven through a recursive evaluator — emits to WasmGC and runs `11021193` == the oracle.** This is
+the #133 arc's capstone: first-class capabilities carry a real multi-module program to WebAssembly.
+`bang run` = `bang run --compiled` = `bang emit → wasmtime` = `11021193`, all three agreeing.
+
+Two findings getting here:
+- **The W3 module-resolve gap was ALREADY closed** — `bang emit <file> [-o out.wat]` (Main.lean, CLI
+  at the `emit` subcommand) shares the runner's `resolveEntryFile`, so an import-ing program emits.
+  No new resolution code needed; the `rung4-shape` scratch exe's single-file limitation was the only
+  reason the OLD diagnosis (calcjson W3) saw calc/json as "frontend refusals."
+- **calc was a STALE example** (broken on ALL paths, incl. `bang run`): the Mod_Eff ergonomics change
+  requires imported effects spelled `Eval_Trace`, but calc still used `use Eval (Trace)` + `with
+  Trace`. Fixed (6 lines: `Cap Trace`→`Cap Eval_Trace`, `with Trace`→`with Eval_Trace`, drop the
+  `use`); all three engines then agree.
+
+**json** (the pure multi-module companion, no effects) already gated via `bang emit` → `163`. calc
+ENROLLS in the SAME existing `MODULE_CORPUS` leg (`tools/emit-rung5-print-diff.sh`, `#136` — driving
+`bang emit` → wasmtime, diffed vs `bang run`'s live stdout): `MODULE_CORPUS=( json calc )`. No new
+gate — the module-resolving mechanism already existed; C3 was a one-line enrollment + the stale-example
+fix. The rung-5 EFFECTS gate's `calc`/`json` `KNOWN_REFUSALS` entries are documented as a HARNESS-scope
+split (the single-file `rung4-shape` exe), not emitter walls.
+
+The #133/#134 arc is complete at the emit stratum: escape fixed (C2), first-class caps emit (C0),
+both headline consumers (stage-swap 30005, calc 11021193) run on wasmtime == the kernel oracle.
+
+### 8.5 · C4 (proof-grade) INPUTS — handed to the wgcexec calculated-machine probe
+
+**C4 is NOT scoped here** — the `wgcexec` calculated-machine design probe owns the proof-grade story
+(the `wexec ≡ Source.eval` obligation on a GC machine, calculated not verified-after per inv#4). This
+section is the INPUT handoff for that lane; two concrete obligations the #134 stamp introduces:
+
+1. **The watermark-equivalence clause** (§3.2 + §8.2): the runtime `$liveTop`/`$id` gate ≡ the
+   kernel's `WellCounted (g,K,_)` `< g` bound (`Invariants.lean:31`) — `capId < $liveTop` is the
+   image of `splitAtId K n ≠ none`. This is a TRANSFER (the kernel already proves `WellCounted`),
+   not a new theory. It is stateable against the proof-carrying backend (§8.2), unlike the
+   `$env↔store` bijection (which needs the post-v1 GC machine).
+2. **The txn-abort restore RESIDUAL** (§8.2, the honesty note + the txn arm comment): the `throw_ref`
+   unwind on a txn ABORT skips the txn's `$capExit`, leaving `$liveTop` transiently HIGH. This is the
+   SAFE direction (more caps look live ⇒ never a wrong-trap on a legit cap; worst case = failing to
+   trap an escaped cap AFTER an abort, an exotic shape in no witness). The airtight fix (restore
+   `$liveTop` on the abort path too, e.g. inside the `catch_all_ref` block before `throw_ref`) is a
+   C4-lane input — tighten it opportunistically if that arm is touched. The rung-3 explicit-restore
+   finding (`emission-rung3-design.md`) is the precedent (wasm unwinds free; the heap/watermark
+   restore is the load-bearing manual part).
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two

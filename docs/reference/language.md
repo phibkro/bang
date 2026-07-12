@@ -476,6 +476,7 @@ file just sits there unreferenced (no silent pickup).
 |---|---|
 | `concat` | `Str -> Str -> Str` |
 | `strLength` | `Str -> Int` |
+| `intToStr` | `Int -> Str` |
 | `reverse` | — (no top-level annotation — see `Prelude.bang`) |
 | `eq` | `Str -> Str -> Unit + Unit` |
 
@@ -1213,6 +1214,39 @@ keys its policy on ONE field. **Exit contract**: `2` if EITHER file is unreadabl
 the side), `0` a well-formed diff. ALWAYS JSON. **Known v1 gap** (a forward pointer,
 not a silent miss): only VALUE-typed decls' `type`/`row` are compared — a `trait`/
 `data`/`effect`'s structural `shape` change is not yet a `changed` finding.
+
+## `bang emit` & `bang build` — compilation to Wasm (issue #136)
+
+BANG's backend is Wasm 3.0 (ADR-0059): the pure λ + ADT + recursion fragment lowers to
+WasmGC. Two CLI verbs expose it — `emit` prints the text, `build` produces the artifact:
+
+| Verb | Output | Use |
+|---|---|---|
+| `bang emit <file> [-o out.wat]` | a WasmGC `.wat` MODULE (text) — to stdout or `-o` | inspect / debug the lowering |
+| `bang build <file> [-o out.wasm]` | a runnable Wasm binary (default `<stem>.wasm`) | the distribution artifact |
+| `bang build <file> --component [--adapter P]` | a WASI component | component-model deployment |
+
+`build` runs the SAME module-resolved lowering `emit` does, then `wasm-tools parse`
+(wat→binary) + `wasm-tools validate`, writing a WASI **command** module — so:
+
+<!-- no-gate: a shell transcript (CLI invocation + engine run), not a bang program -->
+```
+bang build examples/json/main.bang -o json.wasm
+wasmtime run json.wasm      # → 163  (== the program's Source.eval value)
+```
+
+This is the distribution story (`docs/notes/distribution-survey.md`): the compiled Wasm
+module IS bang's static artifact — one file, zero runtime deps, runs on any WASI+GC
+engine. `bang build` needs `wasm-tools` on `PATH`; a missing tool or an invalid module
+fails LOUD with the tool's own stderr, never a silent or wrong artifact. A program the
+GC fragment does not cover (a first-class-capability effect, or host-IO) refuses LOUDLY
+at emit time (`EMIT-REFUSED`), exit 1.
+
+`--component` additionally wraps the module as a WASI **component** via `wasm-tools
+component new`. The preview1→WIT adapter is NOT bundled (no nixpkgs WASI adapter), so it
+is supplied via `--adapter PATH` or `$BANG_WASI_ADAPTER` (the pinned
+`wasi_snapshot_preview1.command.wasm` from wasmtime's releases); absent, `build --component`
+fails LOUD naming the artifact.
 
 ## Diagnostic codes (`bang explain`)
 

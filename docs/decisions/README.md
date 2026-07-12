@@ -123,6 +123,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0103](0103-forall-generalization.md) | Accepted | ∀-generalization for bound-free self-recursive generics: a call-site-monomorphization pre-pass (the List-family door) | A bound-free self-recursive generic (`length : List a -> Int`, the whole List family: | — / — | — / — | — | — |
 | [0104](0104-host-io-environment.md) | Accepted | Host IO as effects + handlers, driven by an environment seam with record/replay conformance | Host IO (Console, Clock now; Fs, Net later) is an ORDINARY `effect` in the row, | — / — | — / — | — | — |
 | [0105](0105-effect-sound-trace-runtime-bound.md) | Accepted | effect_sound trace semantics: the runtime live-bound (Q14 ruling) | `effect_sound` (`Bang/Spec.lean:191`, a ◊2-block soundness theorem) was flagged with three | — / — | — / — | — | — |
+| [0106](0106-trait-op-name-call-dispatch.md) | Accepted | trait-op name-call dispatch (#78 operator ruling) | #78 (trait ops were operator-dispatch-ONLY — `env.insts` consulted exclusively at | — / — | — / — | — | — |
 | [0107](0107-d5-parameterised-handlers-optin-customupd.md) | Proposed | D5 parameterised handlers (handler memory): opt-in `customUpd`, yield-sniffing rejected | D5 (parameterised handlers / handler memory, the effect-algebra rung-2 face — a custom | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
