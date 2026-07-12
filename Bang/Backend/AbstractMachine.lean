@@ -1642,6 +1642,16 @@ theorem netEffect_cons_custom {fr : HFrame} {hs : HStack} {σ : SStore} {τ : TH
   rw [updateStates_cons_nonstate σ (by rw [hfr]; intro ℓ s; simp)]
   simp only [updateTxns, hfr]
 
+/-- `netEffect` passes a `customUpd` install frame to the tail (ADR-0107 D5, the twin of
+`netEffect_cons_custom`): customUpd carries no state/txn store, so updateStates/updateTxns skip it. -/
+theorem netEffect_cons_customUpd {fr : HFrame} {hs : HStack} {σ : SStore} {τ : THeap}
+    {ℓ0 : Bang.EffectRow.Label} {p0 : Val} {cls0 : List (Bang.OpId × Comp)}
+    (hfr : fr.handler = .customUpd ℓ0 p0 cls0) :
+    netEffect (fr :: hs) σ τ = fr :: netEffect hs σ τ := by
+  unfold netEffect
+  rw [updateStates_cons_nonstate σ (by rw [hfr]; intro ℓ s; simp)]
+  simp only [updateTxns, hfr]
+
 /-- The raised-part at-raise correspondence pops a NON-state, NON-txn (throws) install frame from the
 COMBINED net-effect triple: a throws frame carries neither store entry, so `Corr`/`TCorr`/`HMut` over
 `netEffect (fr::hs) σ' τ'` pass to the tail. The `sim` raised handle(throws) escape case (triple form). -/
@@ -3571,6 +3581,66 @@ theorem sim : ∀ fe,
                       hSB.push_custom (hSD.push_custom hSB)
                     have hfwd : throwOutcome F g1 ℓ' op' w (netEffect (fr :: hs) σ1 τ1) = some r := by
                       rw [netEffect_cons_custom (show fr.handler = .custom ℓ0 p0 cls0 from by rw [hfrdef])]
+                      rw [throwOutcome_cons_nonthrows _ _ _ _ _ _ _ (by rw [hfrdef]; intro ℓ; simp)]
+                      exact hr
+                    obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
+                    exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
+                | (.term (.ret v0), _, _, _, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
+          | customUpd ℓ0 p0 cls0 =>
+              -- route-B INSTALL (raised, FORWARD) for customUpd (ADR-0107 D5): identical to the custom
+              -- raised arm — a raise FORWARDS past customUpd (it never catches a throws-raise), popping the
+              -- pushed κ entry; the param-update is inline at perform, not on this forward path.
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) σ τ (κ.pushUpd g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    have hns0 : ∀ ℓ s, (Handler.customUpd ℓ0 p0 cls0) ≠ Handler.state ℓ s := by intro ℓ s; simp
+                    have hnt0 : ∀ ℓ Θ, (Handler.customUpd ℓ0 p0 cls0) ≠ Handler.transaction ℓ Θ := by intro ℓ Θ; simp
+                    have htriple : (Corr σ1 (netEffect hs σ1 τ1) ∧ TCorr τ1 (netEffect hs σ1 τ1)
+                        ∧ CCorr κ1.tail (netEffect hs σ1 τ1) ∧ HMut hs (netEffect hs σ1 τ1))
+                        ∧ StoresBelow g1 σ1 τ1 κ1.tail ∧ StoresDisjoint σ1 τ1 κ1.tail := by
+                      set fr0 : HFrame := { id := g, handler := Handler.customUpd ℓ0 p0 cls0, savedCode := [], savedStack := [] }
+                        with hfr0
+                      obtain ⟨⟨hCr, hTr, hKr, hmutr⟩, hSBr, hSDr, _⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.pushUpd g p0 cls0) ℓ' op' w g1 σ1 τ1 κ1 hM (fr0 :: hs)
+                          (Corr_install_nonstate fr0 (by rw [hfr0]; exact hns0) hC)
+                          (TCorr_install_nontxn fr0 (by rw [hfr0]; exact hnt0) hT)
+                          (CCorr_installUpd ℓ0 p0 cls0 fr0 (by rw [hfr0]) hK)
+                          hSB.pushUpd_custom (hSD.pushUpd_custom hSB)
+                      obtain ⟨hCt, hTt, hMt⟩ := raisedTriple_pop_nontxn (by rw [hfr0]; exact hns0)
+                        (by rw [hfr0]; exact hnt0) hCr hTr hmutr
+                      refine ⟨⟨hCt, hTt, ?_, hMt⟩, hSBr.tail_custom, hSDr.tail_custom⟩
+                      rw [netEffect_cons_customUpd (show fr0.handler = .customUpd ℓ0 p0 cls0 from rfl)] at hKr
+                      exact CCorr_pop_customUpd (show fr0.handler = .customUpd ℓ0 p0 cls0 from rfl) hKr
+                    refine ⟨htriple.1, htriple.2.1, htriple.2.2, fun c s F r hr => ?_⟩
+                    set fr : HFrame := { id := g, handler := Handler.customUpd ℓ0 p0 cls0, savedCode := c, savedStack := s }
+                      with hfrdef
+                    obtain ⟨_, _, _, kR⟩ := ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.pushUpd g p0 cls0) ℓ' op' w g1 σ1 τ1 κ1 hM (fr :: hs)
+                      (Corr_install_nonstate fr (by rw [hfrdef]; exact hns0) hC)
+                      (TCorr_install_nontxn fr (by rw [hfrdef]; exact hnt0) hT)
+                      (CCorr_installUpd ℓ0 p0 cls0 fr (by rw [hfrdef]) hK)
+                      hSB.pushUpd_custom (hSD.pushUpd_custom hSB)
+                    have hfwd : throwOutcome F g1 ℓ' op' w (netEffect (fr :: hs) σ1 τ1) = some r := by
+                      rw [netEffect_cons_customUpd (show fr.handler = .customUpd ℓ0 p0 cls0 from by rw [hfrdef])]
                       rw [throwOutcome_cons_nonthrows _ _ _ _ _ _ _ (by rw [hfrdef]; intro ℓ; simp)]
                       exact hr
                     obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
