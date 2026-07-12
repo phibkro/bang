@@ -89,6 +89,8 @@ def Handler.shiftFrom (c : Nat) : Handler → Handler
   -- mutual `shiftFrom` block onto well-founded recursion, breaking the `rfl`-reduction the kernel relies
   -- on. Sound this stage: custom is untyped (stage 3), so no typed program's substitution observes it.
   | .custom ℓ p clauses => .custom ℓ p clauses
+  -- customUpd (ADR-0107 D5): IDENTITY, byte-identical to `custom` (same closed-fields discipline).
+  | .customUpd ℓ p clauses => .customUpd ℓ p clauses
 end
 
 /-- `Val.shift = Val.shiftFrom 0` — push a closed-ish value under one binder. -/
@@ -145,6 +147,8 @@ def Handler.substFrom (k : Nat) (v : Val) : Handler → Handler
   -- `OpId → Option Comp` function would break it). Sound this stage: custom is untyped, unobservable
   -- by any typed program's substitution. Real param/clause substitution is a stage-2/3 concern.
   | .custom ℓ p clauses => .custom ℓ p clauses
+  -- customUpd (ADR-0107 D5): IDENTITY, byte-identical to `custom`.
+  | .customUpd ℓ p clauses => .customUpd ℓ p clauses
 end
 
 /-- The head-redex substitution `c[v]`: fill the nearest binder (index 0)
@@ -226,6 +230,7 @@ theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
   | .transaction _ _ => rfl
   -- custom: both shift and subst are the identity (ADR-0085 stage 1) ⇒ round-trip is definitional.
   | .custom _ _ _    => rfl
+  | .customUpd _ _ _ => rfl   -- customUpd (ADR-0107 D5): identity like `custom`
 end
 
 /-- `(Comp.shift c).subst v = c` — the cutoff-0 instance of `Comp.substFrom_shiftFrom`, the exact
@@ -534,6 +539,7 @@ theorem Handler.shiftFrom_substFrom_closed :
   | _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, .transaction _ _ => rfl
   | _, _, _, _, _, .custom _ _ _ => rfl   -- shift/subst both identity on custom (ADR-0085 stage 1)
+  | _, _, _, _, _, .customUpd _ _ _ => rfl   -- customUpd (ADR-0107 D5): identity like `custom`
 end
 
 /-- `v` is SCOPED IN `m`: no free de Bruijn index `≥ m` is exposed (`shiftFrom k` fixes `v` for `k ≥ m`).
@@ -766,6 +772,7 @@ theorem Handler.substFrom_swap_closed :
   | _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, .transaction _ _ => rfl
   | _, _, _, _, _, .custom _ _ _ => rfl   -- subst identity on custom (ADR-0085 stage 1)
+  | _, _, _, _, _, .customUpd _ _ _ => rfl   -- customUpd (ADR-0107 D5): identity like `custom`
 end
 
 /-! ### B.1c′ NON-ADJACENT substitution-swap (for the d=2 `split` descent)
@@ -871,6 +878,7 @@ theorem Handler.substFrom_swap_closed_ge :
   | _, _, _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, _, _, .transaction _ _ => rfl
   | _, _, _, _, _, _, _, .custom _ _ _ => rfl   -- subst identity on custom (ADR-0085 stage 1)
+  | _, _, _, _, _, _, _, .customUpd _ _ _ => rfl   -- customUpd (ADR-0107 D5): identity like `custom`
 end
 
 /-! ### B.1d The substitution-descent crux (`closeC_subst_comm`)

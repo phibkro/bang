@@ -505,6 +505,29 @@ theorem dispatchOn_append_outer (n : Nat) (op : OpId) (v : Val) (Kᵢ : Stack) (
       | some clause =>
           simp only [hcl] at hd ⊢
           obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp [List.append_assoc]
+  | customUpd ℓ' p cl =>
+      -- customUpd (ADR-0107 D5): the reinstall appends to `Kₒ` identically; the extra pair-decode `match`
+      -- commutes with the `++ T` too (both branches reassemble `Kᵢ ++ customUpd :: (Kₒ ++ T)`).
+      simp only [dispatchOn] at hd ⊢
+      cases hcl : cl.find? (·.1 == op) with
+      | none => simp only [hcl, reduceCtorEq] at hd
+      | some clause =>
+          simp only [hcl] at hd ⊢
+          -- The pair-decode `match` scrutinizes the substituted clause `S`, which is Kₒ-INDEPENDENT, so it
+          -- is IDENTICAL in `hd` and the goal. Generalize `S` and `match` on it: every branch reassembles
+          -- `Kᵢ ++ customUpd :: (Kₒ ++ T)`, closed by `hd`'s injectivity + append-assoc, uniformly.
+          set S := Comp.subst p (Comp.subst (Val.shift v) clause.2) with hS
+          clear_value S
+          match S with
+          | .ret (.pair w p') =>
+              simp only at hd ⊢
+              obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp only [List.append_assoc, List.cons_append]
+          | .ret .vunit | .ret (.vint _) | .ret (.vvar _) | .ret (.vcap _ _) | .ret (.vthunk _)
+          | .ret (.inl _) | .ret (.inr _) | .ret (.fold _)
+          | .letC _ _ | .app _ _ | .force _ | .lam _ | .handle _ _ | .case _ _ _ | .split _ _
+          | .unfold _ | .binop _ _ _ | .oom | .wrong _ | .perform _ _ _ =>
+              simp only at hd ⊢
+              obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp only [List.append_assoc, List.cons_append]
 
 /-- ◊4.5b-strengthen the krel-carrying resume CONCLUSION → `CoApproxC_le`. The strengthened handleF
 resume conjunct concludes a DECOMPOSITION `cfgⱼ = (Sᵢ, ret rⱼ)` with `r₁~r₂` (VrelK) + `Sᵢ~Sᵢ'` (KrelS
@@ -611,6 +634,13 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
             cases hf : cl.find? (·.1 == op) with
             | none => simp only [hf, reduceCtorEq] at hd₁
             | some clause => simp only [hf]; exact ⟨_, rfl⟩
+        -- customUpd (ADR-0107 D5): `find? = some` (forced by the outer dispatch) ⇒ dispatchOn is `some` on
+        -- either pair-decode branch, independent of the outer stack (`Kₒ` never gates the some/none decision).
+        | customUpd ℓ' p cl =>
+            simp only [dispatchOn] at hd₁ ⊢
+            cases hf : cl.find? (·.1 == op) with
+            | none => simp only [hf, reduceCtorEq] at hd₁
+            | some clause => simp only [hf]; split <;> exact ⟨_, rfl⟩
       obtain ⟨cfgᵢ₂, hdi₂⟩ : ∃ c, Bang.dispatchOn mh₁ op w₂ (Kⱼ', hh₂, Kᵢ'rest) = some c := by
         cases hh₂ with
         | throws _ => exact ⟨_, rfl⟩
@@ -622,6 +652,11 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
             cases hf : cl.find? (·.1 == op) with
             | none => simp only [hf, reduceCtorEq] at hd₂
             | some clause => simp only [hf]; exact ⟨_, rfl⟩
+        | customUpd ℓ' p cl =>
+            simp only [dispatchOn] at hd₂ ⊢
+            cases hf : cl.find? (·.1 == op) with
+            | none => simp only [hf, reduceCtorEq] at hd₂
+            | some clause => simp only [hf]; split <;> exact ⟨_, rfl⟩
       have hlift₁ := dispatchOn_append_outer mh₁ op w₁ Kⱼ hh₁ Kᵢrest (Frame.handleF nh h₁ :: K₁) hdi₁
       have hlift₂ := dispatchOn_append_outer mh₁ op w₂ Kⱼ' hh₂ Kᵢ'rest (Frame.handleF nh h₂ :: K₂) hdi₂
       rw [hd₁] at hlift₁; rw [hd₂] at hlift₂

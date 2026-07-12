@@ -427,6 +427,91 @@ are the forks a future session could reverse).
 
 ---
 
+## 5.5 · IMPLEMENTATION HANDOFF (branch `impl-d5-param-handlers`, WIP — SUBSET-GREEN, ENGINES PENDING)
+
+**Status as banked (the #62-slice-3 bank-and-hand-off precedent):** the kernel `Handler.customUpd`
+constructor + the `Source.eval` param-update dispatch arm + the ENTIRE route-A/LR proof-spine build
+clean **as a subset** (`lake build Bang.Core.Soundness Bang.Meta.BinaryLR Bang.Core.CapCoh
+Bang.Core.Freshness` → 717 jobs). What remains is the CalcVM calc-correctness + engine port — the L
+that pulls `compile_correct` into scope. A fresh compiler-engineer successor takes it with full budget
+(a lane deep in its session is the wrong vehicle for ~450 must-not-be-hollow proof arms). **The
+successor lands ONLY whole-tree-green** (main never holds an IR constructor lacking engine arms) with
+the whole-corpus differential + custom-byte-identical + REAL calc-correctness customUpd cases.
+
+### The uninhabited-vs-real split (rider b — pre-empt the vacuous-forever trap)
+
+Every customUpd proof case landed so far is ONE of two kinds. **A future auditor + the S2-typing
+successor MUST know which**, because a case that is *vacuous today* (because `customUpd` is not yet
+typeable) and *silently stays vacuous after S2 typing lands* is the trap:
+
+```
+ kind        where                                    why it's discharged that way        S2 obligation
+ ─────────   ──────────────────────────────────────   ─────────────────────────────────   ────────────────────────
+ VACUOUS     Soundness.lean: the 2 preservation-       customUpd is UNTYPED in S0 — no      When S2 adds
+ (today)     dispatch sites + the 2 handle-MINT sites   `handleCustomUpd`/`customUpdF`       `handleCustomUpd` +
+                                                         rule, so `HasStack`/`HasCTy` over    `customUpdF`, these
+             `handle_customUpd_uninhabited`             a customUpd frame is uninhabited     become REAL cases —
+             `concat_customUpd_absurd`                  (`cases h`/`cases hK` = 0 goals).    the `.elim` calls MUST
+                                                                                              be REPLACED, not left.
+ REAL        Freshness.lean (freshCfg_step customUpd),  these are RUNTIME invariants over    STAY real — S2 typing
+ (now)       CapCoh.lean (weakCoh customUpd),           ANY config (not typing-gated), so    only ADDS the typed
+             Dispatch dispatchOn arm, dispatchOn_isSome, customUpd IS reachable NOW; the      layer; these already
+             return-pop, BinaryLR append_outer          proofs carry content (pair-decode    carry content.
+                                                         split + clause-cap bound).
+```
+
+**The trap to pre-empt:** after S2 lands `handleCustomUpd`, the 4 VACUOUS Soundness sites are NO LONGER
+vacuous (a well-typed program CAN now contain a customUpd frame). If a successor leaves the `.elim`
+calls, the build BREAKS (the uninhabitedness lemmas become false) — which is the *good* failure (loud).
+The trap is the inverse: a successor who "fixes" the break by re-proving uninhabitedness some other
+vacuous way, hiding that the typed customUpd preservation was never actually proven. The S2 obligation
+is to prove the REAL typed-preservation customUpd case (mirroring the `custom` case at
+`Soundness.lean:2487`), NOT to keep it vacuous.
+
+### The evalD param-update design (rider a — the engine approach, verified-then-reverted)
+
+The evalD (CalcVM) customUpd arm was implemented and COMPILED, then reverted to keep the tree clean for
+the bank. The design the successor re-applies:
+
+```
+ CStore payload  (Val × List(OpId×Comp))  →  (Val × List(OpId×Comp) × Bool)   -- +isUpd flag
+ CStore.push     unchanged (isUpd = false — custom BYTE-IDENTICAL)
+ CStore.pushUpd  new: (n, (p, cls, true)) :: κ                                  -- customUpd install
+ CStore.setParam new: κ.map (e ↦ if e.1=n then (e.1,(p',e.2.2.1,e.2.2.2)) else e)  -- the param update
+ handle arm      | .customUpd _ p cls => … κ.pushUpd id p cls … κ'.tail (POP like custom)
+ perform service destructure (p, cls, isUpd); if isUpd: run clause → decode `.term (.ret (.pair w p'))`
+                 → `κ'.setParam n p'` → resume `.term (.ret w)`; else custom-identical (read-only)
+```
+
+The `isUpd` flag reuses the SAME κ store (both custom + customUpd are keyed by the disjoint generative
+identity) — chosen over a 4th store `κu` (which would ripple the CStore through all 71 evalD call sites
++ the ADR-0016 pipeline). The flag localizes to the 3 CStore defs + the 2 push sites + the service arm.
+
+### The engine census (the ~450-site shape — mechanical-verbatim vs genuinely-new)
+
+```
+ file                         customUpd-forced   MECHANICAL (= custom verbatim)     GENUINELY-NEW (real content)
+ ──────────────────────────   ────────────────   ────────────────────────────────  ──────────────────────────────
+ AbstractMachine.lean         303 + CStore ripple hsCustoms tuple, most exec arms,   the param-update service arm
+   (evalD/compile/exec/         (101 downstream    subst/label traversal              (done, reverted); the
+    compile_correct)            errors observed)                                      compile_correct customUpd case
+ EnvMachine.lean              76                 the default-engine custom arms      the param-update env-machine arm
+ U5bComplete.lean             48                 mostly rep-traversal                 the converse κ-thread case
+ Wasm.lean (exec/wexec)       28                 GC/linear-mem custom arms            the $box param-update lowering
+ WasmEmit.lean                2                  emit dispatch                        —
+```
+
+### The per-engine diff-gate plan (condition 2 — whole-corpus byte-identical every slice)
+
+Each engine's customUpd arm is gated by the differential harness (`AgreeOutcome`/`Fuzz`, comparing the
+engine against `Source.eval`). The whole EXISTING corpus (all `custom`, no `customUpd`) must run
+byte-identical every slice — enforced by the harness on the unchanged `custom` path. A NEW witness
+(rider from condition 4, NOT yet written) pins: (i) a `custom` handler returning `pair(w,x)` still gets
+the pair as its VALUE (the yield-sniffing regression); (ii) a `customUpd` handler evolving its param
+across performs (the D5 win) — both via `#guard` on `Source.eval`, then re-run against each engine.
+
+---
+
 ## 6 · ADR-inputs (present, don't decide)
 
 ```

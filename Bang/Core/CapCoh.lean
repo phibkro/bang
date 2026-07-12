@@ -401,6 +401,61 @@ private theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val
         · rcases List.mem_append.mp h' with h'' | h''
           · exact weakCoh_replace (by rfl) (wkA q (Or.inr (Or.inl (by simpa only [capsH] using h''))))
           · exact weakCoh_replace (by rfl) (wkA q (Or.inr (Or.inr h'')))
+    | customUpd ℓ' pm cl =>
+      -- customUpd (ADR-0107 D5): ONE-SHOT resume with param-UPDATE. Cap-coherence applies to any config
+      -- (runtime, NOT typing), so customUpd IS reachable — a REAL proof. The reinstall changes the frame's
+      -- param (`pm → p'` on the pair branch), but `Handler.label` is UNCHANGED (`ℓ'`), so `weakCoh_replace`
+      -- (which needs only label-equality) bridges pm→p'. Both the focus caps and the reinstalled-frame caps
+      -- reduce to `capsH (customUpd ℓ' pm cl)` (via `wkA`, the clause-cap path — `p'`/`w` are projections of
+      -- the substituted clause whose caps are `capsCls cl`) or `capsV v` (via `wkV`), exactly like `custom`.
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      -- clause-cap coherence: every cap of the substituted clause focus is WeakCoh (via wkA/wkV).
+      have hclausecoh : ∀ q ∈ capsC (Comp.subst pm (Comp.subst (Val.shift v) clause.2)),
+          WeakCoh (Kᵢ ++ Frame.handleF n (Handler.customUpd ℓ' pm cl) :: Kₒ) q := by
+        intro q hq
+        rcases capsC_substFrom 0 pm _ q hq with h' | h'
+        · rcases capsC_substFrom 0 (Val.shift v) clause.2 q h' with h'' | h''
+          · exact wkA q (Or.inr (Or.inl (by simp only [capsH]; exact List.mem_append_right _ (capsCls_find? hcl q h''))))
+          · rw [capsV_shiftFrom] at h''; exact wkV q h''
+        · exact wkA q (Or.inr (Or.inl (by simp only [capsH]; exact List.mem_append_left _ h')))
+      simp only [dispatchOn, hcl] at hd2
+      split at hd2
+      · -- PAIR branch: focus `ret w`, reinstalled param `p'`; capsC S = capsV w ++ capsV p'.
+        rename_i w p' hS
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+        obtain ⟨rfl, rfl⟩ := hd2
+        have hSeq : capsC (Comp.subst pm (Comp.subst (Val.shift v) clause.2)) = capsV w ++ capsV p' := by
+          rw [hS]; simp only [capsC, capsV]
+        -- label-preserving reinstall pm → p'.
+        have hlab : Handler.label (Handler.customUpd ℓ' pm cl) = Handler.label (Handler.customUpd ℓ' p' cl) := rfl
+        refine ⟨?_, ?_⟩
+        · intro q hq  -- focus caps: capsC (ret w) = capsV w ⊆ capsC S.
+          exact weakCoh_replace hlab (hclausecoh q (by rw [hSeq]; exact List.mem_append_left _ (by simpa only [capsC] using hq)))
+        · intro q hq  -- reinstalled-frame + tail caps.
+          rw [capsK_append] at hq; simp only [capsK, capsH] at hq
+          rcases List.mem_append.mp hq with h' | h'
+          · exact weakCoh_replace hlab (wkA q (Or.inl h'))
+          · rcases List.mem_append.mp h' with h'' | h''
+            · -- q ∈ capsV p' ++ capsCls cl (the reinstalled customUpd frame).
+              rcases List.mem_append.mp h'' with hqp | hqcl
+              · exact weakCoh_replace hlab (hclausecoh q (by rw [hSeq]; exact List.mem_append_right _ hqp))
+              · exact weakCoh_replace hlab (wkA q (Or.inr (Or.inl (by simp only [capsH]; exact List.mem_append_right _ hqcl))))
+            · exact weakCoh_replace hlab (wkA q (Or.inr (Or.inr h'')))
+      · -- GUARD branch: focus S, reinstalled param pm (unchanged) — exactly custom's read-only shape.
+        rename_i hS
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+        obtain ⟨rfl, rfl⟩ := hd2
+        refine ⟨?_, ?_⟩
+        · intro q hq; exact weakCoh_replace (by rfl) (hclausecoh q hq)
+        · intro q hq
+          rw [capsK_append] at hq; simp only [capsK, capsH] at hq
+          rcases List.mem_append.mp hq with h' | h'
+          · exact weakCoh_replace (by rfl) (wkA q (Or.inl h'))
+          · rcases List.mem_append.mp h' with h'' | h''
+            · exact weakCoh_replace (by rfl) (wkA q (Or.inr (Or.inl (by simpa only [capsH] using h''))))
+            · exact weakCoh_replace (by rfl) (wkA q (Or.inr (Or.inr h'')))
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 

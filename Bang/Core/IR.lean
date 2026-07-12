@@ -174,6 +174,20 @@ inductive Handler : Type where
   -- typing stage 3, the DERIVED calc-machine arm stage 4. Coexist keeps the three built-ins' arms
   -- byte-identical — the ripple is ADDITIVE (a new match case), never a re-freeze of the census.
   | custom : Label → Val → List (OpId × Comp) → Handler
+  -- customUpd ℓ p clauses (ADR-0107, #44 D5 param-update — PARAMETERISED handler / handler memory):
+  -- the OPT-IN updatable-param sibling of `custom`. Same fields (label, carried param `p`, finite clause
+  -- list), but its dispatch arm reinstalls an UPDATED param `p'` the clause computes — the `state`-arm
+  -- `put` swap (Dispatch.lean:137, which reinstalls a CHANGED cell) generalized to the user-effect arm.
+  -- A `customUpd` clause body yields `ret (pair w p')`: `w` resumes `Kᵢ`, `p'` is the reinstalled param
+  -- (Plotkin–Pretnar parameterised handlers). This is DECLARED by the constructor, NEVER inferred from a
+  -- `custom` clause's yield (ADR-0107 rejects yield-sniffing: a legal v1 `custom` clause returning a pair
+  -- AS ITS VALUE must not be reinterpreted). A DISTINCT constructor, NOT a mode-flag on `custom`, so every
+  -- existing `custom` match-arm / theorem / proof stays byte-identical (the unmarked path is definitionally
+  -- unchanged; ADR-0107 §M-kind). NOT a 6th primitive (invariant #5): a 5th `Handler` constructor reusing
+  -- the CK machinery, the same class of change ADR-0025/0030 made adding `state`/`transaction`. The
+  -- structural arms (subst / freshness / cap-enumeration) treat `customUpd` IDENTICALLY to `custom` — only
+  -- dispatch (Dispatch.lean) and typing (Typing.lean `HasClausesUpd`, S2) carry the param-update logic.
+  | customUpd : Label → Val → List (OpId × Comp) → Handler
 end
 
 /-- The `Bool = 1 + 1` encoding (ADR-0065/0029): `true = inr unit`, `false = inl unit`. The single

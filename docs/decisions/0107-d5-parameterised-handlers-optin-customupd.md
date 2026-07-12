@@ -1,4 +1,4 @@
-# ADR-0106 · D5 parameterised handlers (handler memory): opt-in `customUpd`, yield-sniffing rejected
+# ADR-0107 · D5 parameterised handlers (handler memory): opt-in `customUpd`, yield-sniffing rejected
 
 <!-- adr-frontmatter -->
 

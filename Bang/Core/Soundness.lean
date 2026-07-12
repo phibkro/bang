@@ -1748,6 +1748,16 @@ private theorem HasCTy.handleCustom_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff M
   | @handleCustom _ _ _ _ _ _ e_body φ q qc P A hcl hcov hp hM hle hbocc =>
     exact ⟨e_body, q, qc, P, A, rfl, hcl, hcov, hp, hM, hle, hbocc⟩
 
+/-- **`customUpd` is UNTYPED in S0 (ADR-0107) — `handle (customUpd …) M` is UNTYPEABLE.** `HasCTy`'s
+handle rules are `handleThrows`/`handleState`/`handleTransaction`/`handleCustom`; NONE types a
+`customUpd` handler (its rule `handleCustomUpd` is S2). So no well-typed focus installs a `customUpd`
+handler — the `customUpd` `handle`-MINT case of preservation is vacuous. `cases h` finds no matching
+constructor. REMOVED when S2 lands `handleCustomUpd`. -/
+private theorem HasCTy.handle_customUpd_uninhabited {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {ℓ : Label} {p : Val} {cl : List (OpId × Comp)} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.handle (Handler.customUpd ℓ p cl) M) e C → False := by
+  intro h; cases h
+
 private theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.lam M) e C →
@@ -2146,6 +2156,29 @@ private theorem HasStack.concat_custom_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {�
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.customF hcl hcov hp hle hbocc hsub'⟩
 
+/-- **`customUpd` is UNTYPED in S0 (ADR-0107) — a `HasStack` over a `customUpd` boundary is ABSURD.**
+`HasStack`'s frame rules are `letF`/`appF`/`handleF`/`stateF`/`transactionF`/`customF`; NONE types a
+`handleF n (customUpd …)` frame (customUpd's typing rule `HasClausesUpd`/`handleCustomUpd` is S2, not
+yet landed). So no well-typed config ever has a `customUpd` frame on its stack — the `customUpd`
+dispatch case of preservation is vacuous. Mirror of the pre-typing `custom` uninhabitedness
+(`handle_custom_uninhabited`); the induction rebuilds `Kᵢ`, and the boundary `cases hK` finds no
+matching constructor (zero goals). REMOVED when S2 lands `handleCustomUpd`. -/
+private theorem HasStack.concat_customUpd_absurd {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
+    {cl : List (OpId × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.customUpd ℓ' p cl) :: Kₒ) e C eo Co → False := by
+  intro hK
+  induction Kᵢ generalizing e C with
+  | nil => simp only [List.nil_append] at hK; cases hK  -- no frame rule types a `customUpd` boundary
+  | cons fr Kᵢ ih =>
+    simp only [List.cons_append] at hK
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
+    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
+
 /-- **A clause found by `find?` is a well-typed ret-clause (ADR-0092 D4, ret-shape v1).** From
 `HasClauses ℓ P cl` and the membership of a clause `(op', body)` in `cl` (as returned by `dispatchOn`'s
 `find?`), the body IS a `ret w` with the resumed VALUE `w : opRes ℓ op'` under `[opArg ℓ op', P]`.
@@ -2510,6 +2543,10 @@ theorem preservation_proof
         obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
         obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
         exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩, hnecfg'⟩
+      | customUpd ℓ' p cl =>
+        -- customUpd (ADR-0107 D5) is UNTYPED in S0 — no `HasStack` has a `customUpd` boundary, so this
+        -- dispatch case is VACUOUS (`concat_customUpd_absurd`). REMOVED when S2 lands `handleCustomUpd`.
+        exact (hstack.concat_customUpd_absurd).elim
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2581,6 +2618,10 @@ theorem preservation_proof
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus', HasStack.customF hcl hcov hp hle hbocc hstack⟩, hnecfg'⟩
+    | customUpd ℓ p cl =>
+      -- customUpd (ADR-0107 D5) is UNTYPED in S0 — `handle (customUpd …) M` is untypeable, so this
+      -- MINT case is vacuous (`handle_customUpd_uninhabited`). REMOVED when S2 lands `handleCustomUpd`.
+      exact (hfocus.handle_customUpd_uninhabited).elim
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -2891,6 +2932,9 @@ theorem hasConfigTy_step
         obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
         obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
         exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩⟩
+      | customUpd ℓ' p cl =>
+        -- customUpd (ADR-0107 D5) UNTYPED in S0 — no `customUpd` boundary in a well-typed stack (vacuous).
+        exact (hstack.concat_customUpd_absurd).elim
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2961,6 +3005,9 @@ theorem hasConfigTy_step
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus', HasStack.customF hcl hcov hp hle hbocc hstack⟩⟩
+    | customUpd ℓ p cl =>
+      -- customUpd (ADR-0107 D5) is UNTYPED in S0 — the MINT case is vacuous. REMOVED when S2 lands.
+      exact (hfocus.handle_customUpd_uninhabited).elim
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -3108,6 +3155,14 @@ private theorem dispatchOn_isSome (n : Nat) (ℓ : Label) (op : OpId) (v : Val) 
       obtain ⟨_, hsome⟩ := hh
       obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
       simp only [dispatchOn, hcl]; exact ⟨_, rfl⟩
+  -- customUpd (ADR-0107 D5): dispatchOn is TOTAL here too — `handlesOp = true` forces the clause found;
+  -- then whatever the substituted focus is (a `ret (pair …)` on the typed path, `other` on the guard),
+  -- BOTH `match` branches produce `some`. The extra `split` covers the pair-decode; each leaf is `rfl`.
+  | customUpd ℓ' p cl =>
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hh
+      obtain ⟨_, hsome⟩ := hh
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl]; split <;> exact ⟨_, rfl⟩
 
 /-- **PROGRESS'S PERFORM CASE** (probe §2): given `CapResolves K n ℓ op`, the `idDispatch` step fires —
 `splitAtId` finds the handling frame, the fail-loud `handlesOp` guard passes, and `dispatchOn` is total. -/
@@ -3170,6 +3225,8 @@ theorem progress'_proof
         | transaction ℓ Θ => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
         -- return-pop is handler-kind-agnostic (Source.step's `handleF _ _ :: K, ret v` arm): custom pops too.
         | custom ℓ p cl => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
+        -- customUpd (ADR-0107 D5): return-pop is kind-agnostic, so it pops identically to `custom`.
+        | customUpd ℓ p cl => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
       | appF w =>
         obtain ⟨γ', A0, q0, he, hC, hγ, hwv⟩ := hfocus.ret_inv
         obtain ⟨q', A', B', hCeq, _⟩ := hstack.appF_inv

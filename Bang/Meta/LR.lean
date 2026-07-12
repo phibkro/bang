@@ -495,6 +495,7 @@ def renameH (σ : Nat → Nat) : Handler → Handler
   | .throws ℓ   => .throws ℓ
   | .transaction ℓ Θ => .transaction ℓ (Θ.map (renameV σ))
   | .custom ℓ p cl => .custom ℓ p cl    -- ADR-0087: identity on custom (param/clauses closed in reachable configs, like shift/subst)
+  | .customUpd ℓ p cl => .customUpd ℓ p cl    -- ADR-0107 D5: identity like `custom`
 end
 
 /-- Rename capability identities in a frame by `σ` (including a `handleF`'s own id). -/
@@ -608,6 +609,8 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
     renameH σ (.transaction ℓ Θ) = .transaction ℓ (Θ.map (renameV σ)) := by simp only [renameH]
 @[simp] theorem renameH_custom (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) :
     renameH σ (.custom ℓ p cl) = .custom ℓ p cl := by simp only [renameH]
+@[simp] theorem renameH_customUpd (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) :
+    renameH σ (.customUpd ℓ p cl) = .customUpd ℓ p cl := by simp only [renameH]
 
 @[simp] theorem renameF_letF (σ : Nat → Nat) (N : Comp) : renameF σ (.letF N) = .letF (renameC σ N) := rfl
 @[simp] theorem renameF_appF (σ : Nat → Nat) (v : Val) : renameF σ (.appF v) = .appF (renameV σ v) := rfl
@@ -621,7 +624,9 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
 /-- `handlesOp` is invariant under `renameH` (it reads only the label + op-kind, not payloads/ids). -/
 @[simp] theorem handlesOp_renameH (σ : Nat → Nat) (h : Handler) (ℓ : Label) (op : OpId) :
     handlesOp (renameH σ h) ℓ op = handlesOp h ℓ op := by
-  cases h <;> simp only [renameH_state, renameH_throws, renameH_transaction, renameH_custom, handlesOp]
+  cases h <;>
+    simp only [renameH_state, renameH_throws, renameH_transaction, renameH_custom, renameH_customUpd,
+      handlesOp]
 
 /-! Renaming COMMUTES with `shiftFrom`/`substFrom` (relabels only `vcap` ids; shift/subst touch only
 de Bruijn indices). Standard mutual structural induction. -/
@@ -673,6 +678,7 @@ theorem renameH_shiftFrom (σ : Nat → Nat) (c : Nat) :
   | .throws _        => by simp only [Handler.shiftFrom, renameH_throws]
   | .transaction _ _ => by simp only [Handler.shiftFrom, renameH_transaction]
   | .custom _ _ _    => by simp only [Handler.shiftFrom, renameH_custom]    -- both identity on custom (ADR-0085 stage 1)
+  | .customUpd _ _ _ => by simp only [Handler.shiftFrom, renameH_customUpd]    -- ADR-0107 D5: identity like `custom`
 end
 
 /-- renaming commutes with the cutoff-0 `shift`. -/
@@ -739,6 +745,7 @@ theorem renameH_substFrom (σ : Nat → Nat) (k : Nat) (v : Val) :
   | .throws _        => by simp only [Handler.substFrom, renameH_throws]
   | .transaction _ _ => by simp only [Handler.substFrom, renameH_transaction]
   | .custom _ _ _    => by simp only [Handler.substFrom, renameH_custom]    -- both identity on custom (ADR-0085 stage 1)
+  | .customUpd _ _ _ => by simp only [Handler.substFrom, renameH_customUpd]    -- ADR-0107 D5: identity like `custom`
 end
 
 /-- renaming commutes with the head-redex `subst`. -/
@@ -815,6 +822,7 @@ def Handler.CapsBelow (g : Nat) : Handler → Prop
   | .throws _        => True
   | .transaction _ Θ => ∀ x ∈ Θ, Val.CapsBelow g x
   | .custom _ _ _    => True    -- ADR-0085 stage 1: custom is inert/untyped ⇒ no cap-scope constraint (like throws)
+  | .customUpd _ _ _ => True    -- ADR-0107 D5: like `custom` (inert cap-scope, param/clauses closed)
 end
 
 /-- Frame cap-scopedness: the `handleF` id AND the frame's stored sub-terms are `< g`. -/
@@ -880,6 +888,7 @@ theorem Handler.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
   | .transaction _ Θ, h => by
       simp only [Handler.CapsBelow] at h ⊢; exact fun x hx => Val.CapsBelow_mono hgg (h x hx)
   | .custom _ _ _,    _ => by simp only [Handler.CapsBelow]   -- goal `True` (like throws)
+  | .customUpd _ _ _, _ => by simp only [Handler.CapsBelow]   -- ADR-0107 D5: goal `True` (like `custom`)
 end
 
 
@@ -1073,6 +1082,7 @@ theorem Handler.substFrom_shiftFrom_closed_below :
   | _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, .transaction _ _ => rfl
   | _, _, _, _, _, .custom _ _ _ => rfl
+  | _, _, _, _, _, .customUpd _ _ _ => rfl   -- ADR-0107 D5: identity like `custom`
 end
 
 /-- `bumpL` commutes cap-substitution past a single `shift`, for CLOSED fillers: each filler needs no

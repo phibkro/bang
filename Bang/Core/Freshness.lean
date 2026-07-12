@@ -82,6 +82,8 @@ def capsH : Handler → List (Nat × Label)
   -- thread automatically; the `sizeOf` measure justifies the descent. Equation lemmas
   -- (`simp only [capsH]`/`[capsCls]`) are still generated.
   | .custom _ p cls => capsV p ++ capsCls cls
+  -- customUpd (ADR-0107 D5): caps are STRUCTURAL, identical to `custom` — param caps ++ clause caps.
+  | .customUpd _ p cls => capsV p ++ capsCls cls
   termination_by h => sizeOf h
 /-- Caps of a custom handler's clause list — recurses on the list spine; each body `c.2` is a
 `sizeOf`-subterm of the clause list (ADR-0087). -/
@@ -227,6 +229,7 @@ theorem capsH_shiftFrom (j : Nat) (h : Handler) : capsH (Handler.shiftFrom j h) 
   | .throws _ => rfl
   | .transaction _ _ => rfl
   | .custom _ _ _ => rfl    -- shiftFrom is identity on custom (clauses closed) ⇒ capsH round-trips (ADR-0087)
+  | .customUpd _ _ _ => rfl  -- customUpd (ADR-0107 D5): identity like `custom`
 end
 
 mutual
@@ -319,6 +322,7 @@ theorem capsH_substFrom (k : Nat) (v : Val) (h : Handler) :
   -- custom: `Handler.substFrom` is the IDENTITY (clauses closed, Stage-1), so `capsH (subst …) = capsH h`
   -- ⇒ every cap of the result is already a cap of `h` (ADR-0087: capsH is honest but subst is inert here).
   | .custom _ _ _ => intro p hp; exact Or.inl hp
+  | .customUpd _ _ _ => intro p hp; exact Or.inl hp   -- customUpd (ADR-0107 D5): subst inert like `custom`
 end
 
 /-! ### §3.0b — DISPATCH-arm freshness: the resumed stack + focus stay `< g`. Richer mirror of
@@ -549,6 +553,60 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
           · rw [capsV_shiftFrom] at h''; exact hv q h''
         · exact hch q (by simp only [capsH]; exact List.mem_append_left _ h')
       · intro q hq; simp only [capsH] at hq; exact hch q (by simp only [capsH]; exact hq)
+    | customUpd ℓ' pm cl =>
+      -- customUpd (ADR-0107 D5): the ONE-SHOT resume with param-UPDATE. Freshness applies to any config
+      -- (a runtime invariant, NOT typing), so customUpd IS reachable here — this is a REAL proof, not
+      -- vacuous. The reinstalled stack + focus caps stay `< g`: on EITHER dispatch branch (pair-split or
+      -- guard) the resume focus and reinstalled param are BOTH sub-caps of the substituted clause
+      -- `subst pm (subst (shift v) clause.2)`, whose caps `capsCls_find?` + `hch` bound (ADR-0087
+      -- enumerability). `.ret (pair w p')` case: `capsC (ret (pair w p')) = capsV w ++ capsV p'`, both
+      -- inside the clause's caps; the reinstalled `customUpd ℓ' p' cl` has `capsH = capsV p' ++ capsCls cl`,
+      -- and `p'`'s caps are the clause's. The guard `other` case reinstalls `pm` unchanged (= custom's shape).
+      have hch : ∀ q ∈ capsH (Handler.customUpd ℓ' pm cl), q.1 < g := hckh
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      -- clause-cap bound: every cap of the substituted clause focus is `< g` (the ADR-0087 enumerability).
+      have hclausecap : ∀ q ∈ capsC (Comp.subst pm (Comp.subst (Val.shift v) clause.2)), q.1 < g := by
+        intro q hq
+        rcases capsC_substFrom 0 pm _ q hq with h' | h'
+        · rcases capsC_substFrom 0 (Val.shift v) clause.2 q h' with h'' | h''
+          · exact hch q (by simp only [capsH]; exact List.mem_append_right _ (capsCls_find? hcl q h''))
+          · rw [capsV_shiftFrom] at h''; exact hv q h''
+        · exact hch q (by simp only [capsH]; exact List.mem_append_left _ h')
+      simp only [dispatchOn, hcl] at hd2
+      -- Split the pair-decode. Set `S := subst pm (subst (shift v) clause.2)` (the substituted clause).
+      -- PAIR branch: `S = ret (pair w p')`, focus `ret w`, reinstalled param `p'` — `capsC (ret w) ⊆ capsC S`
+      --   and `capsV p' ⊆ capsC S` (both projections of the pair, via `capsC (ret (pair w p')) = capsV w ++
+      --   capsV p'`). GUARD branch: `S = other` (unreachable at typed S2, but freshness is untyped), focus
+      --   `S`, reinstalled param `pm` — `capsC S ⊆ capsC S`, `capsV pm ⊆ capsH (customUpd … pm …)`.
+      -- Both give the reinstalled-stack cap bound `< g` via `hclausecap`/`hch`.
+      split at hd2
+      · -- PAIR branch: hd2 : some (…customUpd ℓ' p' cl…, ret w) = (K', c')
+        rename_i w p' hS
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+        obtain ⟨rfl, rfl⟩ := hd2
+        -- capsC S = capsV w ++ capsV p'  (S = ret (pair w p')).
+        have hSeq : capsC (Comp.subst pm (Comp.subst (Val.shift v) clause.2)) = capsV w ++ capsV p' := by
+          rw [hS]; simp only [capsC, capsV]
+        refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
+          stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ ?_⟩
+        · -- focus caps: capsC (ret w) = capsV w ⊆ capsV w ++ capsV p' = capsC S, bounded by hclausecap.
+          intro q hq
+          apply hclausecap q; rw [hSeq]; exact List.mem_append_left _ (by simpa only [capsC] using hq)
+        · -- reinstalled-frame caps: capsH (customUpd ℓ' p' cl) = capsV p' ++ capsCls cl; both bounded.
+          intro q hq; simp only [capsH] at hq
+          rcases List.mem_append.mp hq with hqp | hqcl
+          · exact hclausecap q (by rw [hSeq]; exact List.mem_append_right _ hqp)
+          · exact hch q (by simp only [capsH]; exact List.mem_append_right _ hqcl)
+      · -- GUARD branch: hd2 : some (…customUpd ℓ' pm cl…, S) = (K', c') (S the whole substituted clause).
+        rename_i hS
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+        obtain ⟨rfl, rfl⟩ := hd2
+        refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
+          stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ ?_⟩
+        · intro q hq; exact hclausecap q hq
+        · intro q hq; simp only [capsH] at hq; exact hch q (by simp only [capsH]; exact hq)
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- The `Bool=1+1` encoding (ADR-0065) is closed: it carries no capabilities. -/
@@ -747,6 +805,7 @@ def CFHandler : Handler → Prop
   | .throws _         => True
   | .transaction _ Θ  => ∀ w ∈ Θ, CFVal w
   | .custom _ _ _     => False
+  | .customUpd _ _ _  => False   -- customUpd (ADR-0107 D5): a user handler, NOT cap-free (like `custom`)
 end
 
 /-! ### Shift preservation (CFVal/CFComp survive `shiftFrom`). -/
@@ -766,6 +825,7 @@ theorem CFHandler_shiftFrom (k : Nat) : ∀ {hd : Handler}, CFHandler hd → CFH
   | .throws ℓ, _ => by simp [Handler.shiftFrom, CFHandler]
   | .transaction ℓ Θ, h => by simpa only [Handler.shiftFrom, CFHandler] using h
   | .custom ℓ p cl, h => by simp only [CFHandler] at h
+  | .customUpd ℓ p cl, h => by simp only [CFHandler] at h   -- CFHandler customUpd = False (ADR-0107)
 theorem CFComp_shiftFrom (k : Nat) : ∀ {t : Comp}, CFComp t → CFComp (Comp.shiftFrom k t)
   | .ret w, h => by simp only [Comp.shiftFrom, CFComp] at h ⊢; exact CFVal_shiftFrom k h
   | .letC M N, h => by simp only [Comp.shiftFrom, CFComp] at h ⊢; exact ⟨CFComp_shiftFrom k h.1, CFComp_shiftFrom (k+1) h.2⟩
@@ -802,6 +862,7 @@ theorem CFHandler_substFrom (k : Nat) {v : Val} (hv : CFVal v) : ∀ {hd : Handl
   | .throws ℓ, _ => by simp [Handler.substFrom, CFHandler]
   | .transaction ℓ Θ, h => by simpa only [Handler.substFrom, CFHandler] using h
   | .custom ℓ p cl, h => by simp only [CFHandler] at h
+  | .customUpd ℓ p cl, h => by simp only [CFHandler] at h   -- CFHandler customUpd = False (ADR-0107)
 theorem CFComp_substFrom (k : Nat) {v : Val} (hv : CFVal v) : ∀ {t : Comp}, CFComp t → CFComp (Comp.substFrom k v t)
   | .ret w, h => by simp only [Comp.substFrom, CFComp] at h ⊢; exact CFVal_substFrom k hv h
   | .letC M N, h => by simp only [Comp.substFrom, CFComp] at h ⊢; exact ⟨CFComp_substFrom k hv h.1, CFComp_substFrom (k+1) (CFVal_shiftFrom 0 hv) h.2⟩

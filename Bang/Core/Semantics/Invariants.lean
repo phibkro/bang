@@ -171,6 +171,20 @@ theorem stackBelow_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
       simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
       obtain ⟨rfl, _⟩ := hd2
       exact (StackBelow_append g Kᵢ _).mpr ⟨hsbi, hng, hsbo⟩
+    | customUpd ℓ' p cl =>
+      -- customUpd (ADR-0107 D5): ONE-SHOT resume reinstalling the deep frame over the SAME `Kᵢ`/`Kₒ`,
+      -- carrying the UPDATED param (`p'` on the pair path, `p` on the guard path) — but the stack SHAPE is
+      -- identical to `custom` (`Kᵢ ++ handleF n (customUpd …) :: Kₒ`), so StackBelow is preserved either way.
+      -- The extra `match … with .ret (.pair …)` needs one more `split`; both branches reassemble the same
+      -- shape and discharge by the SAME append lemma as `custom`.
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl] at hd2
+      split at hd2 <;>
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, _⟩ := hd2
+          exact (StackBelow_append g Kᵢ _).mpr ⟨hsbi, hng, hsbo⟩
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- **`WellCounted` is preserved by `cstep`.** The mint arm pushes `handleF g` with counter `g+1` (old

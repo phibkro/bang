@@ -29,6 +29,7 @@ def Handler.label : Handler → Label
   | .state ℓ _ => ℓ
   | .transaction ℓ _ => ℓ
   | .custom ℓ _ _ => ℓ         -- ADR-0085: the custom handler's label (its first field), like the others
+  | .customUpd ℓ _ _ => ℓ      -- ADR-0107 D5: label is the first field, like `custom`
 
 /-- Does handler `h` catch operation `(ℓ, op)`? -/
 def handlesOp : Handler → Label → OpId → Bool
@@ -44,6 +45,9 @@ def handlesOp : Handler → Label → OpId → Bool
   -- well-typed program routes here (typed soundness discharges custom via `HasStack` having no custom
   -- frame — `handle_custom_uninhabited`/`concat_custom_absurd`).
   | .custom ℓ' _ clauses, ℓ, op => (ℓ' = ℓ) && (clauses.find? (·.1 == op)).isSome
+  -- customUpd (ADR-0107 D5): catches exactly like `custom` — label match && clause-list membership.
+  -- The param-update happens in dispatch, not here; which ops it CATCHES is identical to `custom`.
+  | .customUpd ℓ' _ clauses, ℓ, op => (ℓ' = ℓ) && (clauses.find? (·.1 == op)).isSome
 
 /-- `handlesOp` forces the label match: a catching handler's `label` IS the dispatched `ℓ`. -/
 theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp h ℓ op = true) :
@@ -179,6 +183,25 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) :
           | some clause =>
               some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ,
                     Comp.subst p (Comp.subst (Val.shift v) clause.2))
+          | none => none   -- UNREACHABLE: the `handlesOp` guard forced `(clauses.find? …).isSome` before here.
+      -- customUpd (ADR-0107 D5 param-update — PARAMETERISED handler): the `custom` arm's ONE difference —
+      -- the clause yields `ret (pair w p')` (its DECLARED contract, typed by `HasClausesUpd`, S2), and the
+      -- reinstalled frame carries the UPDATED param `p'` (not `p`). This is the `state`-`put` swap
+      -- (`dispatchOn` state arm above reinstalls a CHANGED cell) generalized to the user-effect arm. The
+      -- pair-decode runs ONLY here — NEVER on a `custom` handler — so a `custom` clause returning a pair
+      -- keeps getting the pair as its VALUE (ADR-0107 rejects yield-sniffing). Same binder discipline as
+      -- `custom` (`subst p (subst (shift v) clause)` = `clause[param@1 := p, arg@0 := v]`); the substituted
+      -- focus is `ret (pair w p')` (closed), decomposed into (resume `w`, reinstall `p'`). The `other`
+      -- fall-through is a type-safe guard: `HasClausesUpd` forces the pair shape, so it is source-unreachable
+      -- (reinstall `p` unchanged, resume with the focus — never wrong-valued). One-shot, tail-resumptive.
+      | .customUpd ℓ' p clauses =>
+          match clauses.find? (·.1 == op) with
+          | some clause =>
+              match Comp.subst p (Comp.subst (Val.shift v) clause.2) with
+              | .ret (.pair w p') =>
+                  some (Kᵢ ++ Frame.handleF n (.customUpd ℓ' p' clauses) :: Kₒ, .ret w)   -- REINSTALL p', RESUME w
+              | other =>
+                  some (Kᵢ ++ Frame.handleF n (.customUpd ℓ' p clauses) :: Kₒ, other)   -- ill-typed guard (unreachable)
           | none => none   -- UNREACHABLE: the `handlesOp` guard forced `(clauses.find? …).isSome` before here.
 
 /-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the
