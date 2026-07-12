@@ -477,7 +477,7 @@ the bank. The design the successor re-applies:
  CStore payload  (Val × List(OpId×Comp))  →  (Val × List(OpId×Comp) × Bool)   -- +isUpd flag
  CStore.push     unchanged (isUpd = false — custom BYTE-IDENTICAL)
  CStore.pushUpd  new: (n, (p, cls, true)) :: κ                                  -- customUpd install
- CStore.setParam new: κ.map (e ↦ if e.1=n then (e.1,(p',e.2.2.1,e.2.2.2)) else e)  -- the param update
+ CStore.setParam UPDATE-FIRST-MATCH (recursive, NOT map): stop at the first e.1=n              -- the param update
  handle arm      | .customUpd _ p cls => … κ.pushUpd id p cls … κ'.tail (POP like custom)
  perform service destructure (p, cls, isUpd); if isUpd: run clause → decode `.term (.ret (.pair w p'))`
                  → `κ'.setParam n p'` → resume `.term (.ret w)`; else custom-identical (read-only)
@@ -486,6 +486,18 @@ the bank. The design the successor re-applies:
 The `isUpd` flag reuses the SAME κ store (both custom + customUpd are keyed by the disjoint generative
 identity) — chosen over a 4th store `κu` (which would ripple the CStore through all 71 evalD call sites
 + the ADR-0016 pipeline). The flag localizes to the 3 CStore defs + the 2 push sites + the service arm.
+
+**`CStore.setParam` is UPDATE-FIRST-MATCH, not `map` (impl finding, S1).** The first-draft `κ.map (if
+e.1=n …)` rewrites EVERY entry keyed `n`; the impl uses a recursive `setParam` that updates the FIRST
+(innermost) match and stops. Why it matters: `customParamUpdate_setParam` (the machine↔store correspondence
+— `customParamUpdate n p' hs` projects to `(hsCustoms hs).setParam n p'`) then commutes WITHOUT a
+uniqueness premise. With `map`, the head case's residual is `(hsCustoms hs).setParam n p'` on the TAIL,
+which differs from the machine's `hsCustoms (tail unchanged)` unless the tail has no key-`n` entry — a
+freshness/uniqueness fact not locally available. Update-first-match matches `get?`'s innermost-wins and the
+machine's `customParamUpdate` (which rewrites the first `id = n` frame), so the projection commutes
+structurally. (The same reasoning is why a mid-body self-perform on a customUpd frame is a REAL net-effect
+stack mutation — see the FrameMut(customUpd)=param-free finding: `netEffect` must apply `updateCustoms` to
+reconstruct it, S1 route A1.)
 
 ### The engine census (the ~450-site shape — mechanical-verbatim vs genuinely-new)
 
