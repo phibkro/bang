@@ -154,6 +154,13 @@ partial def genValueOf (spec : DataSpec) (fuel : Nat) (s : Nat) : String × Nat 
 -- (either `Nil` or another `Cons(...)`) — checked by parsing it (§3 reuses `elaborateToComp`).
 #guard ((genValueOf ⟨"IntList", [("Nil", []), ("Cons", [.int, .recur])]⟩ 4 3).1.startsWith "Cons(") ||
        ((genValueOf ⟨"IntList", [("Nil", []), ("Cons", [.int, .recur])]⟩ 4 3).1 == "Nil")
+-- #152: a 3-ary spec (`goArgs`'s own recursion is already arity-agnostic — no hardcoded 2-field
+-- cap anywhere in `genValueOf`/`toSrc` — this is the first witness that actually EXERCISES it at
+-- 3, not just asserts the code path is structurally capable). `T(n1, n2, n3)`'s rendered source
+-- always has exactly 2 commas (2 separators for 3 args) and both a leading and trailing paren.
+#guard
+  let (src, _) := genValueOf ⟨"Triple3", [("T", [.int, .int, .int])]⟩ 3 11
+  src.startsWith "T(" && (src.toList.count ',' == 2)
 
 /-! ## 2. A generated VALUE TREE — the shrinking domain. Shrinking operates on the STRUCTURE
 (which ctor, which sub-values), not the rendered string, so "try an earlier constructor" / "shrink
@@ -650,6 +657,35 @@ def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s =
 -- just a bare `Eq`/`Ord` reference anywhere in the body) is what makes this resolve at ALL: this
 -- program mentions neither trait name outside its `deriving` clause.
 #guard (match runLawsFromSource "data Point = Pt(Int, Int) deriving (Eq, Ord)" 30 7 with
+    | .ok outcomes => outcomes.length == 6 && outcomes.all (fun o => match o.outcome with
+        | .holds _ => true | _ => false)
+    | .error _ => false)
+
+-- **#152: the arity ≥ 3 vocabulary gap.** Every hand-written `DataSpec`/`runLawsFromSource`
+-- program in this file to this point tops out at arity 2 (`Box`/`IntList`/`Point`) — B011's v1
+-- cap LIFTED (#144) for the SURFACE (`data Triple = T(Int, Int, Int)`, `examples/ctor-nary`), but
+-- this witness's own fuzz-generator SHAPE VOCABULARY (`PayloadKind`/`DataSpec`) and its
+-- `runLawsFromSource` law-checking corpus never independently confirmed the derived Eq/Ord law
+-- suite still holds through the SAME N-ary fold generalization at 3+ fields — a genuinely
+-- different code path (`eqFoldBody`/`ordFoldBody`'s own `foldr`, not `genValueOf`'s), so a 2-ary
+-- witness alone doesn't structurally cover it. A 3-ary derive-only program (mirroring the 2-ary
+-- regression net immediately above, same "6 laws, all `.holds`" shape) closes the gap: `Triple`
+-- carries THREE `Int` fields, so `eqArmBody`/`ordArmBody`'s right-nested fold genuinely chains
+-- THREE comparisons deep (not the 2-ary case's single `let #tailEq = … in if … else …` link),
+-- exercising the fold's OWN recursion at a depth the 2-ary witness cannot reach.
+#guard (match runLawsFromSource "data Triple = T(Int, Int, Int) deriving (Eq, Ord)" 30 7 with
+    | .ok outcomes => outcomes.length == 6 && outcomes.all (fun o => match o.outcome with
+        | .holds _ => true | _ => false)
+    | .error _ => false)
+
+-- a SELF-RECURSIVE 3-ary carrier (two `Int` fields + a recursive tail — the `PayloadKind.recur`
+-- generalization `genValueOf`/`DataSpec.toSrc` already support structurally, now actually
+-- EXERCISED at 3-ary through the derive-law path): the `#112`/`#139` knot dispatch for a
+-- SELF-referential `==`/`<` on the carrier's own tail field composes with the N-ary fold — the
+-- generated `impl`'s `eq`/`lt` op recurses on `t == t2` (the third field) through the SAME
+-- knot-deferral mechanism a hand-written 2-ary impl already uses, now reached at arity 3.
+#guard (match runLawsFromSource
+    "data W3 = End | Cons3(Int, Int, W3) deriving (Eq, Ord)" 30 7 with
     | .ok outcomes => outcomes.length == 6 && outcomes.all (fun o => match o.outcome with
         | .holds _ => true | _ => false)
     | .error _ => false)
