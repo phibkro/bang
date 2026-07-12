@@ -1,5 +1,7 @@
 pub let rec concat : Str -> Str -> Str =
   fun a => fun b => match a { SNil -> b, SCons(c, t) -> SCons(c, $concat t b) }
+pub let rec strLength : Str -> Int =
+  fun s => match (s : Str) { SNil -> 0, SCons(c, t) -> 1 + $strLength t }
 pub let reverse =
   {let rec revApp : Str -> Str -> Str = fun acc =>
       fun s => match (s : Str) { SNil -> acc, SCons(c, t) -> $revApp (SCons(c, acc)) t }
@@ -71,6 +73,17 @@ pub let rec head : List a -> Option a =
   fun xs => match (xs : List a) { Nil -> None, Cons(h, t) -> Some h }
 pub let rec tail : List a -> Option (List a) =
   fun xs => match (xs : List a) { Nil -> None, Cons(h, t) -> Some t }
+pub let rec zip : List a -> List b -> List (a * b) =
+  fun xs =>
+    fun ys =>
+      match (xs : List a) {
+        Nil -> Nil,
+        Cons(h, t) -> match (ys : List b) { Nil -> Nil, Cons(h2, t2) -> Cons((h, h2), $zip t t2) }
+      }
+pub let rec range : Int -> Int -> List Int =
+  fun lo => fun hi => if lo == hi then Nil else Cons(lo, $range (lo + 1) hi)
+pub let rec replicate : Int -> a -> List a =
+  fun n => fun x => if n == 0 then Nil else Cons(x, $replicate (n - 1) x)
 pub trait Eq {
   fn eq(a, b) -> Unit + Unit;
   law refl(a): a == a;

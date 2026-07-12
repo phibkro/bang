@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (66)
+## active (69)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -16,6 +16,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`calculated-typer-survey.md`](calculated-typer-survey.md) — Calculated type CHECKING — design inputs for a future ADR
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`cap-gc-rep-design.md`](cap-gc-rep-design.md) — First-class-capability GC rep — design (#133)
+- [`carrier-inference-design.md`](carrier-inference-design.md) — Carrier-inference design — closing #55's result-position instantiation-discovery gap
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
 - [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
 - [`copy-kit.md`](copy-kit.md) — Copy kit — pitching bang accurately and hook-worthily
@@ -28,6 +29,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`dogfood-calc-findings.md`](dogfood-calc-findings.md) — Dogfood findings — a multi-module calculator written in bang
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
 - [`effect-algebra-survey.md`](effect-algebra-survey.md) — The algebra of effects and the effect-side lambda cube — design survey (R-series companion to R6)
+- [`effect-sound-refoundation.md`](effect-sound-refoundation.md) — effect_sound re-foundation — the three trace axioms → defs (Q14, 2026-07-12)
 - [`effects-vs-cic.md`](effects-vs-cic.md) — Effects vs the Calculus of (Inductive) Constructions — additive or derivative?
 - [`emission-bignum-design.md`](emission-bignum-design.md) — Emission bignum design — full ℤ on the WasmGC path (closing the rung-4/5 i64-wrap gap)
 - [`emission-rung1-probe.md`](emission-rung1-probe.md) — Emission rung-1 probe — pure ⊥-row arithmetic → real `.wat`, run on wasmtime
@@ -57,6 +59,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
 - [`refinement-types-survey.md`](refinement-types-survey.md) — Refinement types vs grades — design survey (R5, ROADMAP §Pre-v1 research ladder)
 - [`rung5-s5-proofgrade-refutation.md`](rung5-s5-proofgrade-refutation.md) — Rung-5 S5 proof-grade — the obligation, RE-FRAMED (one half done, one half unstateable in v1)
+- [`sched-library-demo.md`](sched-library-demo.md) — Scheduler-as-handler, as ordinary library code — the ADR-0101 flagship demo
 - [`spanned-surf-design.md`](spanned-surf-design.md) — Spanned-Surf design — located errors + LSP-hover tier (#52)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
 - [`spec-proof-discipline.md`](spec-proof-discipline.md) — Spec proof discipline

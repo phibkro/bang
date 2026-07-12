@@ -1,0 +1,90 @@
+-- sched-roundrobin — three cooperative tasks, interleaved by a ROUND-ROBIN Sched
+-- handler. Each task takes 3 steps; the driver appends the running task's id
+-- (a single digit) to an accumulator each step, base-10 — so the OUTPUT IS the
+-- interleaving trace. Round-robin strictly alternates 1,2,3,1,2,3,... : 123123123.
+--
+-- The scheduling POLICY lives entirely in the handler clause `next(round) => round
+-- mod 3` (a PURE function of the round counter the driver threads — no mutable
+-- "whose turn" register, ADR-0095 D4/ADR-0092 D5; see Sched.bang's op doc and
+-- ../../docs/notes/sched-library-demo.md §"stateless seed-splitting"). Swap that one
+-- clause for a different pure function and the SAME driver produces a different
+-- interleaving with zero other changes — see ../sched-swap-dfs/ (paradigm-is-a-value
+-- on the concurrency axis, ADR-0101 §G1).
+import Sched
+import Task
+
+handle
+  (let tid1 = sched.spawn(1) in
+   let tid2 = sched.spawn(2) in
+   let tid3 = sched.spawn(3) in
+   let t1 = ($(Task.makeTask)) tid1 3 in
+   let t2 = ($(Task.makeTask)) tid2 3 in
+   let t3 = ($(Task.makeTask)) tid3 3 in
+   -- drive: pop-one-step-per-round over a fixed 3-slot queue (ta/sa, tb/sb, tc/sc =
+   -- task-id/current-Step pairs). A finished slot (Fin) is skipped without consuming
+   -- a `sched.next` pick — the handler is only asked to choose among RUNNABLE tasks,
+   -- so the trace never "wastes" a round on a task that has nothing left to do.
+   let rec drive
+     : Int -> Step -> Int -> Step -> Int -> Step -> Int -> Int -> Int ! {Div, Sched_Sched}
+     = fun ta => fun sa => fun tb => fun sb => fun tc => fun sc => fun round => fun acc =>
+       match (sa : Step) {
+         Fin(u) -> match (sb : Step) {
+           Fin(v) -> match (sc : Step) {
+             Fin(w) -> acc,
+             More(kc) -> (let c1 = ($kc) () in
+                          let acc1 = acc * 10 + tc in
+                          ($drive) ta sa tb sb tc c1 (round + 1) acc1)
+           },
+           More(kb) -> (let b1 = ($kb) () in
+                        let acc1 = acc * 10 + tb in
+                        ($drive) ta sa tb b1 tc sc (round + 1) acc1)
+         },
+         More(ka) -> match (sb : Step) {
+           Fin(v) -> match (sc : Step) {
+             Fin(w) -> (let a1 = ($ka) () in
+                        let acc1 = acc * 10 + ta in
+                        ($drive) ta a1 tb sb tc sc (round + 1) acc1),
+             More(kc) ->
+               (let choice = sched.next(round) in
+                if choice == 0 then
+                  (let a1 = ($ka) () in
+                   let acc1 = acc * 10 + ta in
+                   ($drive) ta a1 tb sb tc sc (round + 1) acc1)
+                else
+                  (let c1 = ($kc) () in
+                   let acc1 = acc * 10 + tc in
+                   ($drive) ta sa tb sb tc c1 (round + 1) acc1))
+           },
+           More(kb) -> match (sc : Step) {
+             Fin(w) ->
+               (let choice = sched.next(round) in
+                if choice == 0 then
+                  (let a1 = ($ka) () in
+                   let acc1 = acc * 10 + ta in
+                   ($drive) ta a1 tb sb tc sc (round + 1) acc1)
+                else
+                  (let b1 = ($kb) () in
+                   let acc1 = acc * 10 + tb in
+                   ($drive) ta sa tb b1 tc sc (round + 1) acc1)),
+             More(kc) ->
+               (let choice = sched.next(round) in
+                if choice == 0 then
+                  (let a1 = ($ka) () in
+                   let acc1 = acc * 10 + ta in
+                   ($drive) ta a1 tb sb tc sc (round + 1) acc1)
+                else (if choice == 1 then
+                  (let b1 = ($kb) () in
+                   let acc1 = acc * 10 + tb in
+                   ($drive) ta sa tb b1 tc sc (round + 1) acc1)
+                else
+                  (let c1 = ($kc) () in
+                   let acc1 = acc * 10 + tc in
+                   ($drive) ta sa tb sb tc c1 (round + 1) acc1)))
+           }
+         }
+       }
+   in ($drive) tid1 t1 tid2 t2 tid3 t3 0 0)
+with Sched_Sched as sched {
+  spawn(n) => n,
+  next(round) => round - (round / 3) * 3
+}

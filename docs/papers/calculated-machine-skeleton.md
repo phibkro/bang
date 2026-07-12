@@ -5,7 +5,9 @@
 > with lexically-dispatched effect handlers, in which the abstract machine is *calculated*
 > (Bahr–Hutton) from the reference semantics rather than designed and verified after the
 > fact, and the calculated machine is connected to a WasmFX-shaped target by an **annotated
-> forward simulation** (`compile_forward_sim`, axiom-clean modulo two vacuous premises).
+> forward simulation** (`compile_forward_sim`, axiom-clean modulo ONE vacuous premise
+> `VcapFree` — the `CustomFree` premise was DROPPED at #62 slice 3, so **user-defined/custom
+> effects are now inside the verified fragment**; ADR-0085 Stage 4 landed).
 >
 > **Riskiest related-work overlap.** PureCake (PLDI'23) and CakeML already deliver
 > end-to-end verified compilation for functional languages; our novelty is *not* "a verified
@@ -16,8 +18,9 @@
 
 Status: SKELETON. Outline + precise claims + exact Lean theorem names/files/**real** axiom
 sets + related-work map + honest what-remains. Not prose. Target audience: ICFP/PLDI/CPP FP-
-verification track. All theorem citations below were checked against the repo at the base sha
-(`lake env lean Bang/Audit.lean`, census reproduced in §7).
+verification track. All theorem citations below were re-checked against the repo at the base
+sha (`just axioms` on a clean build; census reproduced in §7 — **21 clean · 6 flagged · 53
+sorries** at `62335411`, the CONTEXT.md generated proof-state block is the SoT).
 
 ---
 
@@ -43,9 +46,22 @@ verification track. All theorem citations below were checked against the repo at
      This is the paper's motivating example — a bug the naive machine has, made unrepresentable.
   3. The **annotated forward simulation** as the ◊5 method (ADR-0035), distinguished from the
      biorthogonal LR used for contextual equivalence (that is Paper 2).
-  4. **Premised completeness** (ADR-0086): an honestly-premised headline (`VcapFree ∧
-     CustomFree`) that is *true on every probed class but provable on none of the excluded
-     ones*, with the premises vacuous for every elaborator-produced program.
+  4. **Premised completeness** (ADR-0086) as a *methodological* contribution — the discipline
+     of a scaffolding premise with a named expiry, justified by a true-on-the-class witness.
+     The headline's `CustomFree` premise has since **been discharged** (ADR-0085 Stage 4, #62
+     slice 3): `compile_forward_sim` is now premised on `VcapFree` ONLY, so the paper reports
+     the *lifecycle* (premised → expired) rather than a standing premise. The single remaining
+     premise `VcapFree` is vacuous for every elaborator-produced program *except ambient
+     host-IO* (since #126 `hostPerformS` lowers `Mod.op` to a literal `vcap` — the deliberate
+     ADR-0104 tested-stratum boundary, now a premise consequence, not just a design intention).
+  5. **The S5 composition finding** (`Rung5ProofGrade.lean`) — the effectful `wexec ≡
+     Source.eval` obligation is discharged *by composition* (the `exec_wexec_sim_ok` lockstep ∘
+     the CalcVM reverse bridge = `compile_forward_sim`), and the freezing exercise surfaces a
+     structural fact: the machine has TWO backends, and the proof lives on the one with a Lean
+     machine (`compileC`/`wexec`) while the `$env`-slot↔store bijection would require a machine
+     over the *text-emitter* backend that does not (and per invariant #4 must not be hand-)
+     exist. A methodologically clean "what is provable is bounded by which backend carries a
+     calculated machine" story.
 
 ---
 
@@ -118,7 +134,7 @@ verification track. All theorem citations below were checked against the repo at
   `evalD` (fail-loud, the `handlesOp` image), but a machine that walks *past* the mismatched
   frame (via `stateUpdate`/`txnUpdate`/`customUpdate`) could find a **same-id shadow of another
   kind and RESUME** — a genuine raise-vs-resume divergence, *not* a proof gap. (Source:
-  `Bang/Backend/AbstractMachine.lean:670-701`, the `StoresDisjoint`/`StoresBelow` doc-block.)
+  `Bang/Backend/AbstractMachine.lean:689-724`, the `StoresDisjoint`/`StoresBelow` doc-block.)
 - **4.3 The fix is structural, not a runtime check.** `StoresBelow g` (every stored key `< g`,
   the fresh-id counter — the machine-store twin of the kernel's `WellCounted`) makes
   `StoresDisjoint` push-stable: each `handle` mints a globally-fresh key `≥` every existing key
@@ -143,47 +159,63 @@ verification track. All theorem citations below were checked against the repo at
   reserved for the *two-sided* contextual-equivalence theorems (Paper 2); using it here would
   be over-engineering (⊤⊤-closure buys compositionality the single-source statement does not
   need).
-- **5.2 The exact headline** (checked, `Bang/Spec.lean:297`, axiom set
-  `[propext, Classical.choice, Quot.sound]` — CLEAN):
+- **5.2 The exact headline** (re-checked, `Bang/Spec.lean:326`, axiom set
+  `[propext, Classical.choice, Quot.sound]` — CLEAN). **`CustomFree` is gone** — the statement
+  is now single-premise `VcapFree`, covering the FULL fragment (handlers AND custom effects):
   ```lean
   theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
-      Bang.Model.VcapFree c → Bang.CustomFree.CFComp c →
+      Bang.Model.VcapFree c →
       Source.eval fuel c = Result.done v →
       ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v)
   ```
+  Re-exported under the S5 name as `Bang.Rung5ProofGrade.s5_effectful_forward_sim`
+  (`Rung5ProofGrade.lean:102`, axiom-clean).
 - **5.3 The proof structure.** PURE arm routes through the always-clean
-  `compile_forward_sim_pure` (`Bang/Backend/Wasm.lean:2605`, clean); the HANDLER arm through the
+  `compile_forward_sim_pure` (`Bang/Backend/Wasm.lean:2771`, clean); the HANDLER arm through the
   U5b completeness spine `evalD_complete_gen` (`Bang.Backend.U5bComplete`) — the converse-of-
-  `run_evalD` bridge (1226 lines, every arm closed for the three built-in handler kinds,
-  K=[] adapter included). `source_eval_to_exec` (clean) is the eval→exec leg.
+  `run_evalD` bridge, now **κ-threaded over custom frames** so the OP arm resolves custom
+  clause-services as a real lockstep (`wCustomUpdate_comm`); every arm closed for all FOUR
+  handler kinds (state · throws · transaction · custom). `source_eval_to_exec`
+  (`Wasm.lean:2759`, clean) is the eval→exec leg. The underlying effectful lockstep
+  `Wasmfx.exec_wexec_sim_ok` (Wasm.lean:1953, its OP arm = the 4-way
+  state/txn/custom/abort dispatch) is re-exported as `s5_exec_wexec_lockstep`
+  (`Rung5ProofGrade.lean:111`, axiom-clean).
 - **5.4 The AsmFX epilogue/annotation technique.** Compiled-only fragments (suspend/resume
   scaffold, leave records) with no source counterpart get AsmFX's §7 annotation treatment.
   AsmFX (Lindley et al., "Effect Handlers All the Way Down", Oct'25 draft) is the nearest
   published twin — we adopt its *method*, not its machine (its ISA is not WasmFX; Q9).
 
-## 6. Premised completeness — the ADR-0086 honesty move (a methodological contribution)
+## 6. Premised completeness — the ADR-0086 lifecycle (a methodological contribution)
+
+**This section is now a *lifecycle* story: the `CustomFree` scaffolding premise was
+introduced, its expiry named, and it has since EXPIRED (ADR-0085 Stage 4 landed). The paper
+reports the whole arc, which is a cleaner methodological contribution than a standing premise.**
 
 - **6.1 The situation.** The frozen ◊5 headline quantified over *raw* `Comp` with no premise.
   Wiring in the completeness spine exposed that the only known proof architecture (store-
-  threaded converse; congruence and determinism routes build-refuted) requires `FreshCfg`,
-  which two program classes violate: (i) non-`VcapFree` programs (a buried never-forced `vcap`
+  threaded converse; congruence and determinism routes build-refuted) required `FreshCfg`,
+  which two program classes violated: (i) non-`VcapFree` programs (a buried never-forced `vcap`
   completes in the kernel but fails `FreshCfg`), (ii) `Handler.custom` programs (`evalD custom
-  = none` by ADR-0085 Stage-1, while kernel + machine both handle custom generically).
+  = none` at ADR-0085 Stage-1, while kernel + machine both handle custom generically).
 - **6.2 The key epistemic point** (the reviewer-facing defense). Both witnesses
   machine-check that the headline is **TRUE on those classes** (both sides complete
-  identically, all `rfl`) — so this is "premise an unprovable *true* statement," not "repair a
+  identically, all `rfl`) — so this was "premise an unprovable *true* statement," not "repair a
   *false* one." Witnesses are census-protected regression files:
   `Bang/Witness/VcapFreeRefute.lean`, `Bang/Witness/CustomStage1Refute.lean`.
-- **6.3 Premise lifecycle** (why this is not a permanent weakening). `CustomFree` is scaffolding
-  with a named expiry (ADR-0085 Stage 4 derives the custom machine arm, then the premise
-  DROPS — a consumer-safe strengthening). `VcapFree` persists until #21 (scoped capability
-  types) makes a raw source `vcap` untypeable, after which it is derivable. **Both premises are
-  vacuous for every elaborator-produced program** (the elaborator emits `vvar`, never raw
-  `vcap`; no surface form emits `custom` until Stage 7), so the product-facing meaning of ◊5 is
-  unchanged.
+- **6.3 Premise lifecycle — `CustomFree` EXPIRED, `VcapFree` remains.** `CustomFree` was
+  scaffolding with a named expiry, and the expiry FIRED: ADR-0085 Stage 4 (#62 slice 3,
+  `STATEMENT_CHANGE_OK` task #27) κ-threaded the completeness spine over custom frames and gave
+  the WASM OP arm a real custom lockstep (`wCustomUpdate_comm`), so the premise DROPPED — a
+  consumer-safe strengthening the discipline PREDICTED. `VcapFree` persists until #21 (scoped
+  capability types) makes a raw source `vcap` untypeable, after which it too is derivable. It is
+  vacuous for every elaborator-produced program *except ambient host-IO* — since #126,
+  `hostPerformS` lowers `Mod.op` to a literal `vcap hostCapId`, so a host-IO program is
+  non-`VcapFree` and premise-EXCLUDED by construction (the ADR-0104 tested-stratum boundary; it
+  fails LOUD on the compiled path per ADR-0063, runs correctly only on the `evalEHost` driver).
 - **6.4 Generalizable pattern.** "Scaffolding premise with named expiry, justified by a
-  true-on-the-class witness" is applied *three times* in this codebase (ADR-0086 `CustomFree`,
-  ADR-0087 `NoCustomFrame`, ADR-0092's additive arms). Worth writing up as a discipline for
+  true-on-the-class witness" is applied *three times* in this codebase (ADR-0086 `CustomFree` —
+  now the completed exemplar, ADR-0087 `NoCustomFrame`, ADR-0092's additive arms). The
+  `CustomFree` lifecycle from introduction to discharge is worth writing up as a discipline for
   frozen-statement evolution under proof-architecture limits.
 
 ## 7. Verification / reproducibility — the axiom census (checked at base sha)
@@ -194,38 +226,64 @@ paper's theorems (reproduced from the census, not the docs):
 
 | theorem | file:line | axiom set | status |
 |---|---|---|---|
-| `compile_forward_sim` | `Spec.lean:297` | `propext, Classical.choice, Quot.sound` | **clean** |
-| `compile_forward_sim_pure` | `Wasm.lean:2605` | `propext, Classical.choice, Quot.sound` | **clean** |
-| `source_eval_to_exec` | (Wasm/backend) | `propext, Classical.choice, Quot.sound` | **clean** |
-| `compile_well_typed` | `Spec.lean:283` | `propext` | **clean** |
-| `zero_grade_no_code` | `Spec.lean:308` | `propext` | **clean** |
-| `subst_value` / `preservation` / `type_safety` | `Spec.lean:79/94/131` | `propext, Classical.choice, Quot.sound` | **clean** |
-| `progress` | `Spec.lean:109` | `propext, Quot.sound` | **clean** |
-| `no_accidental_handling` | `Spec.lean:59` | *none* | **clean (0 axioms)** |
+| `compile_forward_sim` | `Spec.lean:326` | `propext, Classical.choice, Quot.sound` | **clean** (`VcapFree`-only) |
+| `compile_forward_sim_pure` | `Wasm.lean:2771` | `propext, Classical.choice, Quot.sound` | **clean** |
+| `source_eval_to_exec` | `Wasm.lean:2759` | `propext, Classical.choice, Quot.sound` | **clean** |
+| `Rung5ProofGrade.s5_effectful_forward_sim` | `Rung5ProofGrade.lean:102` | `propext, Classical.choice, Quot.sound` | **clean** (S5 re-export) |
+| `Rung5ProofGrade.s5_exec_wexec_lockstep` | `Rung5ProofGrade.lean:111` | `propext, Quot.sound` | **clean** |
+| `custom_program_safe` | `Spec.lean:84` | `propext, Classical.choice, Quot.sound` | **clean** (Stage-6 capstone) |
+| `compile_well_typed` | `Spec.lean:308` | `propext` | **clean** |
+| `zero_grade_no_code` | `Spec.lean:337` | `propext` | **clean** |
+| `subst_value` / `preservation` / `type_safety` | `Spec.lean:104/119/156` | `propext, Classical.choice, Quot.sound` | **clean** |
+| `progress` | `Spec.lean:134` | `propext, Quot.sound` | **clean** |
+| `no_accidental_handling` | `Spec.lean:60` | *none* | **clean (0 axioms)** |
+| `no_accidental_handling_custom` | `Spec.lean:71` | `propext` | **clean** |
+| `rowinst_requires_disjoint` | `Spec.lean:49` | *none* | **clean (0 axioms)** |
 | `CalcVM.compile_correct` / `evalD_agrees_source` / `sim` / `run_evalD` | `CalcVM.lean` | `propext, Classical.choice, Quot.sound` | **clean** |
-| `handler_compiles` | `Spec.lean:304` | **`sorryAx`** | **FLAGGED (bare `sorry`)** |
+| `handler_compiles` | `Spec.lean:333` | **`sorryAx`** | **FLAGGED (bare `sorry`)** |
 
 ## 8. What is NOT proven (the honest scope section — mandatory)
 
-- **8.1 `handler_compiles` is a bare `sorry`** (`Spec.lean:304`, axiom set `[sorryAx]`). The
+- **8.1 `handler_compiles` is a bare `sorry`** (`Spec.lean:333`, axiom set `[sorryAx]`). The
   "handler ↦ suspend/resume compiles to an equivalent WasmFX handler" statement is *stated, not
   proven*. The forward-simulation headline routes around it (through the completeness spine),
   so `compile_forward_sim` does not depend on it — but the standalone handler-equivalence lemma
   is open. Do not claim it.
-- **8.2 The two vacuous premises are still premises.** `compile_forward_sim` is clean *because*
-  of `VcapFree ∧ CustomFree`. The unpremised form has no known proof (§6.1). Honest phrasing:
-  "clean for the elaborator-image fragment," not "clean for all `Comp`."
-- **8.3 `CustomFree` retention.** ADR-0085 Stage 4 (the derived custom machine arm) is the
-  riskiest #44 obligation and is NOT done; until it lands the `CustomFree` premise stays. The
-  converse-custom direction is pending (ADR-0087 rung-2 landed real dispatch census-clean, but
-  Stage 4's *derived* arm — invariant #4 — is future work).
+- **8.2 One vacuous premise remains (`VcapFree`), and it is now DELIBERATELY non-vacuous for
+  one class.** `compile_forward_sim` is clean *because* of `VcapFree` (the `CustomFree` premise
+  is gone — §6.3). The unpremised form has no known proof. Honest phrasing: "clean for the
+  elaborator-image fragment," not "clean for all `Comp`." The one class `VcapFree` now excludes
+  by design is ambient host-IO (`hostPerformS` emits a literal `vcap`, ADR-0104) — a
+  tested-stratum boundary, not a proof gap.
+- **8.3 `CustomFree` is DISCHARGED — a strengthening to report, not a retention to caveat.**
+  ADR-0085 Stage 4 (the derived custom machine arm, invariant #4) LANDED at #62 slice 3: the
+  completeness spine is κ-threaded over custom frames and the WASM OP arm resolves custom
+  clause-services as a real lockstep (`wCustomUpdate_comm`). User-defined effects are therefore
+  inside the verified fragment; the `custom_program_safe` Stage-6 capstone (`Spec.lean:84`,
+  axiom-clean) states the user-effect soundness story directly over a `HasCTy`.
 - **8.4 The Div fragment.** The verified core is the total (⊥-row, System F) fragment; the
   Turing-complete Div fragment rides fuel + differential testing, not proof (the stratification
   seam is the effect row itself). `compile_forward_sim` is fuel-bounded (`∃ fuel'`).
 - **8.5 Target fidelity (Q9).** `Wasmfx.run` is an annotated *simulation* of the WasmFX
   semantics, not a binding to a live engine (wasm3 / Iris-WasmFX / WasmFXCert). The proof
   bindings are target-syntax-sensitive; the architecture is target-agnostic but the theorem is
-  stated against our modeled machine.
+  stated against our modeled machine. **Caveat on the proof-vs-run gap:** the theorem is stated
+  against `Wasmfx.run` (the modeled machine); the programs that run on a REAL engine (§8.6) go
+  through a *second, text-emitting* backend (`emitModuleGC`) that has NO Lean machine and is
+  verified only by differential harness (invariant #1). The two backends agree by construction
+  on the same `Comp`, but the "proven" and the "ran-on-wasmtime" artifacts are not literally the
+  same object — an honesty point a reviewer will (rightly) probe.
+- **8.6 What actually runs on a real engine (a "what we have," not a proof claim).** Beyond the
+  modeled-machine theorem, whole bang programs compile to WebAssembly and run on **wasmtime**,
+  differential-tested (real `wasmtime` stdout == `bang run` == `Source.eval`): emission rungs
+  1–5 (pure arithmetic → guarded-div → throws→`try_table` → state→locals → txn journal/rollback
+  → WasmGC closures/ADTs/recursion, `nqueens = 21004`); **full ℤ arbitrary-precision arithmetic
+  with `factorial 25` matching `bang run`** (the first arbitrary-precision result outside Lean);
+  and the `bang emit` CLI (issue #136, `emitModuleGCPrint`, module-resolved) which lowers a
+  multi-file program to a `.wat` module — a `json` program emits, runs on wasmtime, prints `163`
+  (GATED, GC corpus = 18 programs). This is the tested stratum by construction (`emitModuleGC`
+  is a `partial def : Comp → String`, no calculated machine — §8.5), demonstrating the compiler
+  produces real output, not that that output is proof-grade.
 
 ## 9. Related work map (positioning — defend the delta for each)
 
@@ -260,5 +318,9 @@ paper's theorems (reproduced from the census, not the docs):
    need it (it does not — but the paper must say so cleanly and the reviewer must believe it).
 4. Decide target-fidelity story (§8.5): ship as "modeled target" (CPP/ICFP-honest) or invest in
    an engine binding (PLDI-grade). Operator call.
-5. Confirm the Stage-4 `CustomFree`-drop timeline vs submission date (§8.3) — if Stage 4 lands
-   first, the headline strengthens and §6.3 shortens.
+5. ~~Confirm the Stage-4 `CustomFree`-drop timeline vs submission date.~~ **DONE** — Stage 4
+   landed (#62 slice 3); the headline is `VcapFree`-only and §6 is now a completed-lifecycle
+   story. Remaining author work here: fold the strengthened headline through the prose (no more
+   "premised on `CustomFree`" anywhere) and decide whether to lead §6 with the *discharged*
+   `CustomFree` as the exemplar (recommended — a completed lifecycle is a stronger CPP story than
+   a standing premise).

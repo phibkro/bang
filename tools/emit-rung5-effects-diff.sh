@@ -25,6 +25,13 @@ trap 'rm -rf "$outdir"' EXIT
 # Programs the GC path CANNOT lower yet, each with the NAMED wall. A refusal here is expected; an
 # emit here (or a refusal NOT here) is a gate failure. Keep this list minimal + honest.
 #   calc/json/hostio-echo : FRONTEND lower-errors (BEFORE the emitter) — pre-existing, orthogonal.
+#   sched-*                : `drive`'s NINE-argument curried `let rec` (5 curried Step/Int params
+#                           plus round+acc) leaves a type variable unresolved for ADR-0103's
+#                           monomorphization pass at one of its self-calls — a frontend lower-error
+#                           orthogonal to the Sched EFFECT itself (the same wall calc/json hit on
+#                           unrelated polymorphic-use shapes, not a Sched-specific gap). Named here,
+#                           not investigated further — a compiler-side fix is out of this lane's
+#                           write scope (docs/notes/sched-library-demo.md §"the emission attempt").
 # NOTE (#133 C0): stage-swap (a capability threaded as a first-class arg) NO LONGER refuses — it emits
 # and runs 30005 == bang run (single-op first-class dispatch on the runtime $txbox cap, #134-stamped).
 # Removed from this list; it now gates like any other program.
@@ -32,6 +39,9 @@ declare -A KNOWN_REFUSALS=(
   [calc]="frontend: unbound variable Ast"
   [json]="frontend: unresolved type variable"
   [hostio-echo]="frontend: host-IO perform not lowered here"
+  [sched-roundrobin]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
+  [sched-swap-dfs]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
+  [sched-seeded-lcg]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
 )
 
 echo "── building the rung4-shape emitter exe ──"

@@ -1,0 +1,26 @@
+-- ambient.bang — the Fs companion to hostio-echo/ambient.bang (ADR-0104 §Scope "next" tier,
+-- hostio-widen lane). Same shape as the Console ambient demo: NO enclosing `with`, so the
+-- `Io.writeFile`/`Io.exists`/`Io.readFile` calls reach ONLY the driver's outermost grant surface
+-- (`--env=real --allow=Fs`). Under the DEFAULT engine (no --env, what check-examples.sh runs) that
+-- surface does not exist, so the first host perform hits the DEFINED escapedCap terminal (ADR-0063).
+-- That is the shipped contract, NOT a bug — an ambient Fs perform needs a grant to resolve. This
+-- file is NOT in the sim corpus (its name isn't main.bang, so check-examples.sh's `examples/*/main.bang`
+-- loop skips it by construction); it is exercised by tools/test-hostio-seam.sh §7, which runs it INSIDE
+-- a fresh mktemp jail (cwd = the jail), so the relative path `g.t` below lands in that temp dir.
+--
+-- The program writes a body to a RELATIVE path, confirms it exists, reads it back, and returns the
+-- round-tripped body. So a byte-identical replay (WITHOUT the file present — the battery deletes it
+-- first) proves the record/replay conformance gate (ADR-0104 §3) over a REAL filesystem round-trip.
+--
+-- NOTE the `writeFile((path, body))` DOUBLE-PAREN: `writeFile : Str * Str -> Unit` takes ONE argument
+-- of PAIR type (v1 effect ops are single-arg, ADR-0095 D3 — the checker refuses `writeFile(p, b)` as
+-- two args). `(path, body)` is the pair value; the outer parens are the call. The driver's
+-- hostServiceReal splits the pair back into (path, body) — ADR-0104 §4, the `hostPerformS` reach.
+import Io
+let main =
+  let path = SCons(Char(103), SCons(Char(46), SCons(Char(116), SNil))) in   -- "g.t"
+  let body = SCons(Char(104), SCons(Char(105), SNil)) in                    -- "hi"
+  let u1 = Io.writeFile((path, body)) in
+  let ex = Io.exists(path) in                                               -- 1 (present)
+  let back = Io.readFile(path) in
+  back

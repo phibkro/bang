@@ -475,6 +475,7 @@ file just sits there unreferenced (no silent pickup).
 | Function | Signature |
 |---|---|
 | `concat` | `Str -> Str -> Str` |
+| `strLength` | `Str -> Int` |
 | `reverse` | — (no top-level annotation — see `Prelude.bang`) |
 | `eq` | `Str -> Str -> Unit + Unit` |
 
@@ -518,6 +519,18 @@ binding of the same name shadows the injected one.
 | `append` | `List a -> List a -> List a` |
 | `head` | `List a -> Option a` |
 | `tail` | `List a -> Option (List a)` |
+| `zip` | `List a -> List b -> List (a * b)` |
+| `range` | `Int -> Int -> List Int` |
+| `replicate` | `Int -> a -> List a` |
+
+**Bound-free generics** (`take`/`drop`/`length`/`append`/`zip`/`range`/`replicate` — no
+trait bound, a free element-type variable) need their instantiation ANCHORED at each call
+site by an explicit annotation on the argument that DIRECTLY carries the free variable
+(ADR-0103 — a monomorphization pre-pass, never a guess, R6's finiteness discipline): a
+`List a`-typed argument needs `(xs : List Int)`, a bare `a`-typed argument (`replicate`'s
+element) needs `(x : Int)` directly, not an annotation on the CALL'S result. An
+un-annotated call that leaves a free variable unresolved is a loud, self-teaching error
+naming the fix, never a silent guess.
 
 ## Examples
 
@@ -613,6 +626,9 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `if (($eq) \"ab\" \"ba\") then 1 else 0` ⟹ `0`
 - `if (($eq) \"a\" \"ab\") then 1 else 0` ⟹ `0`
 - `if (($eq) \"\" \"\") then 1 else 0` ⟹ `1`
+- `($strLength) \"abc\"` ⟹ `3`  — name, `strLength`, #144). Same structural-fold shape as `lengthDef`, now shipped for real.
+- `($strLength) \"\"` ⟹ `0`
+- `($strLength) (($concat) \"ab\" \"cd\")` ⟹ `4`
 - `3` ⟹ `3`
 ### Strings & Characters (issue #65: the stranger-test's documented blind spot).
 
@@ -709,6 +725,10 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `$length (($take 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)` ⟹ `2`  — (`examples/list-basics`) needed its own `data List a`; this doesn't.
 - `$length (($drop 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)` ⟹ `1`
 - `match ($head ((Cons(7, Nil) : List Int) : List Int)) { None -> 0 - 1, Some(v) -> v }` ⟹ `7`  — `head` — `Some` on a non-empty list, `None` on `Nil` (both `Option` arms, TOTAL).
+- `$length ((($range 0) 0 : List Int) : List Int)` ⟹ `0`  — `range` — build `[lo, hi)`, verify via `length` (the empty range AND a non-empty one).
+- `$length ((($range 0) 5 : List Int) : List Int)` ⟹ `5`
+- `$length (($replicate 3) (7 : Int) : List Int)` ⟹ `3`  — `length` (count) and `head` (every element is the replicated value).
+- `match ($head (($replicate 3) (7 : Int) : List Int)) { None -> 0 - 1, Some(v) -> v }` ⟹ `7`
 ### #90 — row annotations (`T ! {…}`) could only name the four BUILT-IN effects (`throws`/
 
 - `effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }` ⟹ `30`  — types, and RUNS end to end (the #84 gap-1 pipeline that was `checkProg`-only until this fix).
@@ -1214,11 +1234,12 @@ and docs can reference it durably.
 | `B008` | the parser reached extra tokens after a complete expression | yes |
 | `B009` | a capability was forced after its handler's block returned (runtime) | — |
 | `B010` | a trait bound is unsatisfied — no impl of the trait for the carrier | — |
-| `B011` | a data constructor declares more than 2 payload fields | yes |
+| `B011` | RETIRED — the v1 payload-arity-≤2 cap this code named was LIFTED (#144) | — |
 | `B012` | a bare constructor name is owned by two or more co-present `data` types | yes |
 | `B013` | a nested `let rec` forward-references a sibling `let rec` bound later in the same block | yes |
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
 | `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
 | `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
 | `B016` | a top-level `let` with no `in` absorbed the next line as an application (issue #129) | yes |
+| `B017` | a bound-free generic's call site names two different types for the same type variable | yes |
 

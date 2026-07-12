@@ -266,3 +266,60 @@ migration cost. Candidate (f) (type-scan the mention filter) stays the priced fa
 `length`'s residue is ruled: **fuel-sweep** (operator, over the note's cheaper rename) — the
 canonical name is worth the corpus touch; the sweep carries the same regression discipline as
 any contract change. Implementation rides the #105 first-slice lane.
+
+## Amendment ② (2026-07-12, operator-ratified) — result-position discovery closes #55's residual gap
+
+This ADR's own "Revisit if" named the door: "annotation-free carrier inference (#55) is taken
+up, unblocking the constructing half." `docs/notes/carrier-inference-design.md` (design-first,
+live-witnessed against the built binary) traced the residual gap PRECISELY: a bound-free
+`let rec`'s tyvar appearing ONLY in the declared RESULT (never in any argument — e.g.
+`mapOpt : (a -> b) -> Option a -> Option b`'s `b`) was undiscoverable no matter how the call's
+arguments were annotated, because `callSitesOf`'s `.annotS e t` arm discarded `t` (the
+annotation's own type) before this ADR's discovery mechanism (`discoverAtCall`) ever ran. The
+note also corrected #55's own framing: the SIMPLE case #55 named ("a generic combinator cannot
+construct generic data") was ALREADY CLOSED by ADR-0079's check-mode/synth-mode split (a bare
+`Some(3)` in synth position infers today) — only the bound-free-`let rec`-with-a-result-only-
+tyvar shape remained open, a narrower residue than #55's title suggested.
+
+**Decision: extend `discoverAtCall`'s mechanism to a second input, `discoverAtCallResult`,
+matched against the call's own enclosing annotation when present** — reusing `matchTyVars`
+UNCHANGED (no new inference power; the unifier already handles `tArr`/`tProd`/`tSum`/`tApp`/
+`tThunk` structurally, it was simply never invoked on a result/annotation pair before). This is
+the SAME mechanism this ADR's own decision item 1 established for arguments, extended to a
+second discovery SITE, not a parallel inference system — the one-construct-per-problem
+discipline this ADR already committed to for the argument-position half.
+
+**Implementation** (`Bang/Frontend/TypeCheck.lean`): `callSitesOf`/`redirectCalls`'s WHOLE
+mutual groups gain a `resultDom : Ty` parameter (`stripArrows tvs.length t`, the ascription-side
+twin `curriedDomains` already is for arguments) threaded the SAME read-only way `domains`
+already is. The ONE structurally-interesting site is `callSitesOf`'s `.annotS inner t` arm:
+when `inner` is EXACTLY `name`'s call spine, `t` is matched against `resultDom` and MERGED into
+that spine's own binding (not a separate call site — `completeInstantiation` needs every
+tyvar's discovery unioned per call). `redirectCalls` re-derives the IDENTICAL merged binding at
+its own `.annotS` arm so the two passes agree on which residue a result-anchored call belongs
+to (by construction: same inputs, same `discoverAtCall`/`discoverAtCallResult` calls).
+
+**The fail-loud extension this door needed and the argument-only door never did.** Before this
+Amendment, `completeInstantiation`'s "last occurrence wins" convention silently collapsed
+repeated bindings for the same tyvar — SAFE when the only source was arguments (two `List a`
+arguments always agree on `a` by construction), but WRONG once a result annotation can also
+contribute a binding: an argument saying `Int` and a result saying `Char` for the same tyvar is
+a genuinely contradictory program, and silently preferring one is exactly the guess this whole
+discovery discipline refuses to make everywhere else. `findConflict` (checked BEFORE the silent
+collapse could hide it) detects a genuine disagreement (structurally different concrete types
+for the same tyvar within one call's binding) and refuses loud, naming the tyvar and both
+conflicting types (`B017`, `Bang/Frontend/DiagCodes.lean`) — never picking a winner.
+
+**Rejected (unchanged from this ADR's original door-refutation):** HM-style let-generalization
+(a genuine top-level `∀` deferring monomorphization to every downstream use) — still REJECTED,
+still for the same reason (door (a)/(c) above: a residual `∀` in the self-knot is polymorphic
+recursion, undecidable, the R6 §4 finiteness wall). Amendment ② stays entirely within the
+FINITE, per-call-site discovery discipline this ADR already committed to; the kernel / `Source.
+eval` / `HasCTy` still never see a type variable (census byte-identical, invariant #4/#5 hold).
+
+Witnessed (`Bang/Frontend/TypeCheck.lean`'s compiled corpus, `runTypedYieldsInt`): a genuinely
+result-only tyvar (`mkNone : a -> Option b`) resolves from the call's OWN annotation alone; TWO
+independent instantiations of the same result-only tyvar in one program produce two distinct
+residues (the SAME distinct-instantiation-set discipline this ADR's decision item 1 already
+established for arguments); the disagreeing-annotation case fails loud with `B017`, never a
+guess.

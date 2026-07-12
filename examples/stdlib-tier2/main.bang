@@ -1,0 +1,34 @@
+-- issue #144: stdlib tier 2 — `zip`/`range`/`replicate` (ADR-0103's List-family construction
+-- members, explicitly un-gated by that ADR's own landing) + `strLength` (the Str-specific
+-- counterpart to List's `length`; a distinct name avoids the bare-name collision the two
+-- differently-typed folds would otherwise hit).
+
+let rec sumL : List Int -> Int =
+  fun xs => match (xs : List Int) { Nil -> 0, Cons(h, t) -> h + (($sumL) t) }
+in
+let rec sumPairs : List (Int * Int) -> Int =
+  fun xs =>
+    match (xs : List (Int * Int)) {
+      Nil -> 0,
+      Cons(h, t) -> let (a, b) = h in a + b + (($sumPairs) t)
+    }
+in
+
+-- `range lo hi` builds `[lo, hi)`.
+let r = (($range 0) 5 : List Int) in
+let sumR = ($sumL) r in           -- 0+1+2+3+4 = 10
+
+-- `replicate n x` builds n copies of x — the annotation anchors on the ELEMENT (`(x : Int)`),
+-- not the whole-list result, since `replicate`'s free tyvar sits in a bare argument position.
+let rep = ($replicate 3) (7 : Int) in
+let sumRep = ($sumL) rep in       -- 7+7+7 = 21
+
+-- `zip` pairs two lists elementwise, truncating to the shorter — each `List`-typed argument
+-- needs its OWN annotation (two free tyvars, one per side).
+let z = ($zip (r : List Int)) (rep : List Int) in
+let sumZ = ($sumPairs) (z : List (Int * Int)) in   -- (0+7)+(1+7)+(2+7) = 24
+
+-- `strLength` — the Str-specific fold (distinct name from `length : List a -> Int`).
+let strLen = ($strLength) "hello" in   -- 5
+
+sumR + sumRep * 100 + sumZ * 10000 + strLen * 1000000

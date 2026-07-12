@@ -40,23 +40,23 @@ graph TD
     Core_IR["Core.IR<br/>440L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
     Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>422L · fan-in 0"]
+    Core_Semantics_Eval["Core.Semantics.Eval<br/>621L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>3400L · fan-in 0"]
     Core_Typing["Core.Typing<br/>510L · fan-in 0"]
     Examples["Examples<br/>510L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>287L · fan-in 0"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>320L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>1116L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>1139L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>289L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>899L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3349L · fan-in 1"]
+    Frontend_Surface["Frontend.Surface<br/>3378L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>8744L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>9035L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1998L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 0"]
@@ -68,6 +68,7 @@ graph TD
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
     Witness_CtrGradeRefute["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
+    Witness_EffectTraceWitness["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
@@ -82,14 +83,14 @@ graph TD
   subgraph tier_Apex["Apex — verification spine + gate"]
     Audit["Audit<br/>69L · fan-in 0"]
     Distribution["Distribution<br/>67L · fan-in 0"]
-    Spec["Spec<br/>346L · fan-in 0"]
+    Spec["Spec<br/>358L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 3349 | 1 |
+| `Frontend.Surface` | ? | 3378 | 1 |
 | `Audit` | Apex | 69 | 0 |
 | `Backend.AbstractMachine` | ? | 6871 | 0 |
 | `Backend.EnvMachine` | ? | 3624 | 0 |
@@ -104,7 +105,7 @@ graph TD
 | `Core.IR` | ? | 440 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
 | `Core.Semantics.Dispatch` | ? | 273 | 0 |
-| `Core.Semantics.Eval` | ? | 422 | 0 |
+| `Core.Semantics.Eval` | ? | 621 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
 | `Core.Semantics.Subst` | ? | 947 | 0 |
 | `Core.Soundness` | ? | 3400 | 0 |
@@ -112,28 +113,29 @@ graph TD
 | `Distribution` | Apex | 67 | 0 |
 | `Examples` | ? | 510 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
-| `Frontend.DiagCodes` | ? | 287 | 0 |
+| `Frontend.DiagCodes` | ? | 320 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
-| `Frontend.Format` | ? | 1116 | 0 |
+| `Frontend.Format` | ? | 1139 | 0 |
 | `Frontend.Lint` | ? | 289 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Query` | ? | 899 | 0 |
 | `Frontend.Rewrite` | ? | 313 | 0 |
 | `Frontend.Surface.PropTest` | ? | 127 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 8744 | 0 |
+| `Frontend.TypeCheck` | ? | 9035 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1998 | 0 |
 | `Reify.CalcReify` | ? | 283 | 0 |
 | `Reify.CalcReifyRef` | ? | 164 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 346 | 0 |
+| `Spec` | Apex | 358 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
 | `Witness.BinopTyping` | ? | 70 | 0 |
 | `Witness.BoccRegress` | ? | 261 | 0 |
 | `Witness.CapEscapeWitness` | ? | 72 | 0 |
 | `Witness.CtrGradeRefute` | ? | 138 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
+| `Witness.EffectTraceWitness` | ? | 127 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.GradePolyReturner` | ? | 165 | 0 |

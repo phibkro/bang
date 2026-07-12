@@ -136,6 +136,73 @@ check "ambient-record-succeeds"       "$rcode" "0"
 check "ambient-replay-reproduces-run" "$replayed" "ih"
 check "ambient-replay-exit"           "$pcode" "0"
 
+# ── 7 · THE Fs WIDENING (ADR-0104 §Scope "next" tier, hostio-widen lane) — real filesystem
+#        write/read/exists + grant + refusal + the record/replay round-trip WITHOUT the file
+#        present. This is the FIRST leg to touch the real FILESYSTEM boundary end-to-end (sections
+#        1-6 are Console/Clock). ambient.bang uses a RELATIVE path (`g.t`), so we run it INSIDE a
+#        fresh jail (cwd = the jail) — the file lands there and the trap-rm'd $workdir cleans it. ──
+repo="$(git rev-parse --show-toplevel)"
+fs_ambient="$repo/examples/hostio-fs/ambient.bang"
+fs_jail="$(mktemp -d --tmpdir bang-hostio-fs-XXXXXX)"
+trap 'rm -rf "$workdir" "$fs_jail"' EXIT
+bang_abs="$repo/$bang"
+
+# 7a · no --env ⟹ the DEFINED escapedCap terminal (exit 5), same contract as the Console ambient path.
+err="$(cd "$fs_jail" && "$bang_abs" run "$fs_ambient" 2>&1 >/dev/null)" && code=0 || code=$?
+check "fs-no-env-nonzero-exit" "$code" "5"
+check_contains "fs-no-env-names-the-collapse" "$err" "escaped-capability"
+
+# 7b · an ungranted label refusal: --env=real WITHOUT Fs in --allow ⟹ the Fs perform still escapes
+#      (exit 5). Proves --allow is deny-by-default per label (row-attenuation), not all-or-nothing.
+err="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Console "$fs_ambient" 2>&1 >/dev/null)" && code=0 || code=$?
+check "fs-ungranted-label-refused-exit" "$code" "5"
+
+# 7c · --allow=Fs bad-name resolution still errors loud (an unqualified Fs resolves to Io_Fs; a
+#      typo does not). Confirms the name→label map sees the new effect.
+got="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs "$fs_ambient" 2>/dev/null)" && code=0 || code=$?
+check "fs-real-write-read-stdout" "$got" "hi"
+check "fs-real-write-read-exit"   "$code" "0"
+# the file was ACTUALLY written to the jail (not a sim) — the real IO boundary, observed on disk.
+check "fs-real-file-on-disk" "$(cat "$fs_jail/g.t" 2>/dev/null)" "hi"
+
+# 7d · THE RECORD → REPLAY ROUND-TRIP over a REAL filesystem (the heart of the slice, ADR-0104 §3).
+#      Record a real run, DELETE the file, then replay: byte-identical output WITHOUT the file on
+#      disk ⇒ the tested-stratum host handler conforms to the pure oracle (invariant #1). Replay
+#      does NO real IO, so the deleted file stays absent — the recorded readFile result is fed back.
+(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs --record "$fs_jail/fs.ndjson" "$fs_ambient" >/dev/null 2>&1) && rcode=0 || rcode=$?
+check "fs-record-succeeds" "$rcode" "0"
+rm -f "$fs_jail/g.t"
+replayed="$(cd "$fs_jail" && "$bang_abs" run --replay "$fs_jail/fs.ndjson" "$fs_ambient" 2>/dev/null)" && pcode=0 || pcode=$?
+check "fs-replay-reproduces-run" "$replayed" "hi"
+check "fs-replay-exit"           "$pcode" "0"
+check "fs-replay-did-no-real-io" "$( [ -e "$fs_jail/g.t" ] && echo present || echo absent )" "absent"
+
+# 7e · the trace's three rows record the real (label,op,payload,result) sequence (writeFile→() ,
+#      exists→1, readFile→hi) — the Sendable ordered log the replay rides. Confirms all three ops
+#      recorded (not just readFile) and the (path,body) PAIR payload serialized.
+tracelines="$(grep -c '"op"' "$fs_jail/fs.ndjson")" && code=0 || code=$?
+check "fs-trace-three-rows" "$tracelines" "3"
+check_contains "fs-trace-writefile-pair-payload" "$(cat "$fs_jail/fs.ndjson")" '"op":"writeFile","payload":"(g.t, hi)"'
+
+# 7f · JSON-escape robustness — a file body carrying a `"` and a NEWLINE round-trips faithfully
+#      (the un-escaped `takeWhile != '"'` loader would TRUNCATE at the quote and the newline would
+#      split the row — a silent record/replay divergence, the exact false-green invariant #1 forbids).
+cat > "$fs_jail/quote.bang" <<'BANG'
+import Io
+let main =
+  let path = SCons(Char(102), SNil) in
+  let body = SCons(Char(97), SCons(Char(34), SCons(Char(98), SCons(Char(10), SCons(Char(99), SNil))))) in
+  let u1 = Io.writeFile((path, body)) in
+  let back = Io.readFile(path) in
+  back
+BANG
+real_out="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs --record "$fs_jail/q.ndjson" "$fs_jail/quote.bang" 2>/dev/null)" && code=0 || code=$?
+rm -f "$fs_jail/f"
+replay_out="$(cd "$fs_jail" && "$bang_abs" run --replay "$fs_jail/q.ndjson" "$fs_jail/quote.bang" 2>/dev/null)" && code=0 || code=$?
+check "fs-escaped-body-round-trips" "$replay_out" "$real_out"
+# the recorded trace stayed ONE line per row (the newline inside the value did NOT split it).
+check "fs-escaped-trace-one-row-per-op" "$(grep -c '"op"' "$fs_jail/q.ndjson")" "2"
+
 echo "──────────────────────────────"
 echo "hostio: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

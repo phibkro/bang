@@ -1895,7 +1895,8 @@ public structure CtorInfo where
   idx           : Nat
   /-- Constructor count (the right-nested sum's total arm count). -/
   total         : Nat
-  /-- Payload arity (≤ 2 in v1). -/
+  /-- Payload arity — N-ary (B011's v1 arity-2 cap lifted, #144); a ≥3-ary payload right-nests
+  into a product (`prodOfTys`), destructured the same way by `splitProd`/`bindPayload`. -/
   arity         : Nat
   /-- MONOMORPHIC: payload types, the data's own name resolved to the CLOSED μ — placeholder for a
   GENERIC ctor (`params ≠ []`), see this structure's own doc comment. -/
@@ -2726,12 +2727,22 @@ def buildLetRecMulti (names : List String) (tys : List Ty) (bodies' : List Surf)
   let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
   .lett "#rec" recVal (bindSiblings true "#rec" indexed bodyExpr')
 
-/-- Bind a match arm's payload binders over the payload variable (arity ≤ 2). -/
-def bindPayload : List String → String → Surf → Surf
-  | [],       _, body => body
-  | [b],      v, body => .lett b (.var v) body
-  | [b1, b2], v, body => .splitS b1 b2 (.var v) body
-  | _,        _, body => body   -- arity ≤ 2 enforced at env build
+/-- Bind a match arm's payload binders over the payload variable (B011, #144: N-ary, matching
+`prodOfTys`'s right-nesting — `[b1, b2, b3]` destructures `.splitS b1 #w (var v) …` where `#w`
+holds the REMAINING right-nested pair `(b2, b3)`, recursively bound the same way `splitProd`'s dual
+type-level walk peels one field at a time. `#w`'s numeric suffix (binder DEPTH, not a global
+counter) avoids colliding with a sibling arm's own `#w` at the SAME depth — each arm's binder chain
+is independently scoped (no cross-arm capture is possible: `#w0`/`#w1`/… are `lett`-bound strictly
+inside THIS arm's own body), so depth alone is a sufficient disambiguator. -/
+def bindPayload : List String → String → Surf → Surf :=
+  fun bs v body => go bs v 0 body
+where go : List String → String → Nat → Surf → Surf
+  | [],           _, _, body => body
+  | [b],          v, _, body => .lett b (.var v) body
+  | [b1, b2],     v, _, body => .splitS b1 b2 (.var v) body
+  | b1 :: rest,   v, d, body =>
+      let w := s!"#w{d}"
+      .splitS b1 w (.var v) (go rest w (d + 1) body)
 
 /-- Assemble the ordered (already-elaborated) match arms into the `matchS` chain over the
 unfolded scrutinee — the last ctor's payload is the bare right-nested-sum tail. -/
@@ -3251,36 +3262,74 @@ def curriedDomains : Nat → Ty → List Ty
   | n + 1, .tArr a b => a :: curriedDomains n b
   | _ + 1, t         => [t]   -- fewer arrows than requested: the tail itself (a shape error downstream)
 
-/-- Discover ONE call site's instantiation of `name`'s free tyvars: line up each curried argument
-against its ascription DOMAIN (`domains`, `curriedDomains` already applied by the caller), and for
-every argument that is an explicit annotation `(e : T)` — ADR-0103 decision item 3's discovery
-anchor, the argument-position twin of `bfnWrapper`'s RESULT-anchored annotation (the fold-shape
-wall, w2, is exactly why this family cannot reuse that anchor) — `matchTyVars` the domain template
-against `T`. An un-annotated argument contributes nothing at this call (never a guess); the caller
-decides whether the union still closes every free tyvar. -/
+/-- Discover ONE call site's instantiation of `name`'s free tyvars from its ARGUMENTS: line up each
+curried argument against its ascription DOMAIN (`domains`, `curriedDomains` already applied by the
+caller), and for every argument that is an explicit annotation `(e : T)` — ADR-0103 decision item 3's
+discovery anchor, the argument-position twin of `bfnWrapper`'s RESULT-anchored annotation (the
+fold-shape wall, w2, is exactly why this family cannot reuse that anchor) — `matchTyVars` the domain
+template against `T`. An un-annotated argument contributes nothing at this call (never a guess); the
+caller decides whether the union still closes every free tyvar. -/
 def discoverAtCall (domains : List Ty) (args : List Surf) : List (String × Ty) :=
   (domains.zip args).flatMap (fun (dom, arg) => match arg with
     | .annotS _ concreteTy => matchTyVars dom concreteTy
     | _                    => [])
 
+/-- ADR-0103 Amendment ②: discover ONE call site's instantiation from its RESULT — the twin
+`discoverAtCall` never had. A bound-free `let rec`'s tyvar appearing ONLY in the declared RESULT
+(never in any argument — e.g. `mapOpt : (a -> b) -> Option a -> Option b`'s `b`) is unreachable to
+`discoverAtCall` no matter how the arguments are annotated; the ONE place it can be recovered is an
+ENCLOSING annotation on the call ITSELF (`(($mapOpt f) o : Option Int)`), which `callSitesOf`'s own
+`.annotS` walk used to discard before this fix (`docs/notes/carrier-inference-design.md` §1's traced
+root cause). `resultDom` is `name`'s declared result type (`stripArrows tvs.length t`, the ascription-
+side twin of `curriedDomains`); `enclosingTy?` is the annotation actually wrapping this call site, if
+any (`none` when the call sits bare, exactly as `discoverAtCall`'s per-argument `none` case — never a
+guess). Reuses `matchTyVars` UNCHANGED — no new inference power, only a second input site for the
+SAME fully-general structural unifier. -/
+def discoverAtCallResult (resultDom : Ty) (enclosingTy? : Option Ty) : List (String × Ty) :=
+  match enclosingTy? with
+  | some concreteTy => matchTyVars resultDom concreteTy
+  | none             => []
+
 mutual
 /-- Every call site of `name` found in `e`, in LEFT-TO-RIGHT traversal order, as its raw discovered
 binding list (`discoverAtCall`, possibly incomplete — completeness is checked by the caller once
-every call site is collected). Exhaustive over every `Surf` former (the `letRecBoundNames`/
-`qualifyVars` completeness discipline) — a NESTED `let rec`/`letRecMultiS` re-binding `name` shadows
-it exactly as `qualifyVars` shadows a qualified name: the shadowed subtree contributes NO further
-call sites (a shadowed inner `name` is a genuinely different binding, never a use of the outer one). -/
-partial def callSitesOf (name : String) (domains : List Ty) (e : Surf) : List (List (String × Ty)) :=
+every call site is collected). `resultDom` (ADR-0103 Amendment ②) is `name`'s declared RESULT type
+(threaded read-only, the `domains` precedent) — the `.annotS e t` arm below is the ONE place it
+matters: when `e` (the annotated INNER expression) is ITSELF `name`'s call spine, `t` is the
+enclosing annotation `discoverAtCallResult` needs, merged into that spine's OWN binding (not a
+separate call site — `completeInstantiation` needs every tyvar's discovery UNIONED per call, so a
+result-anchored binding must land in the SAME list entry the argument-anchored discovery for that
+identical spine produces). Exhaustive over every `Surf` former (the `letRecBoundNames`/`qualifyVars`
+completeness discipline) — a NESTED `let rec`/`letRecMultiS` re-binding `name` shadows it exactly as
+`qualifyVars` shadows a qualified name: the shadowed subtree contributes NO further call sites (a
+shadowed inner `name` is a genuinely different binding, never a use of the outer one). -/
+partial def callSitesOf (name : String) (domains : List Ty) (resultDom : Ty) (e : Surf) : List (List (String × Ty)) :=
   let here := match monoCallSpine name e with
     | some args => [discoverAtCall domains args]
     | none      => []
   here ++ match e with
     | .lit _ | .var _ | .getS | .unitS => []
     | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ =>
-        callSitesOf name domains e
+    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e =>
+        callSitesOf name domains resultDom e
+    -- ADR-0103 Amendment ②: `e`'s OWN annotation `t` is a RESULT-position discovery anchor when
+    -- the annotated expression is EXACTLY `name`'s call spine — merged into THAT spine's binding
+    -- (via `List.map` over the singleton/empty list the inner recursive call produces for `inner`,
+    -- since `monoCallSpine name inner` matching means `inner`'s own `here` computation, one level
+    -- down, is the ONE list entry this annotation's discovery belongs to; `inner` NOT being the
+    -- spine means `t` names an unrelated type — e.g. `(3 : Int)` — contributing nothing, matching
+    -- `discoverAtCall`'s own "un-annotated/irrelevant argument contributes nothing" convention).
+    | .annotS inner t =>
+        let resultBinding := match monoCallSpine name inner with
+          | some _ => discoverAtCallResult resultDom (some t)
+          | none   => []
+        match resultBinding, callSitesOf name domains resultDom inner with
+        | [], rest        => rest
+        | rb, first :: rest => (first ++ rb) :: rest
+        | rb, []           => [rb]   -- unreachable in practice (a matched spine always seeds `here`
+                                       -- one level down), kept total per this file's own discipline.
     | .lett _ a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b | .binopS _ a b =>
-        callSitesOf name domains a ++ callSitesOf name domains b
+        callSitesOf name domains resultDom a ++ callSitesOf name domains resultDom b
     | .app a b =>
         -- `monoCallSpine` already counted the WHOLE spine (every curried arg) as ONE call site
         -- (`here`, above) when `e` itself is a call on `name` — but it only ever READS the spine's
@@ -3290,49 +3339,72 @@ partial def callSitesOf (name : String) (domains : List Ty) (e : Surf) : List (L
         -- `name`'s spine. Only `a` needs the "already counted" skip (recursing into it again down
         -- a `name`-spine would re-`monoCallSpine`-match the SAME outer call at every curried layer,
         -- double-counting once per argument) — `b` is always walked, spine or not.
-        (if (monoCallSpine name e).isSome then [] else callSitesOf name domains a) ++ callSitesOf name domains b
-    | .matchS s _ l _ r => callSitesOf name domains s ++ callSitesOf name domains l ++ callSitesOf name domains r
-    | .ifS c t el        => callSitesOf name domains c ++ callSitesOf name domains t ++ callSitesOf name domains el
-    | .matchD s arms     => callSitesOf name domains s ++ callSitesOfDArms name domains arms
-    | .withCapS _ i _ b  => callSitesOf name domains i ++ callSitesOf name domains b
-    | .dotPerform r _ .none      => callSitesOf name domains r
-    | .dotPerform r _ (.one a)   => callSitesOf name domains r ++ callSitesOf name domains a
-    | .dotPerform r _ (.two a b) => callSitesOf name domains r ++ callSitesOf name domains a ++ callSitesOf name domains b
-    | .hostPerformS _lbl n _ .none      => callSitesOf name domains n
-    | .hostPerformS _lbl n _ (.one a)   => callSitesOf name domains n ++ callSitesOf name domains a
-    | .hostPerformS _lbl n _ (.two a b) => callSitesOf name domains n ++ callSitesOf name domains a ++ callSitesOf name domains b
-    | .letRecS n _ f b => callSitesOf name domains f ++ (if n == name then [] else callSitesOf name domains b)
+        (if (monoCallSpine name e).isSome then [] else callSitesOf name domains resultDom a) ++ callSitesOf name domains resultDom b
+    | .matchS s _ l _ r => callSitesOf name domains resultDom s ++ callSitesOf name domains resultDom l ++ callSitesOf name domains resultDom r
+    | .ifS c t el        => callSitesOf name domains resultDom c ++ callSitesOf name domains resultDom t ++ callSitesOf name domains resultDom el
+    | .matchD s arms     => callSitesOf name domains resultDom s ++ callSitesOfDArms name domains resultDom arms
+    | .withCapS _ i _ b  => callSitesOf name domains resultDom i ++ callSitesOf name domains resultDom b
+    | .dotPerform r _ .none      => callSitesOf name domains resultDom r
+    | .dotPerform r _ (.one a)   => callSitesOf name domains resultDom r ++ callSitesOf name domains resultDom a
+    | .dotPerform r _ (.two a b) => callSitesOf name domains resultDom r ++ callSitesOf name domains resultDom a ++ callSitesOf name domains resultDom b
+    | .hostPerformS _lbl n _ .none      => callSitesOf name domains resultDom n
+    | .hostPerformS _lbl n _ (.one a)   => callSitesOf name domains resultDom n ++ callSitesOf name domains resultDom a
+    | .hostPerformS _lbl n _ (.two a b) => callSitesOf name domains resultDom n ++ callSitesOf name domains resultDom a ++ callSitesOf name domains resultDom b
+    | .letRecS n _ f b => callSitesOf name domains resultDom f ++ (if n == name then [] else callSitesOf name domains resultDom b)
     | .letRecMultiS binds b =>
-        callSitesOfLRBindings name domains binds ++
-        (if (letRecBindingsNames binds).contains name then [] else callSitesOf name domains b)
-    | .lettMulti binds b => callSitesOfBindings name domains binds ++ callSitesOf name domains b
-    | .handleCustomS _lbl n .none _h cls b       => callSitesOf name domains n ++ callSitesOfHClauses name domains cls ++ callSitesOf name domains b
-    | .handleCustomS _lbl n (.one p) _h cls b    => callSitesOf name domains n ++ callSitesOf name domains p ++ callSitesOfHClauses name domains cls ++ callSitesOf name domains b
-    | .handleCustomS _lbl n (.two p q) _h cls b  => callSitesOf name domains n ++ callSitesOf name domains p ++ callSitesOf name domains q ++ callSitesOfHClauses name domains cls ++ callSitesOf name domains b
-partial def callSitesOfDArms (name : String) (domains : List Ty) : DArms → List (List (String × Ty))
+        callSitesOfLRBindings name domains resultDom binds ++
+        (if (letRecBindingsNames binds).contains name then [] else callSitesOf name domains resultDom b)
+    | .lettMulti binds b => callSitesOfBindings name domains resultDom binds ++ callSitesOf name domains resultDom b
+    | .handleCustomS _lbl n .none _h cls b       => callSitesOf name domains resultDom n ++ callSitesOfHClauses name domains resultDom cls ++ callSitesOf name domains resultDom b
+    | .handleCustomS _lbl n (.one p) _h cls b    => callSitesOf name domains resultDom n ++ callSitesOf name domains resultDom p ++ callSitesOfHClauses name domains resultDom cls ++ callSitesOf name domains resultDom b
+    | .handleCustomS _lbl n (.two p q) _h cls b  => callSitesOf name domains resultDom n ++ callSitesOf name domains resultDom p ++ callSitesOf name domains resultDom q ++ callSitesOfHClauses name domains resultDom cls ++ callSitesOf name domains resultDom b
+partial def callSitesOfDArms (name : String) (domains : List Ty) (resultDom : Ty) : DArms → List (List (String × Ty))
   | .nil              => []
-  | .cons _ _ b rest  => callSitesOf name domains b ++ callSitesOfDArms name domains rest
-partial def callSitesOfBindings (name : String) (domains : List Ty) : LetBindings → List (List (String × Ty))
+  | .cons _ _ b rest  => callSitesOf name domains resultDom b ++ callSitesOfDArms name domains resultDom rest
+partial def callSitesOfBindings (name : String) (domains : List Ty) (resultDom : Ty) : LetBindings → List (List (String × Ty))
   | .nil            => []
-  | .cons _ e rest  => callSitesOf name domains e ++ callSitesOfBindings name domains rest
-partial def callSitesOfHClauses (name : String) (domains : List Ty) : HClauses → List (List (String × Ty))
+  | .cons _ e rest  => callSitesOf name domains resultDom e ++ callSitesOfBindings name domains resultDom rest
+partial def callSitesOfHClauses (name : String) (domains : List Ty) (resultDom : Ty) : HClauses → List (List (String × Ty))
   | .nil               => []
-  | .cons _ _ b rest   => callSitesOf name domains b ++ callSitesOfHClauses name domains rest
-partial def callSitesOfLRBindings (name : String) (domains : List Ty) : LetRecBindings → List (List (String × Ty))
+  | .cons _ _ b rest   => callSitesOf name domains resultDom b ++ callSitesOfHClauses name domains resultDom rest
+partial def callSitesOfLRBindings (name : String) (domains : List Ty) (resultDom : Ty) : LetRecBindings → List (List (String × Ty))
   | .nil               => []
   | .cons n _ e rest   =>
-      (if n == name then [] else callSitesOf name domains e) ++ callSitesOfLRBindings name domains rest
+      (if n == name then [] else callSitesOf name domains resultDom e) ++ callSitesOfLRBindings name domains resultDom rest
 end
+
+/-- ADR-0103 Amendment ②, the fail-loud condition on the new door: does `binding` (one call site's
+raw discovered occurrences — argument-derived AND, since Amendment ②, possibly ALSO result-derived)
+name the SAME tyvar `tv` at two STRUCTURALLY-DIFFERENT concrete types? Only a genuine disagreement is
+flagged — repeated occurrences that all AGREE (e.g. `take`'s domain naming `a` twice, once per
+curried slot, always the SAME concrete type at one call) are fine and stay silent, matching
+`completeInstantiation`'s pre-existing "the last occurrence wins" convention for the AGREEING case.
+`none` ⟹ no conflict; `some (tv, tyA, tyB)` names the FIRST disagreement found (first-seen order),
+carrying both conflicting types so the caller's diagnostic can show both. -/
+def findConflict (binding : List (String × Ty)) : Option (String × Ty × Ty) :=
+  let tvs := (binding.map Prod.fst).eraseDups
+  tvs.findSome? (fun tv =>
+    match binding.filter (fun (t, _) => t == tv) |>.map Prod.snd |>.eraseDups with
+    | [] | [_] => none
+    | ty1 :: ty2 :: _ => some (tv, ty1, ty2))
 
 /-- Complete every discovered call-site binding against `tvs` (`name`'s free-tyvar list, order-
 stable from `freeTyVars`): a binding is COMPLETE iff every `tv ∈ tvs` was pinned by SOME annotation
-at that call (`discoverAtCall` may have only pinned a subset, or pinned the SAME var twice — the
-LAST occurrence wins, mirroring `List.lookup`'s own first-match convention read right-to-left via
-`List.reverse` so a later annotation in a multi-arg call overrides an earlier accidental alias).
-`none` ⟹ that call site is unmonomorphizable (some free tyvar never annotated) — the caller fails
-LOUD naming it, never silently drops it or guesses. -/
-def completeInstantiation (tvs : List String) (binding : List (String × Ty)) : Option (List (String × Ty)) :=
-  tvs.mapM (fun tv => (binding.reverse.lookup tv).map (tv, ·))
+at that call (`discoverAtCall`/`discoverAtCallResult`, Amendment ②, may have only pinned a subset).
+AGREEING repeats of the same tyvar collapse silently (`List.reverse.lookup`'s last-occurrence
+convention, unchanged from before Amendment ②); a DISAGREEING repeat (`findConflict`, checked FIRST,
+BEFORE the silent collapse could hide it) fails LOUD naming the tyvar and both conflicting types —
+the fail-loud condition the argument-only door never needed (two arguments of `List a` always agree
+on `a` by construction; an argument AND a result annotation disagreeing is a genuinely new failure
+mode Amendment ② introduces, so it needs its own check, not a reuse of "unresolved"). `none` from
+THIS function (the un-conflicted, still-incomplete case) ⟹ that call site is unmonomorphizable
+(some free tyvar never annotated anywhere) — the caller fails LOUD naming it, never silently drops
+it or guesses; `Except` (the conflict case) is the LOUDER of the two, checked first. -/
+def completeInstantiation (tvs : List String) (binding : List (String × Ty)) :
+    Except (String × Ty × Ty) (Option (List (String × Ty))) :=
+  match findConflict binding with
+  | some c => .error c
+  | none   => .ok (tvs.mapM (fun tv => (binding.reverse.lookup tv).map (tv, ·)))
 
 /-- Assign each COMPLETE call-site instantiation a residue index, collapsing call sites that agree
 on every tyvar to the SAME index (`List.idxOf`-style first-match) — the distinct-instantiation-set
@@ -3363,15 +3435,20 @@ CONTAINED single pass (no separate discovery pass to stay in lockstep with, avoi
 synchronization hazard a split discover-then-redirect design carries): at a recognized call spine,
 RE-DISCOVER that ONE site's binding (`discoverAtCall`, the same call `callSitesOf` makes) and look
 it up directly in `residues` (a call's binding, once completed against `tvs`, uniquely determines
-its residue by construction — `indexInstantiations` grouped by exactly this equality). An
-INCOMPLETE call (some free tyvar unpinned) was already rejected by the caller before any residue
-existed, so `lookup` failing here is unreachable in the CALL case; it IS reachable in the SELF-CALL
-case (`self? = some freshName`; see `monomorphizeOne`), where every self-reference maps to that one
-fixed name regardless of its own (irrelevant — a self-call carries no annotation to rediscover)
-binding. Exhaustive over every `Surf` former (the `qualifyVars`/`callSitesOf` completeness
-discipline); mirrors `callSitesOf`'s OWN `.app`/shadow treatment exactly (both consult
-`monoCallSpine` the same way), but needs no index-threading since each redirect is self-determined. -/
-partial def redirectCalls (name : String) (domains : List Ty) (tvs : List String)
+its residue by construction — `indexInstantiations` grouped by exactly this equality). `resultDom`
+(ADR-0103 Amendment ②) is threaded the same read-only way `domains` already is — the `.annotS e t`
+arm below re-derives the SAME result-anchored merge `callSitesOf`'s own `.annotS` arm does, so a
+result-only-discovered call redirects to the SAME residue index `callSitesOf`'s discovery run
+assigned it (the two passes must agree by construction: same inputs, same `discoverAtCall`/
+`discoverAtCallResult` calls, same merge). An INCOMPLETE call (some free tyvar unpinned) was already
+rejected by the caller before any residue existed, so `lookup` failing here is unreachable in the
+CALL case; it IS reachable in the SELF-CALL case (`self? = some freshName`; see `monomorphizeOne`),
+where every self-reference maps to that one fixed name regardless of its own (irrelevant — a
+self-call carries no annotation to rediscover) binding. Exhaustive over every `Surf` former (the
+`qualifyVars`/`callSitesOf` completeness discipline); mirrors `callSitesOf`'s OWN `.app`/shadow/
+`.annotS` treatment exactly (both consult `monoCallSpine` the same way), but needs no index-
+threading since each redirect is self-determined. -/
+partial def redirectCalls (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : Surf → Surf
   | e =>
     match monoCallSpine name e with
@@ -3379,9 +3456,13 @@ partial def redirectCalls (name : String) (domains : List Ty) (tvs : List String
         let freshName? := match self? with
           | some sn => some sn
           | none    =>
+              -- both `none` (incomplete) and `.error` (conflicting) are unreachable HERE — the
+              -- caller (`monomorphizeOne`) already rejected either case via `callSitesOf`'s
+              -- IDENTICAL discovery before any residue (hence any redirect) exists.
               match completeInstantiation tvs (discoverAtCall domains args) with
-              | some sub => (residues.find? (fun (s, _) => s == sub)).map (·.2)
-              | none     => none   -- unreachable: the caller already rejected incomplete calls
+              | .ok (some sub) => (residues.find? (fun (s, _) => s == sub)).map (·.2)
+              | .ok none       => none
+              | .error _       => none
         let e' := match freshName? with
           | some fresh => redirectHead name fresh e
           | none       => e
@@ -3389,81 +3470,104 @@ partial def redirectCalls (name : String) (domains : List Ty) (tvs : List String
         -- redirect — `monoCallSpine` only reads the spine's shape, never descends. `args` were
         -- consumed structurally above; redirect each independently (order-irrelevant, no shared
         -- counter to desync).
-        redirectArgsInHead name domains tvs residues self? e'
+        redirectArgsInHead name domains resultDom tvs residues self? e'
     | none =>
     match e with
     | .lit n => .lit n
     | .var x => .var x
     | .getS  => .getS
     | .unitS => .unitS
-    | .thunk e   => .thunk   (redirectCalls name domains tvs residues self? e)
-    | .force e   => .force   (redirectCalls name domains tvs residues self? e)
-    | .raise e   => .raise   (redirectCalls name domains tvs residues self? e)
-    | .handle e  => .handle  (redirectCalls name domains tvs residues self? e)
-    | .putS e    => .putS    (redirectCalls name domains tvs residues self? e)
-    | .atomS e   => .atomS   (redirectCalls name domains tvs residues self? e)
-    | .newS e    => .newS    (redirectCalls name domains tvs residues self? e)
-    | .readS e   => .readS   (redirectCalls name domains tvs residues self? e)
-    | .inlS e    => .inlS    (redirectCalls name domains tvs residues self? e)
-    | .inrS e    => .inrS    (redirectCalls name domains tvs residues self? e)
-    | .foldS e   => .foldS   (redirectCalls name domains tvs residues self? e)
-    | .unfoldS e => .unfoldS (redirectCalls name domains tvs residues self? e)
-    | .divMark e => .divMark (redirectCalls name domains tvs residues self? e)
-    | .lam x e   => .lam x   (redirectCalls name domains tvs residues self? e)
-    | .annotS e t => .annotS (redirectCalls name domains tvs residues self? e) t
-    | .lett x a b     => .lett x (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .stateS a b     => .stateS (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .writeS a b     => .writeS (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .pairS a b      => .pairS (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .splitS x y a b => .splitS x y (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .binopS op a b  => .binopS op (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .app a b        => .app (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
-    | .ifS c t el     => .ifS (redirectCalls name domains tvs residues self? c) (redirectCalls name domains tvs residues self? t) (redirectCalls name domains tvs residues self? el)
-    | .matchS s xl l xr r => .matchS (redirectCalls name domains tvs residues self? s) xl (redirectCalls name domains tvs residues self? l) xr (redirectCalls name domains tvs residues self? r)
-    | .matchD s arms  => .matchD (redirectCalls name domains tvs residues self? s) (redirectCallsDArms name domains tvs residues self? arms)
-    | .withCapS k i x b => .withCapS k (redirectCalls name domains tvs residues self? i) x (redirectCalls name domains tvs residues self? b)
-    | .dotPerform r op .none      => .dotPerform (redirectCalls name domains tvs residues self? r) op .none
-    | .dotPerform r op (.one a)   => .dotPerform (redirectCalls name domains tvs residues self? r) op (.one (redirectCalls name domains tvs residues self? a))
-    | .dotPerform r op (.two a b) => .dotPerform (redirectCalls name domains tvs residues self? r) op (.two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b))
-    | .hostPerformS lbl n op .none      => .hostPerformS lbl (redirectCalls name domains tvs residues self? n) op .none
-    | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (redirectCalls name domains tvs residues self? n) op (.one (redirectCalls name domains tvs residues self? a))
-    | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (redirectCalls name domains tvs residues self? n) op (.two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b))
+    | .thunk e   => .thunk   (redirectCalls name domains resultDom tvs residues self? e)
+    | .force e   => .force   (redirectCalls name domains resultDom tvs residues self? e)
+    | .raise e   => .raise   (redirectCalls name domains resultDom tvs residues self? e)
+    | .handle e  => .handle  (redirectCalls name domains resultDom tvs residues self? e)
+    | .putS e    => .putS    (redirectCalls name domains resultDom tvs residues self? e)
+    | .atomS e   => .atomS   (redirectCalls name domains resultDom tvs residues self? e)
+    | .newS e    => .newS    (redirectCalls name domains resultDom tvs residues self? e)
+    | .readS e   => .readS   (redirectCalls name domains resultDom tvs residues self? e)
+    | .inlS e    => .inlS    (redirectCalls name domains resultDom tvs residues self? e)
+    | .inrS e    => .inrS    (redirectCalls name domains resultDom tvs residues self? e)
+    | .foldS e   => .foldS   (redirectCalls name domains resultDom tvs residues self? e)
+    | .unfoldS e => .unfoldS (redirectCalls name domains resultDom tvs residues self? e)
+    | .divMark e => .divMark (redirectCalls name domains resultDom tvs residues self? e)
+    | .lam x e   => .lam x   (redirectCalls name domains resultDom tvs residues self? e)
+    -- ADR-0103 Amendment ②: when the ANNOTATED inner expression is `name`'s own call spine, the
+    -- fresh residue must be looked up using the SAME merged (argument ++ result) binding
+    -- `callSitesOf`'s `.annotS` arm discovered for it — otherwise this pass and that one could
+    -- disagree on which residue a result-anchored call belongs to. `self?` still short-circuits
+    -- first (a self-call carries no annotation to rediscover, matching every other arm here).
+    | .annotS inner t =>
+        match self? with
+        | some _ => .annotS (redirectCalls name domains resultDom tvs residues self? inner) t
+        | none =>
+            match monoCallSpine name inner with
+            | none => .annotS (redirectCalls name domains resultDom tvs residues self? inner) t
+            | some args =>
+                let merged := discoverAtCall domains args ++ discoverAtCallResult resultDom (some t)
+                -- both `.ok none` (incomplete) and `.error` (conflicting) are unreachable HERE, the
+                -- SAME reason the root `.app`-spine arm's own comment gives — `monomorphizeOne`
+                -- already rejected either case via `callSitesOf`'s IDENTICAL merged discovery.
+                let freshName? := match completeInstantiation tvs merged with
+                  | .ok (some sub) => (residues.find? (fun (s, _) => s == sub)).map (·.2)
+                  | .ok none       => none
+                  | .error _       => none
+                let inner' := match freshName? with
+                  | some fresh => redirectHead name fresh inner
+                  | none       => inner
+                .annotS (redirectArgsInHead name domains resultDom tvs residues self? inner') t
+    | .lett x a b     => .lett x (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .stateS a b     => .stateS (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .writeS a b     => .writeS (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .pairS a b      => .pairS (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .splitS x y a b => .splitS x y (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .binopS op a b  => .binopS op (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .app a b        => .app (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b)
+    | .ifS c t el     => .ifS (redirectCalls name domains resultDom tvs residues self? c) (redirectCalls name domains resultDom tvs residues self? t) (redirectCalls name domains resultDom tvs residues self? el)
+    | .matchS s xl l xr r => .matchS (redirectCalls name domains resultDom tvs residues self? s) xl (redirectCalls name domains resultDom tvs residues self? l) xr (redirectCalls name domains resultDom tvs residues self? r)
+    | .matchD s arms  => .matchD (redirectCalls name domains resultDom tvs residues self? s) (redirectCallsDArms name domains resultDom tvs residues self? arms)
+    | .withCapS k i x b => .withCapS k (redirectCalls name domains resultDom tvs residues self? i) x (redirectCalls name domains resultDom tvs residues self? b)
+    | .dotPerform r op .none      => .dotPerform (redirectCalls name domains resultDom tvs residues self? r) op .none
+    | .dotPerform r op (.one a)   => .dotPerform (redirectCalls name domains resultDom tvs residues self? r) op (.one (redirectCalls name domains resultDom tvs residues self? a))
+    | .dotPerform r op (.two a b) => .dotPerform (redirectCalls name domains resultDom tvs residues self? r) op (.two (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b))
+    | .hostPerformS lbl n op .none      => .hostPerformS lbl (redirectCalls name domains resultDom tvs residues self? n) op .none
+    | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (redirectCalls name domains resultDom tvs residues self? n) op (.one (redirectCalls name domains resultDom tvs residues self? a))
+    | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (redirectCalls name domains resultDom tvs residues self? n) op (.two (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? b))
     | .letRecS nm t f b =>
-        .letRecS nm t (redirectCalls name domains tvs residues self? f)
-          (if nm == name then b else redirectCalls name domains tvs residues self? b)
+        .letRecS nm t (redirectCalls name domains resultDom tvs residues self? f)
+          (if nm == name then b else redirectCalls name domains resultDom tvs residues self? b)
     | .letRecMultiS binds b =>
-        .letRecMultiS (redirectCallsLRBindings name domains tvs residues self? binds)
-          (if (letRecBindingsNames binds).contains name then b else redirectCalls name domains tvs residues self? b)
-    | .lettMulti binds b => .lettMulti (redirectCallsBindings name domains tvs residues self? binds) (redirectCalls name domains tvs residues self? b)
+        .letRecMultiS (redirectCallsLRBindings name domains resultDom tvs residues self? binds)
+          (if (letRecBindingsNames binds).contains name then b else redirectCalls name domains resultDom tvs residues self? b)
+    | .lettMulti binds b => .lettMulti (redirectCallsBindings name domains resultDom tvs residues self? binds) (redirectCalls name domains resultDom tvs residues self? b)
     | .handleCustomS lbl n p? h cls b =>
-        .handleCustomS lbl (redirectCalls name domains tvs residues self? n)
+        .handleCustomS lbl (redirectCalls name domains resultDom tvs residues self? n)
           (match p? with
             | .none    => .none
-            | .one p   => .one (redirectCalls name domains tvs residues self? p)
-            | .two a c => .two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? c))
-          h (redirectCallsHClauses name domains tvs residues self? cls) (redirectCalls name domains tvs residues self? b)
-partial def redirectArgsInHead (name : String) (domains : List Ty) (tvs : List String)
+            | .one p   => .one (redirectCalls name domains resultDom tvs residues self? p)
+            | .two a c => .two (redirectCalls name domains resultDom tvs residues self? a) (redirectCalls name domains resultDom tvs residues self? c))
+          h (redirectCallsHClauses name domains resultDom tvs residues self? cls) (redirectCalls name domains resultDom tvs residues self? b)
+partial def redirectArgsInHead (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : Surf → Surf
-  | .app f a => .app (redirectArgsInHead name domains tvs residues self? f) (redirectCalls name domains tvs residues self? a)
+  | .app f a => .app (redirectArgsInHead name domains resultDom tvs residues self? f) (redirectCalls name domains resultDom tvs residues self? a)
   | e        => e   -- reached the call HEAD (`.force (.var freshOrName)`) — already redirected by the caller
-partial def redirectCallsDArms (name : String) (domains : List Ty) (tvs : List String)
+partial def redirectCallsDArms (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : DArms → DArms
   | .nil              => .nil
-  | .cons c ps b rest => .cons c ps (redirectCalls name domains tvs residues self? b) (redirectCallsDArms name domains tvs residues self? rest)
-partial def redirectCallsBindings (name : String) (domains : List Ty) (tvs : List String)
+  | .cons c ps b rest => .cons c ps (redirectCalls name domains resultDom tvs residues self? b) (redirectCallsDArms name domains resultDom tvs residues self? rest)
+partial def redirectCallsBindings (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : LetBindings → LetBindings
   | .nil            => .nil
-  | .cons n e rest  => .cons n (redirectCalls name domains tvs residues self? e) (redirectCallsBindings name domains tvs residues self? rest)
-partial def redirectCallsHClauses (name : String) (domains : List Ty) (tvs : List String)
+  | .cons n e rest  => .cons n (redirectCalls name domains resultDom tvs residues self? e) (redirectCallsBindings name domains resultDom tvs residues self? rest)
+partial def redirectCallsHClauses (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : HClauses → HClauses
   | .nil               => .nil
-  | .cons op x b rest  => .cons op x (redirectCalls name domains tvs residues self? b) (redirectCallsHClauses name domains tvs residues self? rest)
-partial def redirectCallsLRBindings (name : String) (domains : List Ty) (tvs : List String)
+  | .cons op x b rest  => .cons op x (redirectCalls name domains resultDom tvs residues self? b) (redirectCallsHClauses name domains resultDom tvs residues self? rest)
+partial def redirectCallsLRBindings (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : LetRecBindings → LetRecBindings
   | .nil               => .nil
   | .cons n t e rest   =>
-      .cons n t (if n == name then e else redirectCalls name domains tvs residues self? e)
-        (redirectCallsLRBindings name domains tvs residues self? rest)
+      .cons n t (if n == name then e else redirectCalls name domains resultDom tvs residues self? e)
+        (redirectCallsLRBindings name domains resultDom tvs residues self? rest)
 end
 
 mutual
@@ -3709,18 +3813,37 @@ a) { … }`) mention the same tyvar and must close too. -/
 def monomorphizeOne (name : String) (t : Ty) (fb bodyExpr : Surf) (tvs : List String) :
     Except String Surf := do
   let domains := curriedDomains tvs.length t
-  let raw := callSitesOf name domains bodyExpr
+  -- ADR-0103 Amendment ②: `resultDom` is the twin of `domains` for RESULT-position discovery — the
+  -- declared result type after peeling every curried argument arrow (`stripArrows`, the ascription-
+  -- side twin `curriedDomains` already is for arguments). Threaded read-only into BOTH `callSitesOf`
+  -- and `redirectCalls` so a call site whose free tyvar appears ONLY in the result (never in any
+  -- argument, e.g. `mapOpt : (a -> b) -> Option a -> Option b`'s `b`) is DISCOVERABLE from the
+  -- call's own enclosing annotation, not just an argument's.
+  let resultDom := stripArrows tvs.length t
+  let raw := callSitesOf name domains resultDom bodyExpr
   if raw.isEmpty then
     return bodyExpr
   else do
     let complete ← raw.mapM (fun binding =>
       match completeInstantiation tvs binding with
-      | some sub => .ok sub
-      | none     => .error s!"'{name}': a use leaves a type variable unresolved — annotate the argument (e.g. `({name} arg : List Int)`) so ADR-0103's monomorphization pass can close it")
+      -- ADR-0103 Amendment ②'s fail-loud condition: an ARGUMENT-derived and a RESULT-derived
+      -- annotation (or two of either) disagreeing on the SAME tyvar's instantiation is a genuinely
+      -- new failure mode — REFUSE naming both conflicting types (`Bang.Format.showTy`, the
+      -- Format.lean-owned `Ty → String` renderer every OTHER surface-facing diagnostic in this file
+      -- already imports), never silently pick one (the pre-Amendment-② "last occurrence wins"
+      -- convention is WRONG here: silently preferring the result over the argument, or vice versa,
+      -- is exactly the guess the whole discovery discipline refuses to make).
+      | .error (tv, ty1, ty2) =>
+          .error s!"'{name}': conflicting instantiations for type variable '{tv}' — one call site \
+names both '{Bang.Format.showTy ty1}' and '{Bang.Format.showTy ty2}' (an argument annotation \
+and the call's own result annotation disagree, or two arguments disagree) — annotate consistently, \
+or drop the redundant annotation"
+      | .ok (some sub) => .ok sub
+      | .ok none     => .error s!"'{name}': a use leaves a type variable unresolved — annotate the argument (e.g. `({name} arg : List Int)`) or the call's own result (e.g. `(({name} arg) : List Int)`) so ADR-0103's monomorphization pass can close it")
     let (distinct, _) := indexInstantiations complete
     let freshNames := (List.range distinct.length).map (fun i => qualifyName s!"#mono{i}" name)
     let residues := distinct.zip freshNames
-    let bodyExpr' := redirectCalls name domains tvs residues none bodyExpr
+    let bodyExpr' := redirectCalls name domains resultDom tvs residues none bodyExpr
     return residues.foldr (fun (sub, freshName) acc =>
       let closeTy : Ty → Ty := fun ty => sub.foldl (fun ty' (tv, c) => substTyVar tv c ty') ty
       let t' := closeTy t
@@ -3731,7 +3854,7 @@ def monomorphizeOne (name : String) (t : Ty) (fb bodyExpr : Surf) (tvs : List St
       -- monomorphic, non-polymorphic-recursion invariant `w4` established). `substTyVarInSurf
       -- closeTy` ADDITIONALLY closes every tyvar occurrence INSIDE `fb`'s body (`match (xs : List
       -- a) { … }`) — the outer ascription `t'` alone does not reach there.
-      let fb' := substTyVarInSurf closeTy (redirectCalls name domains tvs residues (some freshName) fb)
+      let fb' := substTyVarInSurf closeTy (redirectCalls name domains resultDom tvs residues (some freshName) fb)
       .letRecS freshName t' fb' acc) bodyExpr'
 
 mutual
@@ -4239,13 +4362,18 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
       let binderLookup : Option (List IVTy) :=
         (binderTys.lookup c).orElse (fun _ =>
           (binderTys.find? (fun p => (env.ctors.lookup p.1).any (fun ci => qualifyName ci.dataName p.1 == c))).map Prod.snd)
+      -- N-ary (B011's v1 arity-2 cap lifted, #144): `List.zip bs tys` pairs each binder with its
+      -- field type positionally regardless of length — the SAME generalization `bindPayload`'s
+      -- desugar got, needed HERE too since `elabS`'s arm-body pass (`anfSplit`/`synthSV`) needs
+      -- every binder in `Γ` BEFORE `bindPayload` ever runs (this is elaboration-time context, not
+      -- the later desugar) — a length MISMATCH (malformed `binderTys`/`payloadClosed`, never
+      -- reachable given `elabS`'s own `bs.length != ci.arity` guard upstream) degrades to `Γ`
+      -- un-extended, mirroring the old `| _, _ => Γ` catch-all's fail-soft convention.
       let Γa := match binderLookup with
         -- GENERIC (bite-1): concrete field types derived from the scrutinee's μ (`genBinderTable`).
         | some tys =>
-            (match bs, tys with
-             | [b1], [t1]         => (b1, (t1 : Scheme)) :: Γ
-             | [b1, b2], [t1, t2] => (b2, (t2 : Scheme)) :: (b1, (t1 : Scheme)) :: Γ
-             | _, _               => Γ)
+            if bs.length == tys.length then (bs.zip tys).foldr (fun (b, t) acc => (b, (t : Scheme)) :: acc) Γ
+            else Γ
         -- MONOMORPHIC: the ctor's own closed payload types (ADR-0069), unchanged. ADR-0099: an
         -- AMBIGUOUS `c` here just leaves Γ un-extended (mirroring the pre-existing `none` case) —
         -- `matchD`'s OWN `resolveCtor env c0` call (on the first arm) is what actually reports the
@@ -4253,10 +4381,9 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
         -- `dcs`/`armsL` validation runs against the SAME (single, now-resolved) `ci0.dataName`.
         | none => match resolveCtor env c with
           | some (.ok ci) =>
-              (match bs, ci.payloadClosed with
-               | [b1], [t1]         => (b1, embV (vtyOf t1)) :: Γ
-               | [b1, b2], [t1, t2] => (b2, embV (vtyOf t2)) :: (b1, embV (vtyOf t1)) :: Γ
-               | _, _               => Γ)
+              if bs.length == ci.payloadClosed.length then
+                (bs.zip ci.payloadClosed).foldr (fun (b, t) acc => (b, embV (vtyOf t)) :: acc) Γ
+              else Γ
           | some (.error _) => Γ
           | none             => Γ
       let b' ← elabS env Γa b
@@ -4381,7 +4508,9 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
           -- resolution moves to USE time (`resolveCtor`, below).
           if (ctors.filter (fun p => p.2.dataName == n)).any (fun p => p.1 == c.1) then
             throw s!"duplicate constructor '{c.1}'"
-          if cp.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
+          -- B011's v1 arity-2 cap LIFTED (#144): `prodOfTys`/`splitProd` already right-nest ANY
+          -- payload length (`ctors.arity`, formerly capped, now the true field count) — see this
+          -- struct's `arity` field doc comment for the N-ary contract.
           ctors := (c.1, ⟨n, i, cs.length, cp.length, cp, closed, [], []⟩) :: ctors
           i := i + 1
     | .dataD n params cs => do                   -- GENERIC (ADR-0069 bite-1): register the TEMPLATE; ctors monomorphize per use
@@ -4394,7 +4523,9 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
           -- ADR-0099: same-type-only duplicate refusal — see the mono `.dataD` arm's comment above.
           if (ctors.filter (fun p => p.2.dataName == n)).any (fun p => p.1 == c.1) then
             throw s!"duplicate constructor '{c.1}'"
-          if c.2.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
+          -- B011's v1 arity-2 cap LIFTED (#144): the GENERIC-template twin of the mono `.dataD`
+          -- arm's own fix above — `monoData`/`resolveTyG` right-nest via `prodOfTys` per concrete
+          -- instantiation regardless of ctor arity.
           ctors := (c.1, ⟨n, i, cs.length, c.2.length, [], .tUnit, params, c.2⟩) :: ctors
           i := i + 1
     | .traitD n params sigs _ => do
@@ -4782,11 +4913,27 @@ reusing the same "keep bare" set `.dataD`'s ctors already ride — a trait is a 
 exactly like a ctor, `moduleTopNames`'s own `d.name` fallback already includes it) — otherwise
 `impl Eq for Box` and `trait Eq`'s own now-qualified `ModName_Eq` diverge and `buildEnv` rejects the
 impl as targeting an undeclared trait (confirmed live before this fix: `error: impl of undeclared
-trait 'Eq'`, a two-file program importing a trait and implementing it in the entry file). -/
+trait 'Eq'`, a two-file program importing a trait and implementing it in the entry file).
+
+A `use`d EFFECT is the exact same shape as a `use`d trait, not a `use`d type: an effect's declared
+name is referenced via `Surf.var` (inside `withCapS`'s `k`-labelled init / `handleCustomS`'s `n`
+field — `handle … with Log as h { … }` parses `Log` as `.var "Log"`, resolved to a label only later)
+AND via `Ty` row/`Cap` positions (`! {Log}`, `Cap Log`) — but crucially those `Ty` positions are
+resolved by a SEPARATE later pass (`resolveEffName`/`resolveTyG`'s `Cap` special case, against
+`env.effects`) that looks up the LITERAL name text unchanged; row annotations are never rewritten by
+any `qualify*` pass (`.tEff ns t`'s `ns` list is threaded through `qualifyTyName` untouched). So the
+ONLY place an effect's spelling is decided is here, its own decl-name qualification, mirroring the
+trait rule exactly (`usedCtors.contains n` keeps it bare) — once the effect's OWN `.effectD` decl
+stays unqualified, `env.effects` is keyed by the bare name and every reference site (`Surf.var`,
+`! {…}` rows, `Cap …`) resolves for free, no separate reference-side fix needed. Before this fix, an
+imported effect needed the mangled `Mod_Eff` spelling in EVERY position even in files that `use`d it
+(`docs/notes/dogfood-calc-findings.md`'s papercut, confirmed live: `error: 'Log' is not a declared
+effect (row annotation)` for a bare row naming a `use`d effect). -/
 def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .dataD n ps cs        =>
       .dataD (qualifyName modName n) ps (cs.map (fun (c, tys) => (if usedCtors.contains c then c else qualifyName modName c, tys)))
-  | .effectD n ops        => .effectD (qualifyName modName n) ops
+  | .effectD n ops        =>
+      .effectD (if usedCtors.contains n then n else qualifyName modName n) ops
   | .traitD n ps ops laws =>
       .traitD (if usedCtors.contains n then n else qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
@@ -5076,9 +5223,19 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
     modP.decls.flatMap (fun d => match d with
       | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
       | _              => []))
+  -- an EFFECT or TRAIT name is not a `let`-aliasable "plain fn" — `mergeModules`'s twin site (this
+  -- function's own doc-comment cross-ref) has the full rationale; this transitively-imported-module
+  -- pass needs the identical exclusion so a module that itself `use`s an effect from a THIRD module
+  -- gets the same bare, direct-resolving name, not a shadowing `let`-alias.
+  let nonAliasableNames : List String := resolved.flatMap (fun (_, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .effectD n _   => [n]
+      | .traitD n _ _ _ => [n]
+      | _              => []))
   let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
     u.names.filterMap (fun n =>
-      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
+      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome || nonAliasableNames.contains n
+      then none else some (n, u.modName)))
   let decls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
     | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
@@ -5144,15 +5301,18 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     mergedDecls := mergedDecls ++ modQ.decls
   let importNames := resolved.map Prod.fst
   -- CLASSIFY every resolved module's names so `use`/qualified access rewrites each the RIGHT way —
-  -- a `data` type name, a data CONSTRUCTOR, and a plain `fn`/`effect`/`trait` name are three
-  -- DIFFERENT surface positions (a type ascription's `Ty.tName`, a match PATTERN's bare `String`,
-  -- and an ordinary `Surf.var` reference respectively), so one uniform `let`-alias (which only
-  -- works for the third kind — ctors and type names are never first-class VALUES a `let` can
-  -- bind) is unsound. `ctorOwners` covers kind 2 (pattern rewrite for an UN-`use`d ctor — `use`
-  -- keeps a ctor BARE both in the merged decl list, `qualifyModule` above, and here, so there is
-  -- nothing to rewrite for it; only a bare `import`'s ctor needs the qualified pattern spelling).
-  -- Type names (kind 1) are handled by `qualifyTyName` (ascriptions/decl signatures) below. Only
-  -- kind 3 (plain functions) gets the `let`-alias wrap.
+  -- a `data` type name, a data CONSTRUCTOR, an `effect`/`trait` name, and a plain `fn` name are
+  -- FOUR different surface positions (a type ascription's `Ty.tName`, a match PATTERN's bare
+  -- `String`, `handleCustomS`/`withCapS`/`implD`'s own bare-`.var`-or-name resolution against
+  -- `env.effects`/the trait table, and an ordinary `Surf.var` reference respectively), so one
+  -- uniform `let`-alias (which only works for the fourth kind — ctors, type names, and effect/trait
+  -- names are never first-class VALUES a `let` can bind) is unsound. `ctorOwners` covers kind 2
+  -- (pattern rewrite for an UN-`use`d ctor — `use` keeps a ctor BARE both in the merged decl list,
+  -- `qualifyModule` above, and here, so there is nothing to rewrite for it; only a bare `import`'s
+  -- ctor needs the qualified pattern spelling). Type names (kind 1) are handled by `qualifyTyName`
+  -- (ascriptions/decl signatures) below; effect/trait names (kind 3) stay bare via
+  -- `qualifyDeclName`'s own `usedCtors` exemption and are excluded from the alias set below
+  -- (`nonAliasableNames`) — only kind 4 (plain functions) gets the `let`-alias wrap.
   let allCtorOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
     modP.decls.flatMap (fun d => match d with
       | .dataD _ _ cs => cs.map (fun (c, _) => (c, modName))
@@ -5168,13 +5328,29 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     modP.decls.flatMap (fun d => match d with
       | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
       | _              => []))
-  -- a `use`d name that is a PLAIN fn/effect/trait (not a ctor, not a data type) gets the
+  -- an EFFECT or TRAIT name is a fourth classification kind, not "plain fn" (the doc comment two
+  -- paragraphs below was stale on this point — before this fix, `use Mod (Log)` naming an effect
+  -- fell through to `usedPlainFns` and got a `let Log = Mod_Log in …` alias wrap, WRONG for the
+  -- same reason a trait wrap would be wrong: `handleCustomS`'s `n`/`withCapS`'s `k` fields expect
+  -- `Log` to resolve DIRECTLY against `env.effects` by its (now-bare, `qualifyDeclName`'s own
+  -- `usedCtors`-exemption) name — a `let`-bound value shadows that resolution with an unrelated
+  -- ordinary variable, and `handleCustomS`'s `.var effN` lookup finds the QUALIFIED name instead of
+  -- the bare one the alias's RHS names, "not a declared effect" (confirmed live). Traits ride the
+  -- exact same fix for the same reason (`qualifyDeclName`'s own `.traitD` bare-keeping arm has the
+  -- same "referenced via one non-`let`-able surface position" rationale). -/
+  let nonAliasableNames : List String := resolved.flatMap (fun (_, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .effectD n _   => [n]
+      | .traitD n _ _ _ => [n]
+      | _              => []))
+  -- a `use`d name that is a PLAIN fn (not a ctor, not a data type, not an effect/trait) gets the
   -- `let`-alias wrap — the one kind for which that mechanism is sound. Classified against the
   -- UNFILTERED `allCtorOwners` (not `ctorOwners`, which excludes `use`d ctors BY DESIGN — using
   -- the filtered set here would misclassify a `use`d ctor as a "plain fn").
   let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
     u.names.filterMap (fun n =>
-      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
+      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome || nonAliasableNames.contains n
+      then none else some (n, u.modName)))
   let qTy := qualifyTyName dataTyOwners usedNames
   let entryDecls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
@@ -5404,6 +5580,7 @@ Prelude.bang` flag every one). Consistency with the RUNNING code is enforced by 
 signature drifting from reality breaks a `#guard`, not silently. -/
 def preludeSigs : List (String × String) :=
   [ ("concat", "Str -> Str -> Str"),
+    ("strLength", "Str -> Int"),
     ("eq", "Str -> Str -> Unit + Unit"),
     ("mapOption", "(a -> b) -> Option a -> Option b"),
     ("mapResult", "(a -> b) -> Result e a -> Result e b"),
@@ -5429,7 +5606,10 @@ def preludeSigs : List (String × String) :=
     ("length", "List a -> Int"),
     ("append", "List a -> List a -> List a"),
     ("head", "List a -> Option a"),
-    ("tail", "List a -> Option (List a)") ]
+    ("tail", "List a -> Option (List a)"),
+    ("zip", "List a -> List b -> List (a * b)"),
+    ("range", "Int -> Int -> List Int"),
+    ("replicate", "Int -> a -> List a") ]
 
 /-- Auto-`use` the prelude into `p` (ADR-0098): merge a TRIMMED `preludeProg` — containing only the
 decls the program actually MENTIONS (`progUsesVar`) — in as a resolved module named `"Prelude"`,
@@ -5528,32 +5708,30 @@ def tyHasArrow : Ty → Bool
   | .tMu a => tyHasArrow a
   | _ => false
 
-/-- Fresh field-binder names for a ctor's arity-≤2 payload (ADR-0069: ≤ 2 fields in v1, nest
-tuples beyond that) — `x0`/`x1` for the LEFT scrutinee's binders, `y0`/`y1` for the RIGHT, so a
-same-ctor arm's two bound-variable sets never collide (`matchD`'s outer arm binds `x*`, the nested
-inner arm binds `y*`, both visible together in the innermost body). -/
+/-- Fresh field-binder names for a ctor's N-ary payload (B011's v1 arity-2 cap lifted, #144) —
+`x0`/`x1`/`x2`/… for the LEFT scrutinee's binders, `y0`/`y1`/`y2`/… for the RIGHT, so a same-ctor
+arm's two bound-variable sets never collide (`matchD`'s outer arm binds `x*`, the nested inner arm
+binds `y*`, both visible together in the innermost body). -/
 def deriveFieldNames (pfx : String) (arity : Nat) : List String :=
   (List.range arity).map (fun i => s!"{pfx}{i}")
 
-/-- The `Eq` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒ AND-fold
-`x_i == y_i` over every payload slot (nested `let`+`if`, the exact `headEq`/`tailEq` shape
-`examples/trait-recursive-eq` hand-writes — recursing via bare `==`, which dispatches through
-`env.insts`/the `#112` knot for a `Self`-typed field exactly like a hand-written impl, or the
-kernel δ-rule for `Int`); different ctor ⇒ `false`, unconditionally (payload never inspected). -/
+/-- The `Eq` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2, N-ary generalization
+#144): same ctor ⇒ AND-fold `x_i == y_i` over EVERY payload slot (right-nested `let`+`if`,
+generalizing the `headEq`/`tailEq` 2-field shape `examples/trait-recursive-eq` hand-writes to
+arbitrary length — `foldr` over the (field-binder) pairs, so the LAST slot seeds the base case and
+each earlier slot wraps it in one more `let #tailEq = (x_i == y_i) in if #tailEq then <acc> else
+false`; recursing via bare `==`, which dispatches through `env.insts`/the `#112` knot for a
+`Self`-typed field exactly like a hand-written impl, or the kernel δ-rule for `Int`); different
+ctor ⇒ `false`, unconditionally (payload never inspected). -/
 def eqArmBody (outerArity innerArity : Nat) : Surf :=
   if outerArity != innerArity then deriveFalseS   -- unreachable in practice (matching ctor identity
                                                     -- implies matching arity, ADR-0069) — defensive.
   else
     let xs := deriveFieldNames "x" outerArity
     let ys := deriveFieldNames "y" innerArity
-    match xs, ys with
-    | [], []             => deriveTrueS                                    -- nullary ctor: trivially equal
-    | [x0], [y0]          => .binopS .eq (.var x0) (.var y0)                -- 1 field: bare `==`
-    | [x0, x1], [y0, y1] =>                                                 -- 2 fields: AND-fold
-        .lett "#headEq" (.binopS .eq (.var x0) (.var y0))
-          (.lett "#tailEq" (.binopS .eq (.var x1) (.var y1))
-            (.ifS (.var "#headEq") (.var "#tailEq") deriveFalseS))
-    | _, _ => deriveFalseS   -- unreachable: arity ≤ 2 in v1 (ADR-0069), defensive fallback.
+    (xs.zip ys).foldr (fun (xi, yi) acc =>
+      .lett "#tailEq" (.binopS .eq (.var xi) (.var yi))
+        (.ifS (.var "#tailEq") acc deriveFalseS)) deriveTrueS
 
 /-- The full `Eq.eq` fold over ALL (outer, inner) ctor pairs of `cs` — a `matchD`-of-`matchD`
 diagonal, ADR-0097 §2's exact shape. Each outer arm's binders are `x0..`; each nested inner arm
@@ -5579,11 +5757,13 @@ def eqFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar : 
     (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
-/-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒
-lexicographic ladder over payload slots (`if hx < hy then true else if hy < hx then false else
-recurse-next-slot`, `examples/trait-recursive-ord`'s exact shape); DIFFERENT ctor ⇒ the OUTER
-ctor's decl-order INDEX compared against the INNER's (`outerIdx < innerIdx`, ADR-0097 §2's
-"ctor-index order = decl order, the tag IS the ordinal" — ADR-0069's sum-by-decl-order encoding). -/
+/-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2, N-ary generalization
+#144): same ctor ⇒ lexicographic ladder over EVERY payload slot (`if hx < hy then true else if hy <
+hx then false else recurse-next-slot`, generalizing `examples/trait-recursive-ord`'s 2-field shape
+via `foldr` from the LAST slot — its base case is a bare `x_last < y_last` — `deriveFalseS`
+seeds the fold for a 0-field ctor, "never strictly less"); DIFFERENT ctor ⇒ the OUTER ctor's
+decl-order INDEX compared against the INNER's (`outerIdx < innerIdx`, ADR-0097 §2's "ctor-index
+order = decl order, the tag IS the ordinal" — ADR-0069's sum-by-decl-order encoding). -/
 def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
   if outerIdx != innerIdx then
     if outerIdx < innerIdx then deriveTrueS else deriveFalseS
@@ -5591,14 +5771,9 @@ def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
   else
     let xs := deriveFieldNames "x" outerArity
     let ys := deriveFieldNames "y" innerArity
-    match xs, ys with
-    | [], []             => deriveFalseS                                    -- nullary vs nullary: never strictly less
-    | [x0], [y0]          => .binopS .lt (.var x0) (.var y0)                 -- 1 field: bare `<`
-    | [x0, x1], [y0, y1] =>                                                  -- 2 fields: lexicographic ladder
-        .ifS (.binopS .lt (.var x0) (.var y0)) deriveTrueS
-          (.ifS (.binopS .lt (.var y0) (.var x0)) deriveFalseS
-            (.binopS .lt (.var x1) (.var y1)))
-    | _, _ => deriveFalseS   -- unreachable: arity ≤ 2 in v1 (ADR-0069), defensive fallback.
+    (xs.zip ys).foldr (fun (xi, yi) acc =>
+      .ifS (.binopS .lt (.var xi) (.var yi)) deriveTrueS
+        (.ifS (.binopS .lt (.var yi) (.var xi)) deriveFalseS acc)) deriveFalseS
 
 /-- The full `Ord.lt` fold over ALL (outer, inner) ctor pairs of `cs` — mirrors `eqFoldBody`'s
 `matchD`-of-`matchD` shape exactly, threading each ctor's DECL-ORDER INDEX (its position in `cs`,
@@ -5695,6 +5870,33 @@ def eqModProg : Prog :=
                   [⟨"eq", ["p", "q"], .binopS .eq (.var "p") (.var "q")⟩]],
       body := .binopS .eq (.app (.var "BLeft") (.lit 3)) (.app (.var "BLeft") (.lit 3)), isLibrary := false } with
     | .ok merged => merged.decls.any (fun d => match d with | .traitD "Eq" .. => true | _ => false)
+    | .error _   => false)
+
+/-- **The `.effectD` twin of #117's gap-1 fix** (Mod_Eff ergonomics): a `use`d EFFECT resolves
+BARE at every reference site — `handle … with Log as h { … }` (`.handleCustomS`'s `n : .var "Log"`
+field) AND `Cap Log`/`! {Log}` row annotations (`resolveEffName` against `env.effects`, keyed by
+whatever spelling `qualifyDeclName` leaves the effect's OWN decl at). Reproduced RED before this fix
+(live via `bang run`, `docs/notes/dogfood-calc-findings.md`'s papercut): `error: 'Log' is not a
+declared effect (row annotation)` for a bare row naming a `use`d effect, and — even after ONLY the
+decl-name half of the fix — `error: handle: 'LibMod_Log' is not a declared effect` from the SEPARATE
+`usedPlainFns` alias-wrap bug (a `use`d effect misclassified as a "plain fn", `let Log = LibMod_Log`
+shadowing the direct-resolution `handleCustomS` needs). Exercises `mergeModules` directly (the SAME
+`Prog`-taking pure-function seam `eqModProg`'s test above uses) with the effect's `Cap`/`handle`
+positions BOTH present, so either half of the fix regressing fails this guard. -/
+def logModProg : Prog :=
+  { pubNames := ["Log", "helper"],
+    decls := [.effectD "Log" [("emit", .tArr .tInt .tInt)],
+              .letRecD "helper" (.tArr (.tApp "Cap" (.one (.tName "Log"))) (.tArr .tInt (.tEff ["Log"] .tInt)))
+                (.lam "cap" (.lam "x" (.dotPerform (.var "cap") "emit" (.one (.var "x")))))],
+    body := .lit 0, isLibrary := true }
+#guard (match mergeModules [("LibMod", logModProg)]
+    { uses := [⟨"LibMod", ["Log"]⟩],
+      decls := [],
+      body := .handleCustomS none (.var "Log")
+                (.one (.app (.app (.var "LibMod_helper") (.var "h")) (.lit 5))) "h"
+                (.cons "emit" "x" (.binopS .add (.var "x") (.lit 1)) .nil)
+                (.var "h"), isLibrary := false } with
+    | .ok merged => merged.decls.any (fun d => match d with | .effectD "Log" .. => true | _ => false)
     | .error _   => false)
 
 /-- **Widened for #117's gap-2 fix.** Originally `parseProg >>= expandDerives` alone (so a
@@ -7011,6 +7213,24 @@ close; `reverse` staying `Div` here is the CORRECT conservative verdict, not a b
 #guard runTypedYieldsInt 3000 "if (($eq) \"ab\" \"ba\") then 1 else 0" 0
 #guard runTypedYieldsInt 3000 "if (($eq) \"a\" \"ab\") then 1 else 0" 0
 #guard runTypedYieldsInt 3000 "if (($eq) \"\" \"\") then 1 else 0" 1
+-- `strLength` — the PRELUDE'S OWN entry (distinct from `lengthDef`'s local test fixture above,
+-- which every `List`-family guard in this file uses for a DIFFERENT reason — `length : List a ->
+-- Int` already owns the bare `length` name, so a `Str`-specific counterpart needed a non-colliding
+-- name, `strLength`, #144). Same structural-fold shape as `lengthDef`, now shipped for real.
+#guard runTypedYieldsInt 3000 "($strLength) \"abc\"" 3
+#guard runTypedYieldsInt 3000 "($strLength) \"\"" 0
+#guard runTypedYieldsInt 3000 "($strLength) (($concat) \"ab\" \"cd\")" 4
+-- `strLength` certifies `Div` (conservative, NOT the `lengthDef` fixture's TOTAL verdict a few
+-- guards above — that fixture's own `let rec length : Str -> Int = fun s => match s { … }` has a
+-- BARE `s` scrutinee, its type known directly from `length`'s OWN top-level ascription, no
+-- `.annotS` wrapper). `Prelude.bang`'s `strLength` NEEDS the `(s : Str)` ascription (a `pub let
+-- rec`'s body has no per-caller-visible domain to fall back on the same way — same reason
+-- `take`/`drop`/`append`/`length`'s OWN `List a` entries all ascribe their scrutinee too) — and
+-- `scrutMatch` (this file) only recognizes a BARE `.var` scrutinee, never an `.annotS`-wrapped one,
+-- so `structOK` correctly stays conservative rather than guess through the ascription — the EXACT
+-- same documented gap `reverse`'s own doc comment names a few lines up, not a new mystery. Still
+-- runs CORRECTLY (the guards above); just Div-typed, like `reverse`.
+#guard (match checkProg "($strLength) \"abc\"" with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
 -- ADR-0091: USING `concat` no longer forces `Div` — the checker now certifies its curried-accumulator
 -- shape directly (slot 0 descends on `a`'s strict subterm `t`; slot 1's `b` rides free every call).
 -- FALSIFIED (documented, not asserted here — see the multi-arg regression corpus below for the
@@ -7527,6 +7747,23 @@ free `a` unresolved — `monomorphizeLetRec` only visits `.letRecS` nodes). -/
    "{ None -> 0 - 1, Some(t) -> $length (t : List Int) }") 1
 #guard runTypedYieldsInt 400
   "match ($tail ((Nil : List Int) : List Int)) { None -> 0 - 1, Some(t) -> $length (t : List Int) }" (0 - 1)
+-- `range` — build `[lo, hi)`, verify via `length` (the empty range AND a non-empty one).
+#guard runTypedYieldsInt 400 "$length ((($range 0) 0 : List Int) : List Int)" 0
+#guard runTypedYieldsInt 800 "$length ((($range 0) 5 : List Int) : List Int)" 5
+-- `replicate` — the annotation anchors on the ELEMENT argument directly (`(x : Int)`), NOT the
+-- call's result — `replicate`'s free tyvar sits in a BARE (non-`List`-wrapped) argument position,
+-- the one shape `take`/`drop`/`append`'s own `List a`-wrapped anchor doesn't cover; verified via
+-- `length` (count) and `head` (every element is the replicated value).
+#guard runTypedYieldsInt 800 "$length (($replicate 3) (7 : Int) : List Int)" 3
+#guard runTypedYieldsInt 800
+  "match ($head (($replicate 3) (7 : Int) : List Int)) { None -> 0 - 1, Some(v) -> v }" 7
+-- `zip` — TWO free tyvars, one per `List`-wrapped argument (both need their OWN annotation, not
+-- one on the shared result) — pairs elementwise, truncating to the shorter list; verified by
+-- summing both components of a `Cons`'d-together result via `head`+`fst`/`snd`.
+#guard runTypedYieldsInt 1200
+  ("let xs = (($range 0) 3 : List Int) in let ys = (($replicate 3) (10 : Int) : List Int) in " ++
+   "match ($head (($zip (xs : List Int)) (ys : List Int) : List (Int * Int))) " ++
+   "{ None -> 0 - 1, Some(p) -> let (a, b) = p in a + b }") 10
 -- a DIFFERENTLY-named list-shaped type with the SAME bare `Nil`/`Cons` ctor names collides with the
 -- injected `List` (B012, ADR-0099) — the ratified migration cost, not a silent break (qualified
 -- form still resolves, `IntList_Nil`/`IntList_Cons`, mirroring Validation ⑨a's `collidingListsProg`).
@@ -7574,6 +7811,60 @@ def derivedIntListProg : String :=
     "let l2 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in " ++
     "let l3 = IntList_Cons(1, IntList_Cons(3, IntList_Nil)) in " ++
     "if l1 == l2 then (if l1 == l3 then 0 else (if l1 < l3 then 1 else 0)) else 0") 1
+
+/-! ### Validation ⑨o — #144: B011's v1 payload-arity-≤2 cap LIFTED. A 3-field AND a 4-field
+ctor construct, match, and `deriving (Eq, Ord)` end to end (the whole pipeline: `pTupleTail`'s
+N-ary call-site grammar → `bindPayload`'s N-ary desugar → `elabArms`'s N-ary elaboration-context
+extension → `eqArmBody`/`ordArmBody`'s N-ary fold). RED before this fix (`bang check`/`bang run`
+both `error[B011]: constructor 'T': payload arity ≤ 2 in v1`, confirmed live pre-fix). -/
+def deriveTripleProg : String := "data Triple = T(Int, Int, Int) deriving (Eq, Ord) "
+#guard (match checkProg (deriveTripleProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (deriveTripleProg ++
+    "let t1 = T(1, 2, 3) in let t2 = T(1, 2, 3) in let t3 = T(1, 2, 4) in " ++
+    "let matched = match (t1 : Triple) { T(a, b, c) -> a + b + c } in " ++
+    "matched + (if t1 == t2 then 100 else 0) + (if t1 == t3 then 1000 else 0) + " ++
+    "(if t1 < t3 then 10000 else 0)") 10106
+
+def deriveQuadProg : String := "data Quad = Q(Int, Int, Int, Int) deriving (Eq, Ord) "
+#guard (match checkProg (deriveQuadProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (deriveQuadProg ++
+    "let q1 = Q(1, 2, 3, 4) in let q2 = Q(1, 2, 3, 4) in let q3 = Q(1, 2, 3, 5) in " ++
+    "let matched = match (q1 : Quad) { Q(a, b, c, d) -> a + b + c + d } in " ++
+    "matched + (if q1 == q2 then 100 else 0) + (if q1 == q3 then 1000 else 0) + " ++
+    "(if q1 < q3 then 10000 else 0)") 10110
+
+/-! ### Validation ⑨p — #55/ADR-0103 Amendment ②: RESULT-position instantiation discovery for a
+bound-free `let rec` whose free tyvar appears ONLY in the declared result (never in any argument —
+`docs/notes/carrier-inference-design.md`'s traced root cause: `callSitesOf`'s `.annotS e t` arm used
+to discard `t` before discovery ever ran). RED before this fix (`bang run` on `mkNone`'s call:
+`error: 'mkNone': a use leaves a type variable unresolved — annotate the argument`, confirmed live
+pre-fix — no argument annotation could EVER close a tyvar that never appears in any argument). -/
+-- `mkNone : a -> Option b` — `b` is discoverable ONLY from the call's own result annotation.
+def mkNoneProg : String := "let rec mkNone : a -> Option b = fun ignored => None "
+#guard (match checkProg (mkNoneProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 800
+  (mkNoneProg ++
+    "let rec unwrapOr : Int -> Option Int -> Int = fun d => fun o => match (o : Option Int) { None -> d, Some(v) -> v } in " ++
+    "($unwrapOr 99) (($mkNone (3 : Int)) : Option Int)") 99
+-- TWO independent instantiations of the SAME result-only tyvar in one program produce two DISTINCT
+-- residues (ADR-0103 decision item 1's distinct-instantiation-set discipline, now exercised on the
+-- result-discovery door too) — `always7`'s `b` is `Int` at one call, `Char` at another.
+def alwaysNoneTwoInstProg : String := "let rec always7 : a -> Option b = fun ignored => None "
+#guard runTypedYieldsInt 1500
+  (alwaysNoneTwoInstProg ++
+    "let rec unwrapOrI : Int -> Option Int -> Int = fun d => fun o => match (o : Option Int) { None -> d, Some(v) -> v } in " ++
+    "let rec unwrapOrC : Int -> Option Char -> Int = fun d => fun o => match (o : Option Char) { None -> d, Some(v) -> match v { Char(n) -> n } } in " ++
+    "let r1 = ($unwrapOrI 11) (($always7 (3 : Int)) : Option Int) in " ++
+    "let r2 = ($unwrapOrC 22) (($always7 (3 : Int)) : Option Char) in " ++
+    "r1 + r2 * 100") 2211
+-- the disagreeing-annotation conflict FAILS LOUD (B017), never silently picks one side — the
+-- fail-loud condition Amendment ② needed (an argument and a result annotation naming the SAME
+-- tyvar at two different concrete types is a genuinely contradictory program, not a guess to make).
+#guard (match checkProg "let rec passThroughOpt : Option a -> Option a = fun o => o in ($passThroughOpt (Some(3) : Option Int) : Option Char)" with
+        | .error m => (m.splitOn "conflicting instantiations for type variable").length > 1
+        | .ok _    => false)
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic

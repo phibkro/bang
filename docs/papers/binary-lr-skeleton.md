@@ -17,11 +17,14 @@
 > paper must lead with these three or it reads as a re-implementation of Biernacki.
 
 Status: SKELETON. Outline + precise claims + exact Lean theorem names/files/**real** axiom sets
-+ related-work map + honest what-remains. Not prose. Target: ICFP/POPL/CPP. All theorem
-citations checked against the repo at the base sha (census in §7). **Note (load-bearing
-honesty): the two LR headlines this paper is named for — `lr_sound` and `lr_fundamental` — are
-CURRENTLY FLAGGED (`sorryAx`).** This paper is a *◊4/◊4.5-in-progress* writeup; §8 states
-exactly what is closed and what is a single named residual.
++ related-work map + honest what-remains. Not prose. Target: **CPP** (operator-ruled, ADR-0096
+④), POPL/ICFP if the residual ever closes. All theorem citations re-checked against the repo at
+the base sha via `just axioms` (census in §7 — **21 clean · 6 flagged · 53 sorries** at
+`62335411`). **Note (load-bearing honesty): the two LR headlines this paper is named for —
+`lr_sound` and `lr_fundamental` — are FLAGGED (`sorryAx`), and the operator has ruled the `lr_*`
+unit CLOSED-AS-PARKED** (five machine-arbitrated rounds hit a statement-level answer-determinacy
+wall, ADR-0096 amendment ④). This paper is CPP-framed with that ONE named residual front and
+centre; §8 states exactly what is closed and what is the single parked residual.
 
 ---
 
@@ -181,18 +184,23 @@ Quot.sound}`; any `sorryAx` = FAIL). **Real** axiom sets (reproduced from the ce
 
 | theorem | file:line | axiom set | status |
 |---|---|---|---|
-| `lr_sound` | `Spec.lean:212` | `propext, sorryAx, Classical.choice, Quot.sound` | **FLAGGED** |
-| `lr_fundamental` | `Spec.lean:243` | `propext, sorryAx, Classical.choice, Quot.sound` | **FLAGGED** |
-| `lr_fundamental_closed` | `Spec.lean:253` | `propext, sorryAx, Classical.choice, Quot.sound` | **FLAGGED** (inherits from `lr_fundamental`) |
-| `zero_usage_erasable` | `Spec.lean:140` | `propext, sorryAx` | **FLAGGED** |
-| `seq_unit` | `Spec.lean:269` | `propext, sorryAx` | **FLAGGED** |
-| `effect_sound` | `Spec.lean:166` | `sorryAx, Trace, traceWithin, Source.evalTrace` | **FLAGGED** (bare `sorry` + carrier axioms) |
-| `no_accidental_handling` | `Spec.lean:59` | *none* | clean (structural — the ADR-0018 licensor) |
-| `rowinst_requires_disjoint` | `Spec.lean:48` | *none* | clean |
+| `lr_sound` | `Spec.lean:237` | `propext, sorryAx, Classical.choice, Quot.sound` | **FLAGGED** |
+| `lr_fundamental` | `Spec.lean:268` | `propext, sorryAx, Classical.choice, Quot.sound` | **FLAGGED** |
+| `lr_fundamental_closed` | `Spec.lean:278` | `propext, sorryAx, Classical.choice, Quot.sound` | **FLAGGED** (inherits from `lr_fundamental`) |
+| `zero_usage_erasable` | `Spec.lean:165` | `propext, sorryAx` | **FLAGGED** |
+| `seq_unit` | `Spec.lean:294` | `propext, Classical.choice, Quot.sound` | **CLEAN** (discharged — see §8.5) |
+| `effect_sound` | `Spec.lean:191` | `sorryAx, Trace, traceWithin, Source.evalTrace` | **FLAGGED** (bare `sorry` + carrier axioms) |
+| `no_accidental_handling` | `Spec.lean:60` | *none* | clean (structural — the ADR-0018 licensor) |
+| `rowinst_requires_disjoint` | `Spec.lean:49` | *none* | clean |
+
+**Census SoT** (CONTEXT.md generated proof-state block, `62335411`): **21 clean · 6 flagged ·
+53 sorries.** The 6 flagged: `lr_sound`, `lr_fundamental`, `lr_fundamental_closed`,
+`handler_compiles` (Paper 1), `effect_sound`, `zero_usage_erasable`. Note `seq_unit` is NOT in
+the flagged set — it was part of the 20→21 clean move (§8.5).
 
 ## 8. What is NOT proven (the honest scope section — mandatory)
 
-- **8.1 `lr_sound` carries a single named residual** (`Spec.lean:212`, `[…, sorryAx, …]`). The
+- **8.1 `lr_sound` carries a single named residual** (`Spec.lean:237`, `[…, sorryAx, …]`). The
   proof is complete up to ONE `sorry`: the **reshape↔raw-focus bridge**. The biorthogonal
   closure observes the RAW focus `(g, C, cᵢ)`, but `converges_plug_iff` observes the CAP-
   SUBSTITUTED, RESHAPED config `(handlerCount C, canonStack C cᵢ, capSubstInto C cᵢ)`; no `CrelK`
@@ -200,22 +208,41 @@ Quot.sound}`; any `sorryAx` = FAIL). **Real** axiom sets (reproduced from the ce
   effectful programs). `AdequacySpike.adequacy_bridge_attempt2` build-confirms the bridge closes
   IFF `capSubstInto C cᵢ = cᵢ` — the labelling-vs-closure cap-rep seam (OPEN_QUESTIONS Q22 /
   ADR-0058 route-1). This is a **definition-shape concern**, not a grind. State it as the one
-  open architectural residual of `lr_sound`.
-- **8.2 `lr_fundamental` is partial** (`Spec.lean:243`, wired to `crelK_fund`). THROWS closes
+  open architectural residual of `lr_sound`. **Operator ruling (2026-07-11, ADR-0096 amendment
+  ④): this `lr_*` residual is CLOSED-AS-PARKED** — five machine-arbitrated rounds refuted every
+  route (both the def-conclusion-strengthening and the fuel-indexed re-index survivors fail at
+  the same inter-derivation ANSWER-DETERMINACY wall, a statement-level gap not a proof technique).
+  The paper goes **CPP-framed with this ONE named residual** front-and-center; the resume bar is
+  "answer-determined-by-construction only." §8.5's `seq_unit` is the *positive* boundary of this
+  exact bridge (the cap-inert case closes; the cap-live case is the wall).
+- **8.2 `lr_fundamental` is partial** (`Spec.lean:268`, wired to `crelK_fund`). THROWS closes
   end-to-end; documented `sorry`s remain ONLY in the **state/transaction producer arms** (the
   `krelS_append` + ▷-metering research crux). So `lr_fundamental`'s `sorryAx` traces *solely* to
   that one crux. `lr_fundamental_closed` is the `Γ=[]` corollary and inherits the flag.
 - **8.3 `zero_usage_erasable` (grade-0 coeffect erasure) blocks on `lr_fundamental`.** It is
   irreducibly two-sided (two distinct fillers ⇒ `≈`-equal computations) and routes through the
   LR; its `sorry` is downstream of §8.2. Its *definition* `NotEvaluated` is axiom-free.
-- **8.4 `effect_sound` is a bare `sorry`** with additional carrier axioms
-  (`Trace, traceWithin, Source.evalTrace`). "Static grade over-approximates every observed
-  trace" is stated, not proven. Do not claim it.
-- **8.5 `seq_unit` carries `sorryAx`** (left-unit law for sequencing). Its proof routes through
-  `seq_unit_proof`; the flag says it is not yet closed. (`group_recovers` was RETIRED, ADR-0032
-  — false-as-stated + vacuous; note it as a *resolved* ◊4 item, not a proven theorem: v1 rollback
-  is the transaction handler, demonstrated by the Surface `ledgerAbort` #guard, not a spine
-  theorem.)
+- **8.4 `effect_sound` is a bare `sorry`** (`Spec.lean:191`) with additional carrier axioms
+  (`Trace, traceWithin, Source.evalTrace` — at the base sha). "Static grade over-approximates
+  every observed trace" is stated, not proven. Do not claim it. (A re-foundation that replaces
+  the three carrier axioms with definitions, then discharges the `sorry`, is in-flight in a
+  sibling lane; if it lands, re-run `just axioms` and update this row — but until the committed
+  sha shows it clean, report it as flagged.) It is a *sibling obligation*, separate from the LR
+  spine — likely cut from this paper's claims (§11 item 4).
+- **8.5 `seq_unit` is now DISCHARGED — axiom-clean** (left-unit law for sequencing,
+  `Spec.lean:294`, `[propext, Classical.choice, Quot.sound]`; was `sorryAx` at the prior census).
+  Part of the 20→21 clean move. The proof (`seq_unit_proof`, `Meta/LR.lean:1185`) is purely
+  OPERATIONAL — no LR machinery: both foci `seqComp (ret v) c` and `c` reshape under the same
+  observation context `C` to configs that share stack + counter and differ only by a 2-step head
+  reduction, closed through `converges_plug_iff` in both `⊑` directions
+  (`seqComp_capSubst_run`). **Methodologically load-bearing for §8.1:** this reshape machinery
+  (`RunPlugReshape.capSubstInto`/`canonStack` + `converges_plug_iff`) is *exactly* the
+  raw↔reshaped-focus bridge that `lr_sound`'s residual turns on — `seq_unit` demonstrates the
+  bridge closes for the cap-inert case (`capSubstInto C c = c` when `c` uses none of `C`'s caps),
+  which is the boundary §8.1's `capSubstInto C cᵢ = cᵢ` names. It is a *worked instance* of the
+  open `lr_sound` bridge, not an unrelated lemma — a good figure for the paper. (`group_recovers`
+  was RETIRED, ADR-0032 — false-as-stated + vacuous; v1 rollback is the transaction handler,
+  demonstrated by the Surface `ledgerAbort` #guard, not a spine theorem.)
 - **8.6 W1/W2 `lr_sound` deferral.** The two-witness `lr_sound` closure (the deferred W1/W2
   legs of the ◊4.5 grind) is not landed; §8.1's bridge is the gating residual.
 - **8.7 The ▷-subsystem (§4.2) is the bulk of the deferred work.** μ + resume + resumptive
@@ -236,32 +263,44 @@ Quot.sound}`; any `sorryAx` = FAIL). **Real** axiom sets (reproduced from the ce
 
 ## 10. Venue candidates (fit notes — operator picks, do NOT commit)
 
-- **POPL** — the natural home for a binary LR / contextual-equivalence result for a novel
-  effect-dispatch discipline; the Biernacki lineage is POPL. Risk: the flagged headlines (§8) —
-  POPL wants the LR *closed*. Submit only after ◊4.5 lands `lr_sound`/`lr_fundamental` sorry-
-  free (the reshape bridge §8.1 + the state/txn arms §8.2). Currently premature.
-- **ICFP** — good fit for the CBPV-arrow adaptation (§3) as a build-arbitrated design story +
-  the typed-static pivot; slightly more tolerant of a "here is the design + what closed" framing.
-  Still wants the core LR closed.
-- **CPP** — best fit *now* if the paper is framed as the *machine-checked LR construction +ing
-  the seam analysis* (the build-as-arbiter methodology, §3.2/§5.5, is a CPP-shaped contribution),
-  and the honest §8 residuals are acceptable there as stated open obligations. Lowest-risk venue
-  given current flag status.
+**Operator ruling (ADR-0096 amendment ④): the `lr_*` unit is CLOSED-AS-PARKED — this paper
+goes CPP-framed with one named residual, NOT held for POPL-after-close.** The residual is a
+*statement-level* answer-determinacy wall five machine-arbitrated rounds could not route past,
+not a proof-effort backlog, so "wait until it closes" is not the plan.
+
+- **CPP — the ruled venue.** Frame the paper as the *machine-checked LR construction + the seam
+  analysis* (the build-as-arbiter methodology, §3.2/§5.5, is a CPP-shaped contribution) with the
+  §8.1 residual stated as the ONE open architectural obligation, and `seq_unit` (§8.5) as the
+  positive boundary of that exact bridge. The honest §8 residuals are acceptable at CPP as
+  stated open obligations. Lowest-risk and the operator-ruled target.
+- **POPL** — the natural home for a *closed* binary LR / contextual-equivalence result for a
+  novel effect-dispatch discipline (the Biernacki lineage is POPL). Off the table until the
+  answer-determinacy wall is dissolved by construction (the resume bar: an answer-in-the-frame,
+  kernel-adjacent re-statement — no background lane is chasing it). Record as the *if-it-closes*
+  aspiration, not the plan.
+- **ICFP** — a middle option: good fit for the CBPV-arrow adaptation (§3) as a build-arbitrated
+  design story + the typed-static pivot, more tolerant of a "here is the design + what closed"
+  framing than POPL. Still wants the core LR closed, so CPP is the safer read given the ruling.
 
 ## 11. What remains to write (author TODO before submission — proof AND prose)
 
-1. **Close `lr_sound`** — the reshape↔raw-focus bridge (§8.1), the labelling-vs-closure cap-rep
-   reconciliation (Q22). This is the single gating theorem residual; without it the paper's
-   title theorem is flagged.
-2. **Close `lr_fundamental`'s state/txn arms** (§8.2) — the `krelS_append` + ▷-metering crux;
-   this is inside the ◊4.5 ▷-subsystem (§4.2) and needs the IxFree Kripke re-phrasing.
+1. **Write `lr_sound`'s residual AS the CPP contribution, not as a TODO to close.** Given the
+   ADR-0096 ④ parked ruling (§8.1/§10), the prose leads with the reshape↔raw-focus bridge (§8.1)
+   and the labelling-vs-closure cap-rep seam (Q22) as the *one named, honestly-bounded* open
+   obligation — the five-rounds refutation IS the finding. Pair it with `seq_unit` (§8.5) as the
+   worked positive boundary (cap-inert closes; cap-live is the wall).
+2. **`lr_fundamental`'s state/txn arms** (§8.2) — the `krelS_append` + ▷-metering crux, inside
+   the ◊4.5 ▷-subsystem (§4.2), needs the IxFree Kripke re-phrasing. Also parked; state it as a
+   sibling residual, not a pre-submission blocker under the CPP framing.
 3. Full prose for §3 (the two refuted arrow forms as a worked build-arbitration narrative — the
    paper's cleanest "the build is the arbiter" story).
 4. Decide whether `effect_sound`/`seq_unit` (§8.4/8.5) are in-scope contributions or explicitly
-   out (they are separate from the LR spine; likely cut from this paper's claims, mentioned as
-   sibling obligations).
+   out. `seq_unit` is now a *proven, axiom-clean* lemma and is the best figure for the §8.1
+   bridge — keep it in. `effect_sound` is a separate flagged sibling obligation — likely cut.
 5. A figure for the §5.2 lexical-dispatch divergence and the §5.3 collision witness (two-column
    traces), mirroring Paper 1's store-shadow figure — the two papers share the "typing-by-label /
-   dispatch-by-identity" gap and should cross-reference it.
-6. Reconcile venue choice with the ◊4.5 landing timeline (§10) — CPP-now vs POPL/ICFP-after-
-   close. Operator call.
+   dispatch-by-identity" gap and should cross-reference it. Add a `seq_unit` reshape-bridge
+   figure (§8.5) as the positive companion to the §8.1 residual.
+6. ~~Reconcile venue choice with the ◊4.5 landing timeline.~~ **Ruled: CPP-with-one-residual**
+   (ADR-0096 ④, §10). Remaining author work: make the residual read as a contribution boundary,
+   not an apology.
