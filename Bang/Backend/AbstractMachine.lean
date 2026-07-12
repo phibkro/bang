@@ -5335,8 +5335,8 @@ theorem CCtxCorr_install {κ : CStore} {n : Nat} {ℓ : Bang.EffectRow.Label} {p
 
 /-- A NON-custom handler/non-frame head carries no clause entry: pushing it preserves `CCtxCorr`. -/
 theorem CCtxCorr_cons_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls)) (hK : CCtxCorr κ K) :
-    CCtxCorr κ (fr :: K) := by
+    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls) ∧ fr ≠ Frame.handleF n (.customUpd ℓ p cls))
+    (hK : CCtxCorr κ K) : CCtxCorr κ (fr :: K) := by
   unfold CCtxCorr at hK ⊢; rw [hK]
   cases fr with
   | handleF m h =>
@@ -5344,8 +5344,8 @@ theorem CCtxCorr_cons_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCt
       | state ℓ0 s => simp only [ctxCustoms]
       | throws ℓ0 => simp only [ctxCustoms]
       | transaction ℓ0 Θ => simp only [ctxCustoms]
-      | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
-      | customUpd ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
+      | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl).1
+      | customUpd ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl).2
   | letF N => simp only [ctxCustoms]
   | appF w => simp only [ctxCustoms]
 
@@ -5494,7 +5494,7 @@ the custom projection. Induction on `K`. -/
 theorem splitAtId_custom_value {n : Nat} :
     ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {p : Val} {cl : List (Bang.OpId × Comp)},
       Bang.splitAtId K n = some (Kᵢ, Handler.custom ℓ' p cl, Kₒ) →
-        (ctxCustoms K).get? n = some (p, cl) := by
+        (ctxCustoms K).get? n = some (p, cl, false) := by
   intro K
   induction K with
   | nil => intro Kᵢ Kₒ ℓ' p cl hs; simp [Bang.splitAtId] at hs
@@ -5687,11 +5687,11 @@ theorem NoCustomFrame.tail {fr : Bang.Frame} {K : Bang.EvalCtx} (h : NoCustomFra
 
 /-- Pushing a NON-custom handler frame preserves `NoCustomFrame`. -/
 theorem NoCustomFrame.cons_handleF {n : Nat} {hd : Handler} {K : Bang.EvalCtx}
-    (hne : ∀ ℓ p cl, hd ≠ Handler.custom ℓ p cl) (h : NoCustomFrame K) :
+    (hne : ∀ ℓ p cl, hd ≠ Handler.custom ℓ p cl ∧ hd ≠ Handler.customUpd ℓ p cl) (h : NoCustomFrame K) :
     NoCustomFrame (Frame.handleF n hd :: K) := by
   cases hd with
-  | custom ℓ p cl => exact absurd rfl (hne ℓ p cl)
-  | customUpd ℓ p cl => exact absurd rfl (hne ℓ p cl)
+  | custom ℓ p cl => exact absurd rfl (hne ℓ p cl).1
+  | customUpd ℓ p cl => exact absurd rfl (hne ℓ p cl).2
   | _ => exact h
 
 theorem NoCustomFrame.cons_letF {N : Comp} {K : Bang.EvalCtx} (h : NoCustomFrame K) :
@@ -6124,7 +6124,7 @@ theorem run_evalD : ∀ fe,
                 have hTletF : CtxTxnCorr τ (Frame.letF N :: K) :=
                   CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
                 have hKletF : CCtxCorr κ (Frame.letF N :: K) :=
-                  CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                  CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
                 -- PUSH the coherence/freshness through `Source.step (g,K,letC M N) → (g, letF N :: K, M)`.
                 have hpush : Source.step (g, K, Comp.letC M N) = some (g, Frame.letF N :: K, M) := rfl
                 have hFletF := freshCfg_step _ _ hFresh hpush
@@ -6199,7 +6199,7 @@ theorem run_evalD : ∀ fe,
                 have hTappF : CtxTxnCorr τ (Frame.appF v :: K) :=
                   CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
                 have hKappF : CCtxCorr κ (Frame.appF v :: K) :=
-                  CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                  CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
                 have hpush : Source.step (g, K, Comp.app M v) = some (g, Frame.appF v :: K, M) := rfl
                 have hFappF := freshCfg_step _ _ hFresh hpush
                 have hCappFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
@@ -6480,7 +6480,7 @@ theorem run_evalD : ∀ fe,
                     have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
                       CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
                     have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
-                      CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                      CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
                     have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
                     have hFreshInstall := freshCfg_step _ _ hFresh hmint
                     obtain ⟨⟨hCM, hTM, hKM, hCohM, hFreshM⟩, kM⟩ :=
@@ -6530,7 +6530,7 @@ theorem run_evalD : ∀ fe,
               have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
                 CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
               have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
-                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
               cases hM : evalD fe (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M) with
@@ -6637,7 +6637,7 @@ theorem run_evalD : ∀ fe,
                     have hTinstall : CtxTxnCorr (τ.push g Θ) (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) :=
                       CtxTxnCorr_install hTtx
                     have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) :=
-                      CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                      CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
                     have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
                     have hFreshInstall := freshCfg_step _ _ hFresh hmint
                     obtain ⟨⟨hCM, hTM, hKM, hCohM, hFreshM⟩, kM⟩ :=
@@ -7002,7 +7002,7 @@ theorem run_evalD : ∀ fe,
           simp only [evalD] at h
           have hCletF : CtxCorr σ (Frame.letF N :: K) := CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
           have hTletF : CtxTxnCorr τ (Frame.letF N :: K) := CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
-          have hKletF : CCtxCorr κ (Frame.letF N :: K) := CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+          have hKletF : CCtxCorr κ (Frame.letF N :: K) := CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
           have hpush : Source.step (g, K, Comp.letC M0 N) = some (g, Frame.letF N :: K, M0) := rfl
           have hCletFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
           have hFletF := freshCfg_step _ _ hFresh hpush
@@ -7079,7 +7079,7 @@ theorem run_evalD : ∀ fe,
           simp only [evalD] at h
           have hCappF : CtxCorr σ (Frame.appF v0 :: K) := CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
           have hTappF : CtxTxnCorr τ (Frame.appF v0 :: K) := CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
-          have hKappF : CCtxCorr κ (Frame.appF v0 :: K) := CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+          have hKappF : CCtxCorr κ (Frame.appF v0 :: K) := CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
           have hpush : Source.step (g, K, Comp.app M0 v0) = some (g, Frame.appF v0 :: K, M0) := rfl
           have hCappFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
           have hFappF := freshCfg_step _ _ hFresh hpush
@@ -7235,7 +7235,7 @@ theorem run_evalD : ∀ fe,
               have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
                 CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
               have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
-                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
               cases hM : evalD fe (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
@@ -7299,7 +7299,7 @@ theorem run_evalD : ∀ fe,
               have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
                 CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
               have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
-                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
               cases hM : evalD fe (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
@@ -7362,7 +7362,7 @@ theorem run_evalD : ∀ fe,
               have hTinstall : CtxTxnCorr (τ.push g Θ) (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) :=
                 CtxTxnCorr_install hTtx
               have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) :=
-                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; exact ⟨by simp, by simp⟩) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
               cases hM : evalD fe (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M0) with
