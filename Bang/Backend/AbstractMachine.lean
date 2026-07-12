@@ -4657,6 +4657,14 @@ theorem splitAtId_of_ctxStates_get {n : Nat} {s : Val} : ∀ {K : Bang.EvalCtx},
             · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
               exact ⟨Frame.handleF m (Handler.custom ℓ0 p cl) :: Ki, ℓ', Ko, by
                 simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | customUpd ℓ0 p cl =>   -- customUpd = non-state frame (ADR-0107 D5): same shadow-refute as custom
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxStates_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.customUpd ℓ0 p cl) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
     | letF N =>
         simp only [Bang.Model.StratFresh] at hsf
         have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
@@ -4743,6 +4751,14 @@ theorem splitAtId_of_ctxTxns_get {n : Nat} {Θ : List Val} : ∀ {K : Bang.EvalC
             · subst hc; rw [ctxTxns_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
             · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
               exact ⟨Frame.handleF m (Handler.custom ℓ0 p cl) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | customUpd ℓ0 p cl =>   -- customUpd = non-txn frame (ADR-0107 D5): same shadow-refute as custom
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxTxns_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.customUpd ℓ0 p cl) :: Ki, ℓ', Ko, by
                 simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
     | letF N =>
         simp only [Bang.Model.StratFresh] at hsf
@@ -5355,6 +5371,12 @@ theorem ctxCustoms_get_none_of_capsBelow {n : Nat} : ∀ {K : Bang.EvalCtx},
                 = (ctxCustoms K).get? n := by
               simp only [ctxCustoms, CStore.get?, List.find?, hmn, decide_false, Bool.false_eq_true, if_false]
             rw [he]; exact ih hcb.2
+        | customUpd ℓ0 p cl =>   -- customUpd is IN ctxCustoms (ADR-0107 D5); same below-key skip as custom
+            have hmn : ¬ (m = n) := by omega
+            have he : (ctxCustoms (Frame.handleF m (Handler.customUpd ℓ0 p cl) :: K)).get? n
+                = (ctxCustoms K).get? n := by
+              simp only [ctxCustoms, CStore.get?, List.find?, hmn, decide_false, Bool.false_eq_true, if_false]
+            rw [he]; exact ih hcb.2
         | state ℓ0 s0 => simp only [ctxCustoms]; exact ih hcb.2
         | throws ℓ0 => simp only [ctxCustoms]; exact ih hcb.2
         | transaction ℓ0 Θ0 => simp only [ctxCustoms]; exact ih hcb.2
@@ -5365,7 +5387,7 @@ theorem ctxCustoms_get_none_of_capsBelow {n : Nat} : ∀ {K : Bang.EvalCtx},
 `(p, cls)` at identity `n` in the store reflects a live `custom` frame at `n` on the stack. `StratFresh`
 (id-uniqueness) rules out a same-id state/throws/txn shadow. Mirror of `splitAtId_of_ctxStates_get`. -/
 theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
-    ∀ {K : Bang.EvalCtx}, Bang.Model.StratFresh K → (ctxCustoms K).get? n = some (p, cls) →
+    ∀ {K : Bang.EvalCtx}, Bang.Model.StratFresh K → (ctxCustoms K).get? n = some (p, cls, false) →
       ∃ Kᵢ ℓ' Kₒ, Bang.splitAtId K n = some (Kᵢ, Handler.custom ℓ' p cls, Kₒ) := by
   intro K
   induction K with
@@ -5379,10 +5401,10 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
             by_cases hc : m = n
             · subst hc
               have hhead : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: K)).get? m
-                  = some (p0, cl0) := by simp [ctxCustoms, CStore.get?]
+                  = some (p0, cl0, false) := by simp [ctxCustoms, CStore.get?]
               rw [hhead] at hg
               obtain ⟨rfl, rfl⟩ : p = p0 ∧ cls = cl0 := by
-                have := Option.some.inj hg; simp only [Prod.mk.injEq] at this; exact ⟨this.1.symm, this.2.symm⟩
+                have := Option.some.inj hg; simp only [Prod.mk.injEq] at this; exact ⟨this.1.symm, this.2.1.symm⟩
               exact ⟨[], ℓ0, K, by simp [Bang.splitAtId]⟩
             · have he : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: K)).get? n
                   = (ctxCustoms K).get? n := by
@@ -5392,9 +5414,26 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
               obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg
               exact ⟨Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: Ki, ℓ', Ko, by
                 simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | customUpd ℓ0 p0 cl0 =>
+            -- customUpd is IN ctxCustoms (isUpd=true); the hypothesis says isUpd=false, so at m=n the head
+            -- read gives (p0,cl0,true) contradicting (p,cls,false). At m≠n, skip and recurse (like custom).
+            by_cases hc : m = n
+            · subst hc
+              have hhead : (ctxCustoms (Frame.handleF m (Handler.customUpd ℓ0 p0 cl0) :: K)).get? m
+                  = some (p0, cl0, true) := by simp [ctxCustoms, CStore.get?]
+              rw [hhead] at hg
+              have := Option.some.inj hg; simp only [Prod.mk.injEq] at this; exact absurd this.2.2 (by simp)
+            · have he : (ctxCustoms (Frame.handleF m (Handler.customUpd ℓ0 p0 cl0) :: K)).get? n
+                  = (ctxCustoms K).get? n := by
+                simp only [ctxCustoms, CStore.get?, List.find?, hc, decide_false, Bool.false_eq_true, if_false]
+              rw [he] at hg
+              simp only [Bang.Model.StratFresh] at hsf
+              obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg
+              exact ⟨Frame.handleF m (Handler.customUpd ℓ0 p0 cl0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
         | state ℓ0 s0 =>
             simp only [Bang.Model.StratFresh] at hsf
-            have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+            have hg' : (ctxCustoms K).get? n = some (p, cls, false) := by simpa only [ctxCustoms] using hg
             by_cases hc : m = n
             · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
             · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
@@ -5402,7 +5441,7 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
                 simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
         | throws ℓ0 =>
             simp only [Bang.Model.StratFresh] at hsf
-            have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+            have hg' : (ctxCustoms K).get? n = some (p, cls, false) := by simpa only [ctxCustoms] using hg
             by_cases hc : m = n
             · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
             · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
@@ -5410,7 +5449,7 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
                 simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
         | transaction ℓ0 Θ0 =>
             simp only [Bang.Model.StratFresh] at hsf
-            have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+            have hg' : (ctxCustoms K).get? n = some (p, cls, false) := by simpa only [ctxCustoms] using hg
             by_cases hc : m = n
             · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
             · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
@@ -5418,12 +5457,12 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
                 simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
     | letF N =>
         simp only [Bang.Model.StratFresh] at hsf
-        have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+        have hg' : (ctxCustoms K).get? n = some (p, cls, false) := by simpa only [ctxCustoms] using hg
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.letF N :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
     | appF w =>
         simp only [Bang.Model.StratFresh] at hsf
-        have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+        have hg' : (ctxCustoms K).get? n = some (p, cls, false) := by simpa only [ctxCustoms] using hg
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
 
