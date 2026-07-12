@@ -3,20 +3,20 @@ import Lexer
 import Parser
 import Eval
 import Print
-use Eval (Trace)
+
 let baseEnv = {Ast.EnvCons("x", (10, Ast.EnvCons("y", (3, Ast.EnvNil))))}
 let calc = {fun src =>
     let toks = $(Lexer.lex) src
       in
     let ast = $(Parser.parseAll) toks
       in
-    handle (($(Eval.eval)) tr $baseEnv ast) with Trace as tr { log(x) => 0 }}
+    handle (($(Eval.eval)) tr $baseEnv ast) with Eval_Trace as tr { log(x) => 0 }}
 let nodes = {fun src =>
     let toks = $(Lexer.lex) src
       in
     let ast = $(Parser.parseAll) toks
       in
-    handle (($(Eval.countSteps)) tr ast) with Trace as tr { log(x) => 1 }}
+    handle (($(Eval.countSteps)) tr ast) with Eval_Trace as tr { log(x) => 1 }}
 let roundTrips = {fun src =>
     let toks1 = $(Lexer.lex) src
       in
@@ -32,7 +32,7 @@ let roundTrips = {fun src =>
       (let v1 = ($(Eval.eval)) tr $baseEnv ast1
          in
        let v2 = ($(Eval.eval)) tr $baseEnv ast2 in if v1 == v2 then 1 else 0)
-    with Trace as tr { log(x) => 0 }}
+    with Eval_Trace as tr { log(x) => 0 }}
 let main =
   let r1 = $calc "1 + 2 + 3"
     in

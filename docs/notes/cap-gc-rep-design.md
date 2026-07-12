@@ -361,6 +361,31 @@ sourced from the runtime value — gate the `$id` (#134 stamp), then `$clausecel
 `lake build` EXIT 0 · `just fitness` EXIT 0 · both emission harnesses green. #133 headline DONE for
 the single-op first-class case (the whole current corpus).
 
+### 8.4 · C3 LANDED — calc emits (the capstone: a 5-module program with a first-class cap on wasm)
+
+**`examples/calc` — a 5-module program (Ast/Lexer/Parser/Eval/Print) with a first-class `Cap Trace`
+woven through a recursive evaluator — emits to WasmGC and runs `11021193` == the oracle.** This is
+the #133 arc's capstone: first-class capabilities carry a real multi-module program to WebAssembly.
+`bang run` = `bang run --compiled` = `bang emit → wasmtime` = `11021193`, all three agreeing.
+
+Two findings getting here:
+- **The W3 module-resolve gap was ALREADY closed** — `bang emit <file> [-o out.wat]` (Main.lean, CLI
+  at the `emit` subcommand) shares the runner's `resolveEntryFile`, so an import-ing program emits.
+  No new resolution code needed; the `rung4-shape` scratch exe's single-file limitation was the only
+  reason the OLD diagnosis (calcjson W3) saw calc/json as "frontend refusals."
+- **calc was a STALE example** (broken on ALL paths, incl. `bang run`): the Mod_Eff ergonomics change
+  requires imported effects spelled `Eval_Trace`, but calc still used `use Eval (Trace)` + `with
+  Trace`. Fixed (6 lines: `Cap Trace`→`Cap Eval_Trace`, `with Trace`→`with Eval_Trace`, drop the
+  `use`); all three engines then agree.
+
+**json** (the pure multi-module companion, no effects) also emits via `bang emit` → `163`. Both are
+banked as real green tests by `tools/emit-modules-diff.sh` (the module-resolving corpus gate, driving
+`bang emit` not `rung4-shape`). The rung-5 corpus gate's `calc`/`json` `KNOWN_REFUSALS` entries are
+now documented as a HARNESS-scope split (single-file `rung4-shape`), not emitter walls.
+
+The #133/#134 arc is complete at the emit stratum: escape fixed (C2), first-class caps emit (C0),
+both headline consumers (stage-swap 30005, calc 11021193) run on wasmtime == the kernel oracle.
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two
