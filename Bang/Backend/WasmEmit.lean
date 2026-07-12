@@ -1042,13 +1042,30 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
                       (.ok (seqBlock s!"{txGate}\n    (struct.set $ref $box (call $txcell {hlist} {unboxI ej}) {ew})\n    {boxI "(i64.const 0)"}"), st2)
             | _ => (.unsup s!"writeTVar payload not a (pair index value)", st)
           else
-            -- The cap-binder at index `i` is `.none` (a value slot / a lam-arg), but the op is neither a
-            -- built-in state/txn op nor a lexically-known custom op. This is the RUNTIME-CAP wall: a
-            -- capability threaded as a first-class $val (a `vcap`) — e.g. a handler passed INTO a closure
-            -- as an argument (`app (force performer) capArg`), so dispatch is by the runtime cap value,
-            -- not a lexical CapSlot. v1's GC path has no `vcap` $val rep; refuse LOUDLY (fail-loud,
-            -- invariant #1), never a wrong emission. (Lexically-scoped custom/state/txn/throws all work.)
-            (.unsup s!"perform op `{op}` on a cap threaded as a runtime VALUE (vvar {i} = a value/arg slot, not a lexical handler cap) — the first-class-capability rep is a rung-5+ wall, not lowered on the GC path", st)
+            -- #133 C0 — FIRST-CLASS CAP dispatch. The cap-binder at index `i` is `.none` (a value/arg
+            -- slot), and the op is not a built-in state/txn op — so it is a CUSTOM op performed on a
+            -- capability threaded as a runtime VALUE (a handler passed INTO a closure as an argument,
+            -- `app (force performer) capArg`). The runtime slot holds the handler's `$txbox` cap
+            -- (the SAME value the lexical custom path builds — §8, cap-gc-rep-design.md), so dispatch
+            -- REUSES the lexical machinery, sourced from the runtime value instead of a compile-time
+            -- CapSlot: gate the cap's `$id` (#134 stamp — an escaped first-class cap traps), then
+            -- `$clausecell` + `call_ref`. POSITION: the emitter has no compile-time op→position map for
+            -- a first-class cap, so it emits position 0 GUARDED by a runtime single-op check
+            -- (`$clauselen == 1`) — the ENTIRE shippable corpus is single-op (calc `Trace`.log,
+            -- stage-swap `Net`.fetch). A MULTI-op first-class cap traps (fail-loud, invariant #1: never
+            -- a wrong-clause dispatch) rather than guessing a position. The general multi-op case needs
+            -- a runtime op→position map on the cap (deferred; §8 slice note).
+            match emitValGC envL caps v st with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok ev, st1) =>
+                let (tmpL, st2) := st1.fresh tyVal
+                let capBox := s!"(ref.cast (ref $txbox) {lookupGC envL i})"
+                let hlist  := s!"(struct.get $txbox $list {capBox})"
+                -- gate id (escape), then guard single-op (clauselen==1 else trap), then dispatch pos 0.
+                let gate := s!"(call $capGate (struct.get $txbox $id {capBox}))"
+                let guard := s!"(if (i32.ne (call $clauselen {hlist}) (i32.const 1)) (then (unreachable)))"
+                let cloE := s!"(call $clausecell {hlist} (i64.const 0))"
+                (.ok (seqBlock s!"{gate}\n    {guard}\n    {callClosGC tmpL cloE ev}"), st2)
       | none => (.unsup s!"perform target vvar {i} is free (open term) — no capability in scope", st)
   | .perform _ _ _ => (.unsup "perform on a non-vvar target (runtime cap / malformed — out of the GC-path fragment)", st)
   -- RUNG 5 S1: handle (state s₀) M on the GC path. Mint a $ref box holding s₀, PREPEND it as env slot
@@ -1294,7 +1311,19 @@ def gcHelpers : String :=
   "      (local.set $h (struct.get $env $tl (local.get $h)))\n" ++
   "      (local.set $k (i64.sub (local.get $k) (i64.const 1)))\n" ++
   "      (br $l)))\n" ++
-  "    (struct.get $env $hd (local.get $h)))"
+  "    (struct.get $env $hd (local.get $h)))\n" ++
+  -- #133 C0: the length of a custom cap's clause-closure list — the number of ops the effect has.
+  -- A FIRST-CLASS (arg-slot) perform uses this to guard single-op dispatch (position 0): a multi-op
+  -- first-class cap traps rather than guessing a position (invariant #1). Single-op = the shippable
+  -- corpus (calc/stage-swap).
+  "  (func $clauselen (param $h (ref null $env)) (result i32) (local $n i32)\n" ++
+  "    (local.set $n (i32.const 0))\n" ++
+  "    (block $d (loop $l\n" ++
+  "      (br_if $d (ref.is_null (local.get $h)))\n" ++
+  "      (local.set $n (i32.add (local.get $n) (i32.const 1)))\n" ++
+  "      (local.set $h (struct.get $env $tl (local.get $h)))\n" ++
+  "      (br $l)))\n" ++
+  "    (local.get $n))"
 
 /-- BIGNUM runtime helpers (issue #132 / bignum lane B2): sign-magnitude arithmetic over the mixed
 `$ival`/`$bigval` rep. Each `$addVal`/`$subVal` takes two `(ref null $val)` and returns one, with an
