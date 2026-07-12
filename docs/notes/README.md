@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (68)
+## active (69)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -16,6 +16,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`calculated-typer-survey.md`](calculated-typer-survey.md) — Calculated type CHECKING — design inputs for a future ADR
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`cap-gc-rep-design.md`](cap-gc-rep-design.md) — First-class-capability GC rep — design (#133)
+- [`carrier-inference-design.md`](carrier-inference-design.md) — Carrier-inference design — closing #55's result-position instantiation-discovery gap
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
 - [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
 - [`copy-kit.md`](copy-kit.md) — Copy kit — pitching bang accurately and hook-worthily

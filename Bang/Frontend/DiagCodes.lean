@@ -237,7 +237,20 @@ def registry : List DiagEntry := [
         ++ "trailing `in` to end the RHS on the SAME line (`let name = e in …`, script mode), or make "
         ++ "sure the value after `=` is followed IMMEDIATELY by the next `let`/decl keyword with "
         ++ "nothing else on that line (top-level-decl mode, ADR-0093)."
-    example? := some "let x = 3\nlet y = 4\nx + y" }
+    example? := some "let x = 3\nlet y = 4\nx + y" },
+  { code := "B017"
+    anchors := ["conflicting instantiations for type variable"]
+    summary := "a bound-free generic's call site names two different types for the same type variable"
+    teaching :=
+      "ADR-0103's monomorphization pass discovers a bound-free `let rec`'s (e.g. `mapOpt : (a -> b) "
+        ++ "-> Option a -> Option b`) concrete instantiation from EITHER an argument's own annotation "
+        ++ "or (Amendment ②) the call's own result annotation — but never guesses: if one call site "
+        ++ "names the SAME type variable at two different concrete types (an argument says `Int`, the "
+        ++ "result says `Char`, or two arguments disagree), that is a genuinely contradictory program, "
+        ++ "refused loud rather than silently picking one annotation over the other. Annotate "
+        ++ "consistently, or drop whichever annotation is redundant."
+    example? := some
+      "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)" }
 ]
 
 /-! ## 3. The two total functions over the registry. -/
@@ -288,6 +301,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)" == some "B014"
 #guard codeForMsg "let-binding 'double': a bare function is a computation (a \"returner\"), not a value — a top-level `let` binds a VALUE, so wrap it in a thunk: `let double = {fun … => …}` (see `examples/caesar`)" == some "B015"
 #guard codeForMsg "app: callee is not a function — '4' is a literal, never a callable; the next line's `x` looks like it was folded in as an application argument. A top-level `let` needs `in` to end its RHS on the SAME line" == some "B016"
+#guard codeForMsg "'passThroughOpt': conflicting instantiations for type variable 'a' — one call site names both 'Int' and 'Char' (an argument annotation and the call's own result annotation disagree, or two arguments disagree) — annotate consistently, or drop the redundant annotation" == some "B017"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none
