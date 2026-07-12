@@ -239,10 +239,12 @@ def CStore.pushUpd (κ : CStore) (n : Nat) (p : Val) (cls : List (Bang.OpId × C
   (n, (p, cls, true)) :: κ
 
 /-- UPDATE the carried param of the `customUpd` frame with identity `n` to `p'` (the ADR-0107 D5
-param-update — the user-effect analog of `SStore.put`). Keyed by identity (kind-first is unnecessary:
-globally-fresh ids mean at most one entry matches); leaves clauses + the `isUpd` flag intact. -/
-def CStore.setParam (κ : CStore) (n : Nat) (p' : Val) : CStore :=
-  κ.map (fun e => if e.1 = n then (e.1, (p', e.2.2.1, e.2.2.2)) else e)
+param-update — the user-effect analog of `SStore.put`). Updates the FIRST (innermost) matching entry
+and stops — mirroring `get?`'s innermost-wins and the machine's `customParamUpdate` (which rewrites the
+first frame with `id = n`); leaves clauses + the `isUpd` flag intact. -/
+def CStore.setParam : CStore → Nat → Val → CStore
+  | [],       _, _  => []
+  | e :: κ', n, p' => if e.1 = n then (e.1, (p', e.2.2.1, e.2.2.2)) :: κ' else e :: CStore.setParam κ' n p'
 
 /-! ## The denotational source `evalD` (substitution, terminal-Comp, store-threaded)
 
@@ -2038,6 +2040,58 @@ theorem CCorr_pop_customUpd {κ : CStore} {fr : HFrame} {hs : HStack} {ℓ0 : Ba
     {p : Val} {cls : List (Bang.OpId × Comp)} (hfr : fr.handler = .customUpd ℓ0 p cls)
     (hK : CCorr κ (fr :: hs)) : CCorr κ.tail hs := by
   unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr]
+
+/-- The `customParamUpdate ↔ setParam` correspondence (ADR-0107 D5): the machine's in-place customUpd
+frame param-overwrite projects to the store's `setParam`. When a customUpd frame at `n` exists,
+`customParamUpdate n p' hs = some hs'` with `hsCustoms hs' = (hsCustoms hs).setParam n p'`. This is the
+customUpd analog of `stateUpdate_put`'s `hsStates hs' = (hsStates hs).put n v` — the load-bearing bridge
+between evalD's `κ.setParam` and exec's `CUPD` frame mutation. Induction on `hs`. -/
+theorem customParamUpdate_setParam {n : Nat} {p' : Val} :
+    ∀ {hs : HStack} {p0 : Val} {cls0 : List (Bang.OpId × Comp)}, hsCustom hs n = some (p0, cls0, true) →
+      ∃ hs', customParamUpdate n p' hs = some hs' ∧ hsCustoms hs' = (hsCustoms hs).setParam n p' := by
+  intro hs
+  induction hs with
+  | nil => intro p0 cls0 hc; simp [hsCustom] at hc
+  | cons fr hs ih =>
+    intro p0 cls0 hc
+    cases hh : fr.handler with
+    | customUpd ℓ0 p1 cls1 =>
+        by_cases hid : fr.id = n
+        · refine ⟨{ fr with handler := .customUpd ℓ0 p' cls1 } :: hs, ?_, ?_⟩
+          · simp [customParamUpdate, hh, hid]
+          · simp only [hsCustoms, hh, CStore.setParam, hid, ↓reduceIte]
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          obtain ⟨hs', hcu, heq⟩ := ih hc
+          refine ⟨fr :: hs', ?_, ?_⟩
+          · simp [customParamUpdate, hh, hid, hcu]
+          · simp only [hsCustoms, hh, heq, CStore.setParam, if_neg hid]
+    | custom ℓ0 p1 cls1 =>
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨_, _, hupd⟩ := hc; exact absurd hupd (by simp)
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          obtain ⟨hs', hcu, heq⟩ := ih hc
+          refine ⟨fr :: hs', ?_, ?_⟩
+          · simp [customParamUpdate, hh, hid, hcu]
+          · simp only [hsCustoms, hh, heq, CStore.setParam, if_neg hid]
+    | state ℓ0 s =>
+        simp only [hsCustom, hh] at hc
+        obtain ⟨hs', hcu, heq⟩ := ih hc
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp [customParamUpdate, hh, hcu]
+        · simp only [hsCustoms, hh, heq]
+    | throws ℓ0 =>
+        simp only [hsCustom, hh] at hc
+        obtain ⟨hs', hcu, heq⟩ := ih hc
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp [customParamUpdate, hh, hcu]
+        · simp only [hsCustoms, hh, heq]
+    | transaction ℓ0 Θ =>
+        simp only [hsCustom, hh] at hc
+        obtain ⟨hs', hcu, heq⟩ := ih hc
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp [customParamUpdate, hh, hcu]
+        · simp only [hsCustoms, hh, heq]
 
 /-- `CCorr` rides the POP of a NON-custom top frame (state/throws/txn): the custom projection skips it,
 so the store is unchanged (analog of `Corr_pop_nonstate`, but no `HMut` needed — CCorr projects the
