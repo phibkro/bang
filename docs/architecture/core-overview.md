@@ -68,6 +68,7 @@ graph TD
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
     Witness_CtrGradeRefute["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
+    Witness_D5ParamHandlerWitness["Witness.D5ParamHandlerWitness<br/>161L · fan-in 0"]
     Witness_EffectTraceWitness["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
@@ -135,6 +136,7 @@ graph TD
 | `Witness.CapEscapeWitness` | ? | 72 | 0 |
 | `Witness.CtrGradeRefute` | ? | 138 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
+| `Witness.D5ParamHandlerWitness` | ? | 161 | 0 |
 | `Witness.EffectTraceWitness` | ? | 127 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |

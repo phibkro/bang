@@ -21,6 +21,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
 - [`copy-kit.md`](copy-kit.md) — Copy kit — pitching bang accurately and hook-worthily
 - [`ctr-design.md`](ctr-design.md) — Compute-then-return design map — lifting the ADR-0095 D4 ret-shape restriction (#44 exit gate)
+- [`d5-param-handlers-design.md`](d5-param-handlers-design.md) — D5 — parameterised handlers (handler memory): design probe with HOLD (#44 rung-2 face)
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
