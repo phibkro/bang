@@ -855,6 +855,21 @@
                CBPV-spine eval might be). See docs/notes/calculated-type-system-frontier.md.},
 }
 
+@inproceedings{osvald-oopsla16-second-class-values,
+  keywords = {topic:capability-safety grounds:scoped-cap-types-design role:frontier},
+  author  = {Osvald, Leo and Essertel, Gr\'egory and Wu, Xilun and Gonz\'alez Al\'ayon, Lilliam and Rompf, Tiark},
+  title   = {Gentrification Gone too Far? Affordable 2nd-Class Values for Fun and (Co-)Effect},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year    = 2016,
+  doi     = {10.1145/2983990.2984009},
+  % The SECOND-CLASS-values discipline: a value can be passed DOWN (arguments) but never
+  % returned/stored/escaped upward, enforced by a lightweight scope-nesting check (no rank-2
+  % machinery). The origin of bang's scoped-cap candidate (b) -- caps as second-class values makes the
+  % ADR-0063 laundered-thunk escape UNTYPEABLE at zero corpus cost (the whole corpus uses caps
+  % down-only; see docs/notes/scoped-cap-types-design.md census + Bang/Witness/ScopedCapWitness.lean).
+  % Effect-handler realization is [brachthauser-oopsla20-effects-as-capabilities] (Effekt).
+}
+
 @article{brachthauser-oopsla20-effects-as-capabilities,
   keywords = {topic:capability-safety grounds:task-18 role:frontier},
   sha256 = {424a1be3377a7180731c8e1c9484d0d97dacc546aeab35aa4e9365bdfa172ae0},

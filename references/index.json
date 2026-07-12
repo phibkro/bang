@@ -1614,6 +1614,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "osvald-oopsla16-second-class-values",
+    "title": "Gentrification Gone too Far? Affordable 2nd-Class Values for Fun and (Co-)Effect",
+    "year": "2016",
+    "doi": "10.1145/2983990.2984009",
+    "eprint": "",
+    "topics": [
+      "capability-safety"
+    ],
+    "grounds": [
+      "scoped-cap-types-design"
+    ],
+    "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "pedrot-popl20-fire-triangle",
     "title": "The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects",
     "year": "2020",
