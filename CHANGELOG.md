@@ -206,6 +206,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **emit** — #133 C3 — calc EMITS to wasm (11021193); the multi-module capstone (`c85d125d`)
 - **frontend** — trait-op name-call dispatch (#78 operator ruling, ADR-0106) (`99839fb8`)
 - **frontend** — #164 S0 — the #94 teaching diagnostic at a row-poly reuse site (`463869c7`)
+- **frontend** — #164 S1 — subeffecting at the row-poly reuse site (issue #94) (`b9b327e3`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
