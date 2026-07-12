@@ -124,6 +124,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0104](0104-host-io-environment.md) | Accepted | Host IO as effects + handlers, driven by an environment seam with record/replay conformance | Host IO (Console, Clock now; Fs, Net later) is an ORDINARY `effect` in the row, | — / — | — / — | — | — |
 | [0105](0105-effect-sound-trace-runtime-bound.md) | Accepted | effect_sound trace semantics: the runtime live-bound (Q14 ruling) | `effect_sound` (`Bang/Spec.lean:191`, a ◊2-block soundness theorem) was flagged with three | — / — | — / — | — | — |
 | [0106](0106-trait-op-name-call-dispatch.md) | Accepted | trait-op name-call dispatch (#78 operator ruling) | #78 (trait ops were operator-dispatch-ONLY — `env.insts` consulted exclusively at | — / — | — / — | — | — |
+| [0107](0107-effect-row-subeffecting-at-reuse-sites.md) | Accepted | effect-row reuse: subeffecting at reuse sites, open-row ascription deferred (#94) | #94 (`unifyRow`'s single-shared-row-var "first cut" rejected reusing ONE | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 
