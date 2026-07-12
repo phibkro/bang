@@ -204,6 +204,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **emit** — #133 C0 — first-class caps emit; stage-swap runs 30005 (the headline) (`7355a803`)
 - **build** — bang build — emit → wasm-tools parse/validate → runnable Wasm (#136) (`14993381`)
 - **emit** — #133 C3 — calc EMITS to wasm (11021193); the multi-module capstone (`c85d125d`)
+- **frontend** — trait-op name-call dispatch (#78 operator ruling, ADR-0106) (`99839fb8`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
