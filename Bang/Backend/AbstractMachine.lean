@@ -246,6 +246,315 @@ def CStore.setParam : CStore → Nat → Val → CStore
   | [],       _, _  => []
   | e :: κ', n, p' => if e.1 = n then (e.1, (p', e.2.2.1, e.2.2.2)) :: κ' else e :: CStore.setParam κ' n p'
 
+/-! ### ⏸ PARKED — the customUpd calc-bridge well-formedness spine (DORMANT UNTIL S2) ⏸
+
+**Status (2026-07-12, ruling task #181): the D5 calc-bridge customUpd-correctness lane is PARKED.**
+The kernel D5 win stays banked green (`Source.eval` dispatch + the `#guard` witnesses, `dafc4ddc`).
+This block is the compile-VALIDATED spine for the FUTURE increment that proves the CalcVM/exec bridge
+CORRECT over `customUpd` — it is COMMENTED OUT so the branch is not carrying dead-but-live code.
+
+**Why parked (the full fork, SSoT = `docs/notes/d5-param-handlers-design.md` §5.5):**
+- **(B) blunt `CustomUpdFree` premise — REFUTED, not cheaper.** Excluding customUpd still needs the same
+  store-preservation to show `κ` never gains a customUpd frame (the fact is read off the runtime `κ`).
+- **(C) one named `sorryAx` on the customUpd calc OP arm — REFUTED by the census landing bar.** A single
+  sorryAx flags `compile_correct` and every headline above it transitively; the 22-clean axiom census may
+  not regress at any merge, so (C) cannot land even as "green this session".
+- **(A) prove it — CORRECT, but a dedicated FUTURE increment FUSED WITH S2 typing.** Repriced at
+  ~1000-1200 lines: because `customUpd` is UNTYPED at S0, the honest premise is a full `PSVal`-EVERYWHERE
+  value-well-formedness invariant (every value flowing through `evalD` — perform args, store params, σ
+  cells — must be tracked, since an untyped clause can smuggle an ill-shaped customUpd inside a thunk).
+  At S2, `HasClausesUpd` makes ALL of this DERIVABLE-BY-TYPING (pay the price where it's cheap) — so the
+  apparatus below belongs to the (A)+S2 increment, not this relay.
+
+**RESUME PRICE TAG for the (A)+S2 increment (what remains beyond this validated spine):**
+  1. UNCOMMENT this block (it compiled clean as of the WIP — mutual `PSComp`/`PSVal`/`PSHandler`/`PSCls`/
+     `PSClsPair` + shift/subst preservation + `CStorePairShaped` + its 7 store-preservation lemmas).
+  2. `evalD_CStorePairShaped` (κ-preservation across a whole evalD run, ~350 lines) + `evalD_term_PSComp`
+     (PSComp on the output term, for the app-lam arm) — OR combine into one fuel induction returning both.
+  3. The `PSVal`-of-fillers threading: perform args / frame params / σ cells carry `PSVal` (the S2 typing
+     derivation supplies these for free — this is the "fused with S2" economy).
+  4. The ~130-site ATOMIC thread of `PairShapedUpd M` + `CStorePairShaped κ` through `sim` (~69 sites) and
+     `run_evalD` (~62 sites); discharge at `compile_correct`/`evalD_agrees_source` (κ=[] trivial;
+     PairShapedUpd-of-the-witness by construction).
+  5. The customUpd OP=true arm proper: `customParamUpdate_setParam` (the §4.2 state-PUT template) + the
+     `PairShaped` premise killing the non-pair `| other => other` divergence as a CONTRADICTION.
+
+The `RetPairShaped` predicate below already encodes #175's FINDING (customUpd matches `ret (pair w p')`
+SYNTACTICALLY, value-only update) — the S2 `HasClausesUpd` rule constrains to exactly this shape.
+
+-------------------------------------------------------------------------------------------------------
+DORMANT SPINE (uncomment for the (A)+S2 increment):
+
+
+/-- A single clause's body is a syntactic `ret (pair _ _)` (the customUpd resume-shape). -/
+def RetPairShaped (body : Comp) : Prop := ∃ w p', body = Comp.ret (Val.pair w p')
+
+/-- Every clause body in `cls` is `ret (pair _ _)` — the customUpd handler's clause contract. -/
+def ClausesRetPair (cls : List (Bang.OpId × Comp)) : Prop :=
+  ∀ clause ∈ cls, RetPairShaped clause.2
+
+mutual
+/-- The S0 contract, MUTUAL over Comp/Val/Handler (mirrors `CFComp`/`CFVal`/`CFHandler` +
+`capsC`/`capsH`/`capsCls`): every `customUpd` handler ANYWHERE in the term — including inside
+thunks (`vthunk`) and lam/handler/clause bodies, which carry Comps that flow out of `evalD` as
+values — has ret-pair clause bodies. `custom` clause bodies are unconstrained in SHAPE but must be
+`PSComp`-well-formed (a clause may install a nested `customUpd`). Clause recursion goes through
+`PSCls` (the list-spine member, `sizeOf`-justified like `capsCls`), the nested-inductive occurrence
+of `Comp` the structural checker cannot thread automatically. The DECLARED-not-sniffed contract: a
+`custom` clause returning a pair is untouched (only `customUpd` carries `RetPairShaped`). -/
+def PSComp : Comp → Prop
+  | .ret v            => PSVal v
+  | .letC M N         => PSComp M ∧ PSComp N
+  | .force v          => PSVal v
+  | .lam M            => PSComp M
+  | .app M v          => PSComp M ∧ PSVal v
+  | .perform c _ v    => PSVal c ∧ PSVal v
+  | .handle h M       => PSHandler h ∧ PSComp M
+  | .case v N₁ N₂     => PSVal v ∧ PSComp N₁ ∧ PSComp N₂
+  | .split v N        => PSVal v ∧ PSComp N
+  | .unfold v         => PSVal v
+  | .binop _ a b      => PSVal a ∧ PSVal b
+  | .oom              => True
+  | .wrong _          => True
+  termination_by c => sizeOf c
+/-- The value-side contract (recurses into thunks). -/
+def PSVal : Val → Prop
+  | .vunit | .vint _ | .vvar _ | .vcap _ _ => True
+  | .vthunk c         => PSComp c
+  | .inl v | .inr v | .fold v => PSVal v
+  | .pair a b         => PSVal a ∧ PSVal b
+  termination_by v => sizeOf v
+/-- The handler-side contract: `custom` clauses are `PSComp`-well-formed; `customUpd` clauses are
+ADDITIONALLY `RetPairShaped`. Both go through `PSCls`/`PSClsPair`. -/
+def PSHandler : Handler → Prop
+  | .state _ v         => PSVal v
+  | .throws _          => True
+  | .transaction _ _   => True
+  | .custom _ _ cls    => PSCls cls
+  | .customUpd _ _ cls => PSClsPair cls
+  termination_by h => sizeOf h
+/-- Every clause body in `cls` is `PSComp`-well-formed (list-spine recursion). -/
+def PSCls : List (Bang.OpId × Comp) → Prop
+  | []        => True
+  | c :: rest => PSComp c.2 ∧ PSCls rest
+  termination_by cls => sizeOf cls
+  decreasing_by
+    · simp_wf; cases c with | mk op body => simp only [Prod.mk.sizeOf_spec]; omega
+    · simp_wf; omega
+/-- Every clause body is ret-pair AND `PSComp`-well-formed (the customUpd contract). -/
+def PSClsPair : List (Bang.OpId × Comp) → Prop
+  | []        => True
+  | c :: rest => (RetPairShaped c.2 ∧ PSComp c.2) ∧ PSClsPair rest
+  termination_by cls => sizeOf cls
+  decreasing_by
+    · simp_wf; cases c with | mk op body => simp only [Prod.mk.sizeOf_spec]; omega
+    · simp_wf; omega
+end
+
+@[inherit_doc PSComp] abbrev PairShapedUpd (M : Comp) : Prop := PSComp M
+
+/-- `PSCls` reads back a clause's `PSComp` well-formedness by membership. -/
+theorem PSCls.body_of_mem : ∀ {cls : List (Bang.OpId × Comp)}, PSCls cls →
+    ∀ clause ∈ cls, PSComp clause.2
+  | [], _, _, hm => by simp at hm
+  | c :: rest, h, clause, hm => by
+      simp only [PSCls] at h
+      rcases List.mem_cons.mp hm with rfl | hm'
+      · exact h.1
+      · exact PSCls.body_of_mem h.2 clause hm'
+
+/-- `PSClsPair` reads back the ret-pair shape by membership. -/
+theorem PSClsPair.retpair_of_mem : ∀ {cls : List (Bang.OpId × Comp)}, PSClsPair cls →
+    ClausesRetPair cls
+  | [], _, clause, hm => by simp at hm
+  | c :: rest, h, clause, hm => by
+      simp only [PSClsPair] at h
+      rcases List.mem_cons.mp hm with rfl | hm'
+      · exact h.1.1
+      · exact PSClsPair.retpair_of_mem h.2 clause hm'
+
+/-- `PSClsPair` reads back `PSComp` well-formedness by membership. -/
+theorem PSClsPair.body_of_mem : ∀ {cls : List (Bang.OpId × Comp)}, PSClsPair cls →
+    ∀ clause ∈ cls, PSComp clause.2
+  | [], _, _, hm => by simp at hm
+  | c :: rest, h, clause, hm => by
+      simp only [PSClsPair] at h
+      rcases List.mem_cons.mp hm with rfl | hm'
+      · exact h.1.2
+      · exact PSClsPair.body_of_mem h.2 clause hm'
+
+-- `PSVal`/`PSComp`/`PSHandler` survive SHIFT unconditionally (shift only renumbers vars, and
+-- `Handler.shiftFrom` is IDENTITY on custom/customUpd `Subst.lean`). Mirrors `CFVal_shiftFrom`.
+mutual
+theorem PSVal.shiftFrom (k : Nat) : ∀ {v : Val}, PSVal v → PSVal (Val.shiftFrom k v)
+  | .vunit, _ => by simp [Val.shiftFrom, PSVal]
+  | .vint _, _ => by simp [Val.shiftFrom, PSVal]
+  | .vvar i, _ => by by_cases hi : i < k <;> simp [Val.shiftFrom, hi, PSVal]
+  | .vcap _ _, _ => by simp [Val.shiftFrom, PSVal]
+  | .vthunk M, h => by simp only [Val.shiftFrom, PSVal] at h ⊢; exact PSComp.shiftFrom k h
+  | .inl w, h => by simp only [Val.shiftFrom, PSVal] at h ⊢; exact PSVal.shiftFrom k h
+  | .inr w, h => by simp only [Val.shiftFrom, PSVal] at h ⊢; exact PSVal.shiftFrom k h
+  | .pair a b, h => by simp only [Val.shiftFrom, PSVal] at h ⊢; exact ⟨PSVal.shiftFrom k h.1, PSVal.shiftFrom k h.2⟩
+  | .fold w, h => by simp only [Val.shiftFrom, PSVal] at h ⊢; exact PSVal.shiftFrom k h
+theorem PSHandler.shiftFrom (k : Nat) : ∀ {hd : Handler}, PSHandler hd → PSHandler (Handler.shiftFrom k hd)
+  | .state ℓ s, h => by simp only [Handler.shiftFrom, PSHandler] at h ⊢; exact PSVal.shiftFrom k h
+  | .throws _, _ => by simp [Handler.shiftFrom, PSHandler]
+  | .transaction _ _, _ => by simp [Handler.shiftFrom, PSHandler]
+  | .custom _ _ _, h => by simpa only [Handler.shiftFrom] using h
+  | .customUpd ℓ p cls, h => by simpa only [Handler.shiftFrom] using h
+theorem PSComp.shiftFrom (k : Nat) : ∀ {M : Comp}, PSComp M → PSComp (Comp.shiftFrom k M)
+  | .ret v, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact PSVal.shiftFrom k h
+  | .letC M N, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSComp.shiftFrom k h.1, PSComp.shiftFrom (k+1) h.2⟩
+  | .force v, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact PSVal.shiftFrom k h
+  | .lam M, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact PSComp.shiftFrom (k+1) h
+  | .app M v, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSComp.shiftFrom k h.1, PSVal.shiftFrom k h.2⟩
+  | .perform c _ v, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSVal.shiftFrom k h.1, PSVal.shiftFrom k h.2⟩
+  | .handle hd M, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSHandler.shiftFrom k h.1, PSComp.shiftFrom (k+1) h.2⟩
+  | .case v N₁ N₂, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSVal.shiftFrom k h.1, PSComp.shiftFrom (k+1) h.2.1, PSComp.shiftFrom (k+1) h.2.2⟩
+  | .split v N, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSVal.shiftFrom k h.1, PSComp.shiftFrom (k+2) h.2⟩
+  | .unfold v, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact PSVal.shiftFrom k h
+  | .binop op a b, h => by simp only [Comp.shiftFrom, PSComp] at h ⊢; exact ⟨PSVal.shiftFrom k h.1, PSVal.shiftFrom k h.2⟩
+  | .oom, _ => by simp [Comp.shiftFrom, PSComp]
+  | .wrong _, _ => by simp [Comp.shiftFrom, PSComp]
+end
+
+/-- `PSVal.shift` = shift at 0. -/
+theorem PSVal.shift {u : Val} (h : PSVal u) : PSVal (Val.shift u) := PSVal.shiftFrom 0 h
+
+-- `PSVal`/`PSComp`/`PSHandler` survive SUBSTITUTION when the substituted value `u` is itself
+-- `PSVal`: `Handler.substFrom` is IDENTITY on custom/customUpd (`Subst.lean:91,93`) so clauses are
+-- untouched; the substituted-value case (`vvar k := u`) needs `PSVal u`. The filler stays `PSVal`
+-- under the shifts crossed by binders (`PSVal.shift`). Mirrors `CFComp_substFrom`.
+mutual
+theorem PSVal.substFrom (k : Nat) {u : Val} (hu : PSVal u) : ∀ {v : Val}, PSVal v → PSVal (Val.substFrom k u v)
+  | .vunit, _ => by simp [Val.substFrom, PSVal]
+  | .vint _, _ => by simp [Val.substFrom, PSVal]
+  | .vvar i, _ => by
+      simp only [Val.substFrom]
+      by_cases hi : i = k
+      · simp only [hi, if_true]; exact hu
+      · by_cases hi2 : i > k <;> simp only [hi, hi2, if_false, if_true, PSVal]
+  | .vcap _ _, _ => by simp [Val.substFrom, PSVal]
+  | .vthunk M, h => by simp only [Val.substFrom, PSVal] at h ⊢; exact PSComp.substFrom k hu h
+  | .inl w, h => by simp only [Val.substFrom, PSVal] at h ⊢; exact PSVal.substFrom k hu h
+  | .inr w, h => by simp only [Val.substFrom, PSVal] at h ⊢; exact PSVal.substFrom k hu h
+  | .pair a b, h => by simp only [Val.substFrom, PSVal] at h ⊢; exact ⟨PSVal.substFrom k hu h.1, PSVal.substFrom k hu h.2⟩
+  | .fold w, h => by simp only [Val.substFrom, PSVal] at h ⊢; exact PSVal.substFrom k hu h
+theorem PSHandler.substFrom (k : Nat) {u : Val} (hu : PSVal u) : ∀ {hd : Handler}, PSHandler hd → PSHandler (Handler.substFrom k u hd)
+  | .state ℓ s, h => by simp only [Handler.substFrom, PSHandler] at h ⊢; exact PSVal.substFrom k hu h
+  | .throws _, _ => by simp [Handler.substFrom, PSHandler]
+  | .transaction _ _, _ => by simp [Handler.substFrom, PSHandler]
+  | .custom _ _ _, h => by simpa only [Handler.substFrom] using h
+  | .customUpd ℓ p cls, h => by simpa only [Handler.substFrom] using h
+theorem PSComp.substFrom (k : Nat) {u : Val} (hu : PSVal u) : ∀ {M : Comp}, PSComp M → PSComp (Comp.substFrom k u M)
+  | .ret v, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact PSVal.substFrom k hu h
+  | .letC M N, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSComp.substFrom k hu h.1, PSComp.substFrom (k+1) hu.shift h.2⟩
+  | .force v, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact PSVal.substFrom k hu h
+  | .lam M, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact PSComp.substFrom (k+1) hu.shift h
+  | .app M v, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSComp.substFrom k hu h.1, PSVal.substFrom k hu h.2⟩
+  | .perform c _ v, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSVal.substFrom k hu h.1, PSVal.substFrom k hu h.2⟩
+  | .handle hd M, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSHandler.substFrom k hu h.1, PSComp.substFrom (k+1) hu.shift h.2⟩
+  | .case v N₁ N₂, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSVal.substFrom k hu h.1, PSComp.substFrom (k+1) hu.shift h.2.1, PSComp.substFrom (k+1) hu.shift h.2.2⟩
+  | .split v N, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSVal.substFrom k hu h.1, PSComp.substFrom (k+2) hu.shift.shift h.2⟩
+  | .unfold v, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact PSVal.substFrom k hu h
+  | .binop op a b, h => by simp only [Comp.substFrom, PSComp] at h ⊢; exact ⟨PSVal.substFrom k hu h.1, PSVal.substFrom k hu h.2⟩
+  | .oom, _ => by simp [Comp.substFrom, PSComp]
+  | .wrong _, _ => by simp [Comp.substFrom, PSComp]
+end
+
+/-- The `Comp.subst` (level-0) corollary — the filler `u` must be `PSVal`. -/
+theorem PSComp.subst {u : Val} (hu : PSVal u) {M : Comp} (h : PSComp M) : PSComp (Comp.subst u M) :=
+  PSComp.substFrom 0 hu h
+
+/-- Alias for the bridge threading (`PairShapedUpd` = `PSComp`); the filler must be `PSVal`. -/
+theorem PairShapedUpd.subst {u : Val} (hu : PSVal u) {M : Comp} (h : PairShapedUpd M) :
+    PairShapedUpd (Comp.subst u M) := PSComp.subst hu h
+
+/-- A `vcap` filler is always `PSVal` (the mint-substituted capability in the HANDLE arms). -/
+theorem PSVal.vcap (g : Nat) (ℓ : Label) : PSVal (Val.vcap g ℓ) := by simp [PSVal]
+
+/-- The store-threaded customUpd contract: every frame ANYWHERE in `κ` carries clause bodies that
+are `PSComp`-well-formed, AND every `customUpd` frame (`isUpd = true`) additionally carries only
+ret-pair clause bodies. FRAME-WISE (membership), not `get?`-keyed, so preserved by
+`tail`/`push`/`setParam` WITHOUT an id-uniqueness side-condition. Read at the `perform` arm (the
+resolved `get?` frame is a member); established at `push`/`pushUpd` from the source handler's
+`PSHandler`. -/
+def CStorePairShaped (κ : CStore) : Prop :=
+  ∀ e ∈ κ, (∀ clause ∈ e.2.2.1, PSComp clause.2) ∧ (e.2.2.2 = true → ClausesRetPair e.2.2.1)
+
+/-- The empty store satisfies the contract vacuously (the `compile_correct`/`evalD_agrees_source`
+entry point — a closed program loads at `κ = []`). -/
+theorem CStorePairShaped.nil : CStorePairShaped ([] : CStore) := by
+  intro e he; simp at he
+
+/-- A `get?`-resolved customUpd frame is a store member — the frame-wise contract yields its ret-pair
+clause shape. -/
+theorem CStorePairShaped.get?_clauses {κ : CStore} (h : CStorePairShaped κ) {n : Nat}
+    {p : Val} {cls : List (Bang.OpId × Comp)} (hg : κ.get? n = some (p, cls, true)) :
+    ClausesRetPair cls := by
+  simp only [CStore.get?, Option.map_eq_some_iff] at hg
+  obtain ⟨e, hfind, heq⟩ := hg
+  have hmem : e ∈ κ := List.mem_of_find?_eq_some hfind
+  have hu : e.2.2.2 = true := by rw [heq]
+  have hcl : e.2.2.1 = cls := by rw [heq]
+  rw [← hcl]; exact (h e hmem).2 hu
+
+/-- A `get?`-resolved frame's clause bodies are `PSComp`-well-formed (both custom + customUpd). -/
+theorem CStorePairShaped.get?_bodies {κ : CStore} (h : CStorePairShaped κ) {n : Nat}
+    {p : Val} {cls : List (Bang.OpId × Comp)} {b : Bool} (hg : κ.get? n = some (p, cls, b)) :
+    ∀ clause ∈ cls, PSComp clause.2 := by
+  simp only [CStore.get?, Option.map_eq_some_iff] at hg
+  obtain ⟨e, hfind, heq⟩ := hg
+  have hmem : e ∈ κ := List.mem_of_find?_eq_some hfind
+  have hcl : e.2.2.1 = cls := by rw [heq]
+  rw [← hcl]; exact (h e hmem).1
+
+/-- `push` installs a READ-ONLY (`isUpd = false`) frame whose clause bodies must be `PSComp` (from
+the source handler's `PSHandler`); it adds no ret-pair obligation. -/
+theorem CStorePairShaped.push {κ : CStore} (h : CStorePairShaped κ) (g : Nat) (p : Val)
+    {cls : List (Bang.OpId × Comp)} (hbodies : ∀ clause ∈ cls, PSComp clause.2) :
+    CStorePairShaped (κ.push g p cls) := by
+  intro e he
+  simp only [CStore.push, List.mem_cons] at he
+  rcases he with rfl | he
+  · exact ⟨hbodies, by simp⟩
+  · exact h e he
+
+/-- `pushUpd` installs a customUpd frame; the new obligation = `cls` ret-pair AND `PSComp`-bodied. -/
+theorem CStorePairShaped.pushUpd {κ : CStore} (h : CStorePairShaped κ) (g : Nat) (p : Val)
+    {cls : List (Bang.OpId × Comp)} (hcls : ClausesRetPair cls)
+    (hbodies : ∀ clause ∈ cls, PSComp clause.2) :
+    CStorePairShaped (κ.pushUpd g p cls) := by
+  intro e he
+  simp only [CStore.pushUpd, List.mem_cons] at he
+  rcases he with rfl | he
+  · exact ⟨hbodies, fun _ => hcls⟩
+  · exact h e he
+
+/-- `setParam` rewrites a frame's PARAM only, never its clauses, so the contract rides through. -/
+theorem CStorePairShaped.setParam {κ : CStore} (h : CStorePairShaped κ) (n : Nat) (p' : Val) :
+    CStorePairShaped (κ.setParam n p') := by
+  induction κ with
+  | nil => simpa [CStore.setParam] using h
+  | cons a κ' ih =>
+      intro e he
+      by_cases han : a.1 = n
+      · simp only [CStore.setParam, han, if_true, List.mem_cons] at he
+        rcases he with rfl | he
+        · exact h a (by simp)
+        · exact h e (by simp [he])
+      · simp only [CStore.setParam, han, if_false, List.mem_cons] at he
+        rcases he with rfl | he
+        · exact h e (by simp)
+        · exact ih (fun x hx => h x (by simp [hx])) e he
+
+/-- `List.tail` on a store DROPS the head frame; every tail member is a member, so the contract rides. -/
+theorem CStorePairShaped.tail {κ : CStore} (h : CStorePairShaped κ) : CStorePairShaped κ.tail := by
+  intro e he
+  exact h e (List.mem_of_mem_tail he)
+
+-/
+
 /-! ## The denotational source `evalD` (substitution, terminal-Comp, store-threaded)
 
 Fuel-bounded, structurally recursive on the fuel (NO `termination_by`, so the
@@ -2451,21 +2760,11 @@ theorem customUpdate_none_of_clause_miss {n : Nat} {op : Bang.OpId} {v : Val} {p
     | throws ℓ0 => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
     | transaction ℓ0 Θ => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
 
-/-! ### Frame-id uniqueness (`HsIdsDesc`) — CURRENTLY UNCONSUMED, kept for the wgcexec/`$liveTop` story.
-
-`HsIdsDesc` + `customUpdate_none_of_hsCustom_isUpd` were built for a two-try exec customUpd dispatch that
-needed frame-id uniqueness. ROUTE B (the single `customLookup` merge, ADR-0107 / the invariant-#4 exec-
-faithfulness ruling) DISSOLVED that need — the merged OP arm resolves the innermost frame in ONE pass, so no
-uniqueness obligation remains in `sim`. These lemmas are TRUE + PROVEN and are the machine-level image of the
-ADR-0055 generative-identity principle (a fresh mint is above everything ⇒ ids unique by construction — the
-same fact the cap model + `#134 $liveTop` run on); the wgcexec/C4 `$liveTop ≡ WellCounted` clause will want
-exactly this family. **DO NOT delete as dead** — mark as forward-infrastructure. -/
-
 /-- `HsIdsDesc hs`: frame identities are STRICTLY DECREASING from the head — the head (innermost, newest)
 frame has the LARGEST id, each deeper frame strictly smaller. This holds of every machine HStack: a
 `handle` mints id `g` = the fresh counter (≥ every existing id, `StoresBelow`) then bumps `g→g+1`, so a
-push always prepends a strictly-larger id. It gives frame-id UNIQUENESS (no two frames share an id).
-CURRENTLY UNCONSUMED (route B dissolved the need); kept for wgcexec/`$liveTop` (see the section note). -/
+push always prepends a strictly-larger id. It gives frame-id UNIQUENESS (no two frames share an id), which
+is what the sim's customUpd-dispatch fall-through needs: a `customUpd n` frame is the ONLY frame at `n`. -/
 def HsIdsDesc : HStack → Prop
   | []        => True
   | fr :: hs  => (∀ f ∈ hs, f.id < fr.id) ∧ HsIdsDesc hs

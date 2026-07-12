@@ -468,6 +468,62 @@ vacuous way, hiding that the typed customUpd preservation was never actually pro
 is to prove the REAL typed-preservation customUpd case (mirroring the `custom` case at
 `Soundness.lean:2487`), NOT to keep it vacuous.
 
+### The CALC-BRIDGE customUpd premise lifecycle (D5 S1 finding, 2026-07-12) — ⏸ LANE PARKED (ruling #181)
+
+**RULING (task #181, 2026-07-12): the D5 CalcVM/exec calc-bridge customUpd lane is PARKED — NEITHER (A)
+nor (C).** The D5 kernel win stays banked green (`Source.eval` dispatch + the `#guard` witnesses
+`customUpdEvolve=7` / `customPairValueRegression=100`, `dafc4ddc`). The branch `impl-d5-engines` rests at
+a loud PARKED/DO-NOT-MERGE pin (17 real errors + 1 marked sorry + the DORMANT `PSComp` spine, commented in
+`AbstractMachine.lean` with a resume price tag) until a dedicated **(A)+S2** increment. The three options:
+
+- **(A) PROVE customUpd correct in the calc bridge — CORRECT, but a FUTURE increment FUSED WITH S2 typing.**
+  Repriced at ~1000–1200 lines: because `customUpd` is UNTYPED at S0, the honest premise is a full
+  **`PSVal`-EVERYWHERE** value-well-formedness invariant (perform args, store params, σ cells — an untyped
+  clause can smuggle an ill-shaped customUpd inside a thunk, so `PSComp.subst` needs `PSVal` of the filler).
+  At S2, `HasClausesUpd` makes ALL of this DERIVABLE-BY-TYPING — pay the price where it is cheap. So (A) is
+  the (A)+S2 fusion, not the tail of this relay.
+- **(C) one NAMED `sorryAx` on the customUpd calc OP arm — REFUTED by the census landing bar.** A single
+  sorryAx flags `compile_correct` and every headline above it transitively; the 22-clean axiom census may
+  not regress at any merge, so (C) cannot land even as "green this session".
+- **(B) a blunt `CustomUpdFree` premise — REFUTED, not cheaper.** Excluding customUpd still needs the same
+  store-preservation to show `κ` never gains a customUpd frame (the fact is read off the runtime `κ`).
+
+The remainder of this section is the measured cost analysis that produced the ruling (SSoT for the resume).
+
+---
+
+The `evalD`/kernel customUpd `perform` arm decodes the clause body's terminal as `ret (pair w p')`
+and REINSTALLS `p'`; a NON-pair terminal falls to `| other => other` (evalD passes the raw outcome
+through, the kernel reinstalls-and-continues, the machine `CUPD` guards to `none`) — a three-way
+divergence. Because `customUpd` is UNTYPED at S0, an ill-shaped clause is *representable* though never
+elaborator-produced, so the calc bridge (`sim`/`run_evalD`/`compile_correct`/`evalD_agrees_source`)
+needs a PREMISE excluding it — the ADR-0086 `CustomFree`-precedent lifecycle: premise-at-S0 →
+derivable-at-S2 (`HasClausesUpd` forces the pair shape by typing) → DROPPED.
+
+**The premise CANNOT be cheap** (measured, D5 S1): the `sim`/`run_evalD` customUpd OP arm reads the
+clause shape off the RUNTIME store `κ` (`κ.get? n`), and `κ = hsCustoms hs` (CCorr) is a projection of
+the threaded `hs`. Clause-shape is a GENUINELY fresh fact — NOT derivable from `Corr`/`CCorr`/`HMut`/
+`StoresBelow` (`HMut` permits param drift but does not constrain clauses). So the contract MUST be
+threaded as `CStorePairShaped κ` (frame-wise/membership, id-uniqueness-free) established at
+`push`/`pushUpd` from the source handler, backed by a Comp-side `PairShapedUpd`/`PSComp` predicate
+that is MUTUAL over Comp/Val/Handler (a `custom` clause body can install a nested `customUpd`; a
+`customUpd` body `ret (pair w p')` carries values that can carry thunks — so it mirrors
+`CFComp`/`CFVal`/`CFHandler`). `Handler.substFrom` being the IDENTITY on `customUpd`/`custom`
+(`Subst.lean:93`) makes `PSComp` subst-invariant ⇒ preserved by every substitution the bridge takes.
+
+Cost of the honest premise ≈ **1000–1200 lines** (the `PSVal`-everywhere reprice, D5 S1 final): the
+mutual `PSComp`/`PSVal`/`PSHandler` + subst-preservation;
+`CStorePairShaped` + 7 store-preservation lemmas; `evalD_CStorePairShaped` (κ-preservation across a
+whole evalD run, ~15 arms); `evalD_term_PSComp` (PSComp on the output term, for the app-lam arm where
+the lam body flows out of `evalD`); then the ATOMIC thread of `PairShapedUpd M` + `CStorePairShaped κ`
+through `sim` (~69 `ihT`/`ihR` sites) AND `run_evalD` (~62 sites); discharge at the 2 capstones (κ=[]
+trivial; PairShapedUpd-of-the-witness by construction). A blunt `CustomUpdFree` premise is NOT cheaper
+— excluding customUpd still needs the same store-preservation to show `κ` never gains a customUpd frame.
+Machine-faithfulness (make `CUPD` mirror evalD's passthrough) is ALSO not cheaper (exec cannot abandon
+the already-queued `c` after `CUPD` — confirmed "real machine surgery", auto-memory
+`d5-s2-netEffect-rekey-progress`). The `PSComp` apparatus (items 1–2, ~160 lines) is landed-in-tree and
+compiling; it is the S2 spine either way.
+
 ### The evalD param-update design (rider a — the engine approach, verified-then-reverted)
 
 The evalD (CalcVM) customUpd arm was implemented and COMPILED, then reverted to keep the tree clean for
