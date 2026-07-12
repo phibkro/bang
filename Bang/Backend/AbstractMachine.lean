@@ -446,6 +446,15 @@ inductive Instr where
   -- inspects the closed-value scrutinee and re-`compile`s the chosen branch at runtime (fuel-bounded).
   | CASE   : Val → Comp → Comp → Instr  -- sum elim: inl/inr ⇒ compile+run the matching branch[v]
   | SPLIT  : Val → Comp → Instr         -- product elim: pair ⇒ compile+run N[v][shift w] (DOUBLE subst)
+  -- CUPD n (ADR-0107 #44 D5 param-update): the CK image of `evalD`'s customUpd RESUME. `exec`'s OP arm,
+  -- resolving a `customUpd` frame `n`, runs the clause body before `CUPD n :: c`. The clause body's
+  -- terminal is `ret (pair w p')` (its DECLARED contract); `CUPD n` decodes it, UPDATES frame `n`'s
+  -- carried param to `p'` in the HStack (`customParamUpdate`, the user-effect analog of `stateUpdate`'s
+  -- in-place `put`), and RESUMES `c` with `ret w`. Falls out of the customUpd `evalD` equation
+  -- (`setParam n p'` then resume `ret w`), NOT hand-designed (invariant #4). No CUPD is emitted for a
+  -- read-only `custom` frame — `compile` is oblivious (the cap is a `vvar` until mint); exec's OP arm
+  -- reads the resolved frame's kind and only wraps a customUpd body in `CUPD`.
+  | CUPD   : Nat → Instr
   -- (no UNFOLD: `unfold (fold v)` erases to `RET v` at compile time — see `compile`.)
   deriving Inhabited
 
@@ -582,6 +591,36 @@ def customUpdate : Nat → Bang.OpId → Val → HStack → Option (Comp × HSta
           else (customUpdate n op v hs).map (fun q => (q.1, fr :: q.2))          -- different id ⇒ keep, recurse
       | _ => (customUpdate n op v hs).map (fun q => (q.1, fr :: q.2))            -- non-custom frame ⇒ keep, recurse
 
+/-- The `customUpd` (ADR-0107 D5) analog of `customUpdate`: resolve the PARAMETERISED custom frame with
+identity `n` and return the clause body to run (`subst p (subst (shift v) clause.2)`), the frame kept
+LIVE (like `customUpdate`). The param-update is NOT done here (the clause hasn't run yet) — exec runs
+this body before `CUPD n :: c`, and `CUPD n` does the `customParamUpdate` after the body yields the pair.
+`none` = no `customUpd n` frame OR the op is unserviced ⇒ the caller falls through (throws path). -/
+def customUpdUpdate : Nat → Bang.OpId → Val → HStack → Option (Comp × HStack)
+  | _, _, _, []       => none
+  | n, op, v, fr :: hs =>
+      match fr.handler with
+      | .customUpd _ p cls =>
+          if fr.id = n then
+            match cls.find? (·.1 == op) with
+            | some clause => some (Comp.subst p (Comp.subst (Val.shift v) clause.2), fr :: hs)  -- run clause, frame kept
+            | none        => none                                                              -- op unserviced ⇒ throws path
+          else (customUpdUpdate n op v hs).map (fun q => (q.1, fr :: q.2))       -- different id ⇒ keep, recurse
+      | _ => (customUpdUpdate n op v hs).map (fun q => (q.1, fr :: q.2))         -- non-customUpd frame ⇒ keep, recurse
+
+/-- Update the carried param of the `customUpd` frame with identity `n` to `p'` IN PLACE (the HStack
+image of `CStore.setParam`; the user-effect analog of `stateUpdate`'s `put`). KIND-FIRST: skip
+non-customUpd frames, at a customUpd frame overwrite its param if `id = n`. Returns the mutated HStack;
+`none` = no customUpd frame at `n` (unreachable when driven by a resolved `customUpdUpdate`). -/
+def customParamUpdate : Nat → Val → HStack → Option HStack
+  | _, _,  []       => none
+  | n, p', fr :: hs =>
+      match fr.handler with
+      | .customUpd ℓ0 _ cls =>
+          if fr.id = n then some ({ fr with handler := .customUpd ℓ0 p' cls } :: hs)  -- overwrite param in place
+          else (customParamUpdate n p' hs).map (fr :: ·)                              -- different id ⇒ keep, recurse
+      | _ => (customParamUpdate n p' hs).map (fr :: ·)                                -- non-customUpd frame ⇒ keep, recurse
+
 /-- Is `op` a BUILT-IN op (state get/put or a transaction op)? `evalD`'s perform arm dispatches
 OP-PRIORITY — `if get / elif put / elif isTxnOp / else custom` — so a built-in op NEVER reaches the
 custom arm. The machine's OP arm mirrors this: it only consults `customUpdate` when `op` is NOT built-in,
@@ -700,22 +739,25 @@ The custom param is READ-ONLY in v1, so `updateCustoms` is identity on the frame
 /-- The `(param, clauses)` of the `custom` frame with IDENTITY `n` in `hs` (machine-side `CStore.get?`).
 KIND-FIRST (mirrors `customUpdate`): skip non-custom frames, at a custom frame return its payload if
 `id = n`. -/
-def hsCustom : HStack → Nat → Option (Val × List (Bang.OpId × Comp))
+def hsCustom : HStack → Nat → Option (Val × List (Bang.OpId × Comp) × Bool)
   | [],       _ => none
   | fr :: hs, n =>
       match fr.handler with
-      | .custom _ p cls => if fr.id = n then some (p, cls) else hsCustom hs n
-      | _               => hsCustom hs n
+      | .custom _ p cls    => if fr.id = n then some (p, cls, false) else hsCustom hs n
+      | .customUpd _ p cls => if fr.id = n then some (p, cls, true) else hsCustom hs n  -- ADR-0107 D5: isUpd = true
+      | _                  => hsCustom hs n
 
-/-- Project the HStack to the custom store it mirrors: the `custom` frames, in order, as
-`(id, (p, cls))` entries keyed by IDENTITY (state/throws/txn frames carry no clause payload ⇒ skipped).
-`CCorr` says `evalD`'s threaded κ IS this projection. -/
+/-- Project the HStack to the custom store it mirrors: the `custom`/`customUpd` frames, in order, as
+`(id, (p, cls, isUpd))` entries keyed by IDENTITY (state/throws/txn frames carry no clause payload ⇒
+skipped). `custom` projects with `isUpd = false`, `customUpd` (ADR-0107 D5) with `true`. `CCorr` says
+`evalD`'s threaded κ IS this projection. -/
 def hsCustoms : HStack → CStore
   | []        => []
   | fr :: hs  =>
       match fr.handler with
-      | .custom _ p cls => (fr.id, (p, cls)) :: hsCustoms hs
-      | _               => hsCustoms hs
+      | .custom _ p cls    => (fr.id, (p, cls, false)) :: hsCustoms hs
+      | .customUpd _ p cls => (fr.id, (p, cls, true)) :: hsCustoms hs   -- ADR-0107 D5: isUpd = true
+      | _                  => hsCustoms hs
 
 /-- The bridge invariant (Stage 4), STRUCTURAL form: `evalD`'s threaded κ IS the projection of the
 machine's active custom frames. The user-effect analog of `Corr`/`TCorr`. -/
@@ -992,8 +1034,15 @@ def updateCustoms : HStack → CStore → HStack
       match fr.handler with
       | .custom ℓ0 _ _ =>
           match κ with
-          | (_, (p, cls)) :: κ' => { fr with handler := .custom ℓ0 p cls } :: updateCustoms hs κ'
-          | []                  => fr :: updateCustoms hs []     -- κ exhausted (unreachable under CCorr)
+          | (_, (p, cls, _)) :: κ' => { fr with handler := .custom ℓ0 p cls } :: updateCustoms hs κ'
+          | []                     => fr :: updateCustoms hs []     -- κ exhausted (unreachable under CCorr)
+      -- customUpd (ADR-0107 D5): rebuild from the head payload, KEEPING the customUpd constructor. Unlike
+      -- custom (read-only), the payload param CAN differ (a `setParam` happened) — this is the netEffect
+      -- rebuild that reflects it, the user-effect analog of `updateStates` overwriting a state cell.
+      | .customUpd ℓ0 _ _ =>
+          match κ with
+          | (_, (p, cls, _)) :: κ' => { fr with handler := .customUpd ℓ0 p cls } :: updateCustoms hs κ'
+          | []                     => fr :: updateCustoms hs []     -- κ exhausted (unreachable under CCorr)
       | _ => fr :: updateCustoms hs κ
 
 /-- `get?` of the projection reads the state frame with identity `n` (ties `hsStates` to `hsState`). -/
@@ -2195,10 +2244,16 @@ def exec : Nat → Nat → Code → Stack → HStack → Option Stack
               -- against the unchanged `hs` (frame kept live). Mirrors evalD's inline clause-service sub-eval:
               -- where evalD runs `evalD … κ clauseBody`, exec runs `compile clauseBody c` (invariant #4).
               | some (body, hs') => exec f g (compile body c) s hs'
-              | none =>                                        -- no state/txn/custom frame at n ⇒ throws abort
-                  match unwindFind n op hs with
-                  | some (c', s', hs') => exec f g c' (.ret v :: s') hs'
-                  | none               => none                 -- uncaught = stuck
+              | none =>                                        -- not a read-only custom frame at n: try customUpd
+                  match customUpdUpdate n op v hs with
+                  -- RESUME (customUpd, ADR-0107 D5): run the clause body before `CUPD n :: c`. The body
+                  -- yields `ret (pair w p')`; `CUPD n` then updates frame `n`'s param to `p'` and resumes
+                  -- `c` with `ret w`. The CK image of evalD's customUpd arm (`setParam n p'` then resume w).
+                  | some (body, hs') => exec f g (compile body (Instr.CUPD n :: c)) s hs'
+                  | none =>                                    -- no state/txn/custom/customUpd frame at n ⇒ throws abort
+                      match unwindFind n op hs with
+                      | some (c', s', hs') => exec f g c' (.ret v :: s') hs'
+                      | none               => none             -- uncaught = stuck
   -- ADT eliminators (Unit 6): inspect the closed-value scrutinee in place, re-`compile` the chosen
   -- branch[v] (fuel-bounded ⇒ terminating), mirroring the `SUBST` exec arm. PURE — no `hs` change.
   | Nat.succ f, g, Instr.CASE w N₁ N₂ :: c, s, hs =>
@@ -2210,6 +2265,18 @@ def exec : Nat → Nat → Code → Stack → HStack → Option Stack
       match w with
       | .pair v u => exec f g (compile (Comp.subst v (Comp.subst (Val.shift u) N)) c) s hs
       | _         => none
+  -- CUPD n (ADR-0107 D5 param-update): pop the customUpd clause body's terminal `ret (pair w p')` from
+  -- the stack, UPDATE frame `n`'s carried param to `p'` in the HStack (`customParamUpdate`, the in-place
+  -- image of `CStore.setParam`), and RESUME `c` with `ret w`. The CK image of evalD's customUpd RESUME.
+  -- A non-pair terminal or a missing customUpd frame is the ill-typed guard (source-unreachable under
+  -- HasClausesUpd, S2); mirrors evalD's `other` fall-through (stuck = `none`, fail-loud).
+  | Nat.succ f, g, Instr.CUPD n :: c, s, hs =>
+      match s with
+      | .ret (.pair w p') :: s' =>
+          match customParamUpdate n p' hs with
+          | some hs' => exec f g c (.ret w :: s') hs'         -- REINSTALL p', RESUME c with ret w
+          | none     => none                                  -- no customUpd frame at n (unreachable)
+      | _ => none                                             -- non-pair terminal (ill-typed guard)
 
 /-! ## The calculation is correct (proven) -/
 
