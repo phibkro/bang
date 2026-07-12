@@ -199,6 +199,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **sched** — scheduler-as-handler as ordinary library code (ADR-0101 §G1 demo) (`cb021012`)
 - **frontend** — lift B011's v1 ctor-payload arity-2 cap (#144) (`f1f09bcf`)
 - **stdlib** — tier-2 additions — zip/range/replicate + strLength (#144) (`e452ab04`)
+- **frontend** — result-position instantiation discovery for bound-free generics (#55, ADR-0103 Amendment 2) (`1f279246`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
