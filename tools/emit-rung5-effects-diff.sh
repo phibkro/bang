@@ -24,7 +24,11 @@ trap 'rm -rf "$outdir"' EXIT
 
 # Programs the GC path CANNOT lower yet, each with the NAMED wall. A refusal here is expected; an
 # emit here (or a refusal NOT here) is a gate failure. Keep this list minimal + honest.
-#   calc/json/hostio-echo : FRONTEND lower-errors (BEFORE the emitter) — pre-existing, orthogonal.
+#   calc/json : MULTI-MODULE — refuse HERE only because this gate drives the single-file `rung4-shape`
+#               exe (no import resolution). They EMIT + run == bang run via `bang emit` (module-
+#               resolving); gated by tools/emit-modules-diff.sh (calc 11021193, json 163). NOT an
+#               emitter wall — a harness-scope split (#133 C3 / calcjson-compiled-diagnosis.md W3).
+#   hostio-echo : FRONTEND host-IO perform not lowered here (ADR-0104 boundary) — a real refusal.
 #   sched-*                : `drive`'s NINE-argument curried `let rec` (5 curried Step/Int params
 #                           plus round+acc) leaves a type variable unresolved for ADR-0103's
 #                           monomorphization pass at one of its self-calls — a frontend lower-error
