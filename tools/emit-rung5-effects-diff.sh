@@ -26,8 +26,8 @@ trap 'rm -rf "$outdir"' EXIT
 # emit here (or a refusal NOT here) is a gate failure. Keep this list minimal + honest.
 #   calc/json : MULTI-MODULE — refuse HERE only because this gate drives the single-file `rung4-shape`
 #               exe (no import resolution). They EMIT + run == bang run via `bang emit` (module-
-#               resolving); gated by tools/emit-modules-diff.sh (calc 11021193, json 163). NOT an
-#               emitter wall — a harness-scope split (#133 C3 / calcjson-compiled-diagnosis.md W3).
+#               resolving); gated by emit-rung5-print-diff.sh's MODULE_CORPUS=( json calc ) (calc
+#               11021193, json 163). NOT an emitter wall — a harness-scope split (#133 C3).
 #   hostio-echo : FRONTEND host-IO perform not lowered here (ADR-0104 boundary) — a real refusal.
 #   sched-*                : `drive`'s NINE-argument curried `let rec` (5 curried Step/Int params
 #                           plus round+acc) leaves a type variable unresolved for ADR-0103's

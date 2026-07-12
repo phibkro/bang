@@ -378,13 +378,35 @@ Two findings getting here:
   Trace`. Fixed (6 lines: `Cap Trace`→`Cap Eval_Trace`, `with Trace`→`with Eval_Trace`, drop the
   `use`); all three engines then agree.
 
-**json** (the pure multi-module companion, no effects) also emits via `bang emit` → `163`. Both are
-banked as real green tests by `tools/emit-modules-diff.sh` (the module-resolving corpus gate, driving
-`bang emit` not `rung4-shape`). The rung-5 corpus gate's `calc`/`json` `KNOWN_REFUSALS` entries are
-now documented as a HARNESS-scope split (single-file `rung4-shape`), not emitter walls.
+**json** (the pure multi-module companion, no effects) already gated via `bang emit` → `163`. calc
+ENROLLS in the SAME existing `MODULE_CORPUS` leg (`tools/emit-rung5-print-diff.sh`, `#136` — driving
+`bang emit` → wasmtime, diffed vs `bang run`'s live stdout): `MODULE_CORPUS=( json calc )`. No new
+gate — the module-resolving mechanism already existed; C3 was a one-line enrollment + the stale-example
+fix. The rung-5 EFFECTS gate's `calc`/`json` `KNOWN_REFUSALS` entries are documented as a HARNESS-scope
+split (the single-file `rung4-shape` exe), not emitter walls.
 
 The #133/#134 arc is complete at the emit stratum: escape fixed (C2), first-class caps emit (C0),
 both headline consumers (stage-swap 30005, calc 11021193) run on wasmtime == the kernel oracle.
+
+### 8.5 · C4 (proof-grade) INPUTS — handed to the wgcexec calculated-machine probe
+
+**C4 is NOT scoped here** — the `wgcexec` calculated-machine design probe owns the proof-grade story
+(the `wexec ≡ Source.eval` obligation on a GC machine, calculated not verified-after per inv#4). This
+section is the INPUT handoff for that lane; two concrete obligations the #134 stamp introduces:
+
+1. **The watermark-equivalence clause** (§3.2 + §8.2): the runtime `$liveTop`/`$id` gate ≡ the
+   kernel's `WellCounted (g,K,_)` `< g` bound (`Invariants.lean:31`) — `capId < $liveTop` is the
+   image of `splitAtId K n ≠ none`. This is a TRANSFER (the kernel already proves `WellCounted`),
+   not a new theory. It is stateable against the proof-carrying backend (§8.2), unlike the
+   `$env↔store` bijection (which needs the post-v1 GC machine).
+2. **The txn-abort restore RESIDUAL** (§8.2, the honesty note + the txn arm comment): the `throw_ref`
+   unwind on a txn ABORT skips the txn's `$capExit`, leaving `$liveTop` transiently HIGH. This is the
+   SAFE direction (more caps look live ⇒ never a wrong-trap on a legit cap; worst case = failing to
+   trap an escaped cap AFTER an abort, an exotic shape in no witness). The airtight fix (restore
+   `$liveTop` on the abort path too, e.g. inside the `catch_all_ref` block before `throw_ref`) is a
+   C4-lane input — tighten it opportunistically if that arm is touched. The rung-3 explicit-restore
+   finding (`emission-rung3-design.md`) is the precedent (wasm unwinds free; the heap/watermark
+   restore is the load-bearing manual part).
 
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
