@@ -5358,7 +5358,7 @@ theorem CCtxCorr_pop_custom {κ : CStore} {n : Nat} {ℓ0 : Bang.EffectRow.Label
 
 /-- `CCtxCorr` rides the POP of a NON-custom top frame: the custom projection skips it. -/
 theorem CCtxCorr_pop_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls))
+    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls) ∧ fr ≠ Frame.handleF n (.customUpd ℓ p cls))
     (hK : CCtxCorr κ (fr :: K)) : CCtxCorr κ K := by
   unfold CCtxCorr at hK ⊢; rw [hK]
   cases fr with
@@ -5367,8 +5367,8 @@ theorem CCtxCorr_pop_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCtx
       | state ℓ0 s => simp only [ctxCustoms]
       | throws ℓ0 => simp only [ctxCustoms]
       | transaction ℓ0 Θ => simp only [ctxCustoms]
-      | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
-      | customUpd ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
+      | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl).1
+      | customUpd ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl).2
   | letF N => simp only [ctxCustoms]
   | appF w => simp only [ctxCustoms]
 
@@ -5487,6 +5487,86 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
 
+/-- The `customUpd` (ADR-0107 D5) twin of `splitAtId_of_ctxCustoms_get`: a live customUpd `(p,cls,true)`
+at identity `n` in the store reflects a live `customUpd` frame at `n`. Used by the disjointness refutes. -/
+theorem splitAtId_of_ctxCustomsUpd_get {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
+    ∀ {K : Bang.EvalCtx}, Bang.Model.StratFresh K → (ctxCustoms K).get? n = some (p, cls, true) →
+      ∃ Kᵢ ℓ' Kₒ, Bang.splitAtId K n = some (Kᵢ, Handler.customUpd ℓ' p cls, Kₒ) := by
+  intro K
+  induction K with
+  | nil => intro _ hg; simp [ctxCustoms, CStore.get?] at hg
+  | cons fr K ih =>
+    intro hsf hg
+    cases fr with
+    | handleF m h0 =>
+        cases h0 with
+        | customUpd ℓ0 p0 cl0 =>
+            by_cases hc : m = n
+            · subst hc
+              have hhead : (ctxCustoms (Frame.handleF m (Handler.customUpd ℓ0 p0 cl0) :: K)).get? m
+                  = some (p0, cl0, true) := by simp [ctxCustoms, CStore.get?]
+              rw [hhead] at hg
+              obtain ⟨rfl, rfl⟩ : p = p0 ∧ cls = cl0 := by
+                have := Option.some.inj hg; simp only [Prod.mk.injEq] at this; exact ⟨this.1.symm, this.2.1.symm⟩
+              exact ⟨[], ℓ0, K, by simp [Bang.splitAtId]⟩
+            · have he : (ctxCustoms (Frame.handleF m (Handler.customUpd ℓ0 p0 cl0) :: K)).get? n
+                  = (ctxCustoms K).get? n := by
+                simp only [ctxCustoms, CStore.get?, List.find?, hc, decide_false, Bool.false_eq_true, if_false]
+              rw [he] at hg
+              simp only [Bang.Model.StratFresh] at hsf
+              obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg
+              exact ⟨Frame.handleF m (Handler.customUpd ℓ0 p0 cl0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | custom ℓ0 p0 cl0 =>
+            by_cases hc : m = n
+            · subst hc
+              have hhead : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: K)).get? m
+                  = some (p0, cl0, false) := by simp [ctxCustoms, CStore.get?]
+              rw [hhead] at hg
+              have := Option.some.inj hg; simp only [Prod.mk.injEq] at this; exact absurd this.2.2 (by simp)
+            · have he : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: K)).get? n
+                  = (ctxCustoms K).get? n := by
+                simp only [ctxCustoms, CStore.get?, List.find?, hc, decide_false, Bool.false_eq_true, if_false]
+              rw [he] at hg
+              simp only [Bang.Model.StratFresh] at hsf
+              obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg
+              exact ⟨Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | state ℓ0 s0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxCustoms K).get? n = some (p, cls, true) := by simpa only [ctxCustoms] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.state ℓ0 s0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | throws ℓ0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxCustoms K).get? n = some (p, cls, true) := by simpa only [ctxCustoms] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.throws ℓ0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | transaction ℓ0 Θ0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxCustoms K).get? n = some (p, cls, true) := by simpa only [ctxCustoms] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.transaction ℓ0 Θ0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+    | letF N =>
+        simp only [Bang.Model.StratFresh] at hsf
+        have hg' : (ctxCustoms K).get? n = some (p, cls, true) := by simpa only [ctxCustoms] using hg
+        obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
+        exact ⟨Frame.letF N :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
+    | appF w =>
+        simp only [Bang.Model.StratFresh] at hsf
+        have hg' : (ctxCustoms K).get? n = some (p, cls, true) := by simpa only [ctxCustoms] using hg
+        obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
+        exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
+
 /-- If `splitAtId K n` resolves to a `custom ℓ' p cl` frame, the custom store has that entry at key
 `n`: `(ctxCustoms K).get? n = some (p, cl)`. Route-B custom mirror of `splitAtId_state_value`/
 `splitAtId_txn_value` — the value lookup is by identity `n`; the frame's label `ℓ'` is immaterial to
@@ -5568,10 +5648,15 @@ theorem ctxCustoms_get_none_of_ctxStates_some {n : Nat} {s : Val} {K : Bang.Eval
   | none => rfl
   | some pcl =>
       exfalso
-      obtain ⟨p, cl, _⟩ := pcl
+      obtain ⟨p, cl, b⟩ := pcl
       obtain ⟨Kᵢ, ℓs, Kₒ, hsps⟩ := splitAtId_of_ctxStates_get hsf hs
-      obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
-      rw [hsps] at hspc; simp at hspc
+      cases b with
+      | false =>
+          obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
+          rw [hsps] at hspc; simp at hspc
+      | true =>
+          obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustomsUpd_get hsf hgc
+          rw [hsps] at hspc; simp at hspc
 
 theorem ctxCustoms_get_none_of_ctxTxns_some {n : Nat} {Θ : List Val} {K : Bang.EvalCtx}
     (hsf : Bang.Model.StratFresh K) (ht : (ctxTxns K).get? n = some Θ) :
@@ -5580,10 +5665,15 @@ theorem ctxCustoms_get_none_of_ctxTxns_some {n : Nat} {Θ : List Val} {K : Bang.
   | none => rfl
   | some pcl =>
       exfalso
-      obtain ⟨p, cl, _⟩ := pcl
+      obtain ⟨p, cl, b⟩ := pcl
       obtain ⟨Kᵢ, ℓt, Kₒ, hspt⟩ := splitAtId_of_ctxTxns_get hsf ht
-      obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
-      rw [hspt] at hspc; simp at hspc
+      cases b with
+      | false =>
+          obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
+          rw [hspt] at hspc; simp at hspc
+      | true =>
+          obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustomsUpd_get hsf hgc
+          rw [hspt] at hspc; simp at hspc
 
 /-- **The custom-dispatch bridge** (route-B, Stage-4 perform-arm): a custom op serviced by `evalD`'s inline
 clause-service corresponds to the kernel `idDispatch` running the clause body against the SAME context `K`
