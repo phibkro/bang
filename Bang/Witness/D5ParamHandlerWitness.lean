@@ -157,4 +157,46 @@ private def simMapThreadedByDriver : Comp :=
         (.binop .add (.vvar 0) (.vint 1))))                         -- +1 -> 3
 #guard yieldsInt 200 simMapThreadedByDriver 3
 
+/-! ## §4 · The REAL `customUpd` param-evolution — a USER effect owning its memory (ADR-0107 D5 LANDED)
+
+Now that the kernel carries `Handler.customUpd` (the pin: IR + the `Source.eval` dispatch arm, subset-green),
+the §3 "BLOCKED at the user-effect layer" claim is LIFTED for the kernel: these `#guard`s run an actual
+`customUpd` USER handler on `Source.eval`, whose CLAUSE BODY updates the carried param — the sim-map
+encapsulation §3 said v1 could not do. The clause binds `param@1, arg@0` and yields `ret (pair w p')`
+(resume `w`, reinstall `p'`) — the DECLARED customUpd contract (`dispatchOn`'s customUpd arm). This is the
+e2e customUpd witness (gate condition 4, the `Source.eval` leg — the CalcVM/evalE legs land when the
+engine port greens). -/
+
+/-- The "set" clause for a `customUpd` handler carrying an int cell: `set(arg)` resumes with the OLD param
+`p` and reinstalls the NEW param `arg`. The customUpd dispatch matches the substituted clause body
+SYNTACTICALLY as `ret (pair w p')` (not after evaluation), so `w`/`p'` must be VALUES — hence the update is
+`p' := arg` (a value), not `p + arg` (a binop is a Comp, not a Val; the S0 contract confines the update to
+value operations). Body binds `arg@0, p@1`: `ret (pair p arg)` = `ret (pair (vvar 1) (vvar 0))` — resume the
+OLD param `w = p`, reinstall `p' = arg`. -/
+private def setClause : Comp :=
+  .ret (.pair (.vvar 1) (.vvar 0))                  -- ret (pair p arg) = ret (pair w p') — SYNTACTIC ret-of-pair
+
+/-- **(4a) customUpd param evolves across two performs — USER-effect handler memory.** A `customUpd 1`
+handler carrying 100, one op "set". Perform `set 7` (resumes with the OLD param 100, param → 7), then
+`set 9` (resumes with the evolved param 7, param → 9). The SECOND perform's resume value is the observable
+— 7. The param LIVES IN THE USER HANDLER, evolving across performs with ZERO driver plumbing: the D5 sim-map
+win realized for a USER effect (the §3 "BLOCKED at user-effect layer" claim, LIFTED). Yields 7. -/
+private def customUpdEvolve : Comp :=
+  .handle (.customUpd 1 (.vint 100) [("set", setClause)])
+    (.letC (.perform (.vvar 0) "set" (.vint 7))     -- resume w = 100 (old param); param → 7
+      (.perform (.vvar 1) "set" (.vint 9)))         -- resume w = 7 (evolved param); param → 9
+#guard yieldsInt 300 customUpdEvolve 7
+
+/-- **(4b) the regression pin (ADR-0107 yield-sniffing rejection): a READ-ONLY `custom` clause returning a
+PAIR gets the pair AS ITS VALUE, NOT reinterpreted as a param-update.** The SAME `setClause` under `custom`
+(read-only), performing once — the clause yields `pair 100 7`, and because `custom`'s arm NEVER decodes the
+pair, the resume value IS the whole pair `(100, 7)`. We observe its FIRST component via `split`. Yields 100
+(the pair's fst) — proving the pair-decode fires ONLY under `customUpd`, never `custom` (the exact silent
+reinterpretation ADR-0107 rejects). -/
+private def customPairValueRegression : Comp :=
+  .handle (.custom 1 (.vint 100) [("set", setClause)])
+    (.letC (.perform (.vvar 0) "set" (.vint 7))     -- custom (read-only): resume = the WHOLE pair (100, 7)
+      (.split (.vvar 0) (.ret (.vvar 1))))          -- split the pair: fst@1, snd@0 ⇒ ret fst = 100
+#guard yieldsInt 300 customPairValueRegression 100
+
 end Bang.D5ParamHandlerWitness
