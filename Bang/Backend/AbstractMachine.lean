@@ -1131,9 +1131,6 @@ theorem stateUpdate_get {n : Nat} {v : Val} :
     | custom ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
         simp only [hsState, hh] at hg
         simp [stateUpdate, hh, ih hg]
-    | customUpd ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
-        simp only [hsState, hh] at hg
-        simp [stateUpdate, hh, ih hg]
     | customUpd ℓ0 p cl =>   -- customUpd = non-state frame, same catch-all as custom (ADR-0107 D5)
         simp only [hsState, hh] at hg
         simp [stateUpdate, hh, ih hg]
@@ -1222,6 +1219,13 @@ def FrameMut (a b : HFrame) : Prop :=
      -- UNCHANGED. FrameMut therefore requires FULL equality (label + carried param + clause map) — keeps
      -- `HMut` reflexive (HMut.refl) AND lets `updateStates_eq` reconcile two related custom frames.
      | .custom ℓ1 p1 c1, .custom ℓ2 p2 c2 => ℓ1 = ℓ2 ∧ p1 = p2 ∧ c1 = c2
+     -- customUpd (ADR-0107 D5): FrameMut requires FULL equality (label + param + clause-map), like
+     -- `custom`. The customUpd param-update is serviced INLINE at the `perform` arm (a sub-eval that
+     -- returns before the frame is left), so on the net-effect (raised/throws) path the customUpd frame
+     -- — like custom — is left UNCHANGED by `updateStates`/`updateTxns` (both skip it). `netEffect` does
+     -- not thread the param here; the param-update lives entirely inside the resolved perform sub-eval
+     -- (evalD's customUpd arm runs `setParam` on the returned κ', not on a frame the netEffect rebuilds).
+     | .customUpd ℓ1 p1 c1, .customUpd ℓ2 p2 c2 => ℓ1 = ℓ2 ∧ p1 = p2 ∧ c1 = c2
      | _, _ => False)
 
 /-- `HMut hs hsf`: `hsf` is `hs` with state-frame values possibly changed, no push/pop, frame
@@ -1263,13 +1267,14 @@ theorem Corr_pop_nonstate {σ : SStore} {fr top : HFrame} {hs tail : HStack}
   | custom ℓ1 p1 cl1 =>   -- custom fr: FrameMut forces top = custom (same label); hsStates skips both (ADR-0085 stage 1)
       cases hth : top.handler with
       | custom ℓ2 p2 cl2 => simp [hsStates, hth]
+      | customUpd ℓ2 p2 cl2 => rw [hfr, hth] at hsh; exact absurd hsh (by simp)   -- FrameMut custom/customUpd = False
       | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | transaction _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
-
-  | customUpd ℓ1 p1 cl1 =>   -- custom fr: FrameMut forces top = custom (same label); hsStates skips both (ADR-0085 stage 1)
+  | customUpd ℓ1 p1 cl1 =>   -- customUpd fr (ADR-0107 D5): FrameMut forces top = customUpd; hsStates skips both
       cases hth : top.handler with
-      | custom ℓ2 p2 cl2 => simp [hsStates, hth]
+      | customUpd ℓ2 p2 cl2 => simp [hsStates, hth]
+      | custom ℓ2 p2 cl2 => rw [hfr, hth] at hsh; exact absurd hsh (by simp)   -- FrameMut customUpd/custom = False
       | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | transaction _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
@@ -1445,21 +1450,22 @@ theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore} {τ' : THeap},
                 rw [← ih hmut' (hC : Corr σ' k) (hT : TCorr τ' k)]
                 obtain ⟨fkc, fks, fkh⟩ := fk; obtain ⟨frc, frs, frh⟩ := fr
                 simp_all
+            | customUpd _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut custom/customUpd = False
             | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
-
-        | customUpd ℓ0 p0 cl0 =>   -- custom fr forces fk = custom (FrameMut); both skipped by updateStates/updateTxns, like throws
+        | customUpd ℓ0 p0 cl0 =>   -- customUpd fr (ADR-0107 D5) forces fk = customUpd (FrameMut); both skipped by updateStates/updateTxns
             cases hfk : fk.handler with
-            | custom ℓ1 p1 cl1 =>
-                -- FrameMut custom/custom = FULL equality: the frames are identical, so net-effect (which
-                -- skips custom) reconciles them exactly (ADR-0085 stage 1).
+            | customUpd ℓ1 p1 cl1 =>
+                -- FrameMut customUpd/customUpd = label + clause equality (param free): net-effect skips
+                -- customUpd for the state/txn projections, so updateStates/updateTxns reconcile them.
                 simp only [hsStates, hfk] at hC
                 simp only [hsTxns, hfk] at hT
                 simp only [updateStates, hfr, updateTxns]
                 rw [← ih hmut' (hC : Corr σ' k) (hT : TCorr τ' k)]
                 obtain ⟨fkc, fks, fkh⟩ := fk; obtain ⟨frc, frs, frh⟩ := fr
                 simp_all
+            | custom _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut customUpd/custom = False
             | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
@@ -1911,6 +1917,11 @@ theorem customUpdate_none_of_hsCustom_none {n : Nat} {op : Bang.OpId} {v : Val} 
         · simp only [hsCustom, hh, hid, ↓reduceIte] at hc; exact absurd hc (by simp)
         · simp only [hsCustom, hh, if_neg hid] at hc
           simp only [customUpdate, hh, if_neg hid, ih hc, Option.map_none]
+    | customUpd ℓ0 p0 cls0 =>   -- customUpd frame: customUpdate SKIPS it (matches only .custom), so recurse
+        simp only [customUpdate, hh, ih (by
+          by_cases hid : fr.id = n
+          · simp only [hsCustom, hh, hid, ↓reduceIte] at hc; exact absurd hc (by simp)
+          · simpa only [hsCustom, hh, if_neg hid] using hc), Option.map_none]
     | state ℓ0 s => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc, Option.map_none]
     | throws ℓ0 => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc, Option.map_none]
     | transaction ℓ0 Θ => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc, Option.map_none]
@@ -1919,7 +1930,7 @@ theorem customUpdate_none_of_hsCustom_none {n : Nat} {op : Bang.OpId} {v : Val} 
 `cls.find? op = none` to the machine miss. -/
 theorem customUpdate_none_of_clause_miss {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
     {cls : List (Bang.OpId × Comp)} :
-    ∀ {hs : HStack}, hsCustom hs n = some (p, cls) → cls.find? (·.1 == op) = none →
+    ∀ {hs : HStack}, hsCustom hs n = some (p, cls, false) → cls.find? (·.1 == op) = none →
       customUpdate n op v hs = none := by
   intro hs
   induction hs with
@@ -1930,8 +1941,14 @@ theorem customUpdate_none_of_clause_miss {n : Nat} {op : Bang.OpId} {v : Val} {p
     | custom ℓ0 p0 cls0 =>
         by_cases hid : fr.id = n
         · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
-          obtain ⟨rfl, rfl⟩ := hc
+          obtain ⟨rfl, rfl, _⟩ := hc
           simp only [customUpdate, hh, hid, ↓reduceIte, hcl]
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdate, hh, if_neg hid, ih hc hcl, Option.map_none]
+    | customUpd ℓ0 p0 cls0 =>   -- customUpd frame: hsCustom returns isUpd=true; hypothesis says false ⇒ absurd at id=n, else recurse
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨_, _, hupd⟩ := hc; exact absurd hupd (by simp)
         · simp only [hsCustom, hh, if_neg hid] at hc
           simp only [customUpdate, hh, if_neg hid, ih hc hcl, Option.map_none]
     | state ℓ0 s => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
