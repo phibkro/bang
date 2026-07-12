@@ -585,6 +585,113 @@ def runEmit (file : String) (out : Option String) : IO UInt32 := do
         | some path => IO.FS.writeFile ⟨path⟩ wat; pure 0
         | none      => IO.println wat; pure 0
 
+/-! ## `bang build` — the distribution artifact (issue #136 productized)
+
+`bang emit` prints the `.wat` text; `bang build` turns it into a runnable Wasm artifact —
+the distribution-survey's static story (docs/notes/distribution-survey.md: the compiled-wasm
+component IS bang's static story). The pipeline is `emit` (the SAME module-resolved
+`emitModuleGCPrint` path) → `wasm-tools parse` (wat→binary) → `wasm-tools validate` → write.
+
+The emitted module is a WASI-preview1 COMMAND (`_start` + a `wasi_snapshot_preview1/fd_write`
+import — WasmEmit.lean §renderImports), so `wasmtime run out.wasm` runs it directly. `--component`
+additionally wraps it as a WASI COMPONENT (`wasm-tools component new --adapt`); the preview1→WIT
+adapter is NOT vendored (nixpkgs ships no WASI adapter — the named 2026-toolchain wall), so it is
+resolved from `--adapter PATH` or `$BANG_WASI_ADAPTER`, else a LOUD error names the pinned artifact.
+Every tool invocation fails LOUD with the tool's own stderr; a missing `wasm-tools` names the fix. -/
+
+/-- Run a subprocess, returning `(exitCode, stdout, stderr)`. `wasm-tools`/`wasmtime` write the
+diagnostics we surface to stderr, so both streams are captured. -/
+def runTool (cmd : String) (args : List String) : IO (UInt32 × String × String) := do
+  let out ← IO.Process.output { cmd := cmd, args := args.toArray }
+  pure (out.exitCode, out.stdout, out.stderr)
+
+/-- The entry file's stem + `.wasm` (or `.component.wasm`) — the default output name (e.g.
+`examples/json/main.bang` → `main.wasm`). Mirrors the `-o` convention: an explicit `-o` overrides. -/
+def defaultOutName (file : String) (component : Bool) : String :=
+  let stem := (System.FilePath.mk file).fileStem.getD "out"
+  stem ++ (if component then ".component.wasm" else ".wasm")
+
+/-- `bang build <file> [-o out.wasm] [--component] [--adapter PATH]` — emit → `wasm-tools parse` →
+`validate` → write a runnable Wasm artifact. Fails LOUD (exit 1) at the first tool error, surfacing
+that tool's stderr; a missing `wasm-tools` on PATH names the dev-shell fix. `--component` wraps the
+core module as a WASI component (needs the preview1 adapter — see the section header). -/
+def runBuild (file : String) (out : Option String) (component : Bool)
+    (adapter : Option String) : IO UInt32 := do
+  match ← resolveEntryFile file with
+  | .error e   => IO.eprintln s!"error: {e}"; pure 1
+  | .ok merged =>
+    match Bang.TypeCheck.checkAndLowerProg merged with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok c    =>
+      match Bang.WasmEmit.emitModuleGCPrint c with
+      | .unsup r => IO.eprintln s!"EMIT-REFUSED: {r}"; pure 1
+      | .ok wat  =>
+        let outPath := out.getD (defaultOutName file component)
+        -- The .wat goes to a sibling temp so the readback + component wrap chain from ONE emit.
+        let watPath := outPath ++ ".wat"
+        IO.FS.writeFile ⟨watPath⟩ wat
+        let cleanup : IO Unit := do
+          if ← System.FilePath.pathExists ⟨watPath⟩ then IO.FS.removeFile ⟨watPath⟩
+        let coreBin := if component then outPath ++ ".core.wasm" else outPath
+        -- wat → binary. `IO.Process.output` on a missing `wasm-tools` throws (spawn failure); catch
+        -- it into a loud, actionable msg naming the dev-shell fix. A tool that RUNS but rejects the
+        -- input surfaces its own stderr in the `prc != 0` arm below.
+        let parseRes ← (try
+            let r ← runTool "wasm-tools" ["parse", watPath, "-o", coreBin]
+            pure (Except.ok r)
+          catch _ =>
+            pure (Except.error ()) : IO (Except Unit (UInt32 × String × String)))
+        match parseRes with
+        | .error _ =>
+          cleanup
+          IO.eprintln "error: `wasm-tools` not found on PATH. Install it (dev shell: `nix shell nixpkgs#wasm-tools`)."
+          pure 1
+        | .ok (prc, _, perr) =>
+          if prc != 0 then
+            cleanup
+            -- On some platforms `output` reports the spawn failure as a nonzero exit + a
+            -- "could not execute" stderr rather than throwing; name the fix in that case too.
+            if (perr.splitOn "could not execute").length > 1
+               || (perr.splitOn "No such file").length > 1 then
+              IO.eprintln "error: `wasm-tools` not found on PATH. Install it (dev shell: `nix shell nixpkgs#wasm-tools`)."
+            else
+              IO.eprintln s!"error: wasm-tools parse failed:\n{perr}"
+            pure 1
+          else
+            -- validate the core module against the Wasm 3.0 features the GC backend emits.
+            let (vrc, _, verr) ← runTool "wasm-tools"
+              ["validate", coreBin, "-f", "gc,function-references,exceptions"]
+            if vrc != 0 then
+              cleanup
+              IO.eprintln s!"error: wasm-tools validate failed:\n{verr}"; pure 1
+            else if !component then
+              cleanup
+              IO.eprintln s!"built {outPath} (WASI command module — run: wasmtime run {outPath})"
+              pure 0
+            else
+              -- component wrap: resolve the preview1 adapter, else fail LOUD naming the artifact.
+              let adapterPath ← match adapter with
+                | some p => pure (some p)
+                | none   => IO.getEnv "BANG_WASI_ADAPTER"
+              match adapterPath with
+              | none =>
+                cleanup
+                if ← System.FilePath.pathExists ⟨coreBin⟩ then IO.FS.removeFile ⟨coreBin⟩
+                IO.eprintln "error: --component needs the WASI preview1 adapter (not vendored — no nixpkgs WASI adapter)."
+                IO.eprintln "  Supply it via --adapter PATH or $BANG_WASI_ADAPTER."
+                IO.eprintln "  Get the pinned artifact: github.com/bytecodealliance/wasmtime v45.0.0 → wasi_snapshot_preview1.command.wasm"
+                pure 1
+              | some ap =>
+                let (crc, _, cerr) ← runTool "wasm-tools"
+                  ["component", "new", coreBin, "--adapt", s!"wasi_snapshot_preview1={ap}", "-o", outPath]
+                cleanup
+                if ← System.FilePath.pathExists ⟨coreBin⟩ then IO.FS.removeFile ⟨coreBin⟩
+                if crc != 0 then
+                  IO.eprintln s!"error: wasm-tools component new failed:\n{cerr}"; pure 1
+                else
+                  IO.eprintln s!"built {outPath} (WASI component — run: wasmtime run {outPath})"
+                  pure 0
+
 /-! ## Host-IO driver (ADR-0104) — the replay-prefix seam's IO shell
 
 The ONLY IO site. `evalEHost` (`Bang.EnvMachine`, pure) surfaces a host request; this driver does the
@@ -1746,6 +1853,12 @@ def usage : String :=
   "                                     WasmGC engine: `wasmtime run -W gc=y,function-references=y,\n" ++
   "                                     exceptions=y out.wat`. A program the GC path cannot lower\n" ++
   "                                     (a first-class-capability effect, or host-IO) refuses LOUDLY.\n\n" ++
+  "  bang build <file.bang> [-o out.wasm]  emit → `wasm-tools parse`/`validate` → a runnable Wasm\n" ++
+  "             [--component] [--adapter P] artifact (issue #136). Default out = <stem>.wasm. The\n" ++
+  "                                     module is a WASI command: `wasmtime run out.wasm`. `--component`\n" ++
+  "                                     wraps it as a WASI component (needs the preview1 adapter via\n" ++
+  "                                     --adapter PATH or $BANG_WASI_ADAPTER — not vendored). Needs\n" ++
+  "                                     `wasm-tools` on PATH; a tool error fails LOUD with its stderr.\n\n" ++
   "  bang explain <CODE>                print the teaching entry for a stable diagnostic code\n" ++
   "                                     (the rustc `error[B004]` pattern, plan 013 s5): summary,\n" ++
   "                                     explanation, and a minimal triggering example. Codes appear\n" ++
@@ -2098,6 +2211,35 @@ def main (args : List String) : IO UInt32 := do
         | []               => []
       match (stripOut rest).filter (fun a => !("--".isPrefixOf a)) with
       | [arg] => runEmit arg out
+      | _     => IO.eprintln usage; pure 1
+    else if cmd == "build" then
+      -- `bang build <file> [-o out.wasm] [--component] [--adapter PATH|--adapter=PATH]` (#136):
+      -- emit → `wasm-tools parse`/`validate` → write a runnable Wasm artifact. `-o`/`--out` and
+      -- `--adapter` are two-token OR `=`-form flags (mirrors `emit`'s `-o` handling); `--component`
+      -- is a bare flag; any OTHER `--`-prefixed token falls to usage.
+      let out : Option String :=
+        parseEqFlag "--out" rest <|> (do
+          let rec findOut : List String → Option String
+            | "-o" :: v :: _ => some v
+            | _ :: rst       => findOut rst
+            | []             => none
+          findOut rest)
+      let adapter : Option String :=
+        parseEqFlag "--adapter" rest <|> (do
+          let rec findAdapter : List String → Option String
+            | "--adapter" :: v :: _ => some v
+            | _ :: rst              => findAdapter rst
+            | []                    => none
+          findAdapter rest)
+      let component := rest.contains "--component"
+      -- strip the two-token flag PAIRS before filtering positionals (their values are bare tokens).
+      let rec stripPairs : List String → List String
+        | "-o" :: _ :: rst        => stripPairs rst
+        | "--adapter" :: _ :: rst => stripPairs rst
+        | a :: rst                => a :: stripPairs rst
+        | []                      => []
+      match (stripPairs rest).filter (fun a => !("--".isPrefixOf a)) with
+      | [arg] => runBuild arg out component adapter
       | _     => IO.eprintln usage; pure 1
     else if cmd == "explain" then
       -- `bang explain <CODE>` (plan 013 s5): exactly one positional code; anything else is usage.
