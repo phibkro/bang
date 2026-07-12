@@ -5685,7 +5685,7 @@ resume FOCUS is the clause body (not `ret s`). -/
 theorem dispatch_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v p : Val}
     {cls : List (Bang.OpId × Comp)} {clause : Bang.OpId × Comp} {K : Bang.EvalCtx}
     (hsf : Bang.Model.StratFresh K) (hcr : Bang.CapResolves K n ℓ op)
-    (hg : (ctxCustoms K).get? n = some (p, cls)) (hcl : cls.find? (·.1 == op) = some clause) :
+    (hg : (ctxCustoms K).get? n = some (p, cls, false)) (hcl : cls.find? (·.1 == op) = some clause) :
     Bang.idDispatch K n ℓ op v = some (K, Comp.subst p (Comp.subst (Val.shift v) clause.2)) := by
   obtain ⟨Kᵢ, h, Kₒ, hsp, hho⟩ := hcr
   -- the resolved frame is the live custom frame (id-uniqueness): the store read reflects a custom frame at
@@ -5765,6 +5765,7 @@ ADR-0086 `CustomFree` premise-lifecycle pattern (grep-adjacent so the Stage-4 ex
 def NoCustomFrame : Bang.EvalCtx → Prop
   | [] => True
   | Frame.handleF _ (.custom _ _ _) :: _ => False
+  | Frame.handleF _ (.customUpd _ _ _) :: _ => False   -- ADR-0107 D5: customUpd is a clause-carrier too
   | _ :: K => NoCustomFrame K
 
 /-- `NoCustomFrame` passes to the tail (every recursive `run_evalD` case strips or keeps the head). -/
