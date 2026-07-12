@@ -1289,7 +1289,14 @@ def pExpr : Nat → P Surf
         | some r => pRuleDrive f r.build r.choices [] ("handle" :: ts0)
         | none   => pOp 0 f ("handle" :: ts0)
   | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
-      let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
+      -- #135: the scrutinee is an APPLICATION SPINE (`match ($k) () { … }`, `match (f x) { … }`),
+      -- not a single atom — `pAtom` alone stopped at the first atom, leaving a trailing bare
+      -- application unconsumed and failing the very next `expect "{"` on the application's own
+      -- token (`parse error: expected '{', got '('`, confirmed live pre-fix). `pMatchScrutineeLoop`
+      -- (below `pAppLoop`, same file) folds LEFT-associatively like an ordinary application but
+      -- stops at `{` (never swallows the arms-block opener as a thunk argument).
+      let (s0, ts) ← pAtom f ts           -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
+      let (s, ts) ← pMatchScrutineeLoop f s0 ts
       let (_, ts) ← expect "{" ts
       let (arms, ts) ← pArms f ts
       -- exactly the Left/Right pair (order-independent, 1 binder each) is the anonymous-sum
@@ -1439,6 +1446,27 @@ def pAppLoop : Nat → Surf → P Surf
       else
         match pDotted f ts with
         | .ok (a, ts') => pAppLoop f (.app acc a) ts'
+        | .error _     => .ok (acc, ts)
+
+/-- #135: `match`'s own scrutinee-parse loop — an application spine (`($k) ()`, `f x`) that
+STOPS at `{` (the match ARMS block's own opener), unlike `pAppLoop`'s general stop-set (which does
+NOT include `{`, since an ordinary application legitimately takes a THUNK argument — `f {…}` — and
+adding `{` there would break every one of those call sites). A BESPOKE loop, not a `pAppLoop`
+stop-set edit, is the #26-class-safe move here: `match`'s scrutinee is the ONE surface position
+where a trailing `{` is UNAMBIGUOUSLY "the arms block start", never "a thunk argument" (the
+grammar's own `match s { arms }` shape has no way to write a thunk-argument scrutinee application
+immediately before the arms brace — `match (f {…}) { … }` still parens the whole application, which
+`pAtom`'s own `"("` arm already handles structurally, unaffected by this loop). Otherwise identical
+recursion shape to `pAppLoop` (left-associative, `pDotted` per step). -/
+def pMatchScrutineeLoop : Nat → Surf → P Surf
+  | 0,      acc, ts => .ok (acc, ts)
+  | f + 1, acc, ts =>
+    match ts with
+    | [] => .ok (acc, ts)
+    | "{" :: _ => .ok (acc, ts)
+    | _ =>
+        match pDotted f ts with
+        | .ok (a, ts') => pMatchScrutineeLoop f (.app acc a) ts'
         | .error _     => .ok (acc, ts)
 
 /-- An atom followed by zero+ method-performs `.op` / `.op(args)` (ADR-0070). Binds tighter than
