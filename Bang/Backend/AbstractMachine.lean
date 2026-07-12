@@ -216,17 +216,33 @@ idiom). The ADR-0085 D3 SINGLE-param-store generalization (one store subsuming s
 DEFERRED census-preserving refactor — the SAME status as the handler-COLLAPSE (ADR-0085 D5, Option-A
 instances): a later beautification, not taken mid-derivation on taste (which would invert invariant #4). -/
 /-- The custom-effect store `evalD` threads (ADR-0085): keyed by handler identity to a
-`(param, clauses)` payload, mirroring the machine's active `custom ℓ p cls` frames. -/
-abbrev CStore := List (Nat × (Val × List (Bang.OpId × Comp)))
+`(param, clauses, isUpd)` payload, mirroring the machine's active `custom`/`customUpd ℓ p cls` frames.
+The `isUpd : Bool` flag (ADR-0107 D5) records whether the frame is a PARAMETERISED (`customUpd`, `true`)
+or read-only (`custom`, `false`) handler — the ONE bit that decides, at the `perform` site, whether the
+clause's pair-yield reinstalls an updated param (`κ.setParam`) or the frame stays read-only. `custom`
+pushes `isUpd = false`, so the `custom` path is BYTE-IDENTICAL (the flag is inert on it); only the new
+`customUpd` push/service arms read/write it. -/
+abbrev CStore := List (Nat × (Val × List (Bang.OpId × Comp) × Bool))
 
-/-- The nearest stored `(param, clauses)` for identity `n` (innermost custom frame wins — shadowing;
+/-- The nearest stored `(param, clauses, isUpd)` for identity `n` (innermost frame wins — shadowing;
 identities are globally fresh, so at most one matches). -/
-def CStore.get? (κ : CStore) (n : Nat) : Option (Val × List (Bang.OpId × Comp)) :=
+def CStore.get? (κ : CStore) (n : Nat) : Option (Val × List (Bang.OpId × Comp) × Bool) :=
   (κ.find? (fun p => p.1 = n)).map (·.2)
 
-/-- PUSH a fresh custom binding (a `handle (custom ℓ p cls)` install). -/
+/-- PUSH a fresh READ-ONLY custom binding (a `handle (custom ℓ p cls)` install) — `isUpd = false`. -/
 def CStore.push (κ : CStore) (n : Nat) (p : Val) (cls : List (Bang.OpId × Comp)) : CStore :=
-  (n, (p, cls)) :: κ
+  (n, (p, cls, false)) :: κ
+
+/-- PUSH a fresh PARAMETERISED custom binding (a `handle (customUpd ℓ p cls)` install, ADR-0107 D5) —
+`isUpd = true`, so its `perform` arm decodes the clause's pair-yield and reinstalls the updated param. -/
+def CStore.pushUpd (κ : CStore) (n : Nat) (p : Val) (cls : List (Bang.OpId × Comp)) : CStore :=
+  (n, (p, cls, true)) :: κ
+
+/-- UPDATE the carried param of the `customUpd` frame with identity `n` to `p'` (the ADR-0107 D5
+param-update — the user-effect analog of `SStore.put`). Keyed by identity (kind-first is unnecessary:
+globally-fresh ids mean at most one entry matches); leaves clauses + the `isUpd` flag intact. -/
+def CStore.setParam (κ : CStore) (n : Nat) (p' : Val) : CStore :=
+  κ.map (fun e => if e.1 = n then (e.1, (p', e.2.2.1, e.2.2.2)) else e)
 
 /-! ## The denotational source `evalD` (substitution, terminal-Comp, store-threaded)
 
@@ -315,10 +331,21 @@ def evalD : Nat → Nat → SStore → THeap → CStore → Comp → Option (Out
       -- INLINE-SERVICE: run `subst p (subst (shift v) clause.2)` as a sub-eval against the LIVE store
       -- (κ unchanged: frame stays live, so nested ops are handled; param READ-ONLY in v1). Resume with
       -- the clause's terminal value. No matching clause ⇒ raise to n (op the custom frame can't handle).
-      | some (p, cls) =>
+      | some (p, cls, isUpd) =>
           match cls.find? (·.1 == op) with
-          | some clause => evalD f g σ τ κ (Comp.subst p (Comp.subst (Val.shift v) clause.2))
-          | none        => some (.raised n op v, g, σ, τ, κ)                 -- op unserviced by this custom frame ⇒ raise
+          | some clause =>
+              if isUpd then
+                -- customUpd (ADR-0107 D5 param-update): the clause's DECLARED contract is `ret (pair w p')`.
+                -- Run the clause body inline (SAME store — frame stays live), then decode the pair-yield:
+                -- update κ at n to the new param `p'` (κ.setParam) and RESUME with `w`. Mirrors Source.eval's
+                -- customUpd dispatch arm (reinstall p', resume w) in evalD's store-threaded inline-service form.
+                match evalD f g σ τ κ (Comp.subst p (Comp.subst (Val.shift v) clause.2)) with
+                | some (.term (.ret (.pair w p')), g', σ', τ', κ') =>
+                    some (.term (.ret w), g', σ', τ', κ'.setParam n p')       -- REINSTALL p', RESUME w
+                | other => other                                             -- ill-typed guard (pair forced by HasClausesUpd, S2)
+              else
+                evalD f g σ τ κ (Comp.subst p (Comp.subst (Val.shift v) clause.2))  -- custom (read-only): unchanged
+          | none        => some (.raised n op v, g, σ, τ, κ)                 -- op unserviced by this frame ⇒ raise
       | none => some (.raised n op v, g, σ, τ, κ)                            -- n in no store ⇒ raise / non-resumptive op
   -- handle h M: MINT id := g, SUBSTITUTE `vcap id h.label` for the handle-bound var 0, recurse with g+1.
   --  · state s : push (id ↦ s) on σ for M's extent; POP on exit; a raise FORWARDS (pop entry).
@@ -346,6 +373,14 @@ def evalD : Nat → Nat → SStore → THeap → CStore → Comp → Option (Out
       -- get/put-at-perform shape with USER clause logic in the resume focus (ADR-0085 D3, probe-confirmed).
       | .custom _ p cls =>
           (evalD f (g+1) σ τ (κ.push id p cls) M').bind (fun q => match q with
+            | (.term (.ret v), g', σ', τ', κ') => some (.term (.ret v), g', σ', τ', κ'.tail)  -- POP the pushed id entry
+            | (.term _, _, _, _, _)            => none
+            | (.raised n op' w, g', σ', τ', κ') => some (.raised n op' w, g', σ', τ', κ'.tail)) -- forward; pop entry
+      -- customUpd (ADR-0107 #44 D5 — PARAMETERISED): the `custom` handle arm with `pushUpd` (isUpd = true)
+      -- so its `perform` arm reinstalls the updated param. POP on exit / raise-forward identically to custom
+      -- (the frame's dynamic extent is the same; only the perform-time param-update differs, at the OP arm).
+      | .customUpd _ p cls =>
+          (evalD f (g+1) σ τ (κ.pushUpd id p cls) M').bind (fun q => match q with
             | (.term (.ret v), g', σ', τ', κ') => some (.term (.ret v), g', σ', τ', κ'.tail)  -- POP the pushed id entry
             | (.term _, _, _, _, _)            => none
             | (.raised n op' w, g', σ', τ', κ') => some (.raised n op' w, g', σ', τ', κ'.tail)) -- forward; pop entry
