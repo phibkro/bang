@@ -2093,6 +2093,81 @@ theorem customParamUpdate_setParam {n : Nat} {p' : Val} :
         · simp [customParamUpdate, hh, hcu]
         · simp only [hsCustoms, hh, heq]
 
+/-- The customUpd FRAME SURVIVES a body sub-eval (ADR-0107 D5): `HMut hs hsf` — the net effect of the
+clause body — preserves a `customUpd n` frame VERBATIM. `FrameMut` requires FULL equality on customUpd
+frames (label + param + clause-map, `AbstractMachine.lean:1258`), because the param-update is serviced
+INLINE at the perform arm (a sub-eval that returns before the frame is left) and `updateStates`/
+`updateTxns` skip customUpd — so on the net-effect path the frame is unchanged. Hence a live `customUpd n`
+frame with `(p, cls, true)` in `hs` is still `(p, cls, true)` in `hsf`. This is the load-bearing
+frame-liveness fact the sim/compile_correct customUpd OP true-branch needs to re-resolve the frame
+(`hgCustomf`) after `ihT` runs on the clause body. Induction on the `HMut` pair. -/
+theorem hsCustom_of_HMut {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
+    ∀ {hs hsf : HStack}, HMut hs hsf → hsCustom hs n = some (p, cls, true) →
+      hsCustom hsf n = some (p, cls, true) := by
+  intro hs
+  induction hs with
+  | nil => intro hsf hmut hc; cases hsf with
+    | nil => simp [hsCustom] at hc
+    | cons _ _ => simp [HMut] at hmut
+  | cons fr hs ih =>
+    intro hsf hmut hc
+    cases hsf with
+    | nil => simp [HMut] at hmut
+    | cons frf hsf =>
+      obtain ⟨hfm, hmut'⟩ := hmut
+      -- FrameMut fr frf forces the same handler KIND (label + payload equal). Case on fr's handler.
+      cases hh : fr.handler with
+      | customUpd ℓ0 p0 cls0 =>
+          -- frf.handler must also be customUpd ℓ0 p0 cls0 (FrameMut full-equality).
+          cases hhf : frf.handler with
+          | customUpd ℓ1 p1 cls1 =>
+              simp only [FrameMut, hh, hhf] at hfm
+              obtain ⟨hid, _, _, hℓ, hp, hcl⟩ := hfm; subst hℓ; subst hp; subst hcl
+              by_cases hidn : fr.id = n
+              · simp only [hsCustom, hh, hidn, ↓reduceIte] at hc
+                simp only [hsCustom, hhf, hid ▸ hidn, ↓reduceIte]; exact hc
+              · simp only [hsCustom, hh, if_neg hidn] at hc
+                simp only [hsCustom, hhf, if_neg (hid ▸ hidn)]; exact ih hmut' hc
+          | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+      | custom ℓ0 p0 cls0 =>
+          cases hhf : frf.handler with
+          | custom ℓ1 p1 cls1 =>
+              -- a custom frame projects `isUpd = false`; at id = n that contradicts `hc` (…,true), else recurse.
+              simp only [FrameMut, hh, hhf] at hfm; obtain ⟨hid, _, _, _⟩ := hfm
+              by_cases hidn : fr.id = n
+              · simp only [hsCustom, hh, hidn, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+                exact absurd hc.2.2 (by simp)
+              · simp only [hsCustom, hh, if_neg hidn] at hc
+                simp only [hsCustom, hhf, if_neg (hid ▸ hidn)]; exact ih hmut' hc
+          | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+      | state ℓ0 s =>
+          cases hhf : frf.handler with
+          | state ℓ1 s1 => simp only [hsCustom, hh] at hc; simp only [hsCustom, hhf]; exact ih hmut' hc
+          | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+      | throws ℓ0 =>
+          cases hhf : frf.handler with
+          | throws ℓ1 => simp only [hsCustom, hh] at hc; simp only [hsCustom, hhf]; exact ih hmut' hc
+          | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+      | transaction ℓ0 Θ =>
+          cases hhf : frf.handler with
+          | transaction ℓ1 Θ1 => simp only [hsCustom, hh] at hc; simp only [hsCustom, hhf]; exact ih hmut' hc
+          | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+          | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
+
 /-- `CCorr` rides the POP of a NON-custom top frame (state/throws/txn): the custom projection skips it,
 so the store is unchanged (analog of `Corr_pop_nonstate`, but no `HMut` needed — CCorr projects the
 top directly). -/
