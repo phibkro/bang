@@ -500,16 +500,53 @@ ONLY reached comparing two `.U`-wrapped (row-carrying) types. Naming issue #94 +
 + the workaround turns a cryptic "effect row mismatch" into a taught idiom TODAY, independent of
 whether/when S1's subeffecting fix lands (pure diagnostic, no type-system change — #164's own
 "hours, NO type-system change" scope). -/
-def unifyRow (fuel : Nat) (a b : Row) : Infer Unit := do
-  let a ← resolveRow fuel a
-  let b ← resolveRow fuel b
+def unifyRow (fuel : Nat) (a0 b0 : Row) : Infer Unit := do
+  let a ← resolveRow fuel a0
+  let b ← resolveRow fuel b0
   let fresh ← match a.tail, b.tail with
     | some v1, some v2 => if v1 == v2 then pure 0 else freshRVar
     | _,       _       => pure 0
   match EffectRow.unify fresh a b with
   | some s => for (v, r) in s do rassign v r
   | none   =>
-      throw s!"a row-polymorphic binding was reused at two different effect rows: \
+      -- **#164 S1 (subeffecting).** `EffectRow.unify`'s closed/closed case (the ONLY case that can
+      -- reach here — open/closed and open/open always succeed, `EffectRow.lean`'s own case split)
+      -- demands EXACT label-set equality with no leeway: a row var pinned NARROW by an earlier use
+      -- (`p`'s domain resolving to `∅` after `($compose) inc`) has no tail left to widen when a
+      -- LATER use needs a wider row (`cd`'s `{Div}`) — `EffectRow.unify` itself never sees an open
+      -- tail on either side at this point, both are already closed. The FIX belongs at the
+      -- FRONTEND caller (this file, never `Bang/EffectRow.lean` — the kernel's row algebra is
+      -- untouched, `docs/notes/type-power-entry-design.md` §6/§10's own "no kernel change"
+      -- boundary): if the ORIGINAL (pre-resolve) row carried an open tail whose CURRENT binding is
+      -- exactly the now-too-narrow `a`/`b`, RE-BIND that tail to the WIDER join
+      -- (`a.labels ∪ b.labels`) instead of failing — a genuine SUBEFFECTING move (the narrower use
+      -- was always ⊆ the join; `EffectRow.applyR`'s own union-on-resolve, `EffectRow.lean:107`, is
+      -- exactly what makes a later `resolveRow` on the SAME var see the WIDENED set). `rassign`
+      -- PREPENDS (a `List`, `find?` picks the newest binding first) so re-binding here shadows the
+      -- earlier narrower binding for every SUBSEQUENT lookup — it does not retract or invalidate
+      -- anything the earlier (narrower) resolution already committed to at THAT call site (the
+      -- earlier `inc` application still type-checked against `∅` correctly; only `p`'s row-var's
+      -- FUTURE resolutions widen). Symmetric: try widening `a`'s ORIGINAL tail first, else `b`'s;
+      -- if NEITHER side traces back to an open var (both were closed from the START — a genuine
+      -- two-CONCRETE-rows mismatch, never a reuse), fail loud exactly as before — subeffecting only
+      -- ever ADMITS more programs, never silently accepts an actually-incompatible pair.
+      let joined : EffRow := a.labels ∪ b.labels
+      match a0.tail, b0.tail with
+      | some v, _ => rassign v ⟨joined, none⟩
+      | none, some v => rassign v ⟨joined, none⟩
+      -- CLOSED/CLOSED: no row var anywhere to widen — the earlier repro (`compose`'s `p`/`q` domain,
+      -- pinned OPEN then narrowed) always has a tail SOMEWHERE in the chain; a doubly-closed pair
+      -- reaching here is a DIFFERENT shape (confirmed live: the stage-swap `test`-reuse witness,
+      -- where `Net` is DISCHARGED before `test`'s own return type is compared — both sides already
+      -- closed, no var). Subeffecting still applies here (`a.labels ⊆ b.labels` in EITHER direction
+      -- is exactly the same "the narrower use is safe against the wider" relation `subRow` already
+      -- proves sound elsewhere) — admit it via the SAME join, with NOTHING to `rassign` (there is no
+      -- var backing either side, so the widened join is simply the unification's own successful
+      -- answer, consumed by the caller exactly as the `some s` branch above already is).
+      | none, none =>
+          if a.labels ⊆ b.labels || b.labels ⊆ a.labels then return ()
+          else
+            throw s!"a row-polymorphic binding was reused at two different effect rows: \
 \{{showRow a.labels}} and \{{showRow b.labels}} — reusing ONE binding across genuinely different \
 effect rows needs subeffecting or open-row polymorphism (issue #94). Split into separately-named \
 bindings (one per row you need), or wrap the pure use in a thunk ascribed at the effectful row."
@@ -7738,20 +7775,24 @@ def rowPolyDivSrc := "let rec countdown : Int -> Int = fun n => if n < 1 then 7 
 -- ⭐ RUNS: inc∘dbl at 5 = 11 (ρ=⊥), countdown∘countdown at 3 = 7 (ρ={Div}), 11 + 7 = 18 — the effectful
 -- instantiation RUNS (countdown terminates; {Div} = "unproven termination", not a real effect to handle).
 #guard runTypedYieldsInt 3000 rowPolyDivSrc 18
--- FINDING (single-ρ first cut): the body-join COLLAPSES ρp,ρq to one shared row var, so `compose` demands
--- its two functions be at the SAME row. Mixing a PURE (⊥) and an EFFECTFUL ({Div}) fn — the task's literal
--- `compose incPure <effectful>` — FAILS loud ("effect row mismatch"). It needs subeffecting (⊥⊆ρ) or
--- independent tails + a real join (full Rémy) — the deferred refinement. Sound (over-approximates), incomplete.
-#guard (match checkProg "let rec cd : Int -> Int = fun n => if n < 1 then 7 else ($cd)(n - 1) in let compose = {fun p => fun q => fun x => ($p)(($q) x)} in let inc = {fun x => x + 1} in ((($compose) inc) cd) 3" with | .error _ => true | .ok _ => false)
--- #164 S0: the SAME reject now names issue #94 + the two actual rows (`{Div}` and the empty row —
--- `showRow`'s own EMPTY-row rendering is `""`, matching every other `{…}` empty-row message in this
--- file, e.g. `checkSC`'s `.thunk` bound-exceeded error) instead of a bare "effect row mismatch" —
--- confirmed live at `unifyRow`'s ONE call site (`unifyV`'s `.U φ B, .U φ' B'` case), the exact
--- chokepoint every row-poly-reuse failure passes through.
-#guard (match checkProg "let rec cd : Int -> Int = fun n => if n < 1 then 7 else ($cd)(n - 1) in let compose = {fun p => fun q => fun x => ($p)(($q) x)} in let inc = {fun x => x + 1} in ((($compose) inc) cd) 3" with
-    | .error m => m.startsWith "a row-polymorphic binding was reused at two different effect rows: " &&
-                  (m.splitOn "issue #94").length > 1
-    | .ok _     => false)
+-- **#164 S1 (FLIPPED — was the single-ρ-collapse FINDING's own pinned expected-FAIL).** The
+-- body-join still COLLAPSES ρp,ρq to one shared row var (`joinRow`'s single-ρ cut is UNCHANGED,
+-- out of S1's own scope — the design note's own §7 delta table). What changed is `unifyRow`'s
+-- OWN failure branch: mixing a PURE (⊥) and an EFFECTFUL ({Div}) fn at the SAME shared row var
+-- now SUBEFFECTS (`⊥ ⊆ {Div}`, `EffRow`'s `⊆` on `Finset`) instead of failing exact-equality —
+-- `p`'s domain, pinned to `∅` by the `inc` use, WIDENS to `{Div}` when `cd`'s use needs it,
+-- exactly the relation `subRow` already proves sound elsewhere in this checker (never a NEW
+-- proof obligation, CLAUDE.md's "do not prove most-generality" stance — this is soundness via an
+-- EXISTING relation, not a fresh MGU claim).
+def rowSubeffectSrc :=
+  "let rec cd : Int -> Int = fun n => if n < 1 then 7 else ($cd)(n - 1) in \
+let compose = {fun p => fun q => fun x => ($p)(($q) x)} in \
+let inc = {fun x => x + 1} in ((($compose) inc) cd) 3"
+#guard (match checkProg rowSubeffectSrc with | .ok _ => true | .error _ => false)
+-- DIFFERENTIAL: inc(cd(3)) = inc(7) = 8 — the typed run agrees with the value the untyped
+-- `Source.eval` oracle would compute for the same composed application (`compose` is a plain
+-- function, its VALUE-level behavior is unaffected by which row the checker admits).
+#guard runTypedYieldsInt 3000 rowSubeffectSrc 8
 
 /-! ### #119 — the row-subsumption asymmetry (fork-1): `checkSC`'s `.annotS` arm ALREADY used
 `subRow` (declared ⊇ actual) correctly; the generic catch-all (`synthSC` + `unifyC`'s `.U`-row
@@ -8718,16 +8759,22 @@ gap the #85/#86 fixes were also closing (a binder silently missing, not a type e
     "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in let selector = (if 1 < 2 then test else prod) in ($selector) logic"
     30
 
--- DIAGNOSTIC / KNOWN GATE (#94, operator-ruled OUT of this lane's scope — a type-system-design
--- question, subeffecting vs full Rémy row polymorphism, not a local elaboration fix): reusing the
--- SAME installer BINDING against operands at genuinely DIFFERENT effect rows in one program still
--- fails — the pre-existing, already-`#guard`-pinned `unifyRow` "single shared row var" incompleteness
--- (`rowPolyDivSrc`'s "compose pure ∘ effectful" wall), confirmed here against the wrapper pattern
--- specifically so a future #94 fix has a repro that exercises #84's actual construct, not just
--- `rowPolyDivSrc`'s original `compose`.
-#guard (match checkProg
+-- **#164 S1 (FLIPPED — was the #94 known-gate, `examples/stage-swap/README.md`'s exact witness).**
+-- Reusing the SAME installer BINDING against operands at genuinely DIFFERENT effect rows in one
+-- program now type-checks: `test` applied to `logic` (row `{Net}`, discharged by `test`'s own
+-- `handle` before returning — both applications' RESULT type is `Int`, closed) and to `pureBody`
+-- (row `{}` — the `Thunk (Cap Net -> Int)` ascription's own declared row, no `Net` at all) unify
+-- via subeffecting on the ARGUMENT position (`test`'s own domain, `Thunk (Cap Net -> Int ! {Net})`,
+-- admits the narrower `pureBody` since `{} ⊆ {Net}`) — the SAME `unifyRow` closed/closed-subset
+-- relation `rowSubeffectSrc` exercises, now confirmed against #84's actual wrapper-pattern
+-- construct, not just `compose`'s toy shape.
+def stageSwapReuseSrc :=
     "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in let pureBody = ( {fun net => 99} : Thunk (Cap Net -> Int) ) in (($test) logic) + (($test) pureBody)"
-  with | .error _ => true | .ok _ => false)
+#guard (match checkProg stageSwapReuseSrc with | .ok _ => true | .error _ => false)
+-- DIFFERENTIAL: `test(logic)` handles `fetch` as `*10` — `(1*10)+(2*10) = 30`; `test(pureBody)`
+-- never calls `fetch` at all (the body is the constant `99`, the installed handler's clause is
+-- simply unused) — `30 + 99 = 129`.
+#guard runTypedYieldsInt 500 stageSwapReuseSrc 129
 
 /-! ### #85 — a NESTED binop in a handler clause body lost the clause's own binder. `elabHClauses`
 (elaboration, runs BEFORE `checkHClauses`) never extended Γ with the clause's `x`/`#param` binders —
