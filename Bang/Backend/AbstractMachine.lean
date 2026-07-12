@@ -1255,13 +1255,14 @@ def FrameMut (a b : HFrame) : Prop :=
      -- UNCHANGED. FrameMut therefore requires FULL equality (label + carried param + clause map) — keeps
      -- `HMut` reflexive (HMut.refl) AND lets `updateStates_eq` reconcile two related custom frames.
      | .custom ℓ1 p1 c1, .custom ℓ2 p2 c2 => ℓ1 = ℓ2 ∧ p1 = p2 ∧ c1 = c2
-     -- customUpd (ADR-0107 D5): FrameMut requires FULL equality (label + param + clause-map), like
-     -- `custom`. The customUpd param-update is serviced INLINE at the `perform` arm (a sub-eval that
-     -- returns before the frame is left), so on the net-effect (raised/throws) path the customUpd frame
-     -- — like custom — is left UNCHANGED by `updateStates`/`updateTxns` (both skip it). `netEffect` does
-     -- not thread the param here; the param-update lives entirely inside the resolved perform sub-eval
-     -- (evalD's customUpd arm runs `setParam` on the returned κ', not on a frame the netEffect rebuilds).
-     | .customUpd ℓ1 p1 c1, .customUpd ℓ2 p2 c2 => ℓ1 = ℓ2 ∧ p1 = p2 ∧ c1 = c2
+     -- customUpd (ADR-0107 D5): FrameMut is PARAM-FREE (label + clause-map, param free) — MIRRORING
+     -- `state`'s value-free clause, NOT `custom`'s full-equality. The customUpd param-update IS a real
+     -- net-effect stack mutation (a `perform` on the frame runs `setParam n p'`, changing THIS frame's
+     -- carried param), so — like a `state` frame's stored value — the param may differ across the body's
+     -- net effect while the frame identity/label/clauses are fixed. This is what lets `HMut hs hsf`
+     -- (the perform arm's net effect) hold with the customUpd param changed. The clauses are fixed (no
+     -- arm rewrites a customUpd clause-list); only the param moves.
+     | .customUpd ℓ1 _ c1, .customUpd ℓ2 _ c2 => ℓ1 = ℓ2 ∧ c1 = c2
      | _, _ => False)
 
 /-- `HMut hs hsf`: `hsf` is `hs` with state-frame values possibly changed, no push/pop, frame
@@ -2103,7 +2104,7 @@ frame-liveness fact the sim/compile_correct customUpd OP true-branch needs to re
 (`hgCustomf`) after `ihT` runs on the clause body. Induction on the `HMut` pair. -/
 theorem hsCustom_of_HMut {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
     ∀ {hs hsf : HStack}, HMut hs hsf → hsCustom hs n = some (p, cls, true) →
-      hsCustom hsf n = some (p, cls, true) := by
+      ∃ p'', hsCustom hsf n = some (p'', cls, true) := by
   intro hs
   induction hs with
   | nil => intro hsf hmut hc; cases hsf with
@@ -2115,19 +2116,21 @@ theorem hsCustom_of_HMut {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
     | nil => simp [HMut] at hmut
     | cons frf hsf =>
       obtain ⟨hfm, hmut'⟩ := hmut
-      -- FrameMut fr frf forces the same handler KIND (label + payload equal). Case on fr's handler.
+      -- FrameMut fr frf forces the same handler KIND (label + clauses equal; customUpd param may DIFFER).
       cases hh : fr.handler with
       | customUpd ℓ0 p0 cls0 =>
-          -- frf.handler must also be customUpd ℓ0 p0 cls0 (FrameMut full-equality).
+          -- frf.handler must also be customUpd, SAME label+clauses, POSSIBLY-different param (param-free FrameMut).
           cases hhf : frf.handler with
           | customUpd ℓ1 p1 cls1 =>
               simp only [FrameMut, hh, hhf] at hfm
-              obtain ⟨hid, _, _, hℓ, hp, hcl⟩ := hfm; subst hℓ; subst hp; subst hcl
+              obtain ⟨hid, _, _, hℓ, hcl⟩ := hfm; subst hℓ; subst hcl
               by_cases hidn : fr.id = n
-              · simp only [hsCustom, hh, hidn, ↓reduceIte] at hc
-                simp only [hsCustom, hhf, hid ▸ hidn, ↓reduceIte]; exact hc
+              · simp only [hsCustom, hh, hidn, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+                obtain ⟨_, rfl, _⟩ := hc
+                exact ⟨p1, by simp only [hsCustom, hhf, hid ▸ hidn, ↓reduceIte]⟩
               · simp only [hsCustom, hh, if_neg hidn] at hc
-                simp only [hsCustom, hhf, if_neg (hid ▸ hidn)]; exact ih hmut' hc
+                obtain ⟨p'', hp''⟩ := ih hmut' hc
+                exact ⟨p'', by simp only [hsCustom, hhf, if_neg (hid ▸ hidn)]; exact hp''⟩
           | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
@@ -2141,28 +2144,29 @@ theorem hsCustom_of_HMut {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
               · simp only [hsCustom, hh, hidn, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
                 exact absurd hc.2.2 (by simp)
               · simp only [hsCustom, hh, if_neg hidn] at hc
-                simp only [hsCustom, hhf, if_neg (hid ▸ hidn)]; exact ih hmut' hc
+                obtain ⟨p'', hp''⟩ := ih hmut' hc
+                exact ⟨p'', by simp only [hsCustom, hhf, if_neg (hid ▸ hidn)]; exact hp''⟩
           | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
       | state ℓ0 s =>
           cases hhf : frf.handler with
-          | state ℓ1 s1 => simp only [hsCustom, hh] at hc; simp only [hsCustom, hhf]; exact ih hmut' hc
+          | state ℓ1 s1 => simp only [hsCustom, hh] at hc; obtain ⟨p'', hp''⟩ := ih hmut' hc; exact ⟨p'', by simp only [hsCustom, hhf]; exact hp''⟩
           | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | throws _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
       | throws ℓ0 =>
           cases hhf : frf.handler with
-          | throws ℓ1 => simp only [hsCustom, hh] at hc; simp only [hsCustom, hhf]; exact ih hmut' hc
+          | throws ℓ1 => simp only [hsCustom, hh] at hc; obtain ⟨p'', hp''⟩ := ih hmut' hc; exact ⟨p'', by simp only [hsCustom, hhf]; exact hp''⟩
           | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | transaction _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
       | transaction ℓ0 Θ =>
           cases hhf : frf.handler with
-          | transaction ℓ1 Θ1 => simp only [hsCustom, hh] at hc; simp only [hsCustom, hhf]; exact ih hmut' hc
+          | transaction ℓ1 Θ1 => simp only [hsCustom, hh] at hc; obtain ⟨p'', hp''⟩ := ih hmut' hc; exact ⟨p'', by simp only [hsCustom, hhf]; exact hp''⟩
           | custom _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | customUpd _ _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
           | state _ _ => exact absurd hfm (by simp only [FrameMut, hh, hhf]; tauto)
