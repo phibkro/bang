@@ -314,6 +314,96 @@ Build-confirm S2 before any S4 ratification (the census must be *mechanized*, no
 
 ---
 
+## S1-REFUTED · The `capOccurs`-on-answer-TYPE mechanism does not close the escape
+
+> Finding (2026-07-12, `feat-second-class-caps` lane, task #168). S1 as specified above was
+> IMPLEMENTED verbatim (`capOccursIV`/`capOccursIC`, the frontend mirror of `ScopedCapWitness`'s
+> own predicate, wired as `¬ capOccurs ℓ B` into `synthSC`'s `.withCapS`/`.handleCustomS` arms) and
+> then REFUTED against its own motivating witness before landing. This section records the
+> refutation, the root cause of the S0 seal's blind spot, and the syntactic candidate the next
+> design pass should formalize — WITH its own falsifier pre-named, so the mistake this section
+> documents is not repeated a second time.
+
+**The refutation, mechanized.** `bang check` on all three named refusal witnesses
+(`scratch/cap-gc/surface-escape/{b3,c1,d2-sched-capture}.bang` — the `state`, custom-`Log`, and
+`Sched` shapes) still returns `ok` with the `¬ capOccurs ℓ B` premise wired into BOTH handler-
+typing arms. Debug-traced the actual synthesized answer type at each site: every one carries an
+EMPTY row and NO `.cap` former anywhere in its structure (`F(omega, U(φ=[], F(omega, int)))` for
+the `c1.bang` custom-effect shape, traced live). The premise never fires because there is nothing
+in the TYPE for it to find.
+
+**Root cause, hand-traced through the kernel's own typing judgment** (`Bang/Core/Typing.lean`'s
+`HasVTy`/`HasCTy`, NOT run through a prover — a manual derivation, cited by rule name and line):
+the ADR-0063 laundering shape's returned thunk (`Val.vthunk Mesc` in `ScopedCapWitness.progEscape`)
+captures the outer capability as a FREE DE BRUIJN VARIABLE inside its own computation BODY
+(`Comp.perform (Val.vvar 1) "get" …`) — never as a value the THUNK'S OWN TYPE mentions. Per
+`HasVTy.vthunk` (`Typing.lean:122`: `HasCTy γ Γ M φ B → HasVTy γ Γ (Val.vthunk M) (VTy.U φ B)`),
+the thunk's type is `VTy.U φ B` where `φ`/`B` come from `M`'s (`Mesc`'s) OWN typing — and `Mesc`
+RE-HANDLES `state 1` internally, so its OWN `handleState` typing arm's B-occ premise
+(`Typing.lean:281`, `¬ LabelOccurs ℓ A`) ALREADY discharges label 1 from `Mesc`'s own answer type
+before ANY outer `capOccurs` check ever runs. The label is gone from the row, and the cap was
+never a value in the type to begin with — `capOccurs` inspects a type that has genuinely nothing
+to find, for the EXACT SAME structural reason bare B-occ was insufficient in the first place (the
+whole premise of this design note's own §1 thesis, ironically now shown to defeat its OWN proposed
+successor by the identical mechanism). **A capability escape is a FREE-VARIABLE-CAPTURE fact, not
+a type-SHAPE fact** — `Thunk T`'s own type says nothing about what `T`'s computation closes over,
+by CBPV's own design (the same reason a closure's captured-environment types are erased from an
+ordinary function type in any CBPV-based system).
+
+**The S0 seal gap, named precisely** (the probe-methodology lesson worth banking verbatim): **A
+PREDICATE SEALED IN ISOLATION IS NOT A SEALED DESIGN — the witness must connect through the real
+judgment.** `Bang/Witness/ScopedCapWitness.lean`'s six `#guard`s (§1/§9 S0, marked "DONE") test
+`capOccurs`/`cCapOccurs` against HAND-CONSTRUCTED `VTy`/`CTy` VALUES (`capOccurs 1 (VTy.U ⊥ (CTy.F
+1 (VTy.cap 1))) = true`, line 125) — illustrative of the PREDICATE's own mechanics, but the file
+contains ZERO references to `HasCTy`/`HasVTy` anywhere (grep-confirmed) — `progEscape`'s type is
+NEVER actually derived through the kernel's own typing judgment and checked against `capOccurs`.
+The `#guard`s prove the predicate CAN flag a cap-former-carrying type; they do not prove
+`progEscape`'s type IS one. That gap is exactly what this refutation closes: `progEscape`'s real
+derived type (hand-traced above) has no cap former to flag. Any future predicate-based door needs
+its OWN witness to be a genuine `HasCTy progEscape e C → capOccurs-or-equivalent-on-C = true`
+DERIVATION, not a standalone assertion about a hand-picked `C`.
+
+**The syntactic candidate for the next design pass** (sketch, not built): check the raw `Surf`
+tree, not the elaborated TYPE. Does the handler's `body` contain a free reference to the bound cap
+name (`name`/`h`) INSIDE a `.thunk` node that ends up in the HANDLE'S OWN answer/return position —
+i.e. reachable as the final tail-position value of `body` itself (through `let`-chains, `if`/
+`match` arm results, the same positions `checkSC`'s own tail-position arms already enumerate) —
+rather than forced lexically within `body`? `surfUsesVar` (`TypeCheck.lean:5687`) already exists
+as the free-variable-reference primitive this would need; the harder, NOT-yet-formalized part is
+"ends up in answer position OF THE HANDLE" precisely.
+
+**The pre-named falsifier for that candidate** (so the next pass is born already knowing its own
+census wall, not discovering it late): the Sched library demo's `Step`-coroutine pattern
+(`data Step = Done(Int) | More(Unit -> Step)`, `docs/notes/sched-library-demo.md`) constructs and
+RETURNS thunks (`More`'s payload) that carry references to the driving `sched` capability — and
+that return is LEGAL, down-flow use (the returned `Step` value is consumed and its `More` thunk
+FORCED again entirely WITHIN the SAME `handle … with Sched as sched { … }` block's dynamic extent
+— the coroutine never outlives its own handler). A naive "any thunk closing over the cap name that
+appears anywhere in a return-reachable position" check would REJECT this legal program, because
+the thunk genuinely IS returned as a value inside the handle body — the rejection needs to be
+scoped to "escapes the HANDLE's OWN dynamic extent," not "appears in ANY return position of ANY
+sub-expression," which the Sched pattern's own internal recursion structurally satisfies (the
+returned `More`-thunk is always re-consumed before the outer `handle` itself returns). Formalizing
+"answer position OF THE HANDLE, not of an inner function/recursion step" — almost certainly
+requiring the discipline to track WHERE (relative to the handle's own extent) a thunk gets forced,
+not merely WHETHER it is syntactically returned somewhere — is the precision the next design pass
+must nail down before any implementation, on pain of repeating this exact refutation's own lesson
+a second time. **Any redesign must clear the 0/50 census INCLUDING this shape** — the census in §3
+already lists `sched-{roundrobin,seeded-lcg,swap-dfs}`/`dst-rounds-{const,lcg}` as corpus programs
+that must stay accepted; this section makes explicit WHY a naive syntactic tightening would
+regress them, which §3's own text names but does not formalize as a falsifier for a NEW mechanism.
+
+**What this means for #168.** The operator's RATIFICATION of the second-class-capability
+DISCIPLINE itself stands — the direction is still right, the census (§3) is still the correct
+bar, and the runtime C2 stamp (`escapedCap`, ADR-0063) keeps the language sound in the meantime.
+Only the ENFORCEMENT MECHANISM (the specific `¬ capOccurs ℓ A` check this section refutes) goes
+back for a fresh design pass. `capOccursIV`/`capOccursIC` and their (currently inert) call sites
+in `TypeCheck.lean` are landed as `WIP-INFRA` — reusable plumbing (the mirror of `ScopedCapWitness`'s
+own predicate, useful if a future mechanism still wants a type-shape sub-check as ONE clause of a
+combined test) — not as a working enforcement, and every comment at those sites says so explicitly.
+
+---
+
 ## 10 · References
 
 - **Osvald, Essertel, Wu, Alayón, Rompf**, "Gentrification Gone too Far? Affordable 2nd-Class Values for

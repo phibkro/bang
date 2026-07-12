@@ -654,6 +654,40 @@ def occCinC (n : Nat) : ICTy → Bool
 end
 
 mutual
+/-- **#168 WIP-INFRA — REFUTED as a scoped-cap enforcement mechanism (see
+`docs/notes/scoped-cap-types-design.md` §S1-REFUTED for the full finding; kept in-tree because
+the plumbing is reusable, NOT because this predicate closes the escape).** Does value type `A`
+syntactically carry a `cap ℓ` (directly, or under a thunk/sum/product/μ)? The FRONTEND
+(`IVTy`/`ICTy`) mirror of `Bang.ScopedCapWitness.capOccurs`/`cCapOccurs`
+(`Bang/Witness/ScopedCapWitness.lean`), same structural shape, same discriminator.
+
+**Why this predicate NEVER fires on the actual escape (hand-traced through `HasVTy`/`HasCTy`,
+`Bang/Core/Typing.lean`, not guessed):** the ADR-0063 laundering shape's returned thunk captures
+the outer capability as a FREE DE BRUIJN VARIABLE inside its computation BODY — never as a
+type-level `.cap` former and never surviving in the ROW either (the inner re-handle's own B-occ
+premise, `Typing.lean:281`, already discharges the label from ITS OWN answer before this predicate
+ever inspects anything, the exact same structural blindness that made bare B-occ insufficient in
+the first place). Confirmed live: `capOccursIV`/`capOccursIC` return `false` on all three named
+refusal witnesses (`scratch/cap-gc/surface-escape/{b3,c1,d2-sched-capture}.bang`) — every one
+still `bang check`s `ok` with this premise wired in. A capability escape is fundamentally a
+FREE-VARIABLE-CAPTURE fact, not a type-SHAPE fact — `Thunk T`'s own type says nothing about what
+`T`'s computation closes over, by design (CBPV). Called on a ZONKED type ONLY (an unresolved
+`.vhole`/`.chole` reaching here means no concrete cap was ever unified into that position). -/
+def capOccursIV (ℓ : Label) : IVTy → Bool
+  | .cap ℓ'   => ℓ == ℓ'
+  | .U _ c    => capOccursIC ℓ c
+  | .sum a b  => capOccursIV ℓ a || capOccursIV ℓ b
+  | .prod a b => capOccursIV ℓ a || capOccursIV ℓ b
+  | .mu a     => capOccursIV ℓ a
+  | _         => false
+/-- Computation-type companion: does `C` carry a `cap ℓ` in its returned/argument value types? -/
+def capOccursIC (ℓ : Label) : ICTy → Bool
+  | .F _ a     => capOccursIV ℓ a
+  | .arr _ a c => capOccursIV ℓ a || capOccursIC ℓ c
+  | .chole _   => false
+end
+
+mutual
 /-- Check-mode value-type comparator: structurally identical to `unifyV`, EXCEPT at a `.U` row it
 uses `subRow` (actual ⊆ declared) instead of `unifyRow` (exact MGU equality) — #119's fork-1 fix,
 scoped to `checkSC`'s `.app` arm (the one shape that needs a NESTED-row subsumption `subRow` alone
@@ -1244,6 +1278,19 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
           if kind = "state" then let _ ← checkSV Γ init .int   -- the initial cell value is Int
           let capTy : IVTy := .cap ℓ
           let (B, φ) ← synthSC ((name, capTy) :: Γ) body   -- name : Cap ℓ in scope
+          -- **#168 WIP-INFRA — REFUTED, does NOT catch the escape (`capOccursIV`/`capOccursIC`'s own
+          -- doc comment + `docs/notes/scoped-cap-types-design.md` §S1-REFUTED have the full finding).
+          -- This `if` NEVER fires on the actual ADR-0063 laundering shape — the outer cap escapes as
+          -- a captured FREE VARIABLE in the returned thunk's body, invisible to a type-shape check on
+          -- `B`. Left wired in (harmless: `just verify` stays green, 0/50 corpus rejections) because
+          -- the plumbing is reusable by whatever mechanism a future design pass lands, NOT because it
+          -- currently enforces anything — do not treat this `if` as load-bearing for #134/ADR-0063.
+          if capOccursIC ℓ (← zonkC bigFuel B) then
+            throw s!"capability {name} (handler kind '{kind}') escapes its handler: the handled \
+block's result carries the capability past the point it is discharged. A capability may only be \
+passed DOWN (as an argument, or performed lexically inside the handled block) — never returned, \
+stored, or captured in a thunk that outlives the handler. Restructure so the capability is used \
+entirely inside the `{kind}`/`with` block, or return only ordinary values."
           return (B, ← eraseRow bigFuel ℓ φ)                    -- the handler DISCHARGES ℓ
   -- #21 s7probe: `handleCustomS n p h cls body` — the ADR-0092 `handleCustom`/`HasClauses` analogue,
   -- ALGORITHMIC (mirrors `withCapS` immediately above; NO `LabelOccurs`/B-occ re-check here — that
@@ -1311,6 +1358,16 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
                   throw s!"handle: effect '{effN}' op '{op}' has no clause"
               let capTy : IVTy := .cap ℓ
               let (B, φ) ← synthSC ((h, capTy) :: Γ) body   -- h : Cap ℓ in scope (ADR-0092's cap-bind)
+              -- **#168 WIP-INFRA — REFUTED**, the SAME (non-firing) premise `.withCapS`'s arm
+              -- carries. See that arm's own doc comment (above) + `capOccursIV`/`capOccursIC`'s
+              -- doc comment + `docs/notes/scoped-cap-types-design.md` §S1-REFUTED for the full
+              -- finding — this `if` does not currently enforce anything against #134/ADR-0063.
+              if capOccursIC ℓ (← zonkC bigFuel B) then
+                throw s!"capability {h} (effect '{effN}') escapes its handler: the handled block's \
+result carries the capability past the point it is discharged. A capability may only be passed \
+DOWN (as an argument, or performed lexically inside the handled block) — never returned, stored, \
+or captured in a thunk that outlives the handler. Restructure so the capability is used entirely \
+inside the `handle … with` block, or return only ordinary values."
               return (B, ← eraseRow bigFuel ℓ φ)                  -- the handler DISCHARGES ℓ
       | _ => throw "handle: the effect name must be a bare identifier naming a declared `effect`"
   | .dotPerform recv op args => do
