@@ -1888,6 +1888,22 @@ public structure PendingOpKnot where
   params   : List String
   /-- The RAW (un-elaborated) body — elaborated later inside `letRecS`'s own arm. -/
   rawBody  : Surf
+  /-- **#139**: this knot's ORIGINATING `.implD`'s position in `buildEnv`'s own `ds` argument
+  (`prelude ++ nonLetDecls`, the SAME list `foldLetDecls` folds — `buildEnv`/`foldLetDecls` are
+  always called on decl-lists derived from the SAME `p.decls` in the SAME relative order, so an
+  index into one is a valid index into the other). `foldLetDecls` uses this to grant a decl
+  VISIBILITY of this knot only when the decl's OWN index is `> declIdx` (the knot's impl came
+  textually BEFORE it) — mirroring the forward-only visibility ordinary `letD`/`letRecD` decls
+  already have relative to EACH OTHER, so a knot never gets wrapped into a decl that came before
+  its own originating `impl` (closing the `Prelude_abs`-sees-a-user-knot-before-the-alias-exists
+  regression this field fixes: without it, EVERY decl — including `Prelude.bang`'s OWN internal
+  definitions, merged in as `mergedDecls` and always index-0-relative outermost — got wrapped with
+  EVERY knot regardless of origin, dragging a user impl's raw body into a scope where even the
+  PRELUDE's own alias for the name it calls wasn't bound yet). Default `0` for any OTHER
+  `PendingOpKnot` construction site there is none today, `buildEnv`'s `.implD` arm is the sole
+  producer, kept a real field (not derived) so a future construction site can't silently pick a
+  wrong default. -/
+  declIdx  : Nat
 
 /-- One data constructor's elaboration record (ADR-0069). For a GENERIC data type (`params ≠ []`,
 ADR-0069 bite-1) `payloadClosed`/`dataTy` are placeholders (a generic ctor has no ONE closed type —
@@ -4546,7 +4562,7 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut hktMethodOf : List (String × String) := []
   let mut hktImpls    : List HktImpl := []
   let mut effects     : List (String × EffectInfo) := []
-  for d in ds do
+  for (d, declIdx) in ds.zipIdx do
     match d with
     | .dataD n [] cs => do                       -- MONOMORPHIC: byte-identical to the ADR-0069 path
         if cs.isEmpty then throw s!"data {n}: needs at least one constructor"
@@ -4628,7 +4644,7 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   | p1 :: rest =>
                       let kn := s!"#opknot{insts.length}"
                       insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, .var "#unreachable-knot-placeholder", some kn⟩]
-                      pendingKnots := pendingKnots ++ [⟨kn, τR, retR, p1 :: rest, od.body⟩]
+                      pendingKnots := pendingKnots ++ [⟨kn, τR, retR, p1 :: rest, od.body, declIdx⟩]
                   -- 0-param ops: UNCHANGED pre-#112 behavior — pre-elaborate + splice. Safe: a
                   -- 0-param op has no `Self`-typed param to knot-bind (nothing FOR the knot's own
                   -- fixpoint to recurse ON), so a splice-caused self-reference wall is structurally
@@ -5434,6 +5450,47 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
   return { imports := [], uses := [], pubNames := p.pubNames, decls := mergedDecls ++ aliasDecls ++ entryDecls,
             body := body, isLibrary := p.isLibrary }
 
+/-- **#112 fix.** Wrap `body` in one `let rec` per PENDING 2-param impl-op knot (`env.pendingKnots`,
+DECL ORDER — each subsequent `let rec` nests OUTSIDE the previous, so it sees every earlier knot's
+name in scope, mirroring `buildEnv`'s pre-#112 "earlier ops resolve" guarantee while ALSO giving
+self-reference for free — the μ-encoded fixpoint (`buildLetRec`, ADR-0073/#95) is REAL recursion,
+not a splice, so `tx == ty` inside `eq`'s own body resolves through the SAME mechanism an ordinary
+`let rec` uses). TUPLED single-arg encoding (`fun pq => let (p1, p2) = pq in rawBody`), NOT curried
+(`fun p1 => fun p2 => …`) — de-risked this session: `letRecS`'s elaboration arm
+(`TypeCheck.lean`'s `.letRecS` case) only threads the DECLARED type onto the OUTERMOST `.lam`
+binder; a curried second parameter falls through the GENERIC `.lam` arm instead, which mints it a
+FRESH HOLE rather than the arrow's second domain — a separate, pre-existing gap this fix does NOT
+touch (consuming `letRecS` as-is per this slice's scope). A FORWARD reference (an EARLIER knot
+calling a LATER one) still fails here — `let rec` alone only ever sees itself + prior bindings;
+TRUE mutual/forward impl dispatch needs `buildLetRecMulti`'s N-way tuple-of-thunks generalization
+of `buildLetRec` (a separate, in-flight lane's scope — not built or touched here).
+
+Moved BEFORE `foldLetDecls` (#139 fix): `foldLetDecls` now calls this directly on every decl RHS,
+not just the top-level tail — see `foldLetDecls`'s own doc comment for the "why every RHS" story. -/
+def wrapPendingKnots (knots : List PendingOpKnot) (body : Surf) : Surf :=
+  knots.foldr (fun k acc =>
+      match k.params with
+      -- 1-ary (#78 Amendment, ADR-0106): NO tupling at all — a bare `T -> RetTy` knot, the param
+      -- binds DIRECTLY (`show(x)` ↦ `fun x => rawBody`), matching `bindPayload`'s own `[b] ↦ .lett`
+      -- (arity-1, no product to destructure) precedent.
+      | [p1] =>
+          let knotTy : Ty := .tArr k.targetTy k.retTy
+          Surf.letRecS k.knotName knotTy (.lam p1 k.rawBody) acc
+      -- 2+-ary: right-nested TUPLED domain (`prodOfTys`'s own convention — `T * T` for 2, `T *
+      -- (T * T)` for 3, …), destructured via `bindPayload`'s SAME N-ary `.splitS` chain — the
+      -- calling convention this knot's callers (`.binopS` dispatch for arity 2, name-call dispatch
+      -- for any arity) build their `.pairS`-nested argument to match.
+      | _ :: _ :: _ =>
+          let domTy : Ty := prodOfTys (List.replicate k.params.length k.targetTy)
+          let knotTy : Ty := .tArr domTy k.retTy
+          let knotFun : Surf := .lam "#pq" (bindPayload k.params "#pq" k.rawBody)
+          Surf.letRecS k.knotName knotTy knotFun acc
+      -- arity 0: unreachable (`buildEnv`'s own `.implD` arm only ever builds a `PendingOpKnot` for
+      -- `od.params ≠ []` — a 0-param op has no `Self`-typed param to knot-bind and stays on the
+      -- pre-#112 splice path) — kept total per this file's own enumeration discipline.
+      | [] => acc)
+    body
+
 /-! Fold every `letD`/`letRecD` in `ds` into `tail`, RIGHTMOST-first (a `foldr`), producing nested
 `Surf.lett`/`Surf.letRecS` wrapping `tail` — the SAME "wrap the body in a let" idiom
 `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s `use`-hoist already use (ADR-0093 D5, operator
@@ -5443,13 +5500,60 @@ elaboration path; `buildEnv` no-ops on them by construction). Decl ORDER is pres
 in its original order does exactly this (`foldr f z [a, b, c] = f a (f b (f c z))`, so `a`'s
 `lett`/`letRecS` wraps EVERYTHING after it, `b`'s wraps what's after IT, etc.), matching ordinary
 nested-`let` scoping. Non-let decls pass through unchanged in a SEPARATE list (returned alongside)
-for `buildEnv`. -/
-def foldLetDecls (ds : List Decl) (tail : Surf) : List Decl × Surf :=
+for `buildEnv`.
+
+`knots` (#139 fix): every `.letD`/`.letRecD`'s OWN right-hand side, PLUS `tail`, is individually
+`wrapPendingKnots`-wrapped BEFORE nesting — not just `tail` once, and not with the WHOLE `knots`
+list unconditionally. `Surf.lett`/`letRecS` are NON-recursive at the OUTER level (`Surf.lett n e
+acc`: `e`'s own scope does NOT include `acc`'s bindings — only a `let rec`'s SELF-reference is
+exempted, and that's `letRecS`'s own separate mechanism, unrelated to `acc`), so nesting the knots
+ONLY around `tail` (the first cut at this fix) left every decl's own RHS (`let main = … Mk(1,2) ==
+Mk(1,2) …`, ADR-0106 §5's OWN worked example is 1-ary and happens to dodge this, but a
+`deriving(Eq)`-generated impl reached through `main`'s RHS does not) outside every knot's scope —
+confirmed live: `data Pair = Mk(Int,Int) deriving (Eq)` + `let main = if Mk(1,2) == Mk(1,2) then 1
+else 0` (a LIBRARY-mode program — `Main.lean`'s own `hasMain` rewrite makes `main`'s `letD` RHS the
+ONLY place the `==` dispatch site lives) regressed to `unbound variable '#opknot0'` under the
+tail-only cut.
+
+Wrapping EVERY RHS with the FULL `knots` list unconditionally (the SECOND cut) is ALSO unsound —
+confirmed live: `Prelude_abs`'s OWN definition (a `letD` in `mergedDecls`, textually and
+scope-wise BEFORE any user impl's `abs`-referencing knot AND before the `abs` alias `letD` itself)
+got wrapped with a user-defined knot whose `rawBody` calls `$abs`, dragging that reference into a
+scope that doesn't yet have the `abs` alias bound — `let-binding 'Prelude_abs': unbound variable
+abs`. A decl must only see knots whose ORIGINATING `impl` came TEXTUALLY BEFORE it (`declIdx <`
+this decl's own position in `ds` — `PendingOpKnot.declIdx`'s own doc comment), mirroring the
+EXACT forward-only visibility ordinary `letD`/`letRecD` siblings already have relative to each
+other — never a knot from a LATER decl (that direction is `#112`'s own documented "a FORWARD
+reference — an EARLIER knot calling a LATER one — still fails" gap, unaffected either way; every
+knot's own `rawBody` only ever self-references its OWN `knotName`) and never a knot whose impl is
+still AHEAD in the ordering (the `Prelude_abs` case: index 0, every knot has `declIdx` at or past
+the user's OWN entry-file decls, always `>` 0). `ds.zipIdx` supplies each decl's own position;
+`knots.filter (·.declIdx < i)` is the visible SUBSET for decl-index `i`. -/
+def foldLetDecls (knots : List PendingOpKnot) (ds : List Decl) (tail : Surf) : List Decl × Surf :=
   let nonLetDecls := ds.filter (fun d => match d with | .letD .. | .letRecD .. => false | _ => true)
-  let body := ds.foldr (fun d acc => match d with
-    | .letD n ty e   => Surf.lett n (match ty with | some t => Surf.annotS e t | none => e) acc
+  let body := (ds.zipIdx).foldr (fun (d, i) acc =>
+    let visible := knots.filter (·.declIdx < i)
+    match d with
+    -- ALIAS shape (`let take = Prelude_take`, ADR-0093 D5's `use`-hoist / `usedPlainFns`): MUST
+    -- stay a BARE `.var m` RHS, untouched — `inlineVarAliases`'s OWN pattern match is exactly
+    -- `.lett n (.var m) rest` (its "the ONE interesting case" comment); wrapping the RHS in a
+    -- non-empty knot's `letRecS` shell (as the general `.letD` arm below does) buries the `.var`
+    -- and makes the alias invisible to that collapse. An alias RHS has no application site a knot
+    -- dispatch could ever need anyway (it's a bare rename), so skipping the wrap here costs nothing.
+    | .letD n none (.var m) => Surf.lett n (.var m) acc
+    | .letD n ty e   => Surf.lett n (wrapPendingKnots visible (match ty with | some t => Surf.annotS e t | none => e)) acc
+    -- `letRecS`'s elaboration arm (`elabS`'s `.letRecS` case) pattern-matches its THIRD arg as
+    -- LITERALLY `.lam pn pbody` — wrapping `e` itself (as the `.letD` arm does) would bury the
+    -- `.lam` under a `letRecS` node and break that match. Knot-wrap the LAMBDA'S OWN BODY instead
+    -- (`.lam pn (wrapPendingKnots visible pbody)`), preserving the outer `.lam` shape `letRecS`
+    -- needs; a non-`.lam` `e` is left untouched (unreachable through the parser — `pLetRecBindings`
+    -- only ever produces a `.lam` RHS — `.letRecS`'s OWN elaboration arm fails loud on it anyway,
+    -- so this fold is not the first or only place that shape is enforced).
+    | .letRecD n t (.lam pn pbody) => Surf.letRecS n t (.lam pn (wrapPendingKnots visible pbody)) acc
     | .letRecD n t e => Surf.letRecS n t e acc
-    | _              => acc) tail
+    | _              => acc) (wrapPendingKnots knots tail)  -- `tail` sees EVERY knot (`i = ds.length`,
+      -- past every possible `declIdx`) — the program's own trailing body is always textually AFTER
+      -- every top-level decl, so the full unfiltered list is exactly the index-scoped answer here too.
   (nonLetDecls, body)
 
 /-! Does `nm` occur as a free-ish variable reference anywhere in `e` (`surfUsesVar`)? A syntactic
@@ -5894,7 +5998,12 @@ the SAME "one spelling, always correct" rationale `eqFoldBody`'s own doc comment
 def showArmBody (dataName ctor : String) (fields : List (String × Ty)) : Except String Surf := do
   let qCtor := qualifyName dataName ctor
   let exprs ← fields.mapM (fun (v, ty) => showFieldExpr dataName v ty)
-  let concat2 : Surf → Surf → Surf := fun a b => .app (.force (.var "concat")) (.pairS a b)
+  -- `Prelude.bang`'s `concat : Str -> Str -> Str` is CURRIED (`fun a => fun b => …`), NOT a
+  -- pair-taking function — `.app (.app (.force (.var "concat")) a) b`, the ordinary curried-call
+  -- shape (matching `showFieldExpr`'s own `.app (.force (.var "intToStr")) …` sibling), not a
+  -- single application to a `.pairS`. (Previously wrong: `.app f (.pairS a b)` applies a
+  -- `Str -> Str -> Str` VALUE to a `Str * Str` PAIR — a genuine type mismatch, confirmed live.)
+  let concat2 : Surf → Surf → Surf := fun a b => .app (.app (.force (.var "concat")) a) b
   match exprs with
   | []            => .ok (Bang.Surface.strToSurf qCtor.toList)
   | first :: rest =>
@@ -5959,7 +6068,10 @@ too — both paths see the SAME expanded decls `elabProg` does. -/
 public def expandDerives (p : Prog) : Except String Prog := do
   if p.derivesFor.isEmpty then pure p
   else
-    let mut newDecls : List Decl := []
+    -- #139: per-`dataName` generated decls, kept SEPARATE (not flattened into one list) so each
+    -- carrier's OWN derived `impl`s can be spliced right after ITS OWN `data` decl below — see the
+    -- splice's own comment for why appending (or prepending) the flattened list at one end broke.
+    let mut byData : List (String × List Decl) := []
     for (dataName, derives) in p.derivesFor do
       match p.decls.find? (fun d => match d with | .dataD n _ _ => n == dataName | _ => false) with
       | none => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
@@ -5975,11 +6087,32 @@ v1's derive handler only targets MONOMORPHIC carriers (ADR-0097 §6). Either dro
 (a monomorphic alias like 'data {dataName}I = …(Int)…') or hand-write the 'impl' for the specific \
 instantiation you need."
       | some (.dataD _ [] cs) =>
+          let mut dsForThis : List Decl := []
           for deriveName in derives do
             let ds ← expandOneDerive dataName cs deriveName
-            newDecls := newDecls ++ ds
+            dsForThis := dsForThis ++ ds
+          byData := byData ++ [(dataName, dsForThis)]
       | some _ => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
-    pure { p with decls := p.decls ++ newDecls }
+    -- Splice each carrier's generated decls right AFTER its OWN `data` decl, not appended at the
+    -- very end of `p.decls`. `buildEnv` resolves decls IN ORDER (this file's own `buildEnv` doc
+    -- comment: "a data type may reference itself + earlier decls; forward references fail loud") —
+    -- appending everything at the end (the ORIGINAL shape) put a derived impl's `PendingOpKnot`
+    -- (`#139`'s own `declIdx` forward-visibility gate, `foldLetDecls`'s doc comment) STRUCTURALLY
+    -- AFTER every ordinary top-level `let`/`let rec` regardless of where `deriving(...)` sits in
+    -- the source (confirmed live: `data Pair = Mk(Int,Int) deriving (Eq)` + a LATER `let main = if
+    -- Mk(1,2) == Mk(1,2) then 1 else 0` put `main` at a LOWER decl-index than the derived `Eq`
+    -- impl, so `main`'s knot-visibility filter excluded the very knot it dispatches to). PREPENDING
+    -- wholesale (the second cut) broke `buildEnv`'s OWN forward-reference discipline the other way
+    -- — a derived `impl Eq for Point` ending up BEFORE `data Point` itself, `resolveTy` failing on
+    -- an undeclared type name, regressing every existing `deriving` `#guard` in this file. Splicing
+    -- right after the OWNING `data` decl satisfies BOTH constraints at once: the impl still comes
+    -- after its own `data` (buildEnv's requirement), and it comes as EARLY as possible otherwise —
+    -- before every `let`/`let rec` a user could write afterward — matching where a hand-written
+    -- `impl` immediately following its `data` would naturally sit.
+    let decls' := p.decls.flatMap (fun d => match d with
+      | .dataD n _ _ => d :: (byData.lookup n).getD []
+      | _            => [d])
+    pure { p with decls := decls' }
 #guard (match Bang.Surface.parseProg "data Triple = T(Int, Int, Int) deriving (Show)\nlet main = 3" >>= expandDerives with
         | .ok p => p.decls.any (fun d => match d with
             | .implD "Show" _ ops => ops.any (fun o => surfUsesVar "intToStr" o.body)
@@ -6073,44 +6206,6 @@ public def lawTestSourceOfProg (p : Prog) : Except String String := do
   let p ← injectPrelude p
   pure (Bang.Format.showProg p)
 
-/-- **#112 fix.** Wrap `body` in one `let rec` per PENDING 2-param impl-op knot (`env.pendingKnots`,
-DECL ORDER — each subsequent `let rec` nests OUTSIDE the previous, so it sees every earlier knot's
-name in scope, mirroring `buildEnv`'s pre-#112 "earlier ops resolve" guarantee while ALSO giving
-self-reference for free — the μ-encoded fixpoint (`buildLetRec`, ADR-0073/#95) is REAL recursion,
-not a splice, so `tx == ty` inside `eq`'s own body resolves through the SAME mechanism an ordinary
-`let rec` uses). TUPLED single-arg encoding (`fun pq => let (p1, p2) = pq in rawBody`), NOT curried
-(`fun p1 => fun p2 => …`) — de-risked this session: `letRecS`'s elaboration arm
-(`TypeCheck.lean`'s `.letRecS` case) only threads the DECLARED type onto the OUTERMOST `.lam`
-binder; a curried second parameter falls through the GENERIC `.lam` arm instead, which mints it a
-FRESH HOLE rather than the arrow's second domain — a separate, pre-existing gap this fix does NOT
-touch (consuming `letRecS` as-is per this slice's scope). A FORWARD reference (an EARLIER knot
-calling a LATER one) still fails here — `let rec` alone only ever sees itself + prior bindings;
-TRUE mutual/forward impl dispatch needs `buildLetRecMulti`'s N-way tuple-of-thunks generalization
-of `buildLetRec` (a separate, in-flight lane's scope — not built or touched here). -/
-def wrapPendingKnots (knots : List PendingOpKnot) (body : Surf) : Surf :=
-  knots.foldr (fun k acc =>
-      match k.params with
-      -- 1-ary (#78 Amendment, ADR-0106): NO tupling at all — a bare `T -> RetTy` knot, the param
-      -- binds DIRECTLY (`show(x)` ↦ `fun x => rawBody`), matching `bindPayload`'s own `[b] ↦ .lett`
-      -- (arity-1, no product to destructure) precedent.
-      | [p1] =>
-          let knotTy : Ty := .tArr k.targetTy k.retTy
-          Surf.letRecS k.knotName knotTy (.lam p1 k.rawBody) acc
-      -- 2+-ary: right-nested TUPLED domain (`prodOfTys`'s own convention — `T * T` for 2, `T *
-      -- (T * T)` for 3, …), destructured via `bindPayload`'s SAME N-ary `.splitS` chain — the
-      -- calling convention this knot's callers (`.binopS` dispatch for arity 2, name-call dispatch
-      -- for any arity) build their `.pairS`-nested argument to match.
-      | _ :: _ :: _ =>
-          let domTy : Ty := prodOfTys (List.replicate k.params.length k.targetTy)
-          let knotTy : Ty := .tArr domTy k.retTy
-          let knotFun : Surf := .lam "#pq" (bindPayload k.params "#pq" k.rawBody)
-          Surf.letRecS k.knotName knotTy knotFun acc
-      -- arity 0: unreachable (`buildEnv`'s own `.implD` arm only ever builds a `PendingOpKnot` for
-      -- `od.params ≠ []` — a 0-param op has no `Self`-typed param to knot-bind and stays on the
-      -- pre-#112 splice path) — kept total per this file's own enumeration discipline.
-      | [] => acc)
-    body
-
 /-- Elaborate a whole program: auto-`use` the prelude module (ADR-0098), build the elaboration env,
 resolve the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the
 type-checker's `.dotPerform` arm needs the program's user-effect table to resolve a `perform`
@@ -6153,14 +6248,42 @@ def elabProg (p : Prog) :
   let p ← expandDerives p
   let p ← injectPrelude p
   let p := Bang.Surface.eraseLettMultiProg p
-  let (nonLetDecls, foldedBody) := foldLetDecls p.decls p.body
+  -- #139 fix (was: `wrapPendingKnots env.pendingKnots foldedBody`, wrapping the KNOTS OUTSIDE
+  -- `foldedBody`'s own top-level let-chain — the ORIGINAL `unbound variable 'eq'` repro, ADR-0106
+  -- §5). `buildEnv` needs `nonLetDecls` first (a plain filter, independent of any knot), so extract
+  -- it via a THROWAWAY `foldLetDecls [] p.decls p.body` call (empty knot list ⟹ its SECOND output
+  -- is discarded, unused below) purely to read `nonLetDecls`; the real fold — WITH `env.pendingKnots`
+  -- threaded through every decl RHS + `tail` (`foldLetDecls`'s own updated doc comment has the full
+  -- "why every RHS, not just tail" story) — runs once `env` exists. `foldLetDecls` being a pure
+  -- filter+fold makes calling it twice on the same `p.decls` exactly as cheap and never divergent
+  -- (identical `nonLetDecls` either way, only the SECOND output — the tree — differs by knot-wrap).
+  let (nonLetDecls, _) := foldLetDecls [] p.decls p.body
   let declared := nonLetDecls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
-  let env ← buildEnv (prelude ++ nonLetDecls)
+  -- #139: `prelude ++ p.decls`, NOT `prelude ++ nonLetDecls` — `buildEnv`'s existing `.letD ..
+  -- | .letRecD .. => pure ()` arm already no-ops on `letD`/`letRecD` (ADR-0093 D5: they're binders,
+  -- never static env entries), so passing them through changes NOTHING `buildEnv` computes, but it
+  -- makes `env.pendingKnots`'s `declIdx` (assigned from THIS list's own `ds.zipIdx`, `buildEnv`'s
+  -- own doc comment) an index into `prelude ++ p.decls` — the SAME index space `foldLetDecls`
+  -- itself uses below (`prelude.length + (position within p.decls)`), so its `declIdx <` comparison
+  -- is meaningful. The OLD `prelude ++ nonLetDecls` gave `declIdx` an index into a FILTERED list
+  -- with `letD`/`letRecD` entries removed — a DIFFERENT index space than `foldLetDecls`'s own
+  -- `p.decls.zipIdx` (which does NOT filter), silently misaligning every comparison whenever a
+  -- `letD`/`letRecD` decl sat between a knot's `impl` and the site that needed to see it (confirmed
+  -- live: `expandDerives`'s own APPENDED-at-the-end generated `.implD` also interacted with this
+  -- misalignment, `data Pair = Mk(Int,Int) deriving (Eq)` + a later `let main = …Mk(1,2)==Mk(1,2)…`
+  -- regressed to `unbound variable '#opknot0'` under the two lists' index skew).
+  let env ← buildEnv (prelude ++ p.decls)
   -- #112: knot-wrap BEFORE `elabS` (RAW `letRecS` nodes feeding its OWN `.letRecS` arm, which does
   -- the real elaboration+fixpoint-build) — NOT wrap an already-elaborated body, which would need a
-  -- second `elabS` pass over the wrapper alone.
-  let wrapped := wrapPendingKnots env.pendingKnots (← expandBFns env none bigFuel foldedBody)
+  -- second `elabS` pass over the wrapper alone. `declIdx` re-based to `p.decls`'s OWN 0-indexed
+  -- space (subtracting `prelude.length`, the offset `buildEnv (prelude ++ p.decls)` introduced) —
+  -- `foldLetDecls`'s own `ds.zipIdx` below indexes `p.decls` alone, matching `elabProg`'s SECOND
+  -- `foldLetDecls` argument here; every `declIdx` is `≥ prelude.length` by construction (`prelude`
+  -- is all `dataD`, never a knot source), so the subtraction never underflows.
+  let rebased := env.pendingKnots.map (fun k => { k with declIdx := k.declIdx - prelude.length })
+  let (_, foldedBody) := foldLetDecls rebased p.decls p.body
+  let wrapped ← expandBFns env none bigFuel foldedBody
   -- ADR-0103: monomorphize every bound-free `let rec` (`take : Int -> List a -> List a`) BEFORE
   -- `elabS` — the `expandBFns` twin, running on the SAME `wrapped` tree. Independent of bounded-fn
   -- expansion (a disjoint surface: `let rec … : T = …` vs `fn … where Trait`, ADR-0103's "one

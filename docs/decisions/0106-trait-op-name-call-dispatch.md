@@ -78,36 +78,67 @@ path (no `Self`-typed param to knot-bind).
 - `deriving (Show)` on an all-nullary carrier (`data Color = Red | Green | Blue`) → works end to
   end (`show(Red)` renders `"Color_Red"`, the #128 type-qualified-ctor-name convention).
 
-## §5 — the wall this ADR does NOT close (STOP-and-SHOW)
+## §5 — the binder-nesting wall (CLOSED, issue #139)
 
-`deriving (Show)` on ANY carrier with a non-nullary ctor fails to ELABORATE AT ALL — not just at
+`deriving (Show)` on ANY carrier with a non-nullary ctor failed to ELABORATE AT ALL — not just at
 the non-nullary call site. `show`'s ONE generated knot covers every ctor arm in a single `matchD`;
 a `$concat`/`intToStr` reference ANYWHERE in that fold (needed to render a field or join a ctor's
-name with its payload) poisons the WHOLE knot, even for a call that only ever hits an unrelated
-nullary arm (confirmed live: `data Wrap = W(Wrap) | End deriving (Show)`, calling ONLY `show(End)`,
-still fails `unbound variable 'concat'`).
+name with its payload) poisoned the WHOLE knot, even for a call that only ever hit an unrelated
+nullary arm (confirmed live at the time: `data Wrap = W(Wrap) | End deriving (Show)`, calling ONLY
+`show(End)`, still failed `unbound variable 'concat'`).
 
-**Root cause, confirmed on a HAND-WRITTEN impl with zero derive/Show involvement**:
+**Root cause** (confirmed on a HAND-WRITTEN impl with zero derive/Show involvement):
 `impl Eq for Box { fn eq(a, b) = $eq "x" "x" }` (calling the PRELUDE's own `eq`, nothing to do with
-`Show`) fails `unbound variable 'eq'`. `wrapPendingKnots`'s knot is `letRecS`-wrapped OUTSIDE the
+`Show`) failed `unbound variable 'eq'`. `wrapPendingKnots`'s knot was `letRecS`-wrapped OUTSIDE the
 program's own top-level let-chain (`foldedBody`, built by `elabProg`'s `foldLetDecls`) — so a
-knot's OWN body is elaborated in a scope that has NOT yet descended into `foldedBody`'s nested
-lets, meaning a knot's op body can NEVER see another top-level binding, prelude alias or user
-function, regardless of arity. This is a `#112`-vintage gap (the ORIGINAL 2-arg knot mechanism has
-always had it) that was simply invisible until now: `Eq`/`Ord`'s generated fold bodies only ever
-call the binop itself (`==`/`<`), never a prelude function; `Show`'s field-rendering is the FIRST
-derive whose generated body genuinely needs to.
+knot's OWN body was elaborated in a scope that had NOT yet descended into `foldedBody`'s nested
+lets, meaning a knot's op body could NEVER see another top-level binding, prelude alias or user
+function, regardless of arity. This was a `#112`-vintage gap (the ORIGINAL 2-arg knot mechanism had
+always had it) that stayed invisible until this session: `Eq`/`Ord`'s generated fold bodies only
+ever call the binop itself (`==`/`<`), never a prelude function; `Show`'s field-rendering was the
+FIRST derive whose generated body genuinely needed to.
 
-**Why this ADR does not fix it.** `wrapPendingKnots`'s wrap-direction relative to `foldedBody` is
-part of `elabProg`'s core binder-nesting order — the SAME pipeline `#112`'s original fix, ADR-0103's
-monomorphization pass, and `expandBFns`'s bounded-fn expansion all thread through in a specific,
-load-bearing sequence. Reordering it correctly (nesting the knot INSIDE `foldedBody`'s own
-let-chain, at the right depth, without breaking the mutual mono-recursion `#112` exists FOR) is a
-genuine architecture change to the elaboration pipeline's scoping discipline — kernel-adjacent by
-this project's own escalation rule (CLAUDE.md: "a frozen-statement touch — STOP-and-SHOW; that is
-kernel-engineer/operator territory even when the symptom is a surface error message"), not a
-Frontend-leaf-scoped edit to attempt under this session's time budget. Filed as a follow-up, not
-guessed at.
+**Fix (#139, landed this session).** `foldLetDecls` now knot-wraps EVERY `letD`/`letRecD`'s OWN
+right-hand side (not just the trailing `tail`), index-scoped so a decl only sees knots whose
+originating `impl` came textually BEFORE it (`PendingOpKnot.declIdx`, mirroring the forward-only
+visibility ordinary sibling `let`/`let rec` decls already have). Two load-bearing companion fixes
+were needed for the index-scoping to be SOUND, not just plausible: (1) `buildEnv` is now called on
+`prelude ++ p.decls` (not the pre-filtered `prelude ++ nonLetDecls`) so `PendingOpKnot.declIdx`
+indexes the SAME list `foldLetDecls` folds — the two functions previously read TWO DIFFERENT,
+silently-misaligned index spaces; (2) `expandDerives` now splices each derived `impl` right AFTER
+its OWN `data` decl (was: appended at the very end of `p.decls` regardless of where `deriving(…)`
+textually sat), so a derived knot's `declIdx` reflects where the carrier is DECLARED, not where
+the LAST `deriving` clause in the file happens to land — both PREPENDING wholesale (breaks
+`buildEnv`'s own "impls resolve after their target `data`" ordering) and APPENDING wholesale (put
+the derived knot's `declIdx` after every ordinary top-level `let`, including ones that dispatch to
+it) were tried and refuted live before the per-`data`-decl splice. Witnessed: the hand-written
+`Eq`/`abs` repro above now runs to `42`; `data Pair = Mk(Int,Int) deriving (Eq)` + a LATER `let
+main = if Mk(1,2) == Mk(1,2) then 1 else 0` (a library-mode program — exactly the shape that
+regressed under an earlier, less-careful cut of this fix) now runs to `1`; the ADR's own worked
+`Wrap`/`show(End)` repro above now runs to `"Wrap_End"`, and the RECURSIVE arm
+`show(W(End))` self-recurses through the knot to `"Wrap_W(Wrap_End)"` (`structOK` correctly
+certifies the self-call). A separate `concat2`-shape bug in `showArmBody` (calling curried
+`concat : Str -> Str -> Str` as if it took ONE paired argument) was ALSO fixed in the same landing
+— unrelated to the binder-nesting wall, but blocking the exact same corpus program.
+
+## §6 — the row-admission wall this fix does NOT close (STOP-and-SHOW, item 2's scope)
+
+`deriving (Show)` on a carrier with an `Int` FIELD (e.g. `data Box = B(Int) deriving (Show)`) still
+fails — now with `thunk body performs {Div}, exceeding its declared bound {}`, a DIFFERENT error at
+a DIFFERENT layer than §5's `unbound variable`. Widening `Prelude.bang`'s `trait Show { fn show(a)
+-> Str … }` to `-> Str ! {Div}` has ZERO effect on this (confirmed live) — a knot's admitted row is
+governed ENTIRELY by `letRecRow`'s `structOK` self-recursion certifier (ADR-0091), never by the
+trait signature's own declared row. `showIt`'s generated body calls `intToStr`/`concat` (both
+themselves `Div`-rowed via THEIR OWN self-recursion) but `structOK`'s check on `#opknotN`'s OWN
+body sees no SELF-recursive call for a leaf `Int` field, so `letRecRow` returns `∅` regardless of
+what the trait declares — the row-admission machinery and the surface row-annotation are two
+DISJOINT systems today. Fixing this needs either (a) `structOK`/`letRecRow` widened to admit `Div`
+when the body calls an EXTERNALLY `Div`-rowed function (not just on self-recursion), or (b) the
+trait's declared row genuinely threaded into the knot's admitted bound at `buildLetRec` — either is
+a typing-rule-adjacent change to `ADR-0091`'s own mechanism, STOP-and-SHOW territory, not attempted
+here. The RECURSIVE-carrier case (§5's `Wrap`/`show(W(End))`) does NOT hit this wall — a genuine
+self-call through `show` certifies fine under `structOK` as-is; only a call to an UNRELATED
+Div-rowed prelude function (never itself the knot's own name) is blocked.
 
 ## Rejected / staged
 
