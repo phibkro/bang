@@ -1825,7 +1825,7 @@ when `hsCustom hs n = some (p, cls)` (a live custom frame `n`) and `op`'s clause
 the machine's `OP`-arm custom dispatch with `evalD`'s inline clause-service. -/
 theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
     {cls : List (Bang.OpId × Comp)} {clause : Bang.OpId × Comp} :
-    ∀ {hs : HStack}, hsCustom hs n = some (p, cls) → cls.find? (·.1 == op) = some clause →
+    ∀ {hs : HStack}, hsCustom hs n = some (p, cls, false) → cls.find? (·.1 == op) = some clause →
       customUpdate n op v hs = some (Comp.subst p (Comp.subst (Val.shift v) clause.2), hs) := by
   intro hs
   induction hs with
@@ -1836,8 +1836,16 @@ theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
     | custom ℓ0 p0 cls0 =>
         by_cases hid : fr.id = n
         · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
-          obtain ⟨rfl, rfl⟩ := hc
+          obtain ⟨rfl, rfl, _⟩ := hc
           simp only [customUpdate, hh, hid, ↓reduceIte, hcl]
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdate, hh, if_neg hid, ih hc hcl, Option.map_some]
+    | customUpd ℓ0 p0 cls0 =>
+        -- hsCustom returns isUpd = true for a customUpd frame; the hypothesis says false ⇒ contradiction
+        -- when id = n. When id ≠ n, recurse (customUpdate skips non-custom frames, hsCustom too).
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨_, _, hupd⟩ := hc; exact absurd hupd (by simp)
         · simp only [hsCustom, hh, if_neg hid] at hc
           simp only [customUpdate, hh, if_neg hid, ih hc hcl, Option.map_some]
     | state ℓ0 s =>
@@ -1849,6 +1857,44 @@ theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
     | transaction ℓ0 Θ =>
         simp only [hsCustom, hh] at hc
         simp only [customUpdate, hh, ih hc hcl, Option.map_some]
+
+/-- The `customUpd` (ADR-0107 D5) service correspondence, the twin of `customUpdate_service`: when
+`hsCustom hs n = some (p, cls, true)` (a live PARAMETERISED frame `n`) and `op`'s clause is `clause`,
+`customUpdUpdate` returns the clause body to run and the SAME `hs` (frame kept live). Aligns the
+machine's OP-arm customUpd dispatch with `evalD`'s inline customUpd clause-service (before the CUPD
+param-update). Structurally identical to `customUpdate_service` with `customUpd`↔`custom` swapped. -/
+theorem customUpdUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
+    {cls : List (Bang.OpId × Comp)} {clause : Bang.OpId × Comp} :
+    ∀ {hs : HStack}, hsCustom hs n = some (p, cls, true) → cls.find? (·.1 == op) = some clause →
+      customUpdUpdate n op v hs = some (Comp.subst p (Comp.subst (Val.shift v) clause.2), hs) := by
+  intro hs
+  induction hs with
+  | nil => intro hc _; simp [hsCustom] at hc
+  | cons fr hs ih =>
+    intro hc hcl
+    cases hh : fr.handler with
+    | customUpd ℓ0 p0 cls0 =>
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨rfl, rfl, _⟩ := hc
+          simp only [customUpdUpdate, hh, hid, ↓reduceIte, hcl]
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdUpdate, hh, if_neg hid, ih hc hcl, Option.map_some]
+    | custom ℓ0 p0 cls0 =>
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨_, _, hupd⟩ := hc; exact absurd hupd (by simp)
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdUpdate, hh, if_neg hid, ih hc hcl, Option.map_some]
+    | state ℓ0 s =>
+        simp only [hsCustom, hh] at hc
+        simp only [customUpdUpdate, hh, ih hc hcl, Option.map_some]
+    | throws ℓ0 =>
+        simp only [hsCustom, hh] at hc
+        simp only [customUpdUpdate, hh, ih hc hcl, Option.map_some]
+    | transaction ℓ0 Θ =>
+        simp only [hsCustom, hh] at hc
+        simp only [customUpdUpdate, hh, ih hc hcl, Option.map_some]
 
 /-- No custom frame for `n` ⇒ `customUpdate` misses (the machine falls to the throw path). Ties the
 `evalD`-side `κ.get? n = none` to the machine `customUpdate = none` via `CCorr`. -/
