@@ -485,7 +485,21 @@ def resolveRow (fuel : Nat) (r : Row) : Infer Row := do
 /-- Open-row unification: resolve both sides, then delegate to the proven-sound `EffectRow.unify` and
 install its result substitution. `unify` needs a fresh tail var only in the open/open-DISTINCT case, so
 that is the sole case that mints one (preserving the fresh-counter trajectory of the former mirror). MGU
-is the differential-tested contract (CLAUDE.md); soundness is `EffectRow.unify_sound`. -/
+is the differential-tested contract (CLAUDE.md); soundness is `EffectRow.unify_sound`.
+
+**#164 S0 (the #94 teaching diagnostic):** this is the ONLY call site (`unifyV`'s `.U φ B, .U φ' B'`
+case, TypeCheck.lean below) — a bare `.U`-typed unification, reached when a row-POLYMORPHIC binding
+(a `let`-generalized function whose body forces two of its own params to distinct fresh row vars,
+`joinRow`'s "single-ρ first cut" doc comment) is applied at TWO uses whose actual rows genuinely
+differ (confirmed live: `let compose = {fun p => fun q => …} in ((compose) inc) cd` — `inc`'s row
+`{}` vs `cd`'s row `{Div}`, `docs/notes/type-power-entry-design.md` §2's stage-swap witness is the
+SAME wall through the wrapper pattern). A FAILURE here is NEVER an ordinary two-sides-disagree type
+error (`unifyV`'s catch-all `_, _ => throw "type mismatch"` already covers those) — it is
+STRUCTURALLY the row-poly-reuse shape, since `unifyRow` has exactly one caller and that caller is
+ONLY reached comparing two `.U`-wrapped (row-carrying) types. Naming issue #94 + the two actual rows
++ the workaround turns a cryptic "effect row mismatch" into a taught idiom TODAY, independent of
+whether/when S1's subeffecting fix lands (pure diagnostic, no type-system change — #164's own
+"hours, NO type-system change" scope). -/
 def unifyRow (fuel : Nat) (a b : Row) : Infer Unit := do
   let a ← resolveRow fuel a
   let b ← resolveRow fuel b
@@ -494,7 +508,11 @@ def unifyRow (fuel : Nat) (a b : Row) : Infer Unit := do
     | _,       _       => pure 0
   match EffectRow.unify fresh a b with
   | some s => for (v, r) in s do rassign v r
-  | none   => throw "effect row mismatch"
+  | none   =>
+      throw s!"a row-polymorphic binding was reused at two different effect rows: \
+\{{showRow a.labels}} and \{{showRow b.labels}} — reusing ONE binding across genuinely different \
+effect rows needs subeffecting or open-row polymorphism (issue #94). Split into separately-named \
+bindings (one per row you need), or wrap the pure use in a thunk ascribed at the effectful row."
 
 /-- Join two rows (the effect-`⊔`). Two DISTINCT open tails are COLLAPSED to one (the single-ρ first cut,
 ADR-0075 item 3): `compose`'s body `($f)(($g) x)` joins `ρf ⊔ ρg` — collapsing forces one shared row var,
@@ -7725,6 +7743,15 @@ def rowPolyDivSrc := "let rec countdown : Int -> Int = fun n => if n < 1 then 7 
 -- `compose incPure <effectful>` — FAILS loud ("effect row mismatch"). It needs subeffecting (⊥⊆ρ) or
 -- independent tails + a real join (full Rémy) — the deferred refinement. Sound (over-approximates), incomplete.
 #guard (match checkProg "let rec cd : Int -> Int = fun n => if n < 1 then 7 else ($cd)(n - 1) in let compose = {fun p => fun q => fun x => ($p)(($q) x)} in let inc = {fun x => x + 1} in ((($compose) inc) cd) 3" with | .error _ => true | .ok _ => false)
+-- #164 S0: the SAME reject now names issue #94 + the two actual rows (`{Div}` and the empty row —
+-- `showRow`'s own EMPTY-row rendering is `""`, matching every other `{…}` empty-row message in this
+-- file, e.g. `checkSC`'s `.thunk` bound-exceeded error) instead of a bare "effect row mismatch" —
+-- confirmed live at `unifyRow`'s ONE call site (`unifyV`'s `.U φ B, .U φ' B'` case), the exact
+-- chokepoint every row-poly-reuse failure passes through.
+#guard (match checkProg "let rec cd : Int -> Int = fun n => if n < 1 then 7 else ($cd)(n - 1) in let compose = {fun p => fun q => fun x => ($p)(($q) x)} in let inc = {fun x => x + 1} in ((($compose) inc) cd) 3" with
+    | .error m => m.startsWith "a row-polymorphic binding was reused at two different effect rows: " &&
+                  (m.splitOn "issue #94").length > 1
+    | .ok _     => false)
 
 /-! ### #119 — the row-subsumption asymmetry (fork-1): `checkSC`'s `.annotS` arm ALREADY used
 `subRow` (declared ⊇ actual) correctly; the generic catch-all (`synthSC` + `unifyC`'s `.U`-row
