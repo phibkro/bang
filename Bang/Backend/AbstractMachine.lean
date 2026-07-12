@@ -2451,11 +2451,21 @@ theorem customUpdate_none_of_clause_miss {n : Nat} {op : Bang.OpId} {v : Val} {p
     | throws ℓ0 => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
     | transaction ℓ0 Θ => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
 
+/-! ### Frame-id uniqueness (`HsIdsDesc`) — CURRENTLY UNCONSUMED, kept for the wgcexec/`$liveTop` story.
+
+`HsIdsDesc` + `customUpdate_none_of_hsCustom_isUpd` were built for a two-try exec customUpd dispatch that
+needed frame-id uniqueness. ROUTE B (the single `customLookup` merge, ADR-0107 / the invariant-#4 exec-
+faithfulness ruling) DISSOLVED that need — the merged OP arm resolves the innermost frame in ONE pass, so no
+uniqueness obligation remains in `sim`. These lemmas are TRUE + PROVEN and are the machine-level image of the
+ADR-0055 generative-identity principle (a fresh mint is above everything ⇒ ids unique by construction — the
+same fact the cap model + `#134 $liveTop` run on); the wgcexec/C4 `$liveTop ≡ WellCounted` clause will want
+exactly this family. **DO NOT delete as dead** — mark as forward-infrastructure. -/
+
 /-- `HsIdsDesc hs`: frame identities are STRICTLY DECREASING from the head — the head (innermost, newest)
 frame has the LARGEST id, each deeper frame strictly smaller. This holds of every machine HStack: a
 `handle` mints id `g` = the fresh counter (≥ every existing id, `StoresBelow`) then bumps `g→g+1`, so a
-push always prepends a strictly-larger id. It gives frame-id UNIQUENESS (no two frames share an id), which
-is what the sim's customUpd-dispatch fall-through needs: a `customUpd n` frame is the ONLY frame at `n`. -/
+push always prepends a strictly-larger id. It gives frame-id UNIQUENESS (no two frames share an id).
+CURRENTLY UNCONSUMED (route B dissolved the need); kept for wgcexec/`$liveTop` (see the section note). -/
 def HsIdsDesc : HStack → Prop
   | []        => True
   | fr :: hs  => (∀ f ∈ hs, f.id < fr.id) ∧ HsIdsDesc hs
