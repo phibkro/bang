@@ -50,7 +50,7 @@ ideal shape — the one sketched above — types and runs end to end; earlier re
 example worked around that gap by inlining the shared expression under each `handle` rather than
 abstracting it into a callable function.
 
-## Known gate: reusing ONE installer binding across differently-effectful bodies (#94)
+## The former #94 gate: reusing ONE installer binding across differently-effectful bodies — CLOSED
 
 This example's shape — TWO installer BINDINGS (`test`, `prod`), each applied ONCE to the SAME
 `logic` — is fully general and works today (as does runtime-selecting between them, since they
@@ -59,15 +59,14 @@ NOT yet work is reusing the SAME installer binding against operands at genuinely
 rows in one program:
 
 ```
--- FAILS today ("effect row mismatch"), even though each application alone type-checks:
+-- WORKS since ADR-0107 (effect-row subeffecting at reuse sites; #94 closed):
 let pureBody = ( {fun net => 99} : Thunk (Cap Net -> Int) ) in
-(($test) logic) + (($test) pureBody)     -- `test` reused at {Net} then at {} — the wall
+(($test) logic) + (($test) pureBody)     -- `test` reused at {Net} then at {} — now admitted
 ```
 
-This is `unifyRow`'s pre-existing, already-documented "single shared row var" incompleteness
-(`TypeCheck.lean`'s `rowPolyDivSrc` corpus, `compose incPure <effectful>` — the SAME wall, not
-specific to the wrapper pattern or capabilities; confirmed via an isolated non-cap repro). Filed as
-issue #94 (a type-system-design decision — subeffecting vs full Rémy row polymorphism — not a local
-elaboration fix, so it is NOT ground this lane's rider budget covers). The per-stage story ships
-today in the form this example demonstrates (separately-named installer bindings); reusing ONE
-binding across stages with genuinely different effect rows is the named next rung.
+This was `unifyRow`'s "single shared row var" incompleteness, closed by ADR-0107: on a
+row mismatch at the one `unifyRow` call site, an open row variable is re-bound to the wider
+join (the narrower use is always ⊆ the join — the relation `subRow` already proves sound), and
+closed rows admit a subset directly. The exact program above is now a compiled `#guard`
+(`stageSwapReuseSrc` = 129) — this section survives as the record of the gate and its closing.
+Full Rémy row polymorphism (incomparable rows) remains consumer-gated per ADR-0107.

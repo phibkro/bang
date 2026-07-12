@@ -9,7 +9,7 @@
   sites**, via the ALREADY-PROVEN-SOUND `subRow` relation this checker already uses elsewhere
   (`checkSC`'s `.thunk`/`.annotS` arms, `subsumeAppV`'s own #119 precedent) — NOT full Rémy
   independent-tails row polymorphism, which stays deferred behind its own consumer gate (no
-  program needs INCOMPARABLE-row reuse today). The kernel's row algebra (`Bang/EffectRow.lean`,
+  program needs INCOMPARABLE-row reuse today). The kernel's row algebra (`Bang/Core/EffectRow.lean`,
   ADR-0001/ADR-0018) is untouched; this is a purely FRONTEND widening of which programs the
   checker admits.
 - **Depends-on**: ADR-0001 (rows are idempotent `Finset`s — the join-semilattice this ruling's
