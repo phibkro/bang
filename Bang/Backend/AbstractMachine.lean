@@ -1064,6 +1064,7 @@ theorem get?_hsStates : ∀ (hs : HStack) (n : Nat),
     | transaction ℓ0 Θ => simp only [hsStates, hsState, hh]; exact ih n
     | custom ℓ0 p cl => simp only [hsStates, hsState, hh]; exact ih n   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
 
+    | customUpd ℓ0 p cl => simp only [hsStates, hsState, hh]; exact ih n   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
 /-- Under `Corr`, the store read equals the machine read. -/
 theorem Corr.get? {σ : SStore} {hs : HStack} (hC : Corr σ hs) (n : Nat) :
     σ.get? n = hsState hs n := by rw [hC]; exact get?_hsStates hs n
@@ -1130,6 +1131,12 @@ theorem stateUpdate_get {n : Nat} {v : Val} :
     | custom ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
         simp only [hsState, hh] at hg
         simp [stateUpdate, hh, ih hg]
+    | customUpd ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
+        simp only [hsState, hh] at hg
+        simp [stateUpdate, hh, ih hg]
+    | customUpd ℓ0 p cl =>   -- customUpd = non-state frame, same catch-all as custom (ADR-0107 D5)
+        simp only [hsState, hh] at hg
+        simp [stateUpdate, hh, ih hg]
 
 /-- `put` correspondence: when `hsState hs ℓ = some s₀`, `stateUpdate ℓ "put" v hs` returns
 `(vunit, hs')` whose state-projection is exactly the store after an in-place `put` —
@@ -1176,6 +1183,12 @@ theorem stateUpdate_put {n : Nat} {v : Val} :
         · simp only [stateUpdate, hh, hsu, Option.map_some]
         · simp only [hsStates, hh, heq]
 
+    | customUpd ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
+        simp only [hsState, hh] at hg
+        obtain ⟨hs', hsu, heq⟩ := ih hg
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp only [stateUpdate, hh, hsu, Option.map_some]
+        · simp only [hsStates, hh, heq]
 /-- `Corr` is preserved by a matched `put` (structural form): the machine's in-place update and
 the store's in-place `put` produce mirrored states. -/
 theorem Corr_put {σ : SStore} {hs hs' : HStack} {ℓ : Bang.EffectRow.Label} {v : Val}
@@ -1239,12 +1252,14 @@ theorem Corr_pop_nonstate {σ : SStore} {fr top : HFrame} {hs tail : HStack}
       | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | transaction _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | custom _ _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)   -- FrameMut throws/custom = False (ADR-0085 stage 1)
+      | customUpd _ _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)   -- FrameMut throws/custom = False (ADR-0085 stage 1)
   | transaction ℓ1 Θ1 =>
       cases hth : top.handler with
       | transaction ℓ2 Θ2 => simp [hsStates, hth]
       | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | custom _ _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)   -- FrameMut txn/custom = False (ADR-0085 stage 1)
+      | customUpd _ _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)   -- FrameMut txn/custom = False (ADR-0085 stage 1)
   | custom ℓ1 p1 cl1 =>   -- custom fr: FrameMut forces top = custom (same label); hsStates skips both (ADR-0085 stage 1)
       cases hth : top.handler with
       | custom ℓ2 p2 cl2 => simp [hsStates, hth]
@@ -1252,6 +1267,12 @@ theorem Corr_pop_nonstate {σ : SStore} {fr top : HFrame} {hs tail : HStack}
       | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
       | transaction _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
 
+  | customUpd ℓ1 p1 cl1 =>   -- custom fr: FrameMut forces top = custom (same label); hsStates skips both (ADR-0085 stage 1)
+      cases hth : top.handler with
+      | custom ℓ2 p2 cl2 => simp [hsStates, hth]
+      | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
+      | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
+      | transaction _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
 /-- `stateUpdate`-put preserves `HMut` (it mutates one state-frame value in place). -/
 theorem HMut.of_stateUpdate_put {n : Nat} {v : Val} :
     ∀ {hs hs' : HStack} {r : Val}, stateUpdate n "put" v hs = some (r, hs') → HMut hs hs' := by
@@ -1278,6 +1299,11 @@ theorem HMut.of_stateUpdate_put {n : Nat} {v : Val} :
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
     | custom ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+    | customUpd ℓ0 p cl =>   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
         simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
@@ -1375,6 +1401,7 @@ theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore} {τ' : THeap},
             | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | custom _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut state/custom = False (ADR-0085 stage 1)
+            | customUpd _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut state/custom = False (ADR-0085 stage 1)
         | throws ℓ0 =>
             cases hfk : fk.handler with
             | throws ℓ1 =>
@@ -1387,6 +1414,7 @@ theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore} {τ' : THeap},
             | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | custom _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut throws/custom = False (ADR-0085 stage 1)
+            | customUpd _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut throws/custom = False (ADR-0085 stage 1)
         | transaction ℓ0 Θ0 =>
             cases hfk : fk.handler with
             | transaction ℓ1 Θ1 =>
@@ -1405,6 +1433,7 @@ theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore} {τ' : THeap},
             | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | custom _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut txn/custom = False (ADR-0085 stage 1)
+            | customUpd _ _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)   -- FrameMut txn/custom = False (ADR-0085 stage 1)
         | custom ℓ0 p0 cl0 =>   -- custom fr forces fk = custom (FrameMut); both skipped by updateStates/updateTxns, like throws
             cases hfk : fk.handler with
             | custom ℓ1 p1 cl1 =>
@@ -1420,6 +1449,20 @@ theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore} {τ' : THeap},
             | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
             | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
 
+        | customUpd ℓ0 p0 cl0 =>   -- custom fr forces fk = custom (FrameMut); both skipped by updateStates/updateTxns, like throws
+            cases hfk : fk.handler with
+            | custom ℓ1 p1 cl1 =>
+                -- FrameMut custom/custom = FULL equality: the frames are identical, so net-effect (which
+                -- skips custom) reconciles them exactly (ADR-0085 stage 1).
+                simp only [hsStates, hfk] at hC
+                simp only [hsTxns, hfk] at hT
+                simp only [updateStates, hfr, updateTxns]
+                rw [← ih hmut' (hC : Corr σ' k) (hT : TCorr τ' k)]
+                obtain ⟨fkc, fks, fkh⟩ := fk; obtain ⟨frc, frs, frh⟩ := fr
+                simp_all
+            | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+            | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+            | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
 /-- The combined net-HStack-effect: overwrite state values from `σ`, then txn heaps from `τ`. The
 post-`M` HStack as a PURE function of the at-handle `hs` and the post-`M` stores (ADR-0031 D4). -/
 def netEffect (hs : HStack) (σ : SStore) (τ : THeap) : HStack := updateTxns (updateStates hs σ) τ
@@ -1447,6 +1490,7 @@ theorem hsCustoms_updateStates : ∀ (hs : HStack) (σ : SStore),
     | transaction ℓ0 Θ => simp only [updateStates, hh, hsCustoms]; rw [ih]
     | custom ℓ0 p cl => simp only [updateStates, hh, hsCustoms]; rw [ih]
 
+    | customUpd ℓ0 p cl => simp only [updateStates, hh, hsCustoms]; rw [ih]
 /-- `updateTxns` preserves the CUSTOM projection (op-disjointness — analog of `hsCustoms_updateStates`). -/
 theorem hsCustoms_updateTxns : ∀ (hs : HStack) (τ : THeap),
     hsCustoms (updateTxns hs τ) = hsCustoms hs := by
@@ -1464,6 +1508,7 @@ theorem hsCustoms_updateTxns : ∀ (hs : HStack) (τ : THeap),
     | throws ℓ0 => simp only [updateTxns, hh, hsCustoms]; rw [ih]
     | custom ℓ0 p cl => simp only [updateTxns, hh, hsCustoms]; rw [ih]
 
+    | customUpd ℓ0 p cl => simp only [updateTxns, hh, hsCustoms]; rw [ih]
 /-- `netEffect` preserves the custom projection: it only rewrites state/txn payloads, so the custom
 store κ mirrors the net-effect HStack exactly as it mirrored the pre-effect one (`CCorr` rides). -/
 theorem hsCustoms_netEffect (hs : HStack) (σ : SStore) (τ : THeap) :
@@ -1497,6 +1542,9 @@ theorem HMut_netEffect : ∀ (hs : HStack) (σ : SStore) (τ : THeap), HMut hs (
         simp only [netEffect, updateStates, hfr, updateTxns_cons_throws τ hfr]
         exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ τ⟩
     | custom ℓ0 p cl =>   -- custom = non-state, non-txn: both passes skip it (catch-all), like throws (ADR-0085 stage 1)
+        simp only [netEffect, updateStates, hfr, updateTxns]
+        exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ τ⟩
+    | customUpd ℓ0 p cl =>   -- custom = non-state, non-txn: both passes skip it (catch-all), like throws (ADR-0085 stage 1)
         simp only [netEffect, updateStates, hfr, updateTxns]
         exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ τ⟩
     | transaction ℓ0 Θ0 =>
@@ -1534,6 +1582,7 @@ theorem updateStates_cons_nonstate {fr : HFrame} {hs : HStack} (σ : SStore)
   | custom ℓ p cl => simp only [updateStates, hh]   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
 
 
+  | customUpd ℓ p cl => simp only [updateStates, hh]   -- custom = non-state frame, catch-all (ADR-0085 stage 1)
 /-- `netEffect` distributes over a `throws`-frame head (it carries neither a state value nor a heap,
 so both passes skip it). Used to push the at-raise tail through the throws install in `sim`. -/
 theorem netEffect_cons_throws {fr : HFrame} {hs : HStack} {σ : SStore} {τ : THeap}
@@ -1570,6 +1619,7 @@ theorem raisedTriple_pop_nontxn {fr : HFrame} {hs : HStack} {σ' : SStore} {τ' 
     | transaction ℓ Θ => exact absurd hh (hnt ℓ Θ)
     | throws ℓ => exact updateTxns_cons_throws τ' hh
     | custom ℓ p cl => simp only [updateTxns, hh]   -- custom = non-txn frame, updateTxns catch-all (ADR-0085 stage 1)
+    | customUpd ℓ p cl => simp only [updateTxns, hh]   -- custom = non-txn frame, updateTxns catch-all (ADR-0085 stage 1)
   rw [hupd] at hCr hTr hmutr
   refine ⟨?_, ?_, HMut.tail hmutr⟩
   · unfold Corr at hCr ⊢
@@ -1579,6 +1629,7 @@ theorem raisedTriple_pop_nontxn {fr : HFrame} {hs : HStack} {σ' : SStore} {τ' 
       | throws ℓ => simp only [hsStates, hh]
       | transaction ℓ Θ => exact absurd hh (hnt ℓ Θ)
       | custom ℓ p cl => simp only [hsStates, hh]   -- custom = non-state frame, hsStates catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simp only [hsStates, hh]   -- custom = non-state frame, hsStates catch-all (ADR-0085 stage 1)
     rw [hproj] at hCr; exact hCr
   · unfold TCorr at hTr ⊢
     have hproj : hsTxns (fr :: netEffect hs σ' τ') = hsTxns (netEffect hs σ' τ') := by
@@ -1587,6 +1638,7 @@ theorem raisedTriple_pop_nontxn {fr : HFrame} {hs : HStack} {σ' : SStore} {τ' 
       | state ℓ s => simp only [hsTxns, hh]
       | throws ℓ => simp only [hsTxns, hh]
       | custom ℓ p cl => simp only [hsTxns, hh]   -- custom = non-txn frame, hsTxns catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simp only [hsTxns, hh]   -- custom = non-txn frame, hsTxns catch-all (ADR-0085 stage 1)
     rw [hproj] at hTr; exact hTr
 
 
@@ -1666,6 +1718,7 @@ theorem stateUpdate_none_of_non_getput (ℓ : Bang.EffectRow.Label) (v : Val) :
     | transaction ℓ0 Θ => simp [stateUpdate, hh, ih hng hnp]
     | custom ℓ0 p cl => simp [stateUpdate, hh, ih hng hnp]   -- custom = non-state, catch-all (ADR-0085 stage 1)
 
+    | customUpd ℓ0 p cl => simp [stateUpdate, hh, ih hng hnp]   -- custom = non-state, catch-all (ADR-0085 stage 1)
 /-- When no state frame for `ℓ` is active, `stateUpdate` finds nothing (the machine OP then
 falls through to `unwindFind`, the throws path). The contrapositive mirror of `hsState … = none`. -/
 theorem stateUpdate_none_of_get?_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val} :
@@ -1686,6 +1739,7 @@ theorem stateUpdate_none_of_get?_none {ℓ : Bang.EffectRow.Label} {op : Bang.Op
     | transaction ℓ0 Θ => simp only [hsState, hh] at hns; simp [stateUpdate, hh, ih hns]
     | custom ℓ0 p cl => simp only [hsState, hh] at hns; simp [stateUpdate, hh, ih hns]   -- custom = non-state, catch-all (ADR-0085 stage 1)
 
+    | customUpd ℓ0 p cl => simp only [hsState, hh] at hns; simp [stateUpdate, hh, ih hns]   -- custom = non-state, catch-all (ADR-0085 stage 1)
 /-- `Corr` is preserved by a `handle (state ℓ s)` install: PUSHING `(ℓ ↦ s)` on the store
 mirrors pushing a `state ℓ s` frame on the HStack. -/
 theorem Corr_install {σ : SStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (s : Val) (fr : HFrame)
@@ -1702,6 +1756,7 @@ theorem Corr_install_nonstate {σ : SStore} {hs : HStack} (fr : HFrame)
   | transaction ℓ0 Θ => simp [hsStates, hh]
   | custom ℓ0 p cl => simp [hsStates, hh]   -- custom = non-state, hsStates catch-all (ADR-0085 stage 1)
 
+  | customUpd ℓ0 p cl => simp [hsStates, hh]   -- custom = non-state, hsStates catch-all (ADR-0085 stage 1)
 /-- `Corr` for the tail when the top is a `state` frame (the `handle (state)` POP): the store's
 tail mirrors the HStack's tail. -/
 theorem Corr_pop_state {σ : SStore} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.EffectRow.Label}
@@ -1729,6 +1784,7 @@ theorem get?_hsTxns : ∀ (hs : HStack) (ℓ : Bang.EffectRow.Label),
     | throws ℓ0 => simp only [hsTxns, hsTxn, hh]; exact ih ℓ
     | custom ℓ0 p cl => simp only [hsTxns, hsTxn, hh]; exact ih ℓ   -- custom = non-txn, hsTxns catch-all (ADR-0085 stage 1)
 
+    | customUpd ℓ0 p cl => simp only [hsTxns, hsTxn, hh]; exact ih ℓ   -- custom = non-txn, hsTxns catch-all (ADR-0085 stage 1)
 /-- Under `TCorr`, the heap read equals the machine read. -/
 theorem TCorr.get? {τ : THeap} {hs : HStack} (hT : TCorr τ hs) (ℓ : Bang.EffectRow.Label) :
     τ.get? ℓ = hsTxn hs ℓ := by rw [hT]; exact get?_hsTxns hs ℓ
@@ -1744,6 +1800,12 @@ theorem get?_hsCustoms : ∀ (hs : HStack) (n : Nat),
     intro n
     cases hh : fr.handler with
     | custom ℓ0 p cl =>
+        simp only [hsCustoms, hsCustom, hh]
+        by_cases hc : fr.id = n
+        · simp [CStore.get?, List.find?, hc]
+        · simp only [if_neg hc, CStore.get?, List.find?, hc, decide_false, Bool.false_eq_true,
+            if_false]; exact ih n
+    | customUpd ℓ0 p cl =>
         simp only [hsCustoms, hsCustom, hh]
         by_cases hc : fr.id = n
         · simp [CStore.get?, List.find?, hc]
@@ -1843,6 +1905,7 @@ theorem CCorr_install_noncustom {κ : CStore} {hs : HStack} (fr : HFrame)
   unfold CCorr at hK ⊢; rw [hK]
   cases hh : fr.handler with
   | custom ℓ0 p cl => exact absurd hh (hnc ℓ0 p cl)
+  | customUpd ℓ0 p cl => exact absurd hh (hnc ℓ0 p cl)
   | state ℓ0 s => simp [hsCustoms, hh]
   | throws ℓ0 => simp [hsCustoms, hh]
   | transaction ℓ0 Θ => simp [hsCustoms, hh]
@@ -1862,6 +1925,7 @@ theorem CCorr_pop_noncustom {κ : CStore} {top : HFrame} {tail : HStack}
   unfold CCorr at hK ⊢; rw [hK]
   cases hh : top.handler with
   | custom ℓ0 p cl => exact absurd hh (hnc ℓ0 p cl)
+  | customUpd ℓ0 p cl => exact absurd hh (hnc ℓ0 p cl)
   | state ℓ0 s => simp [hsCustoms, hh]
   | throws ℓ0 => simp [hsCustoms, hh]
   | transaction ℓ0 Θ => simp [hsCustoms, hh]
@@ -1927,6 +1991,12 @@ theorem txnUpdate_service {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val
         · simp only [txnUpdate, hh, hsu, Option.map_some]
         · simp only [hsTxns, hh, heq]
 
+    | customUpd ℓ0 p cl =>   -- custom = non-txn, txnUpdate/hsTxns catch-all (ADR-0085 stage 1)
+        simp only [hsTxn, hh] at hg
+        obtain ⟨hs', hsu, heq⟩ := ih hg
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp only [txnUpdate, hh, hsu, Option.map_some]
+        · simp only [hsTxns, hh, heq]
 /-- `txnUpdate` finds nothing when no transaction frame for `ℓ` is active (the OP then falls through
 to `unwindFind`). Mirror of `stateUpdate_none_of_get?_none`. Induction on `hs`. -/
 theorem txnUpdate_none_of_hsTxn_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val} :
@@ -1947,6 +2017,7 @@ theorem txnUpdate_none_of_hsTxn_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpI
     | throws ℓ0 => simp only [hsTxn, hh] at hns; simp [txnUpdate, hh, ih hns]
     | custom ℓ0 p cl => simp only [hsTxn, hh] at hns; simp [txnUpdate, hh, ih hns]   -- custom = non-txn, catch-all (ADR-0085 stage 1)
 
+    | customUpd ℓ0 p cl => simp only [hsTxn, hh] at hns; simp [txnUpdate, hh, ih hns]   -- custom = non-txn, catch-all (ADR-0085 stage 1)
 /-- `txnUpdate` finds nothing for a non-txn op (it guards `isTxnOp`), so the OP falls through to the
 throws path — mirroring `evalD`'s `raised` for such ops on a txn label. Induction on `hs`. -/
 theorem txnUpdate_none_of_non_txnop (ℓ : Bang.EffectRow.Label) (v : Val) :
@@ -1965,6 +2036,7 @@ theorem txnUpdate_none_of_non_txnop (ℓ : Bang.EffectRow.Label) (v : Val) :
     | throws ℓ0 => simp [txnUpdate, hh, ih hop]
     | custom ℓ0 p cl => simp [txnUpdate, hh, ih hop]   -- custom = non-txn, catch-all (ADR-0085 stage 1)
 
+    | customUpd ℓ0 p cl => simp [txnUpdate, hh, ih hop]   -- custom = non-txn, catch-all (ADR-0085 stage 1)
 /-- `TCorr` is preserved by a `handle (transaction ℓ Θ)` install: PUSHING `(ℓ ↦ Θ)` on the heap-store
 mirrors pushing a `transaction ℓ Θ` frame. -/
 theorem TCorr_install {τ : THeap} {hs : HStack} (ℓ : Bang.EffectRow.Label) (Θ : List Val) (fr : HFrame)
@@ -1981,6 +2053,7 @@ theorem TCorr_install_nontxn {τ : THeap} {hs : HStack} (fr : HFrame)
   | throws ℓ0 => simp [hsTxns, hh]
   | custom ℓ0 p cl => simp [hsTxns, hh]   -- custom = non-txn, hsTxns catch-all (ADR-0085 stage 1)
 
+  | customUpd ℓ0 p cl => simp [hsTxns, hh]   -- custom = non-txn, hsTxns catch-all (ADR-0085 stage 1)
 /-- `TCorr` for the tail when the top is a `transaction` frame (the `handle (transaction)` POP). -/
 theorem TCorr_pop_txn {τ : THeap} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.EffectRow.Label}
     {Θ : List Val} (hfr : fr.handler = .transaction ℓ0 Θ) (hT : TCorr τ (fr :: hs)) :
@@ -1997,6 +2070,7 @@ theorem TCorr_pop_nontxn {τ : THeap} {fr : HFrame} {hs : HStack}
   | throws ℓ0 => simp [hsTxns, hh]
   | custom ℓ0 p cl => simp [hsTxns, hh]   -- custom = non-txn, hsTxns catch-all (ADR-0085 stage 1)
 
+  | customUpd ℓ0 p cl => simp [hsTxns, hh]   -- custom = non-txn, hsTxns catch-all (ADR-0085 stage 1)
 /-! ### Cross-projection stability (op-disjointness made structural): a txn service leaves the STATE
 projection unchanged, and a state put leaves the TXN projection unchanged. These are the facts that
 let the two parallel stores coexist soundly — the load-bearing op-disjointness invariant, used in
@@ -2038,6 +2112,11 @@ theorem hsStates_txnUpdate {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Va
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         simp only [hsStates, hh]; exact ih hsu1
 
+    | customUpd ℓ0 p cl =>   -- custom = non-txn frame, txnUpdate/hsStates catch-all (ADR-0085 stage 1)
+        simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsStates, hh]; exact ih hsu1
 /-- Under `Corr σ hs`, a `txnUpdate` (which leaves the state projection fixed) preserves `Corr σ`. -/
 theorem Corr_txnUpdate_eq {σ : SStore} {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v r : Val}
     {hs hs' : HStack} (hsu : txnUpdate ℓ op v hs = some (r, hs')) : Corr σ hs → Corr σ hs' := by
@@ -2079,6 +2158,11 @@ theorem HMut_of_txnUpdate {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
 
+    | customUpd ℓ0 p cl =>   -- custom = non-txn frame, txnUpdate catch-all; FrameMut custom/custom diagonal (ADR-0085 stage 1)
+        simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
 /-- `stateUpdate`-put leaves the TXN projection unchanged (a state op never touches a txn frame).
 The mirror of `hsStates_txnUpdate`. Induction on the `stateUpdate` recursion. -/
 theorem hsTxns_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
@@ -2114,6 +2198,11 @@ theorem hsTxns_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         simp only [hsTxns, hh]; exact ih hsu1
 
+    | customUpd ℓ0 p cl =>   -- custom = non-state frame: stateUpdate recurses; hsTxns skips custom (ADR-0085 stage 1)
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsTxns, hh]; exact ih hsu1
 /-- `stateUpdate`'s `put` preserves the CUSTOM projection (op-disjointness — analog of
 `hsTxns_stateUpdate_put`): a state-frame value rewrite never touches a custom frame's payload. -/
 theorem hsCustoms_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
@@ -2149,6 +2238,11 @@ theorem hsCustoms_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         simp only [hsCustoms, hh]; rw [ih hsu1]
 
+    | customUpd ℓ0 p cl =>   -- custom frame: stateUpdate recurses; hsCustoms KEEPS this frame's entry, rest by ih
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; rw [ih hsu1]
 /-- `txnUpdate`'s service preserves the CUSTOM projection (op-disjointness): a txn-heap rewrite never
 touches a custom frame's payload. Analog of `hsCustoms_stateUpdate_put` for the txn side. -/
 theorem hsCustoms_txnUpdate {n : Nat} {op : Bang.OpId} {v : Val} :
@@ -2186,6 +2280,11 @@ theorem hsCustoms_txnUpdate {n : Nat} {op : Bang.OpId} {v : Val} :
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         simp only [hsCustoms, hh]; rw [ih hsu1]
 
+    | customUpd ℓ0 p cl =>
+        simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; rw [ih hsu1]
 /-- The machine. Structurally recursive on the fuel (k2-playbook §3); `SUBST`/`APP`
 re-enter `compile` on the substituted body, `THROW` jumps via the pure `unwindFind`
 (both direct recursive calls — structural). Carries an `HStack` of installed
@@ -2386,6 +2485,7 @@ theorem throwOutcome_cons_nonthrows (F g : Nat) (n : Nat) (op : Bang.OpId) (v : 
   | transaction ℓ0 Θ => simp only [throwOutcome, unwindFind, hh]
   | custom ℓ0 p cl => simp only [throwOutcome, unwindFind, hh]   -- custom = non-throws: skipped by unwind (ADR-0085 stage 1)
 
+  | customUpd ℓ0 p cl => simp only [throwOutcome, unwindFind, hh]   -- custom = non-throws: skipped by unwind (ADR-0085 stage 1)
 /-- (★) the **two-part, store-threaded** simulation (k2-playbook §Effects + ADR-0031):
 a `term` part AND a `raised` part. The store-thread is the resume mechanism — the
 `term` part is now an EXISTENTIAL over the machine's resulting HStack `hsf` (M
@@ -2735,6 +2835,7 @@ theorem sim : ∀ fe,
                         | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | transaction _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut state/custom = False
+                        | customUpd _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut state/custom = False
                       obtain ⟨s', hts⟩ := htop
                       have hCtail := Corr_pop_state hts hCM
                       have hTtail : TCorr τ1 tail :=
@@ -2813,6 +2914,7 @@ theorem sim : ∀ fe,
                         intro ℓ p cls
                         cases hth : top.handler with
                         | custom _ _ _ => rw [hfrdef, hth] at hsh; exact absurd hsh (by simp)
+                        | customUpd _ _ _ => rw [hfrdef, hth] at hsh; exact absurd hsh (by simp)
                         | state _ _ => simp [hth]
                         | throws _ => simp [hth]
                         | transaction _ _ => simp [hth]
@@ -2823,7 +2925,8 @@ theorem sim : ∀ fe,
                         | transaction _ _ => rw [hfrdef, hth] at hsh; exact absurd hsh (by simp)
                         | state _ _ => simp [hth]
                         | throws _ => simp [hth]
-                        | custom _ _ _ => simp [hth]) hTM
+                        | custom _ _ _ => simp [hth]
+                        | customUpd _ _ _ => simp [hth]) hTM
                       have hKtail : CCorr κ1 tail := CCorr_pop_noncustom htopnc hKM
                       have htaileq : tail = netEffect hs σ1 τ1 := updateStates_eq (HMut.tail hmutM) hCtail hTtail
                       have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
@@ -2936,6 +3039,7 @@ theorem sim : ∀ fe,
                         | state _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut txn/custom = False
+                        | customUpd _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut txn/custom = False
                       obtain ⟨Θ', hts⟩ := htop
                       have hTtail := TCorr_pop_txn hts hTM
                       have hCtail : Corr σ1 tail :=
@@ -3854,6 +3958,7 @@ theorem ctxNetEffect_cons_nonframe {fr : Bang.Frame} {K : Bang.EvalCtx} (σ : SS
       | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | throws ℓ => simp only [updateCtxStates, updateCtxTxns]
       | custom ℓ p cl => simp only [updateCtxStates, updateCtxTxns]   -- custom = non-state/txn, both passes skip (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simp only [updateCtxStates, updateCtxTxns]   -- custom = non-state/txn, both passes skip (ADR-0085 stage 1)
   | letF N => simp only [updateCtxStates, updateCtxTxns]
   | appF v => simp only [updateCtxStates, updateCtxTxns]
 
@@ -3873,6 +3978,7 @@ theorem ctxNetEffect_self {σ : SStore} {τ : THeap} {K : Bang.EvalCtx}
             simp only [ctxStates, ctxTxns, updateCtxStates, updateCtxTxns_cons_state]; rw [ih]
         | throws ℓ => simp only [ctxStates, ctxTxns, updateCtxStates, updateCtxTxns]; rw [ih]
         | custom ℓ p cl => simp only [ctxStates, ctxTxns, updateCtxStates, updateCtxTxns]; rw [ih]   -- custom = non-state/txn (ADR-0085 stage 1)
+        | customUpd ℓ p cl => simp only [ctxStates, ctxTxns, updateCtxStates, updateCtxTxns]; rw [ih]   -- custom = non-state/txn (ADR-0085 stage 1)
         | transaction ℓ Θ =>
             simp only [ctxStates, ctxTxns, updateCtxStates_cons_txn, updateCtxTxns]; rw [ih]
     | letF N => simp only [ctxStates, ctxTxns, updateCtxStates, updateCtxTxns]; rw [ih]
@@ -3890,6 +3996,7 @@ theorem CtxTxnCorr_cons_nontxn {τ : THeap} {fr : Bang.Frame} {K : Bang.EvalCtx}
       | state ℓ s => simp only [ctxTxns]
       | throws ℓ => simp only [ctxTxns]
       | custom ℓ p cl => simp only [ctxTxns]   -- custom = non-txn, ctxTxns catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simp only [ctxTxns]   -- custom = non-txn, ctxTxns catch-all (ADR-0085 stage 1)
   | letF N => simp only [ctxTxns]
   | appF v => simp only [ctxTxns]
 
@@ -3923,6 +4030,7 @@ theorem ctxNetEffect_ctxNetEffect : ∀ (K : Bang.EvalCtx) (σ1 : SStore) (τ1 :
                   | cons p σ' => simp only [updateCtxStates, updateCtxTxns_cons_state, ih]
           | throws ℓ => simp only [updateCtxStates, updateCtxTxns, ih]
           | custom ℓ p cl => simp only [updateCtxStates, updateCtxTxns, ih]   -- custom = non-state/txn (ADR-0085 stage 1)
+          | customUpd ℓ p cl => simp only [updateCtxStates, updateCtxTxns, ih]   -- custom = non-state/txn (ADR-0085 stage 1)
           | transaction ℓ Θ =>
               cases τ1 with
               | nil =>
@@ -3952,6 +4060,7 @@ theorem CtxCorr_ctxNetEffect_nonframe {σ' : SStore} {τ' : THeap} {fr : Bang.Fr
       | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | throws ℓ => simpa only [ctxStates] using hC
       | custom ℓ p cl => simpa only [ctxStates] using hC   -- custom = non-state, ctxStates catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simpa only [ctxStates] using hC   -- custom = non-state, ctxStates catch-all (ADR-0085 stage 1)
   | letF N => simpa only [ctxStates] using hC
   | appF v => simpa only [ctxStates] using hC
 
@@ -3968,6 +4077,7 @@ theorem CtxTxnCorr_ctxNetEffect_nonframe {σ' : SStore} {τ' : THeap} {fr : Bang
       | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | throws ℓ => simpa only [ctxTxns] using hT
       | custom ℓ p cl => simpa only [ctxTxns] using hT   -- custom = non-txn, ctxTxns catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simpa only [ctxTxns] using hT   -- custom = non-txn, ctxTxns catch-all (ADR-0085 stage 1)
   | letF N => simpa only [ctxTxns] using hT
   | appF v => simpa only [ctxTxns] using hT
 
@@ -3985,6 +4095,7 @@ theorem updateCtxStates_self {σ : SStore} {K : Bang.EvalCtx} (hC : CtxCorr σ K
         | throws ℓ => simp only [ctxStates, updateCtxStates]; rw [ih]
         | transaction ℓ Θ => simp only [ctxStates, updateCtxStates]; rw [ih]
         | custom ℓ p cl => simp only [ctxStates, updateCtxStates]; rw [ih]   -- custom = non-state (ADR-0085 stage 1)
+        | customUpd ℓ p cl => simp only [ctxStates, updateCtxStates]; rw [ih]   -- custom = non-state (ADR-0085 stage 1)
     | letF N => simp only [ctxStates, updateCtxStates]; rw [ih]
     | appF v => simp only [ctxStates, updateCtxStates]; rw [ih]
 
@@ -3999,6 +4110,7 @@ theorem updateCtxStates_cons_nonstate {fr : Bang.Frame} {K : Bang.EvalCtx} (σ :
       | throws ℓ => simp only [updateCtxStates]
       | transaction ℓ Θ => simp only [updateCtxStates]
       | custom ℓ p cl => simp only [updateCtxStates]   -- custom = non-state, updateCtxStates catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simp only [updateCtxStates]   -- custom = non-state, updateCtxStates catch-all (ADR-0085 stage 1)
   | letF N => simp only [updateCtxStates]
   | appF v => simp only [updateCtxStates]
 
@@ -4015,6 +4127,7 @@ theorem CtxCorr_cons_nonstate {σ : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
       | throws ℓ => simp only [ctxStates]
       | transaction ℓ Θ => simp only [ctxStates]
       | custom ℓ p cl => simp only [ctxStates]   -- custom = non-state, ctxStates catch-all (ADR-0085 stage 1)
+      | customUpd ℓ p cl => simp only [ctxStates]   -- custom = non-state, ctxStates catch-all (ADR-0085 stage 1)
   | letF N => simp only [ctxStates]
   | appF v => simp only [ctxStates]
 
@@ -4187,6 +4300,7 @@ theorem splitAtId_state_value {n : Nat} :
               | throws ℓ0 => simpa [ctxStates] using hv
               | transaction ℓ0 Θ0 => simpa [ctxStates] using hv
               | custom ℓ0 p cl => simpa [ctxStates] using hv   -- custom = non-state, ctxStates skip (ADR-0085 stage 1)
+              | customUpd ℓ0 p cl => simpa [ctxStates] using hv   -- custom = non-state, ctxStates skip (ADR-0085 stage 1)
     | letF N =>
         simp only [Bang.splitAtId] at hs
         cases hsp : Bang.splitAtId K n with
@@ -4228,6 +4342,7 @@ theorem ctxStates_get_none_of_capsBelow {n : Nat} : ∀ {K : Bang.EvalCtx},
         | throws ℓ0 => simp only [ctxStates]; exact ih hcb.2
         | transaction ℓ0 Θ0 => simp only [ctxStates]; exact ih hcb.2
         | custom ℓ0 p cl => simp only [ctxStates]; exact ih hcb.2   -- custom = non-state (ADR-0085 stage 1)
+        | customUpd ℓ0 p cl => simp only [ctxStates]; exact ih hcb.2   -- custom = non-state (ADR-0085 stage 1)
     | letF N => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxStates]; exact ih hcb.2
     | appF w => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxStates]; exact ih hcb.2
 
@@ -4317,6 +4432,7 @@ theorem ctxTxns_get_none_of_capsBelow {n : Nat} : ∀ {K : Bang.EvalCtx},
         | state ℓ0 s0 => simp only [ctxTxns]; exact ih hcb.2
         | throws ℓ0 => simp only [ctxTxns]; exact ih hcb.2
         | custom ℓ0 p cl => simp only [ctxTxns]; exact ih hcb.2   -- custom = non-txn (ADR-0085 stage 1)
+        | customUpd ℓ0 p cl => simp only [ctxTxns]; exact ih hcb.2   -- custom = non-txn (ADR-0085 stage 1)
     | letF N => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxTxns]; exact ih hcb.2
     | appF w => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxTxns]; exact ih hcb.2
 
@@ -4408,6 +4524,10 @@ theorem dispatch_state_get {n : Nat} {ℓ : Bang.EffectRow.Label} {v s : Val} {K
         obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxStates_get hsf hg
         rw [hsp] at hsp2
         simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq, and_false, false_and] at hsp2
+    | customUpd _ _ _ =>
+        obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxStates_get hsf hg
+        rw [hsp] at hsp2
+        simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq, and_false, false_and] at hsp2
   -- the store value at `n` is the frame's `s'`; with `hg`, `s' = s`.
   have hsv : (ctxStates K).get? n = some s' := splitAtId_state_value hsp
   rw [hg] at hsv
@@ -4464,6 +4584,8 @@ theorem updateCtxStates_put_split {n : Nat} {w : Val} :
                   simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
               | custom ℓ0 p cl =>
                   simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]   -- custom = non-state (ADR-0085 stage 1)
+              | customUpd ℓ0 p cl =>
+                  simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]   -- custom = non-state (ADR-0085 stage 1)
     | letF N =>
         simp only [Bang.splitAtId] at hsp
         cases hsp2 : Bang.splitAtId K n with
@@ -4504,6 +4626,10 @@ theorem dispatch_state_put {n : Nat} {ℓ : Bang.EffectRow.Label} {w s : Val} {K
         obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxStates_get hsf hg
         rw [hsp] at hsp2
         simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq, and_false, false_and] at hsp2
+    | customUpd _ _ _ =>
+        obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxStates_get hsf hg
+        rw [hsp] at hsp2
+        simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq, and_false, false_and] at hsp2
   rw [updateCtxStates_put_split hsp]
   simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn, beq_iff_eq,
     if_neg (by decide : ¬ ("put" = "get"))]
@@ -4539,6 +4665,9 @@ theorem ctxStates_updateCtxStates_put {n : Nat} {w : Val} :
             have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
             simp only [ctxStates, updateCtxStates]; rw [ih hg']
         | custom ℓ0 p cl =>   -- custom = non-state, ctxStates/updateCtxStates skip (ADR-0085 stage 1)
+            have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
+            simp only [ctxStates, updateCtxStates]; rw [ih hg']
+        | customUpd ℓ0 p cl =>   -- custom = non-state, ctxStates/updateCtxStates skip (ADR-0085 stage 1)
             have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
             simp only [ctxStates, updateCtxStates]; rw [ih hg']
     | letF N =>
@@ -4584,6 +4713,7 @@ theorem splitAtId_txn_value {n : Nat} :
               | state ℓ0 s0 => simpa [ctxTxns] using hv
               | throws ℓ0 => simpa [ctxTxns] using hv
               | custom ℓ0 p cl => simpa [ctxTxns] using hv   -- custom = non-txn, ctxTxns skip (ADR-0085 stage 1)
+              | customUpd ℓ0 p cl => simpa [ctxTxns] using hv   -- custom = non-txn, ctxTxns skip (ADR-0085 stage 1)
     | letF N =>
         simp only [Bang.splitAtId] at hs
         cases hsp : Bang.splitAtId K n with
@@ -4620,6 +4750,7 @@ theorem updateCtxTxns_self_aux : ∀ {K : Bang.EvalCtx}, updateCtxTxns K (ctxTxn
         | state ℓ s => simp only [ctxTxns, updateCtxTxns]; rw [ih]
         | throws ℓ => simp only [ctxTxns, updateCtxTxns]; rw [ih]
         | custom ℓ p cl => simp only [ctxTxns, updateCtxTxns]; rw [ih]   -- custom = non-txn (ADR-0085 stage 1)
+        | customUpd ℓ p cl => simp only [ctxTxns, updateCtxTxns]; rw [ih]   -- custom = non-txn (ADR-0085 stage 1)
     | letF N => simp only [ctxTxns, updateCtxTxns]; rw [ih]
     | appF v => simp only [ctxTxns, updateCtxTxns]; rw [ih]
 
@@ -4667,6 +4798,8 @@ theorem updateCtxTxns_service_split {n : Nat} {Θ' : List Val} :
                   simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
               | custom ℓ0 p cl =>
                   simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]   -- custom = non-txn (ADR-0085 stage 1)
+              | customUpd ℓ0 p cl =>
+                  simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]   -- custom = non-txn (ADR-0085 stage 1)
     | letF N =>
         simp only [Bang.splitAtId] at hsp
         cases hsp2 : Bang.splitAtId K n with
@@ -4705,6 +4838,10 @@ theorem dispatch_txn_service {n : Nat} {ℓ : Bang.EffectRow.Label} {op : Bang.O
     | state _ _ => rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp] at hho
     | throws _ => rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp] at hho
     | custom _ _ _ =>
+        obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxTxns_get hsf hg
+        rw [hsp] at hsp2
+        simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq, and_false, false_and] at hsp2
+    | customUpd _ _ _ =>
         obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxTxns_get hsf hg
         rw [hsp] at hsp2
         simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq, and_false, false_and] at hsp2
@@ -4750,6 +4887,7 @@ theorem ctxStates_updateCtxTxns : ∀ (K : Bang.EvalCtx) (τ : THeap),
         | state ℓ s => simp only [updateCtxTxns, ctxStates]; rw [ih τ]
         | throws ℓ => simp only [updateCtxTxns, ctxStates]; exact ih τ
         | custom ℓ p cl => simp only [updateCtxTxns, ctxStates]; exact ih τ   -- custom = non-txn (ADR-0085 stage 1)
+        | customUpd ℓ p cl => simp only [updateCtxTxns, ctxStates]; exact ih τ   -- custom = non-txn (ADR-0085 stage 1)
     | letF N => simp only [updateCtxTxns, ctxStates]; exact ih τ
     | appF v => simp only [updateCtxTxns, ctxStates]; exact ih τ
 
@@ -4785,6 +4923,9 @@ theorem ctxTxns_updateCtxTxns_service {n : Nat} {Θ' : List Val} :
         | custom ℓ0 p cl =>   -- custom = non-txn, ctxTxns/updateCtxTxns skip (ADR-0085 stage 1)
             have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
             simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
+        | customUpd ℓ0 p cl =>   -- custom = non-txn, ctxTxns/updateCtxTxns skip (ADR-0085 stage 1)
+            have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
+            simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
     | letF N =>
         have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
         simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
@@ -4810,6 +4951,7 @@ theorem ctxTxns_updateCtxStates : ∀ (K : Bang.EvalCtx) (σ : SStore),
         | transaction ℓ Θ => simp only [updateCtxStates, ctxTxns]; rw [ih σ]
         | throws ℓ => simp only [updateCtxStates, ctxTxns]; exact ih σ
         | custom ℓ p cl => simp only [updateCtxStates, ctxTxns]; exact ih σ   -- custom = non-state (ADR-0085 stage 1)
+        | customUpd ℓ p cl => simp only [updateCtxStates, ctxTxns]; exact ih σ   -- custom = non-state (ADR-0085 stage 1)
     | letF N => simp only [updateCtxStates, ctxTxns]; exact ih σ
     | appF v => simp only [updateCtxStates, ctxTxns]; exact ih σ
 
@@ -4852,6 +4994,7 @@ theorem ctxCustoms_updateCtxStates : ∀ (K : Bang.EvalCtx) (σ : SStore),
         | transaction ℓ Θ => simp only [updateCtxStates, ctxCustoms]; rw [ih σ]
         | throws ℓ => simp only [updateCtxStates, ctxCustoms]; exact ih σ
         | custom ℓ p cl => simp only [updateCtxStates, ctxCustoms]; rw [ih σ]
+        | customUpd ℓ p cl => simp only [updateCtxStates, ctxCustoms]; rw [ih σ]
     | letF N => simp only [updateCtxStates, ctxCustoms]; exact ih σ
     | appF v => simp only [updateCtxStates, ctxCustoms]; exact ih σ
 
@@ -4873,6 +5016,7 @@ theorem ctxCustoms_updateCtxTxns : ∀ (K : Bang.EvalCtx) (τ : THeap),
         | state ℓ s => simp only [updateCtxTxns, ctxCustoms]; rw [ih τ]
         | throws ℓ => simp only [updateCtxTxns, ctxCustoms]; exact ih τ
         | custom ℓ p cl => simp only [updateCtxTxns, ctxCustoms]; rw [ih τ]
+        | customUpd ℓ p cl => simp only [updateCtxTxns, ctxCustoms]; rw [ih τ]
     | letF N => simp only [updateCtxTxns, ctxCustoms]; exact ih τ
     | appF v => simp only [updateCtxTxns, ctxCustoms]; exact ih τ
 
@@ -4907,6 +5051,7 @@ theorem CCtxCorr_cons_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCt
       | throws ℓ0 => simp only [ctxCustoms]
       | transaction ℓ0 Θ => simp only [ctxCustoms]
       | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
+      | customUpd ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
   | letF N => simp only [ctxCustoms]
   | appF w => simp only [ctxCustoms]
 
@@ -4929,6 +5074,7 @@ theorem CCtxCorr_pop_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCtx
       | throws ℓ0 => simp only [ctxCustoms]
       | transaction ℓ0 Θ => simp only [ctxCustoms]
       | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
+      | customUpd ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
   | letF N => simp only [ctxCustoms]
   | appF w => simp only [ctxCustoms]
 
@@ -5056,6 +5202,7 @@ theorem splitAtId_custom_value {n : Nat} :
               have hv := ih hsp
               cases h0 with
               | custom ℓ0 p0 cl0 => simpa [ctxCustoms, CStore.get?, List.find?, hc] using hv
+              | customUpd ℓ0 p0 cl0 => simpa [ctxCustoms, CStore.get?, List.find?, hc] using hv
               | state ℓ0 s0 => simpa [ctxCustoms] using hv
               | throws ℓ0 => simpa [ctxCustoms] using hv
               | transaction ℓ0 Θ0 => simpa [ctxCustoms] using hv
@@ -5227,6 +5374,7 @@ theorem NoCustomFrame.cons_handleF {n : Nat} {hd : Handler} {K : Bang.EvalCtx}
     NoCustomFrame (Frame.handleF n hd :: K) := by
   cases hd with
   | custom ℓ p cl => exact absurd rfl (hne ℓ p cl)
+  | customUpd ℓ p cl => exact absurd rfl (hne ℓ p cl)
   | _ => exact h
 
 theorem NoCustomFrame.cons_letF {N : Comp} {K : Bang.EvalCtx} (h : NoCustomFrame K) :
@@ -5250,6 +5398,7 @@ theorem NoCustomFrame.updateCtxStates {K : Bang.EvalCtx} (σ : SStore) (h : NoCu
         | throws ℓ0 => exact ih σ h.tail
         | transaction ℓ0 Θ0 => exact ih σ h.tail
         | custom ℓ0 p cl => exact absurd h (by simp [NoCustomFrame])
+        | customUpd ℓ0 p cl => exact absurd h (by simp [NoCustomFrame])
     | letF N => exact ih σ h
     | appF w => exact ih σ h
 
@@ -5269,6 +5418,7 @@ theorem NoCustomFrame.updateCtxTxns {K : Bang.EvalCtx} (τ : THeap) (h : NoCusto
         | state ℓ0 s0 => exact ih τ h.tail
         | throws ℓ0 => exact ih τ h.tail
         | custom ℓ0 p cl => exact absurd h (by simp [NoCustomFrame])
+        | customUpd ℓ0 p cl => exact absurd h (by simp [NoCustomFrame])
     | letF N => exact ih τ h
     | appF w => exact ih τ h
 
@@ -5364,6 +5514,9 @@ theorem CapsBelow_updateCtxStates {g : Nat} : ∀ {K : Bang.EvalCtx} (σ : SStor
           | custom ℓ0 p cl =>   -- custom = non-state, updateCtxStates skip (ADR-0085 stage 1)
               simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
               exact ⟨hcb.1, ih σ hcb.2⟩
+          | customUpd ℓ0 p cl =>   -- custom = non-state, updateCtxStates skip (ADR-0085 stage 1)
+              simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
+              exact ⟨hcb.1, ih σ hcb.2⟩
       | letF N =>
           simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
           exact ⟨hcb.1, ih σ hcb.2⟩
@@ -5394,6 +5547,9 @@ theorem CapsBelow_updateCtxTxns {g : Nat} : ∀ {K : Bang.EvalCtx} (τ : THeap),
               simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
               exact ⟨hcb.1, ih τ hcb.2⟩
           | custom ℓ0 p cl =>   -- custom = non-txn, updateCtxTxns skip (ADR-0085 stage 1)
+              simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
+              exact ⟨hcb.1, ih τ hcb.2⟩
+          | customUpd ℓ0 p cl =>   -- custom = non-txn, updateCtxTxns skip (ADR-0085 stage 1)
               simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
               exact ⟨hcb.1, ih τ hcb.2⟩
       | letF N =>
@@ -6345,6 +6501,13 @@ theorem run_evalD : ∀ fe,
                       show (o == "readTVar") = false from by simpa using eb,
                       show (o == "writeTVar") = false from by simpa using ec]
               | custom ℓ' p cl =>
+                  -- id-first: a custom frame CAN sit in K now. It fails to handle `o` — the clause list misses
+                  -- (`hcus` at the resolved custom cell `splitAtId_custom_value`) ⇒ handlesOp = false ⇒ no resume.
+                  left
+                  have hmiss := hcus p cl (splitAtId_custom_value hsp)
+                  simp only [Handler.label, Bang.handlesOp, Option.isNone_iff_eq_none.mp hmiss,
+                    Option.isSome_none, Bool.and_false]
+              | customUpd ℓ' p cl =>
                   -- id-first: a custom frame CAN sit in K now. It fails to handle `o` — the clause list misses
                   -- (`hcus` at the resolved custom cell `splitAtId_custom_value`) ⇒ handlesOp = false ⇒ no resume.
                   left
