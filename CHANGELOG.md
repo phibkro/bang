@@ -202,6 +202,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — result-position instantiation discovery for bound-free generics (#55, ADR-0103 Amendment 2) (`1f279246`)
 - **emit** — #134 C2 — the $liveTop escape stamp closes the tag-gating miscompile (`8e98c0f3`)
 - **emit** — #133 C0 — first-class caps emit; stage-swap runs 30005 (the headline) (`7355a803`)
+- **build** — bang build — emit → wasm-tools parse/validate → runnable Wasm (#136) (`14993381`)
 - **emit** — #133 C3 — calc EMITS to wasm (11021193); the multi-module capstone (`c85d125d`)
 
 ### Fixes

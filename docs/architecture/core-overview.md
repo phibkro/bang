@@ -77,6 +77,7 @@ graph TD
     Witness_LawTest["Witness.LawTest<br/>657L · fan-in 0"]
     Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
+    Witness_ScopedCapWitness["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
     Witness_SendableFragment["Witness.SendableFragment<br/>148L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
     Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
@@ -145,6 +146,7 @@ graph TD
 | `Witness.LawTest` | ? | 657 | 0 |
 | `Witness.ProofExport` | ? | 372 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
+| `Witness.ScopedCapWitness` | ? | 141 | 0 |
 | `Witness.SendableFragment` | ? | 148 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |
 | `Witness.VcapFreeRefute` | ? | 55 | 0 |
