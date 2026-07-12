@@ -17,20 +17,65 @@
 ## 0 · The four-line verdict
 
 ```
-WHAT     D5 = the custom arm reinstalls an UPDATED carried param `p'` (from the clause), not `p`
-         unchanged. It is the `state`-arm `put` swap (Dispatch.lean:137) generalized to the
-         `custom` arm (Dispatch.lean:181, currently reinstalls `p` UNCHANGED — the ONE read-only arm).
-KERNEL   ZERO rep change (`Handler.custom ℓ p cls` already carries `p`). ONE dispatch-arm delta +
-         ONE clause-shape delta (the clause must yield BOTH resume-value AND `p'`). NO 6th primitive
-         (invariant #5 holds — a refinement of the existing handler arm, the `state` PUT proves the shape).
-COST     The blast radius is the PROVEN SPINE, not the rep. The state PUT arm is a FULLY-WORKED
-         TEMPLATE for every proof obligation (LR reinstall, soundness resume-typing) — so D5 is a
-         BOUNDED multi-session M/L, not open-ended: mirror `state`, don't invent. Cheapest entry =
-         the SEMANTIC arm (kernel+engines+diff-test) BEFORE the typed re-grade.
+WHAT     D5 = a parameterised custom handler reinstalls an UPDATED carried param `p'` (from the
+         clause), not `p` unchanged. The mechanism is the `state`-arm `put` swap (Dispatch.lean:137).
+KERNEL   OPT-IN AT THE REP (amended §0.5): a NEW `Handler.customUpd` constructor, distinct from the
+         read-only `custom`. Param-update is NEVER inferred from the clause's YIELD shape (that would
+         silently reinterpret a legal v1 clause returning a pair AS ITS VALUE — the soundness gap the
+         team-lead caught, §0.5). `customUpd`'s clause yields `ret (pair w p')`; UNMARKED `custom` is
+         byte-identical to today. NO 6th primitive (a 5th `Handler` constructor, invariant #5 holds).
+COST     Re-measured under the marker (§4): the UNMARKED-path ripple is ZERO by construction (every
+         existing `custom` statement/proof unchanged). The new-path cost = additive `customUpd` arms
+         (~50 match-sites gain a parallel arm) + the proven spine, TEMPLATED by the `state` PUT twin —
+         a BOUNDED M/L, mirror `state`, don't invent.
 HONESTY  For the DST/Sched class the win is ERGONOMIC (v1 threads the same values through the driver;
          §2 witness: before == after). The non-ergonomic win is the SIM-MAP ENCAPSULATION class:
          handler-owned state behind a USER-effect interface. NOT new computational power (§3).
 ```
+
+---
+
+## 0.5 · AMENDMENT (2026-07-12, team-lead review) — OPT-IN at the rep, yield-sniffing REJECTED
+
+The originally-recommended shape (§1.2 shape A: dispatch decodes `ret (pair w p')` as
+value-plus-param-update) has a **soundness gap**: it infers param-update from the clause's YIELD
+SHAPE. An EXISTING legal v1 clause that legitimately returns a pair AS ITS VALUE — `read(x) => ret
+(pair a b)` typed at `opRes ℓ read = prod A B` — would be SILENTLY reinterpreted as "resume with `a`,
+update param to `b`". That is a semantics change to already-shipped programs: the silent-wrong class,
+the exact failure `CLAUDE.md`'s "make illegal states unrepresentable" forbids. **Yield-sniffing is
+rejected.** (Recorded as the rejected alternative in the ADR — it is what a future session WILL
+re-propose.)
+
+**The fix — D5 is OPT-IN at the REP level, not inferred:**
+
+```
+ IR.lean:  | custom    : Label → Val → List (OpId × Comp) → Handler    -- UNCHANGED (read-only param)
+           | customUpd : Label → Val → List (OpId × Comp) → Handler    -- NEW: parameterised (updatable)
+```
+
+- **A NEW constructor `customUpd`, not a field on `custom`.** Chosen over a mode-FLAG (`custom : … →
+  ParamMode → …`) precisely to satisfy the team-lead's condition (3): with a distinct constructor,
+  every existing `custom` match-arm, theorem STATEMENT, and proof is **definitionally unchanged**
+  (they match `custom`, which did not move). A flag would touch all 134 construct-sites AND
+  re-state every theorem mentioning `Handler.custom ℓ p cl` (the ~50 match-sites' statements) — the
+  unmarked path would NOT be definitionally unchanged, so it would be a "red spine," not a
+  tested-superset (condition 3 fails). The new constructor is the only shape where the unmarked path
+  is untouched by construction.
+- **The surface marks it explicitly.** ADR-0095 already lowers a param-carrying `handle … with Name
+  as h { … }` to `.custom ℓ v clauses` (read-only, `param` names the carried Val, `#87`). The D5
+  spelling adds an explicit opt-in — recommendation: a clause that WRITES the param uses a distinct
+  form (`op(x) => resume(w) with param := p'`, or a handler-level `mut param` marker), lowering to
+  `customUpd`. A non-writing handler stays `custom`. The exact surface token is the Stage-7 lane's
+  call (rides ADR-0095 D5's reserved `resume`); the KERNEL commitment is only that the two are
+  distinct constructors.
+- **`customUpd`'s clause still yields `ret (pair w p')`** — but now that shape is only DECODED under
+  `customUpd`'s dispatch arm, where it is the DECLARED contract, never sniffed. A `custom` clause
+  yielding a pair keeps getting the pair as its value (the regression witness §3-new pins this).
+
+Everything below that says "shape A" / "ZERO rep change" / "one arm" is READ THROUGH THIS AMENDMENT:
+the pair-decode is shape A, but it lives ONLY in the `customUpd` arm; the rep gains a constructor
+(not zero-rep, but the unmarked-path ripple is zero); the proof analysis (§2, §4.2, the state-PUT
+templating) transfers verbatim to the `customUpd` arm.
 
 ---
 
@@ -62,6 +107,11 @@ note grounds it in the dispatch code and prices the proof ripple.)
 
 ### 1.2 The design fork — WHERE does `p'` come from? (the one real decision)
 
+> ⚠ READ §0.5 FIRST. The shape-(A) pair-yield below is CORRECT as the clause contract, but it must NOT
+> be SNIFFED from a `custom` clause's yield (that silently reinterprets a legal pair-returning v1
+> clause — the soundness gap). The pair-decode lives ONLY in the NEW `customUpd` arm; the analysis
+> below describes that arm. "the custom arm" throughout §1.2 means "the `customUpd` arm."
+
 The v1 clause body is `Comp.ret w` — it yields ONE value, the resume value `w` fed to `Kᵢ`
 (`Typing.lean:376`; `HasClauses.cons` fixes `body = Comp.ret w`). D5 needs the clause to yield TWO
 things: the resume value `w` AND the updated param `p'`. Three candidate shapes, one recommended:
@@ -69,40 +119,52 @@ things: the resume value `w` AND the updated param `p'`. Three candidate shapes,
 ```
  shape                       clause body           dispatch decode             verdict
  ─────────────────────────   ───────────────────   ─────────────────────────   ─────────────────────────
- (A) PAIR-yielding clause    ret (pair w p')       split the returned pair;     RECOMMENDED — zero new
-     (the state PUT shape,     (w = resume,          reinstall custom ℓ p' cls,   former; `pair` already in
-      one arm generalized)      p' = new param)      resume Kᵢ with w             the kernel (IR ADT); the
-                                                                                  clause STAYS `ret <closed>`
+ (A) PAIR-yielding clause    ret (pair w p')       split the returned pair      RECOMMENDED — zero new
+     under `customUpd`         (w = resume,          in the customUpd arm;        Comp former (`pair` is the
+     (the state PUT shape)      p' = new param)      reinstall customUpd ℓ p'     ADT); the clause STAYS
+                                                     cls, resume Kᵢ with w        `ret <closed>` (§2.2)
  (B) new Comp former          customYield w p'      a bespoke reduction rule    REJECTED — a kernel former
      `customYield`                                   in Source.step               (invariant #5 pressure); the
                                                                                   pair encoding subsumes it
  (C) param as a 2nd clause    (ret w, ret p') a      two sub-derivations per     REJECTED — doubles the
      component (product cls)   product clause body    clause; blows up HasClauses  clause typing, no gain
+ (X) YIELD-SNIFFING on        custom clause yields   the custom arm decodes a     REJECTED (§0.5) — SILENTLY
+     `custom` (the naive       ret (pair w p')        pair-yield as an update      reinterprets a legal v1 pair-
+      first draft)                                                                 returning clause: soundness gap
 ```
 
-**Recommendation: (A) pair-yielding.** The clause body stays `Comp.ret w'` where `w' = pair w p'`
-is a CLOSED value (the focus-closed discipline holds — no new former, invariant #5 untouched, the
-`pair` is the existing ADT constructor `IR`). The dispatch arm decodes:
+**Recommendation: (A) pair-yielding, under the NEW `customUpd` constructor.** The clause body is
+`Comp.ret w'` with `w' = pair w p'` a CLOSED value (focus-closed discipline holds — no new Comp
+former, invariant #5, the `pair` is the existing ADT). The decode lives in a NEW dispatch arm for
+`customUpd`, leaving the `custom` arm BYTE-IDENTICAL:
 
 ```
+-- the EXISTING custom arm — UNCHANGED (Dispatch.lean:177-181, read-only param):
 | .custom ℓ' p clauses =>
     match clauses.find? (·.1 == op) with
+    | some clause => some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ,
+                           Comp.subst p (Comp.subst (Val.shift v) clause.2))    -- reinstall p UNCHANGED
+    | none => none
+
+-- the NEW customUpd arm — the ONLY place a pair-yield is decoded as an update:
+| .customUpd ℓ' p clauses =>
+    match clauses.find? (·.1 == op) with
     | some clause =>
-        -- clause.2 = ret (pair w p'); substitute [param@1 := p, arg@0 := v] then split the pair.
+        -- customUpd's clause CONTRACT is ret (pair w p') (typed by HasClausesUpd, S2) — DECLARED, not sniffed.
         match Comp.subst p (Comp.subst (Val.shift v) clause.2) with
         | .ret (.pair w p') =>
-            some (Kᵢ ++ Frame.handleF n (.custom ℓ' p' clauses) :: Kₒ, .ret w)   -- REINSTALL p', RESUME w
-        | other => some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ, other)  -- back-compat: read-only
+            some (Kᵢ ++ Frame.handleF n (.customUpd ℓ' p' clauses) :: Kₒ, .ret w)   -- REINSTALL p', RESUME w
+        | other => some (Kᵢ ++ Frame.handleF n (.customUpd ℓ' p clauses) :: Kₒ, other)  -- ill-typed guard
     | none => none
 ```
 
-This is *exactly* `state`'s PUT (reinstall a changed carried value + resume) with the split of the
-pair being the one extra step. The `other` fall-through preserves v1 read-only clauses byte-for-byte
-(a `ret w` clause reinstalls `p` unchanged) — so D5 is **additive**, not a rewrite of the existing
-arm. The RET path (handler return clause) already sees the FINAL `p` — it is `handleF n (custom ℓ'
-p_final cls)` at the moment `M` returns, and the return clause is the identity (ADR-0023 Q6), so
-"does the ret clause see the final param?" — YES, structurally, no change (the identity return
-ignores it in v1; a param-consuming return clause is a further, orthogonal generalization).
+This is *exactly* `state`'s PUT (reinstall a changed carried value + resume) with the pair-split the
+one extra step — but confined to `customUpd`, so a `custom` clause returning a pair keeps getting the
+pair as its VALUE (the §3-new regression witness pins this; the pair-decode NEVER runs on `custom`).
+The `other` fall-through is an ill-typed guard (S2's `HasClausesUpd` forces the pair shape, so it is
+source-unreachable). The RET path (handler return clause) sees the FINAL `p'` — the frame at return is
+`handleF n (customUpd ℓ' p_final cls)`, return clause = identity (ADR-0023 Q6), so "does the ret
+clause see the final param?" — YES, structurally, no change.
 
 ### 1.3 Invariant #5 — D5 is a refinement, not a sixth primitive
 
@@ -216,33 +278,59 @@ class of computable result.**
 
 ---
 
-## 4 · The blast radius — MEASURED, and why the state PUT arm bounds it
+## 4 · The blast radius — RE-MEASURED under the `customUpd` marker (§0.5 amendment)
 
-Census of the custom-rep consumers (grep across `Bang/`, `Handler.custom | .custom | handleCustom |
-HasClauses | dispatchOn`): **519 raw hits across 26 files.** The overwhelming majority are
-NAME-mentions or proof arms that pass the rep THROUGH unchanged; the load-bearing set — where D5's
-*param-update* actually ripples — is small and every member has a `state` twin already proven.
-
-### 4.1 The rep-shape ripple is ZERO (shape A adds no field)
-
-Because shape (A) adds no constructor field, the ~519 sites that pattern-match `custom ℓ p cls`
-compile UNCHANGED. The engines' custom arms already thread `p`:
+Census of the custom-rep consumers (grep across `Bang/`): **519 raw hits across 26 files**, split into
+**134 CONSTRUCT-sites** (`Handler.custom ℓ …` built) and **160 MATCH-sites** (`| .custom …`
+destructured). This split is what decides the marker shape:
 
 ```
- engine                       custom-arm site                    D5 delta under shape (A)
- ──────────────────────────   ────────────────────────────────  ────────────────────────────────────
- Source.step / dispatchOn     Dispatch.lean:177-181              +1 pair-decode (§1.2) — the arm
- evalD (CalcVM)               AbstractMachine.lean:318-321        +1 pair-decode (κ.get? path); PUSH/POP
-                              (CStore = id ↦ (param, clauses))     of κ is unchanged (param already threaded)
- EnvMachine (default engine)  7 custom sites                     +1 pair-decode (mirror dispatchOn)
- exec / wexec (calc + WasmGC) Wasm.lean:41 sites, U5bComplete:18  the S4 arm reinstalls p → reinstall p'
- emitter (S4)                 WasmEmit.lean:13 sites              runtime $box already carries the param
+ marker shape                 UNMARKED-path ripple            new-path cost                verdict
+ ──────────────────────────   ─────────────────────────────  ──────────────────────────   ─────────────────────────
+ (M-flag) field on custom     ALL 294 sites (every construct  branch on the flag in the    REJECTED — the unmarked
+   `custom : … → Mode → …`      + every match re-patterns;      dispatch arm                 path is NOT definitionally
+                                every theorem mentioning                                     unchanged ⇒ RED SPINE
+                                `custom ℓ p cl` re-states)                                    (condition 3 fails)
+ (M-kind) new customUpd        ZERO (custom unmoved — every    ~50 additive customUpd       CHOSEN — unmarked path
+   constructor                   match-arm/theorem/proof         match-arms (mechanical,      byte-identical BY
+                                 byte-identical)                 mostly = the custom arm) +   CONSTRUCTION (condition 3
+                                                                 the param-update proof spine  met definitionally)
 ```
 
-Each engine delta is "decode the pair, reinstall `p'`" — mechanically identical across engines
-(invariant #1: they stay diff-tested against `Source.eval`). The differential-test harness
-(`AgreeOutcome`, `Fuzz`) re-runs all engines against the oracle, so the engine ripple is
-build-and-diff-gated, not proof-gated.
+**Chosen: M-kind (new `customUpd`).** The team-lead's condition (3) — "the unmarked path is
+definitionally unchanged, or it's a red spine" — is satisfiable ONLY by a distinct constructor: the
+160 match-sites and every theorem STATEMENT mentioning `Handler.custom ℓ p cl` (`custom_handlesWithin`,
+`no_accidental_handling_custom_proof`, `custom_program_safe_proof`, …) stay byte-for-byte, because
+they destructure `custom`, which did not move. The cost moves to ADDITIVE `customUpd` arms.
+
+### 4.1 The new-path ripple — additive `customUpd` arms (~50 match-sites gain a parallel arm)
+
+Every place that currently has a `custom` arm gains a `customUpd` sibling. Most are MECHANICALLY the
+`custom` arm (a parameterised handler shares label/clauses/param structure) — the ONLY arms that
+genuinely differ are the reinstall (dispatch) and the typing rule. Per-engine:
+
+```
+ engine                       custom match-arms   customUpd delta
+ ──────────────────────────   ─────────────────   ─────────────────────────────────────────────────
+ Source.step / dispatchOn     Dispatch.lean:3      +1 arm: pair-decode + reinstall p' (the ONE new
+                              (handlesOp/dispatch)  semantics; §1.2 shape A, now under customUpd only)
+ evalD (CalcVM)               AbstractMachine:8    +customUpd arms: κ.get? pair-decode + PUSH/POP
+                              (CStore path)         (mirror the custom arm, reinstall p')
+ EnvMachine (default engine)  4                    +customUpd arms (mirror dispatchOn)
+ exec / wexec (calc + WasmGC) Wasm.lean:15         +customUpd arms: reinstall p' in the $box
+ emitter (S4)                 WasmEmit:13-site set  +customUpd lowering (runtime $box carries param)
+ Subst / Freshness / capsH    Subst:3, Fresh:6     +customUpd arms = the custom arm VERBATIM (subst
+                              (rep-traversal)       the param + clauses; capsH traverses clauses) —
+                                                    zero-semantics, pure structural duplication
+```
+
+The rep-traversal arms (subst, freshness, cap-enumeration) are the custom arm copied verbatim — a
+`customUpd` handler substitutes/enumerates identically to a `custom` one (same fields). Only
+dispatch + typing carry real logic. Each engine's `customUpd` dispatch is "decode the pair, reinstall
+`p'`" — diff-tested against `Source.eval` (invariant #1); the `AgreeOutcome`/`Fuzz` harness re-runs
+all engines against the oracle, so the engine ripple is build-and-diff-gated, not proof-gated. AND
+the whole EXISTING corpus (all `custom`, no `customUpd`) runs byte-identical every slice — condition
+(2), enforced by the differential harness on an unchanged `custom` path.
 
 ### 4.2 The PROVEN-SPINE ripple — the real cost, but TEMPLATED
 
@@ -283,42 +371,59 @@ machinery (the ADT `pair` relation already exists), so it is a lemma-composition
 
 ---
 
-## 5 · Slice map + effort — the cheapest honest entry
+## 5 · Slice map + effort — the cheapest honest entry (under the `customUpd` marker)
 
 ```
  slice   stratum              content                                                      effort   gate
  ─────   ──────────────────   ──────────────────────────────────────────────────────────  ──────   ──────────────────────
- S0      kernel def           dispatchOn custom arm: pair-decode + reinstall p' (§1.2);     S        #guard witnesses
-         (SEMANTIC — CHEAPEST  fall-through preserves v1 read-only. NO rep change.            (1-2d)   (a D5 pair-clause
-          ENTRY)               Extend D5ParamHandlerWitness with a CUSTOM (not state)                 evolving-memory eval)
-                               param-update #guard once the arm lands.
- S1      engines              evalD / EnvMachine / exec / wexec custom arms: mirror S0's     M        AgreeOutcome + Fuzz
-         (diff-tested)         pair-decode. exec/wexec = the L-size hiders (#62 history).     (2-4d)   diff-test all engines
-                               Emitter S4: reinstall p' in the runtime $box.                          == Source.eval
- S2      typing               HasClauses.cons: body → ret (pair w p'), resume type →         M        lake build (the rule
-                               prod opR P (§2.2). handleCustom rule unchanged (§2.4).         (2-3d)   types real programs)
- S3      soundness            handleCustom_inv, concat_custom_*, custom_resume_focus_types,  L        #print axioms ⊆
-         (PROVEN SPINE)        custom_program_safe: port from the state twins (§4.2). The     (1-2wk)  trusted-3; custom_
-                               pair-projection is the one new step.                                    program_safe green
- S4      LR (binary)          krelS_custom_reinstall (port state PUT arm), custom_clause_    L        #print axioms ⊆
-         (PROVEN SPINE)        resume (pair-project), compatK_handleCustom. The resumptive    (1-2wk)  trusted-3; lr_sound
-                               heart — the state PUT arm is the skeleton.                               unaffected
+ S0      kernel rep + arm     ADD `Handler.customUpd` (§0.5); its dispatchOn arm pair-      S/M      #guard: customUpd
+         (SEMANTIC — CHEAPEST  decodes + reinstalls p'. `custom` arm UNCHANGED. Structural   (2-3d)   evolving-memory eval;
+          ENTRY)               arms (subst/freshness/capsH) get customUpd = the custom arm            + REGRESSION #guard: a
+                               verbatim. Regression witness: a `custom` clause returning a            `custom` pair-return
+                               pair still gets the pair as VALUE (§3-new).                             gets pair as VALUE
+ S1      engines              evalD / EnvMachine / exec / wexec: add customUpd arms         M        AgreeOutcome + Fuzz +
+         (diff-tested)         (mirror S0). exec/wexec = the L-size hiders (#62). Emitter    (3-5d)   WHOLE-CORPUS diff run
+                               S4: customUpd lowering. custom path byte-identical.                    (all custom, unchanged)
+ S2      typing               ADD `HasClausesUpd` (customUpd's clause typing): body →       M        lake build (the rule
+                               ret (pair w p'), resume type prod opR P (§2.2); handleCustomUpd (2-3d) types real programs;
+                               rule. `HasClauses`/`handleCustom` UNCHANGED.                            handleCustom untouched
+ S3      soundness            customUpd_resume_focus_types, handleCustomUpd_inv, concat_    L        #print axioms ⊆
+         (PROVEN SPINE)        customUpd_*, customUpd_program_safe: port the custom/state    (1-2wk)  trusted-3; the custom_*
+                               twins (§4.2). custom_* lemmas UNCHANGED (byte-identical).              proofs still green
+ S4      LR (binary)          krelS_customUpd_reinstall (port state PUT arm), customUpd_    L        #print axioms ⊆
+         (PROVEN SPINE)        clause_resume (pair-project), compatK_handleCustomUpd. The    (1-2wk)  trusted-3; lr_sound
+                               state PUT arm is the skeleton. krelS_custom_reinstall UNCHANGED.        + custom LR unaffected
 ```
 
-**Cheapest honest entry = S0 (the semantic arm).** It lands the capability at the kernel, witnessed
-by a runnable custom-param-update `#guard`, WITHOUT touching a single proof — the tested-superset
-gains handler memory for user effects immediately (diff-tested via S1), and the proven-core
-re-grade (S2–S4) follows as a separate, templated push. This mirrors the ADR-0085 stage ladder
-(rep → dispatch → typing → calc → LR) that landed `custom` itself: semantics first, proof after,
-each stage independently gated.
+**The four HARD conditions (team-lead review) gate every slice:**
 
-**The costed verdict for the HOLD:** D5 is a **BOUNDED multi-session L** (S0–S2 ship a tested-superset
-capability in ~1 week; S3–S4 re-establish the proven core in ~2–4 weeks by porting the `state` PUT
-twins). It touches the proven spine but invents no new proof technique — the `state` parameterised
-handler is the existence proof and the template throughout. It is NOT a research risk; it IS a real
-proof-porting investment. Recommendation: land S0–S1 (tested-superset handler memory for user
-effects) when the DST/Sched/Fs-sim lanes want it, gate S2–S4 as a dedicated proven-core increment,
-and file the ADR at S0 (the pair-shape decision §1.2 is the fork a future session could reverse).
+```
+ (1) OPT-IN at the rep — customUpd is a NEW constructor, param-update NEVER sniffed from the yield.
+     The ADR records yield-sniffing as the REJECTED alternative (§0.5).
+ (2) The WHOLE existing corpus byte-identical under a differential run EVERY slice — non-customUpd
+     handlers are untouchable (enforced by the AgreeOutcome/Fuzz harness on the unchanged custom path).
+ (3) Headline axioms green EVERY push — S0's arm is a NEW customUpd arm; the custom arm's equation is
+     definitionally unchanged, so NO proof arm referencing the old equation breaks (that is WHY M-kind,
+     not M-flag). If a custom proof arm broke, the slice would be a red spine, not tested-superset.
+ (4) A pair-valued-clause REGRESSION witness pins that a NON-marked `custom` handler returning
+     pair(w,x) still gets the pair as its VALUE — the exact regression yield-sniffing would have caused,
+     pinned BEFORE it can ever happen (lands in S0).
+```
+
+**Cheapest honest entry = S0 (the semantic arm + the regression witness).** It adds `customUpd` at the
+kernel with its dispatch arm and the regression pin, WITHOUT touching a single `custom` proof — the
+tested-superset gains handler memory for user effects (diff-tested via S1), the `custom` path stays
+byte-identical, and the proven-core re-grade (S2–S4) follows as a separate, templated push over
+`customUpd`-specific lemmas. This mirrors the ADR-0085 stage ladder (rep → dispatch → typing → calc →
+LR) that landed `custom` itself.
+
+**The costed verdict:** D5 is a **BOUNDED multi-session L** (S0–S2 ship a tested-superset capability
+in ~1 week; S3–S4 re-establish the proven core in ~2–4 weeks by porting the `state` PUT / `custom`
+twins). It touches no `custom` proof (M-kind keeps them definitionally unchanged) and invents no new
+proof technique — the `state` parameterised handler is the template throughout. Recommendation
+(team-lead APPROVED, conditions above): land S0–S1 (tested-superset), gate S2–S4 as a dedicated
+proven-core increment, file the ADR at S0 (the `customUpd` constructor + the yield-sniffing rejection
+are the forks a future session could reverse).
 
 ---
 
@@ -327,8 +432,13 @@ and file the ADR at S0 (the pair-shape decision §1.2 is the fork a future sessi
 ```
  # ADR-input                                                                when              rides
  ── ──────────────────────────────────────────────────────────────────     ───────────────   ──────────────────────────
- D5-1 The param-update SHAPE is (A) pair-yielding clause (ret (pair w p')), S0 (the fork)      Dispatch.lean:181;
-      NOT a new Comp former — no 6th primitive, the pair is the existing ADT.                   IR pair; invariant #5
+ D5-0 D5 is OPT-IN at the REP: a NEW `customUpd` constructor (§0.5), NOT a  S0 (the DECISION) IR.lean custom rep;
+      mode-flag and NOT inferred from the clause yield. YIELD-SNIFFING is                      invariant #5 (5th ctor)
+      REJECTED (silently reinterprets a legal pair-returning v1 clause) —
+      the ADR records it as the rejected alternative. M-kind chosen over
+      M-flag so the unmarked `custom` path is DEFINITIONALLY unchanged.
+ D5-1 customUpd's clause yields ret (pair w p') (shape A), decoded ONLY in   S0                Dispatch customUpd arm;
+      its own dispatch arm — no new Comp former, the pair is the ADT.                          IR pair; invariant #5
  D5-2 D5 is a TYPING cost, not a semantic one — the reinstall (state PUT)     framing (adopt)   memory-survey §1.2;
       already exists; the pair stays inside the D4 ret-shape wall (§2.2).                        survey EA2
  D5-3 The proof burden is TEMPLATED by krelS_state_reinstall's PUT arm —      S3/S4             BinaryLR.lean:700,1307
