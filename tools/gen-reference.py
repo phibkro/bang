@@ -187,7 +187,7 @@ def extract_result_ctors(text):
 # carries NO section markers (it is comment-free, matching the examples/*.bang convention: `bang
 # fmt` strips `--` comments, so a commented module permanently fails `bang lint`'s
 # `fmt-divergence` check), so the split is this fixed NAME set instead of a text boundary.
-STDLIB_NAMES = {"concat", "reverse", "eq", "strLength"}
+STDLIB_NAMES = {"concat", "reverse", "eq", "strLength", "intToStr"}
 
 
 def extract_prelude_decl_names(prelude_text):
