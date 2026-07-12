@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (69)
+## active (70)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -79,6 +79,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`traits-prelude-survey.md`](traits-prelude-survey.md) — Traits / typeclasses prelude survey — the census + the derivability matrix
 - [`verification-ladder.md`](verification-ladder.md) — The verification ladder — quality gates for agent-speed code
 - [`wasm-concurrency-survey.md`](wasm-concurrency-survey.md) — Wasm components + concurrency — how bang should model concurrent execution (design survey)
+- [`wgcexec-calculation-plan.md`](wgcexec-calculation-plan.md) — The calculated `wgcexec` machine — calculation plan + tractability spike (Wave D, 2026-07-12)
 
 ## archival (12)
 
