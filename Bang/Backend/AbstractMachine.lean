@@ -898,6 +898,22 @@ theorem StoresBelow.push_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CStor
    fun m hm => by rcases CStore.get?_push_ne_none.mp hm with rfl | hin
                   exacts [by omega, Nat.lt_succ_of_lt (h.2.2 m hin)]⟩
 
+/-- `pushUpd` (ADR-0107 D5) has the SAME key structure as `push` (only the payload Bool differs), so
+`get?` is identical — this bridges the pushUpd lemmas to the push ones. -/
+theorem CStore.get?_pushUpd_ne_none {κ : CStore} {g m : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
+    (κ.pushUpd g p cls).get? m ≠ none ↔ (m = g ∨ κ.get? m ≠ none) := by
+  simp only [CStore.pushUpd, CStore.get?, List.find?]
+  by_cases hc : g = m
+  · subst hc; simp
+  · have hc' : ¬ (m = g) := fun he => hc he.symm
+    simp only [hc, decide_false, Bool.false_eq_true, if_false, hc', false_or]
+
+theorem StoresBelow.pushUpd_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {p : Val}
+    {cls : List (Bang.OpId × Comp)} (h : StoresBelow g σ τ κ) : StoresBelow (g+1) σ τ (κ.pushUpd g p cls) :=
+  ⟨fun m hm => Nat.lt_succ_of_lt (h.1 m hm), fun m hm => Nat.lt_succ_of_lt (h.2.1 m hm),
+   fun m hm => by rcases CStore.get?_pushUpd_ne_none.mp hm with rfl | hin
+                  exacts [by omega, Nat.lt_succ_of_lt (h.2.2 m hin)]⟩
+
 theorem StoresDisjoint.put_state {σ : SStore} {τ : THeap} {κ : CStore} {n : Nat} {v : Val}
     (h : StoresDisjoint σ τ κ) : StoresDisjoint (σ.put n v) τ κ := by
   intro m
@@ -948,6 +964,24 @@ theorem StoresDisjoint.push_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CS
   · have hmg : m ≠ g := Nat.ne_of_lt (hb.2.1 m hne)
     exact ⟨((hd m).2.1 hne).1, cstore_push_eq_none hmg ((hd m).2.1 hne).2⟩
   · rcases CStore.get?_push_ne_none.mp hne with rfl | hin
+    · exact ⟨by by_contra hc; exact Nat.lt_irrefl _ (hb.1 m hc),
+             by by_contra hc; exact Nat.lt_irrefl _ (hb.2.1 m hc)⟩
+    · exact (hd m).2.2 hin
+
+private theorem cstore_pushUpd_eq_none {κ : CStore} {g m : Nat} {p : Val} {cls : List (Bang.OpId × Comp)}
+    (hne : m ≠ g) (h0 : κ.get? m = none) : (κ.pushUpd g p cls).get? m = none := by
+  by_contra hc; rcases CStore.get?_pushUpd_ne_none.mp hc with rfl | hin; exacts [hne rfl, hin h0]
+
+theorem StoresDisjoint.pushUpd_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {p : Val}
+    {cls : List (Bang.OpId × Comp)} (hd : StoresDisjoint σ τ κ) (hb : StoresBelow g σ τ κ) :
+    StoresDisjoint σ τ (κ.pushUpd g p cls) := by
+  intro m
+  refine ⟨fun hne => ?_, fun hne => ?_, fun hne => ?_⟩
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.1 m hne)
+    exact ⟨((hd m).1 hne).1, cstore_pushUpd_eq_none hmg ((hd m).1 hne).2⟩
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.2.1 m hne)
+    exact ⟨((hd m).2.1 hne).1, cstore_pushUpd_eq_none hmg ((hd m).2.1 hne).2⟩
+  · rcases CStore.get?_pushUpd_ne_none.mp hne with rfl | hin
     · exact ⟨by by_contra hc; exact Nat.lt_irrefl _ (hb.1 m hc),
              by by_contra hc; exact Nat.lt_irrefl _ (hb.2.1 m hc)⟩
     · exact (hd m).2.2 hin
@@ -1962,6 +1996,13 @@ theorem CCorr_install {κ : CStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (
     CCorr (κ.push fr.id p cls) (fr :: hs) := by
   unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr, CStore.push]
 
+/-- Installing a `customUpd` frame pushes its `(p, cls, true)` onto the custom store via `pushUpd`
+(the `handle (customUpd)` INSTALL, ADR-0107 D5 — the twin of `CCorr_install`). -/
+theorem CCorr_installUpd {κ : CStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (p : Val)
+    (cls : List (Bang.OpId × Comp)) (fr : HFrame) (hfr : fr.handler = .customUpd ℓ p cls) (hK : CCorr κ hs) :
+    CCorr (κ.pushUpd fr.id p cls) (fr :: hs) := by
+  unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr, CStore.pushUpd]
+
 /-- A NON-custom frame (state/throws/transaction) carries no clause entry: pushing it preserves `CCorr`. -/
 theorem CCorr_install_noncustom {κ : CStore} {hs : HStack} (fr : HFrame)
     (hnc : ∀ ℓ p cls, fr.handler ≠ .custom ℓ p cls) (hK : CCorr κ hs) : CCorr κ (fr :: hs) := by
@@ -1977,6 +2018,13 @@ theorem CCorr_install_noncustom {κ : CStore} {hs : HStack} (fr : HFrame)
 tail mirrors the HStack's tail. -/
 theorem CCorr_pop_custom {κ : CStore} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.EffectRow.Label}
     {p : Val} {cls : List (Bang.OpId × Comp)} (hfr : fr.handler = .custom ℓ0 p cls)
+    (hK : CCorr κ (fr :: hs)) : CCorr κ.tail hs := by
+  unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr]
+
+/-- `CCorr` rides the POP of a `customUpd` top frame (ADR-0107 D5, the twin of `CCorr_pop_custom`):
+`hsCustoms` projects it as a head entry, so popping it tails the store. -/
+theorem CCorr_pop_customUpd {κ : CStore} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.EffectRow.Label}
+    {p : Val} {cls : List (Bang.OpId × Comp)} (hfr : fr.handler = .customUpd ℓ0 p cls)
     (hK : CCorr κ (fr :: hs)) : CCorr κ.tail hs := by
   unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr]
 
@@ -2817,6 +2865,7 @@ theorem sim : ∀ fe,
                         have hh := hmutM.1.2.2.2
                         cases hth : top.handler with
                         | custom ℓ1 p1 cls1 => rw [hfrdef, hth] at hh; simp only at hh; obtain ⟨rfl, _, _⟩ := hh; exact ⟨p1, cls1, rfl⟩
+                        | customUpd _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut custom/customUpd = False
                         | state _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | transaction _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
@@ -2851,6 +2900,80 @@ theorem sim : ∀ fe,
                 | (.raised n' op' w, _, _, _, _), h =>
                     -- body raises past the custom frame (custom never catches a throws-raise) ⇒ forwards ⇒
                     -- raised, contradicting the term part.
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+          | customUpd ℓ0 p0 cls0 =>
+              -- route-B INSTALL a customUpd frame (ADR-0107 D5): identical to the custom install (the
+              -- param-update is serviced INLINE at the perform arm, not here) — pushUpd/CCorr_installUpd
+              -- and the customUpd pop/htop, otherwise byte-identical to the custom arm above.
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) σ τ (κ.pushUpd g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), g1, σ1, τ1, κ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+                    have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
+                        exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1 τ1) = some r2 →
+                        (∃ F', exec F' (g+1) (compile (Comp.subst (Val.vcap g ℓ0) M) (Instr.UNMARK :: cc)) ss
+                          ({ id := g, handler := Handler.customUpd ℓ0 p0 cls0, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        ∧ Corr σ1 (netEffect hs σ1 τ1) ∧ TCorr τ1 (netEffect hs σ1 τ1)
+                        ∧ CCorr κ1.tail (netEffect hs σ1 τ1) ∧ HMut hs (netEffect hs σ1 τ1)
+                        ∧ StoresBelow g1 σ1 τ1 κ1.tail ∧ StoresDisjoint σ1 τ1 κ1.tail := by
+                      intro cc ss F2 r2 hr2
+                      set fr : HFrame := { id := g, handler := Handler.customUpd ℓ0 p0 cls0, savedCode := cc, savedStack := ss }
+                        with hfrdef
+                      have hCinstall : Corr σ (fr :: hs) :=
+                        Corr_install_nonstate fr (by rw [hfrdef]; intro ℓ s; simp) hC
+                      have hTinstall : TCorr τ (fr :: hs) :=
+                        TCorr_install_nontxn fr (by rw [hfrdef]; intro ℓ Θ; simp) hT
+                      have hKinstall : CCorr (κ.pushUpd g p0 cls0) (fr :: hs) :=
+                        CCorr_installUpd ℓ0 p0 cls0 fr (by rw [hfrdef]) hK
+                      obtain ⟨hsM, hCM, hTM, hKM, hmutM, hSBM, hSDM, kM⟩ :=
+                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.pushUpd g p0 cls0) (.ret v) g1 σ1 τ1 κ1 hM (fr :: hs) hCinstall hTinstall hKinstall
+                          hSB.pushUpd_custom (hSD.pushUpd_custom hSB)
+                      obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
+                        cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
+                      have htop : ∃ p' cls', top.handler = .customUpd ℓ0 p' cls' := by
+                        have hh := hmutM.1.2.2.2
+                        cases hth : top.handler with
+                        | customUpd ℓ1 p1 cls1 => rw [hfrdef, hth] at hh; simp only at hh; obtain ⟨rfl, _, _⟩ := hh; exact ⟨p1, cls1, rfl⟩
+                        | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                        | state _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                        | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                        | transaction _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                      obtain ⟨p', cls', hts⟩ := htop
+                      have hCtail : Corr σ1 tail :=
+                        Corr_pop_nonstate (fr := fr) (by rw [hfrdef]; intro ℓ s; simp) hmutM hCM
+                      have hTtail : TCorr τ1 tail :=
+                        TCorr_pop_nontxn (by rw [hts]; intro ℓ Θ; simp) hTM
+                      have hKtail : CCorr κ1.tail tail := CCorr_pop_customUpd hts hKM
+                      have htaileq : tail = netEffect hs σ1 τ1 :=
+                        updateStates_eq (HMut.tail hmutM) hCtail hTtail
+                      have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                        simp only [exec]; rw [htaileq]; exact hr2
+                      exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
+                        htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ hKtail, htaileq ▸ (HMut.tail hmutM),
+                        hSBM.tail_custom, hSDM.tail_custom⟩
+                    obtain ⟨_, hCf, hTf, hKf, hmutf, hSBf, hSDf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨netEffect hs σ1 τ1, hCf, hTf, hKf, hmutf, hSBf, hSDf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                    obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
+                    exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
+                | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
+                | (.raised n' op' w, _, _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
           | state ℓ0 s0 =>
