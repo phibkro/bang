@@ -6,6 +6,13 @@
 > DESIGN-FIRST with a HOLD: this note is the deliverable, not an implementation — every claim below
 > is witnessed live against the built binary (`.lake/build/bin/bang`, `feat-lang-fill` branch), not
 > reasoned-only. No code changes ride with it.
+>
+> **LANDED (2026-07-12):** door (A) — the recommendation this note makes (§2/§5) — is implemented
+> and ACK'd by the operator as **ADR-0103 Amendment ②** (`docs/decisions/0103-forall-generalization.md`),
+> which is now the authoritative record of what shipped (`callSitesOf`/`redirectCalls`'s
+> `resultDom` threading, `discoverAtCallResult`, the `findConflict` fail-loud extension, `B017`).
+> This note stays as the design rationale + the refute-first correction to #55's original framing
+> (§0); it is not re-verified against the shipped code beyond what the amendment already states.
 
 ## 0. The wall, precisely — narrower than #55's original framing
 

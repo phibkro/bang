@@ -1,0 +1,22 @@
+-- issue #55 / ADR-0103 Amendment ②: a bound-free `let rec`'s free type variable that appears
+-- ONLY in the declared RESULT (never in any argument) is now discoverable from the call's own
+-- enclosing annotation — no argument annotation could ever close it before this fix, since the
+-- variable simply never occurs in an argument's type.
+
+-- `mkNone`'s `b` occurs ONLY in `Option b` — the annotation on the WHOLE call anchors it.
+let rec mkNone : a -> Option b = fun ignored => None in
+
+let rec unwrapOrI : Int -> Option Int -> Int =
+  fun d => fun o => match (o : Option Int) { None -> d, Some(v) -> v }
+in
+let rec unwrapOrC : Int -> Option Char -> Int =
+  fun d => fun o => match (o : Option Char) { None -> d, Some(v) -> match v { Char(n) -> n } }
+in
+
+-- the SAME result-only-generic function, instantiated at TWO different result types in one
+-- program — each call site gets its OWN monomorphic residue (ADR-0103's distinct-instantiation
+-- discipline, now exercised on the result-discovery door).
+let r1 = ($unwrapOrI 11) (($mkNone (3 : Int)) : Option Int) in
+let r2 = ($unwrapOrC 22) (($mkNone (3 : Int)) : Option Char) in
+
+r1 + r2 * 100

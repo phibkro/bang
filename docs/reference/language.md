@@ -1241,4 +1241,5 @@ and docs can reference it durably.
 | `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
 | `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
 | `B016` | a top-level `let` with no `in` absorbed the next line as an application (issue #129) | yes |
+| `B017` | a bound-free generic's call site names two different types for the same type variable | yes |
 

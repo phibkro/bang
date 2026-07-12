@@ -61,6 +61,9 @@ trigger_carries_code 'let rec outer : Int -> Int ! {Div} = fun n => let rec a : 
 trigger_carries_code 'let x = 3
 let y = 4
 x + y'                                                             'B016'
+trigger_carries_code 'let rec passThroughOpt : Option a -> Option a = fun o => o
+let main = 0
+($passThroughOpt (Some(3) : Option Int) : Option Char)'           'B017'
 
 # ── B011 RETIRED (#144): its FORMER trigger now type-checks CLEAN, no diagnostic at all — the
 # positive regression for the payload-arity-≤2 cap being lifted (a ≥3-ary ctor constructs/matches
@@ -131,7 +134,7 @@ check "explain-no-arg-exit-1" "$noarg_exit" "1"
 
 echo "──────────────────────────────"
 echo "explain: $pass passed, $fail failed"
-want_total=22
+want_total=23
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"
