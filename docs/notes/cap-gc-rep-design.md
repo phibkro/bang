@@ -337,6 +337,30 @@ Measured (wasmtime 45, `-W gc=y,function-references=y,exceptions=y`):
 tested-stratum text emitter, no proof headline). The tag-gating #134 miscompile is CLOSED. C0 (the
 first-class-cap headline — stage-swap/calc emit) rides this stamped infra next.
 
+### 8.3 · C0 LANDED — first-class caps emit (the #133 headline)
+
+**A capability threaded as a function argument now emits and runs.** The `.none`-slot perform arm's
+refusal (`WasmEmit.lean`, the old "first-class-capability rep is a rung-5+ wall") is REPLACED: when
+the op is a CUSTOM op (not a built-in state/txn op), the runtime env slot holds the handler's
+`$txbox` cap (the SAME value the lexical path builds), so dispatch REUSES the lexical machinery
+sourced from the runtime value — gate the `$id` (#134 stamp), then `$clausecell` + `call_ref`.
+
+- **stage-swap emits + runs `30005` == the oracle** (`examples/stage-swap`, `logic : Cap Net -> Int`
+  threaded as an argument, two handlers ×10/+1). Removed from `emit-rung5-effects-diff.sh`'s
+  `KNOWN_REFUSALS`; the corpus grew **40 → 41**.
+- **Identity dispatch intact**: `handle-custom-nested` still `210` (not the nearest-label `30`).
+- **First-class escape is trap-safe**: a first-class cap forced past its handler TRAPS (the `$capGate`
+  in the C0 route fires) — the #134 stamp covers the new dispatch path by construction.
+- **POSITION**: the emitter has no compile-time op→position map for a first-class cap, so it emits
+  position 0 GUARDED by a runtime `$clauselen == 1` single-op check (else trap). The entire shippable
+  corpus is single-op (calc `Trace`.log, stage-swap `Net`.fetch). A multi-op first-class cap traps
+  (invariant #1: never a wrong-clause dispatch) rather than guessing — the general multi-op case
+  needs a runtime op→position map on the cap (deferred; §6 C-note). `calc` (the other headline
+  consumer) needs the frontend module-resolve harness gap closed first (W3, a separate lane).
+
+`lake build` EXIT 0 · `just fitness` EXIT 0 · both emission harnesses green. #133 headline DONE for
+the single-op first-class case (the whole current corpus).
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two

@@ -25,13 +25,13 @@ trap 'rm -rf "$outdir"' EXIT
 # Programs the GC path CANNOT lower yet, each with the NAMED wall. A refusal here is expected; an
 # emit here (or a refusal NOT here) is a gate failure. Keep this list minimal + honest.
 #   calc/json/hostio-echo : FRONTEND lower-errors (BEFORE the emitter) — pre-existing, orthogonal.
-#   stage-swap            : a capability threaded as a first-class runtime VALUE (a vcap passed into
-#                           a closure as an argument) — no GC $val cap rep in v1 (rung-5+ wall).
+# NOTE (#133 C0): stage-swap (a capability threaded as a first-class arg) NO LONGER refuses — it emits
+# and runs 30005 == bang run (single-op first-class dispatch on the runtime $txbox cap, #134-stamped).
+# Removed from this list; it now gates like any other program.
 declare -A KNOWN_REFUSALS=(
   [calc]="frontend: unbound variable Ast"
   [json]="frontend: unresolved type variable"
   [hostio-echo]="frontend: host-IO perform not lowered here"
-  [stage-swap]="first-class capability (vcap) threaded as a runtime value"
 )
 
 echo "── building the rung4-shape emitter exe ──"
