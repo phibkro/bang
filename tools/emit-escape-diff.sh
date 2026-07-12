@@ -34,6 +34,7 @@ declare -A XFAIL_UNTIL_STAMP=(
   [capEscape-get]="no \$liveTop watermark yet (#133/#134 C2) — emits + silently returns a value"
   [surface:b3]="#134 STATE-cap escape (legal surface program) silently returns 0 on emit"
   [surface:c1]="#134 CUSTOM-cap escape (legal surface program) silently returns 7 on emit"
+  [surface:d2-sched-capture]="#134 SCHED-cap escape (dst-rounds idiom) silently returns 0 on emit"
 )
 
 echo "── building the rung4-shape emitter exe ──"

@@ -1,0 +1,3 @@
+effect Log { emit : Int -> Int }
+let leak = handle logger with Log as logger { emit(x) => x } in
+$(leak.emit(3))
