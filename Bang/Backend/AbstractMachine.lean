@@ -4968,9 +4968,10 @@ op-disjointness argument, the exact mirror of the HStack-side `CCorr` family. -/
 innermost first, as `(n, (p, cls))` entries keyed by IDENTITY (route-B). The `Config.run`-side analog of
 `hsCustoms`; state/throws/txn frames carry no clause payload ⇒ skipped. -/
 def ctxCustoms : Bang.EvalCtx → CStore
-  | []                                       => []
-  | Frame.handleF n (.custom _ p cls) :: K   => (n, (p, cls)) :: ctxCustoms K
-  | _ :: K                                   => ctxCustoms K
+  | []                                          => []
+  | Frame.handleF n (.custom _ p cls) :: K      => (n, (p, cls, false)) :: ctxCustoms K
+  | Frame.handleF n (.customUpd _ p cls) :: K   => (n, (p, cls, true)) :: ctxCustoms K  -- ADR-0107 D5: isUpd = true
+  | _ :: K                                      => ctxCustoms K
 
 /-- The Stage-4 invariant on the kernel side: `evalD`'s threaded κ IS the context's active custom frames.
 The `Config.run`-side analog of `CCorr`. -/
@@ -5251,7 +5252,7 @@ theorem ctxCustoms_get_none_of_ctxStates_some {n : Nat} {s : Val} {K : Bang.Eval
   | none => rfl
   | some pcl =>
       exfalso
-      obtain ⟨p, cl⟩ := pcl
+      obtain ⟨p, cl, _⟩ := pcl
       obtain ⟨Kᵢ, ℓs, Kₒ, hsps⟩ := splitAtId_of_ctxStates_get hsf hs
       obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
       rw [hsps] at hspc; simp at hspc
@@ -5263,7 +5264,7 @@ theorem ctxCustoms_get_none_of_ctxTxns_some {n : Nat} {Θ : List Val} {K : Bang.
   | none => rfl
   | some pcl =>
       exfalso
-      obtain ⟨p, cl⟩ := pcl
+      obtain ⟨p, cl, _⟩ := pcl
       obtain ⟨Kᵢ, ℓt, Kₒ, hspt⟩ := splitAtId_of_ctxTxns_get hsf ht
       obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
       rw [hspt] at hspc; simp at hspc
