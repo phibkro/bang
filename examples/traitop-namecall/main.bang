@@ -1,0 +1,36 @@
+-- issue #78 / ADR-0106: trait-op NAME-CALL dispatch. Before this fix, a trait op could only be
+-- invoked through an OPERATOR overload (`==`/`<`) — a bare name-call (`show(x)`) was `unbound
+-- variable`, no matter how many impls existed. `env.insts` now dispatches through the SAME shape
+-- `.binopS` already used, extended to a name-called application.
+
+trait ShowT { fn showIt(x) -> Int }
+
+data Box = B(Int)
+impl ShowT for Box { fn showIt(x) = match x { B(n) -> n } }
+
+-- self-recursion through the SAME name-call mechanism, on a RECURSIVE carrier — the #112 knot
+-- door, generalized past its old arity-2-only shape to reach a 1-ary op's own self-call.
+data MyList = MNil | MCons(Int, MyList)
+trait Sum1 { fn total(x) -> Int }
+impl Sum1 for MyList {
+  fn total(x) = match x {
+    MNil -> 0,
+    MCons(h, t) -> h + total(t)
+  }
+}
+
+-- deriving (Show)'s ONE fully-working shape today: an all-nullary carrier (no field ever needs
+-- rendering, so the generated impl never calls a prelude conversion — the shape ADR-0106 §5's
+-- STOP-and-SHOW wall does NOT block).
+data Color = Red | Green | Blue deriving (Show)
+
+let a = showIt(B(42)) in                             -- unshadowed: dispatches through the trait impl -> 42
+let c = total(MCons(1, MCons(2, MCons(3, MNil)))) in  -- self-recursive name-call dispatch -> 6
+let d = $strLength (show(Red)) in                     -- deriving(Show), nullary -> 9 ("Color_Red")
+-- lexical shadowing (ADR-0005/0006's "no implicit capture", extended to trait-op name-calls): a
+-- user's own binding of the SAME name wins UNCONDITIONALLY — the trait op is never even consulted
+-- for any reference INSIDE this let's scope (the earlier `a` above was computed BEFORE the shadow
+-- exists, so it still dispatched through the trait impl).
+let b = $({let rec showIt : Int -> Int = fun x => x + 1000 in ($showIt) 5}) in
+
+a + b + c * 10000 + d * 1000000

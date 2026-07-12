@@ -2,6 +2,19 @@ pub let rec concat : Str -> Str -> Str =
   fun a => fun b => match a { SNil -> b, SCons(c, t) -> SCons(c, $concat t b) }
 pub let rec strLength : Str -> Int =
   fun s => match (s : Str) { SNil -> 0, SCons(c, t) -> 1 + $strLength t }
+pub let intToStr =
+  {let rec digitsRev : Int -> Str = fun n =>
+      if n == 0 then SNil else let d = n - n / 10 * 10 in SCons(Char (48 + d), $digitsRev (n / 10))
+    in
+  let rec revStr : Str -> Str -> Str = fun acc =>
+      fun s => match (s : Str) { SNil -> acc, SCons(c, t) -> $revStr (SCons(c, acc)) t }
+    in
+  fun n =>
+    if n == 0
+      then "0"
+      else if n < 0
+        then SCons(Char 45, $revStr SNil ($digitsRev (0 - n)))
+        else $revStr SNil ($digitsRev n)}
 pub let reverse =
   {let rec revApp : Str -> Str -> Str = fun acc =>
       fun s => match (s : Str) { SNil -> acc, SCons(c, t) -> $revApp (SCons(c, acc)) t }
@@ -96,3 +109,4 @@ pub trait Ord {
   law asym(a, b): let #p = a < b in if #p then if b < a then 0 == 1 else 0 == 0 else 0 == 0;
   law trans(a, b, c): let #p = a < b in if #p then let #p = b < c in if #p then a < c else 0 == 0 else 0 == 0
 }
+pub trait Show { fn show(a) -> Str; law refl(a): $eq (show a) (show a) }

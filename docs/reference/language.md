@@ -476,6 +476,7 @@ file just sits there unreferenced (no silent pickup).
 |---|---|
 | `concat` | `Str -> Str -> Str` |
 | `strLength` | `Str -> Int` |
+| `intToStr` | `Int -> Str` |
 | `reverse` | — (no top-level annotation — see `Prelude.bang`) |
 | `eq` | `Str -> Str -> Unit + Unit` |
 

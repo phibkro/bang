@@ -1863,23 +1863,29 @@ public structure Inst where
 at each dispatch site (no map: the list is small, linear scan is fine at bang-program scale). -/
 public abbrev InstEnv := List Inst
 
-/-- **#112 fix — one pending KNOT** for a 2-param impl op: the fresh binder name `.binopS`
-dispatch will reference, the impl's target type (the knot's tupled-arg domain, `T * T`), the
-op's result type, and its RAW (un-elaborated) params/body — elaborated later, inside `letRecS`'s
-OWN elaboration arm (`TypeCheck.lean`'s `.letRecS` case), which is what actually resolves a
-self- or backward reference through the μ-encoded fixpoint. Kept RAW here (not `Surf`-elaborated)
-for the SAME reason `RawOp`/`RawImpl` already are: elaborating too early is precisely the #112 bug. -/
+/-- **#112 fix — one pending KNOT** for an impl op's self- or backward-recursion door: the fresh
+binder name dispatch will reference, the impl's target type (the knot's arg domain — a bare `T`
+for 1 param, `T * T` right-nested for 2+, `prodOfTys`'s own convention), the op's result type, and
+its RAW (un-elaborated) params/body — elaborated later, inside `letRecS`'s OWN elaboration arm
+(`TypeCheck.lean`'s `.letRecS` case), which is what actually resolves a self- or backward reference
+through the μ-encoded fixpoint. Kept RAW here (not `Surf`-elaborated) for the SAME reason `RawOp`/
+`RawImpl` already are: elaborating too early is precisely the #112 bug. `params` GENERALIZES the
+original `p1`/`p2` fields (#78 Amendment: name-callable trait-op dispatch, ADR-0106) — any arity
+≥1 needs the SAME knot door once dispatch can reach it (`.binopS` only ever reached exactly 2, so
+the arity-2 shape was previously the ONLY reachable one; a 1-ary `show` recursing on a recursive
+carrier's own tail is the exact SAME #112 shape, now reachable through name-call dispatch). -/
 public structure PendingOpKnot where
-  /-- The fresh binder name `.binopS` dispatch will reference. -/
+  /-- The fresh binder name dispatch will reference. -/
   knotName : String
-  /-- The knot's tupled-arg domain (the impl's target type, `T * T`). -/
+  /-- The knot's arg domain (the impl's target type, right-nested `T * T * …` for arity ≥2, bare
+  `T` for arity 1 — `prodOfTys`'s own convention, generalizing the old hardcoded `T * T`). -/
   targetTy : Ty
   /-- The op's result type. -/
   retTy    : Ty
-  /-- The op's first `Self`-typed param name, as declared (`fn eq(p, q) = …`). -/
-  p1       : String
-  /-- The op's second `Self`-typed param name. -/
-  p2       : String
+  /-- The op's `Self`-typed param names, as declared (`fn eq(p, q) = …` ↦ `[p, q]`; `fn show(x) =
+  …` ↦ `[x]`) — arity ≥1 (arity-0 ops have no `Self` param to knot-bind and stay on the pre-#112
+  splice path, unchanged). -/
+  params   : List String
   /-- The RAW (un-elaborated) body — elaborated later inside `letRecS`'s own arm. -/
   rawBody  : Surf
 
@@ -4093,7 +4099,57 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             if ci.params.isEmpty then return w (ctorIntro ci v)
             else return w (← genCtorIntro env ci v)
       | some (.error e) => .error e           -- ADR-0099 B012: ambiguous bare ctor
-      | none             => do return .app (.var c) (← elabS env Γ a)
+      -- #78 OPERATOR RULING (a), ADR-0106: an application whose head names a trait op consults
+      -- `env.insts` exactly as `.binopS` does — the SAME `#118` one-candidate-pins-the-hole
+      -- machinery, reading a SINGLE-arg surface application (`show(x)`) instead of a two-operand
+      -- `.binopS`. LEXICAL SHADOWING (the ruling's own wording, ADR-0005/0006's "no implicit
+      -- capture" precedent): `c` is resolved through the ORDINARY environment FIRST (`Γ`, the
+      -- local/folded-in-top-level-let context every OTHER `.var` reference already resolves
+      -- against) — only an UNBOUND head that names a trait op enters dispatch; a user's own
+      -- binding of the name (a `let`/`let rec`/lambda param) wins unconditionally, never shadowed
+      -- by an impl. Multi-arg trait-op name-calls (`eq(a, b)`-shaped) are OUT of this arm's scope
+      -- — they already dispatch via `.binopS`'s own `==`/`<` overload; this arm only reaches the
+      -- SURFACE'S single-argument application shape `c(a)`, matching `show`'s own 1-param sig. -/
+      | none => do
+          if Γ.any (fun (n, _) => n == c) then
+            return .app (.var c) (← elabS env Γ a)   -- lexical shadow wins — ordinary application
+          else
+            match env.insts.filter (fun i => i.opName == c && i.params.length == 1) with
+            | []  => return .app (.var c) (← elabS env Γ a)   -- `c` names no trait op at all —
+                -- an ordinary (genuinely unbound) name, DEFER to the checker's own "unbound
+                -- variable" diagnostic (never guess, `.binopS`'s OWN "zero ⟹ not a trait op here"
+                -- convention, generalized to a name-call).
+            | candidates => do
+                -- mirror `.binopS`'s own A-normalization + dispatch shape (#41): the arg is VALUE-
+                -- position (a trait op's param, exactly like a ctor payload), lifted above the call
+                -- BEFORE dispatch resolves it — a `show(Cons(1, Nil))` shape needs `Cons(1, Nil)`'s
+                -- own ctor-intro to have ALREADY run so its type is concrete, not a hole.
+                let a' ← elabS env Γ a
+                let (Γ1, w, v) ← anfSplit Γ a' env.effects
+                match runInferV (synthSV Γ1 v) with
+                | .error _ => return w (.app (.var c) v)   -- unresolved arg type: defer, never guess
+                | .ok τ =>
+                    match candidates.filter (·.target == τ) with
+                    | [inst] =>
+                        match inst.knotName with
+                        | some kn => return w (.app (.force (.var kn)) v)
+                        -- unreachable post-#78-Amendment (every arity-≥1 impl now knot-defers,
+                        -- `buildEnv`'s own `.implD` arm) — kept total per this file's enumeration
+                        -- discipline, mirroring `dispatchInst`'s pre-#112 splice fallback (never
+                        -- actually taken today).
+                        | none    =>
+                            let fnTy : Ty := .tArr inst.targetTy inst.retTy
+                            return w (.app (.annotS (.lam inst.params.head! inst.body) fnTy) v)
+                    -- no candidate targets `τ` specifically: `c` is a trait op, but not for THIS
+                    -- carrier — DEFER (the checker's own "no impl of …" story fires downstream,
+                    -- exactly `.binopS`'s `dispatchInst`'s own `none` arm), never guess a candidate.
+                    | []      => return w (.app (.var c) v)
+                    -- 2+ candidates targeting the SAME resolved `τ`: genuinely ambiguous (two impls
+                    -- of the same trait op for one carrier — a duplicate-impl program shape) — teach
+                    -- the fix rather than silently pick one, the SAME refusal shape `.binopS`'s own
+                    -- multi-candidate hole-dispatch gives.
+                    | _ :: _ :: _ =>
+                        .error s!"'{c}': multiple impls provide this op for {foldDataTyOrRaw env.ctors env.gen τ} — the bare name is ambiguous"
   | Γ, .app f a     => do                     -- A-normalize a computation ARGUMENT (`($f)(n-1)`), #41
       let f' ← elabS env Γ f
       let a' ← elabS env Γ a
@@ -4561,18 +4617,24 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
                     throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
                   let retR ← resolveTy gen aliases (substSelf τR sig.retTy)
                   match od.params with
-                  -- #112: the 2-param arity `.binopS` actually dispatches — defer to a KNOT, never
-                  -- splice. `insts` still gets an entry (so `env.insts.find?` at the call site
-                  -- resolves the op NAME/target to something) but `body` is an inert placeholder;
-                  -- `knotName` is what dispatch actually uses (see `Inst`'s doc comment).
-                  | [p1, p2] =>
+                  -- #112 + #78 Amendment (ADR-0106): ANY arity ≥1 op is now dispatchable (`.binopS`
+                  -- for exactly 2, name-call dispatch — `elabS`'s `.app (.var c) a` arm — for any
+                  -- arity ≥1), so ANY arity ≥1 needs the SAME knot-deferral door a splice-based
+                  -- self- or backward-reference could never resolve (the #112 wall, now reachable at
+                  -- every arity dispatch can reach, not just 2 — `wrapPendingKnots`'s own doc
+                  -- comment has the generalized knot-shape). `insts` still gets an entry (so
+                  -- `env.insts.find?` at the call site resolves the op NAME/target to something)
+                  -- but `body` is an inert placeholder; `knotName` is what dispatch actually uses.
+                  | p1 :: rest =>
                       let kn := s!"#opknot{insts.length}"
                       insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, .var "#unreachable-knot-placeholder", some kn⟩]
-                      pendingKnots := pendingKnots ++ [⟨kn, τR, retR, p1, p2, od.body⟩]
-                  -- 0/1/3+-param ops: UNCHANGED pre-#112 behavior — pre-elaborate + splice. Safe:
-                  -- `.binopS` never dispatches this arity (its own match requires exactly `[p, q]`),
-                  -- so a splice-caused self-reference wall is structurally unreachable here.
-                  | _ =>
+                      pendingKnots := pendingKnots ++ [⟨kn, τR, retR, p1 :: rest, od.body⟩]
+                  -- 0-param ops: UNCHANGED pre-#112 behavior — pre-elaborate + splice. Safe: a
+                  -- 0-param op has no `Self`-typed param to knot-bind (nothing FOR the knot's own
+                  -- fixpoint to recurse ON), so a splice-caused self-reference wall is structurally
+                  -- unreachable — the SAME reasoning the old `[p1, p2]`-only comment gave, now
+                  -- narrowed to the one arity that genuinely has no knot shape to build.
+                  | [] =>
                       let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
                       let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], [], [], []⟩ bodyΓ od.body
                       insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody, none⟩]
@@ -5527,13 +5589,21 @@ def rewriteForwardRefMsg (prog : Prog) (msg : String) : String :=
 
 /-- Every `Surf` body attached to a `Decl` (mirrors `Bang.Query.declBodies`, upstream copy for the
 same cycle reason as `surfUsesVar` above): a `fnD`/`letD`/`letRecD`'s own body/rhs; `dataD`/
-`effectD` carry no `Surf`; `traitD`/`implD` are excluded too (a prelude entry is never referenced
-from a law/method body in v1's corpus, and `Prelude.bang` itself declares neither). -/
+`effectD` carry no `Surf`. `traitD`'s law bodies + `implD`'s op bodies are INCLUDED (#78 Amendment,
+ADR-0106) — the `Show` derive is the first case where a GENERATED `.implD`'s op body genuinely
+references a prelude entry (`intToStr`, `showFoldBody`'s own generated call): the doc comment's
+former claim ("a prelude entry is never referenced from a law/method body in v1's corpus") was true
+until this derive, not a standing invariant — `expandDerives` runs BEFORE `injectPrelude`'s
+mention-scan (`elabProg`'s pipeline order), so a derive-generated `.implD`'s body is ALREADY part of
+`p.decls` by the time this function walks it, and the mention-filter needs to see INTO it for the
+SAME reason it already sees into an ordinary `letD`/`letRecD` body. -/
 def declBodiesTC : Decl → List Surf
   | .fnD _ _ _ _ _ b => [b]
   | .letD _ _ e      => [e]
   | .letRecD _ _ e   => [e]
-  | .dataD ..  | .effectD .. | .traitD .. | .implD .. => []
+  | .traitD _ _ _ laws => laws.map (·.body)
+  | .implD _ _ ops     => ops.map (·.body)
+  | .dataD ..  | .effectD .. => []
 
 /-- Does `nm` occur anywhere in `p` — its trailing body OR any decl's own body (a name mentioned
 only inside another top-level `let`'s definition, not the trailing expression, must still trigger
@@ -5564,6 +5634,7 @@ def preludeProg : Prog := (Bang.Surface.parseProg preludeSrc).toOption.get!
 implicitly gets `use Prelude (name₁, name₂, …)` naming every one of these, with NO explicit
 `use`/`import` line needed. Precomputed once (not per-elaboration) since `preludeProg` is fixed. -/
 def preludePubNames : List String := preludeProg.pubNames
+#guard preludePubNames.contains "intToStr"
 
 /-- DESCRIPTIVE signatures for the reference doc (`docs/reference/language.md`'s Standard-library/
 Generic-prelude tables, `tools/gen-reference.py`'s `extract_prelude_section`) — hand-maintained
@@ -5581,6 +5652,7 @@ signature drifting from reality breaks a `#guard`, not silently. -/
 def preludeSigs : List (String × String) :=
   [ ("concat", "Str -> Str -> Str"),
     ("strLength", "Str -> Int"),
+    ("intToStr", "Int -> Str"),
     ("eq", "Str -> Str -> Unit + Unit"),
     ("mapOption", "(a -> b) -> Option a -> Option b"),
     ("mapResult", "(a -> b) -> Result e a -> Result e b"),
@@ -5790,6 +5862,59 @@ def ordFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar :
     (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
+/-- #78 Amendment (ADR-0106), the `Show` tier-1 derive: render ONE field to `Str`, TYPE-DIRECTED
+(unlike `Eq`/`Ord`'s uniform binop dispatch — `show` has no kernel δ-rule to fall back on, so the
+generator must know the field's OWN type to pick the right conversion). `Int` ⇒ `$intToStr`
+(`Prelude.bang`'s own entry); a field typed `.tName dataName` (the SAME data type — RAW, pre-
+resolution payload types, `expandOneDerive`'s `cs` runs BEFORE `buildEnv`, so a recursive field is
+STILL its declaring type's bare name, never `.tSelf` — ADR-0069's own "self ↦ the type's own name
+in payload position" convention) ⇒ `show(field)`, dispatching through the SAME name-call mechanism
+(#78 ruling (a)) this derive's OWN generated `impl` will register an `Inst` for — the knot-deferral
+generalization (ADR-0106) is EXACTLY what makes this self-call resolve (the #112 wall, closed for
+arity-1 ops this session). Any OTHER field type FAILS LOUD (never a silent/wrong render) — `Show`'s
+v1 scope is `Int` fields + same-type recursion, the two shapes every corpus carrier (`Triple`/
+`Quad`/`IntList`-shaped) actually has; a richer field-type vocabulary (`Str`/`Char`/nested `data`)
+is a natural, additive follow-on, not built here. -/
+def showFieldExpr (dataName fieldVar : String) (fieldTy : Ty) : Except String Surf :=
+  match fieldTy with
+  | .tInt              => .ok (.app (.force (.var "intToStr")) (.var fieldVar))
+  | .tName n           => if n == dataName then .ok (.app (.var "show") (.var fieldVar))
+                           else .error s!"cannot derive 'Show' for '{dataName}': field of type '{n}' \
+has no Show conversion (v1 supports Int fields and same-type recursion only)"
+  | _                  => .error s!"cannot derive 'Show' for '{dataName}': a constructor field's \
+type has no Show conversion (v1 supports Int fields and same-type recursion only)"
+
+/-- The `Show` fold body for ONE ctor: `"CtorName"` alone for a nullary ctor, else `"CtorName(" ++
+show(x0) ++ ", " ++ show(x1) ++ … ++ ")"` — `foldr` over the field-binder/type pairs, mirroring
+`eqArmBody`'s right-nested-`let`-chain shape but building a STRING (via `$concat`) instead of an
+AND-fold. `qualifyName dataName ctor` for the printed CTOR NAME too (not just the `matchD` arm
+head) — matching how a HAND-written `Show` would spell it once the corpus's own #128 migration is
+in force (a bare `Nil`/`Cons` is ambiguous under B012; the qualified spelling is always correct,
+the SAME "one spelling, always correct" rationale `eqFoldBody`'s own doc comment gives). -/
+def showArmBody (dataName ctor : String) (fields : List (String × Ty)) : Except String Surf := do
+  let qCtor := qualifyName dataName ctor
+  let exprs ← fields.mapM (fun (v, ty) => showFieldExpr dataName v ty)
+  let concat2 : Surf → Surf → Surf := fun a b => .app (.force (.var "concat")) (.pairS a b)
+  match exprs with
+  | []            => .ok (Bang.Surface.strToSurf qCtor.toList)
+  | first :: rest =>
+      -- fold the REST onto `first`, each earlier field's OWN comma prefixed as it's consumed left-
+      -- to-right (`foldl`, matching the ordinary L-to-R reading order a hand-written `show` would
+      -- produce), THEN wrap the whole thing with the ctor-name-and-open-paren prefix and the
+      -- closing paren suffix.
+      let joined := rest.foldl (fun acc e => concat2 acc (concat2 (Bang.Surface.strToSurf ", ".toList) e)) first
+      .ok (concat2 (concat2 (Bang.Surface.strToSurf (qCtor ++ "(").toList) joined) (Bang.Surface.strToSurf ")".toList))
+
+/-- The full `Show.show` fold over EVERY ctor of `cs` — a `matchD` (not `matchD`-of-`matchD`:
+`show` scrutinizes ONE value, not a diagonal pair) binding each ctor's OWN field names, feeding
+`showArmBody`. -/
+def showFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar : String) : Except String Surf := do
+  let arms ← cs.mapM (fun (ctor, tys) => do
+    let xs := deriveFieldNames "x" tys.length
+    let body ← showArmBody dataName ctor (xs.zip tys)
+    .ok (qualifyName dataName ctor, xs, body))
+  .ok (.matchD (.var pVar) (toDArms arms))
+
 /-- Expand ONE `(dataName, deriveList)` entry (`Prog.derivesFor`) into the `Decl`s it contributes:
 the generated `impl <Trait> for <dataName> { fn <op>(p, q) = <fold> }`, targeting whichever
 `trait Eq`/`trait Ord` is in scope (the user's own, or `Prelude.bang`'s canonical one, resolved by
@@ -5807,7 +5932,15 @@ def expandOneDerive (dataName : String) (cs : List (String × List Ty)) (deriveN
       pure [Decl.implD "Eq" (Ty.tName dataName) [⟨"eq", ["p", "q"], eqFoldBody dataName cs "p" "q"⟩]]
   | "Ord" =>
       pure [Decl.implD "Ord" (Ty.tName dataName) [⟨"lt", ["p", "q"], ordFoldBody dataName cs "p" "q"⟩]]
-  | other => throw s!"unknown derive '{other}' for '{dataName}' — v1 supports only 'Eq'/'Ord' (ADR-0097 tier 1)"
+  -- #78 Amendment (ADR-0106), tier-2 unlocked: `Show` was STOPPED honestly (docs/notes/stdlib-
+  -- prelude-survey.md — `env.insts` verified consulted exclusively at the `.binopS` arm) until the
+  -- operator ruling extended dispatch to name-calls; the fold generator itself reuses this file's
+  -- OWN arity-generalization (`eqArmBody`/`ordArmBody`'s `foldr` pattern, #144) — the derive-fold
+  -- generalization work and the dispatch-extension work now compose, exactly as anticipated.
+  | "Show" => do
+      let body ← showFoldBody dataName cs "p"
+      pure [Decl.implD "Show" (Ty.tName dataName) [⟨"show", ["p"], body⟩]]
+  | other => throw s!"unknown derive '{other}' for '{dataName}' — v1 supports 'Eq'/'Ord'/'Show'"
 
 /-- **The derive handler's PUBLIC entry (#109, ADR-0097; #117 landed the trait-sourcing decision).**
 Expand every `Prog.derivesFor` entry into its generated `impl` decls, APPENDING them AFTER
@@ -5847,6 +5980,11 @@ instantiation you need."
             newDecls := newDecls ++ ds
       | some _ => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
     pure { p with decls := p.decls ++ newDecls }
+#guard (match Bang.Surface.parseProg "data Triple = T(Int, Int, Int) deriving (Show)\nlet main = 3" >>= expandDerives with
+        | .ok p => p.decls.any (fun d => match d with
+            | .implD "Show" _ ops => ops.any (fun o => surfUsesVar "intToStr" o.body)
+            | _ => false)
+        | .error _ => false)
 
 /-! ### Validation ⑨m — #117: the trait-prelude migration's own regression net, part 1 (part 2,
 the `checkProg`/`runTypedYieldsInt`-dependent derive-only scenario, lives further down where those
@@ -5951,10 +6089,26 @@ TRUE mutual/forward impl dispatch needs `buildLetRecMulti`'s N-way tuple-of-thun
 of `buildLetRec` (a separate, in-flight lane's scope — not built or touched here). -/
 def wrapPendingKnots (knots : List PendingOpKnot) (body : Surf) : Surf :=
   knots.foldr (fun k acc =>
-      let domTy : Ty := .tProd k.targetTy k.targetTy
-      let knotTy : Ty := .tArr domTy k.retTy
-      let knotFun : Surf := .lam "#pq" (.splitS k.p1 k.p2 (.var "#pq") k.rawBody)
-      Surf.letRecS k.knotName knotTy knotFun acc)
+      match k.params with
+      -- 1-ary (#78 Amendment, ADR-0106): NO tupling at all — a bare `T -> RetTy` knot, the param
+      -- binds DIRECTLY (`show(x)` ↦ `fun x => rawBody`), matching `bindPayload`'s own `[b] ↦ .lett`
+      -- (arity-1, no product to destructure) precedent.
+      | [p1] =>
+          let knotTy : Ty := .tArr k.targetTy k.retTy
+          Surf.letRecS k.knotName knotTy (.lam p1 k.rawBody) acc
+      -- 2+-ary: right-nested TUPLED domain (`prodOfTys`'s own convention — `T * T` for 2, `T *
+      -- (T * T)` for 3, …), destructured via `bindPayload`'s SAME N-ary `.splitS` chain — the
+      -- calling convention this knot's callers (`.binopS` dispatch for arity 2, name-call dispatch
+      -- for any arity) build their `.pairS`-nested argument to match.
+      | _ :: _ :: _ =>
+          let domTy : Ty := prodOfTys (List.replicate k.params.length k.targetTy)
+          let knotTy : Ty := .tArr domTy k.retTy
+          let knotFun : Surf := .lam "#pq" (bindPayload k.params "#pq" k.rawBody)
+          Surf.letRecS k.knotName knotTy knotFun acc
+      -- arity 0: unreachable (`buildEnv`'s own `.implD` arm only ever builds a `PendingOpKnot` for
+      -- `od.params ≠ []` — a 0-param op has no `Self`-typed param to knot-bind and stays on the
+      -- pre-#112 splice path) — kept total per this file's own enumeration discipline.
+      | [] => acc)
     body
 
 /-- Elaborate a whole program: auto-`use` the prelude module (ADR-0098), build the elaboration env,
@@ -7865,6 +8019,53 @@ def alwaysNoneTwoInstProg : String := "let rec always7 : a -> Option b = fun ign
 #guard (match checkProg "let rec passThroughOpt : Option a -> Option a = fun o => o in ($passThroughOpt (Some(3) : Option Int) : Option Char)" with
         | .error m => (m.splitOn "conflicting instantiations for type variable").length > 1
         | .ok _    => false)
+
+/-! ### Validation ⑨q — #78 OPERATOR RULING (a), ADR-0106: trait-op NAME-CALL dispatch. An
+application whose head names a trait op consults `env.insts` exactly as `.binopS` does (the SAME
+one-candidate-pins-the-hole shape, `elabS`'s `.app (.var c) a` arm). LEXICAL SHADOWING: a user's
+own binding of the name wins UNCONDITIONALLY — `c` resolves through `Γ` FIRST, only an unbound head
+entering dispatch. RED before this fix (confirmed live pre-fix, `error: unbound variable 'showIt'`
+on a bare name-call — #78's own diagnosis). Self-recursion through the SAME name-call mechanism
+needed the #112 knot door generalized past its old arity-2-only shape (`PendingOpKnot`/
+`wrapPendingKnots`, both N-ary now) — witnessed on a recursive carrier below. -/
+def showItBoxProg : String :=
+  "data Box = B(Int) trait ShowT { fn showIt(x) -> Int } impl ShowT for Box { fn showIt(x) = match x { B(n) -> n } } "
+#guard runTypedYieldsInt 800 (showItBoxProg ++ "showIt(B(42))") 42
+-- lexical shadowing: a user's OWN `let rec` of the same name wins, unconditionally — dispatch
+-- never even considers `env.insts` once `Γ` already binds `c` (`.binopS`'s own "no implicit
+-- capture" precedent, ADR-0005/0006, generalized to a name-call).
+#guard runTypedYieldsInt 800
+  (showItBoxProg ++ "let rec showIt : Int -> Int = fun x => x + 1000 in ($showIt) 5") 1005
+-- self-recursion on a RECURSIVE carrier — the #112 knot door, now reachable at arity 1 (previously
+-- unreachable: `.binopS` only ever dispatched exactly 2, so a 1-ary op's self-call always hit the
+-- pre-#112 splice wall; the SAME wall a hand-written `impl Eq` calling ANOTHER top-level `let rec`
+-- from its OWN 2-arg op body ALSO still hits — confirmed live, pre-existing, unrelated to THIS fix,
+-- reported separately (see this session's own STOP-and-SHOW note) — a self-call within the SAME
+-- knot (no OTHER top-level binding needed) is the one shape this generalization closes).
+def sum1RecProg : String :=
+  "data MyList = MNil | MCons(Int, MyList) trait Sum1 { fn total(x) -> Int } " ++
+  "impl Sum1 for MyList { fn total(x) = match x { MNil -> 0, MCons(h, t) -> h + total(t) } } "
+#guard runTypedYieldsInt 1500 (sum1RecProg ++ "total(MCons(1, MCons(2, MCons(3, MNil))))") 6
+
+/-! ### Validation ⑨r — #78 Amendment, `deriving (Show)` — the tier-1 unlock the survey (docs/
+notes/traits-prelude-survey.md) named "GATED #78", now closed for its ONE fully-working shape: an
+ALL-NULLARY carrier (no ctor ever needs a field-rendering call at all, so the generated `impl`'s
+KNOT body references NOTHING outside itself — the one shape immune to the wall below). A carrier
+with EVEN ONE non-nullary ctor fails to ELABORATE AT ALL (not just at the non-nullary call site —
+`show`'s ONE knot covers every ctor arm in a single `matchD`, so a `$concat`/`intToStr` reference
+ANYWHERE in that fold poisons the WHOLE knot, confirmed live: `data Wrap = W(Wrap) | End deriving
+(Show)`, calling ONLY `show(End)` — the nullary arm — still fails `unbound variable 'concat'`,
+because `W(Wrap)`'s SIBLING arm needs it). ROOT CAUSE, confirmed on a HAND-WRITTEN `impl Eq`
+totally unrelated to `Show`/derive machinery (`impl Eq for Box { fn eq(a,b) = $eq "x" "x" }` fails
+`unbound variable 'eq'`): `wrapPendingKnots`'s knot is `letRecS`-wrapped OUTSIDE the program's own
+top-level let-chain (`foldedBody`, `elabProg`), so a knot's OWN body can never see ANOTHER top-level
+binding, prelude or user — a #112-vintage scoping gap, invisible until a knot's body needed to call
+something besides itself (`Eq`/`Ord` derive bodies never do; `Show`'s field-rendering is the FIRST
+derive that does). STOP-and-SHOW, not fixed here: `wrapPendingKnots`'s wrap-direction relative to
+`foldedBody` is `elabProg`'s core binder-nesting order — kernel-adjacent by this file's own
+escalation rule, not a Frontend-leaf-scoped edit to make under time pressure. -/
+#guard runTypedYieldsInt 800
+  ("data Color = Red | Green | Blue deriving (Show) " ++ "$strLength (show(Red))") 9
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
