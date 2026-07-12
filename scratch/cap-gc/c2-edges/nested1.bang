@@ -1,0 +1,4 @@
+state 100 in
+  let a = (state 5 in get) in
+  let b = get in
+  a + b
