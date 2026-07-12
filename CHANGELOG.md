@@ -259,5 +259,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **backend** — Euclidean division on both emit paths — compiled path now matches the oracle (#132) (`5f566fd9`)
 - **frontend** — #130 — handler-clause op names accept reserved keywords, reach B002 (`563badd4`)
 - **frontend** — #139 — knot binder-nesting so trait-op bodies see top-level bindings (ADR-0106 §5) (`2c532583`)
+- **frontend** — #135 — match on an application-spine scrutinee now parses (`a6e9eb9f`)
 
 <!-- END GENERATED changelog -->

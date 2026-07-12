@@ -74,7 +74,7 @@ graph TD
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
-    Witness_LawTest["Witness.LawTest<br/>657L · fan-in 0"]
+    Witness_LawTest["Witness.LawTest<br/>693L · fan-in 0"]
     Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_ScopedCapWitness["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
@@ -143,7 +143,7 @@ graph TD
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.GradePolyReturner` | ? | 165 | 0 |
 | `Witness.LWRegress` | ? | 100 | 0 |
-| `Witness.LawTest` | ? | 657 | 0 |
+| `Witness.LawTest` | ? | 693 | 0 |
 | `Witness.ProofExport` | ? | 372 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.ScopedCapWitness` | ? | 141 | 0 |
