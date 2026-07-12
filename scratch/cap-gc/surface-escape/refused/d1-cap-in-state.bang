@@ -1,0 +1,8 @@
+effect Log { emit : Int -> Int }
+let outer =
+  handle
+    (state 0 as box in
+      let z = put({ logger.emit(5) }) in
+      $get)
+  with Log as logger { emit(x) => x }
+in $($outer)

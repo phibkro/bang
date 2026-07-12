@@ -287,6 +287,25 @@ user can write and the typechecker blesses). It is EMIT-path-only today (`bang r
 `--compiled` both fail loud correctly), but "the compiled-wasm binary silently miscompiles legal
 escape programs" is real and demonstrable.
 
+**The full 5-attempt experiment (bounds the reachable escape surface).** Per the manager's brief,
+the named candidate shapes, each verdict machine-cited (`scratch/cap-gc/surface-escape/`):
+
+| # | shape | `bang check` | oracle | emit → wasmtime |
+|---|---|---|---|---|
+| b3 | `let leaked = state 0 in { get } in $leaked` (STATE) | **ok** | escapedCap | **0, rc=0** (miscompile) |
+| c1 | `handle ({logger.emit(7)}) with Log …` forced outside (CUSTOM) | **ok** | escapedCap | **7, rc=0** (miscompile) |
+| d2 | `handle ({sched.bit(1)}) with Sched …` forced outside (the dst-rounds idiom) | **ok** | escapedCap | **0, rc=0** (miscompile) |
+| d1 | cap-in-state: `put({logger.emit(5)})` then read outside | **REFUSED** `type mismatch` | — | — (path closed) |
+| d3 | return a bare `Cap` then perform: `$(leak.emit(3))` | **REFUSED** `not a value` (TC:1042) | — | — (path closed) |
+
+**Bound:** the reachable escape shape is `let leaked = <handle/state returning a cap-capturing
+thunk> in <force outside>` — three distinct effect kinds (state, custom Log, Sched) ALL reach
+`escapedCap` and ALL silently miscompile. Two attempts to escape by a DIFFERENT route (storing the
+cap in a state cell; returning a bare cap value) are structurally refused by the checker (the
+refusing diagnostics recorded in `scratch/cap-gc/surface-escape/REFUSED-attempts.md`). So the miscompile is not a
+one-off shape — it is the general "thunk captures a cap, forced past its handler" pattern, which the
+type system permits (scoped-cap types are post-v1, ADR-0063).
+
 **Consequence for the slice order:** C2 (the escape stamp) is NOT the "riskier second slice" — it is
 the FIX for a tag-gating miscompile, and should go FIRST. The §8 bullet's C0-first proposal assumed
 escape was latent; it is not. Revised recommendation: **C2 (escape stamp, close the miscompile,

@@ -1,0 +1,4 @@
+effect Sched { bit : Int -> Int }
+let leaked =
+  handle ({ sched.bit(1) }) with Sched as sched { bit(s) => 0 }
+in $leaked
