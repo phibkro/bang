@@ -90,8 +90,9 @@ Run a program from a file (there are ready examples in `examples/`):
 
 Other subcommands: `bang repl` (interactive), `bang fmt <file>` (canonical
 form), `bang check <file>` (type-check only, `--json` for structured
-diagnostics), `bang test <file>` (law runner). `bang --help` lists flags and
-exit codes.
+diagnostics), `bang test <file>` (law runner), `bang build <file>` (compile to
+a runnable `.wasm` — the distribution artifact; needs `wasm-tools`). `bang
+--help` lists flags and exit codes.
 
 **Engines (v0.1.0).** The default engine is the *proven environment machine*
 (ADR-0094): its agreement with the kernel semantics is a machine-checked
