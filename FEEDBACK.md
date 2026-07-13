@@ -10,6 +10,7 @@
 | F-013 | The first tracked-only projection mixed index membership with worktree existence, admitting intent-to-add files and omitting unstaged-deleted Markdown. | `git add -N` and `git ls-files --deleted` review fixtures; `tools/check-refs.py:tracked_paths`. | Local fitness can still disagree with the next clean checkout in two ordinary dirty-tree states. |
 | F-014 | The new self-test exercised only synthetic sets and was invoked as a second indistinguishable fitness leg. | `tools/check-refs.py:self_test`; duplicate `check-refs.py` entries in generated `.claude/codebase-maintenance.md`. | The exact Git/source-scan regression was untested while gate documentation became misleading. |
 | F-015 | Adding argparse replaced the checker's positional repository-root interface with `--root`. | `python3 tools/check-refs.py /tmp/lang-bang-doc-research` exits 2 on the first draft. | Existing wrappers or contributors using the prior interface break unnecessarily. |
+| F-016 | The pathspec-scoped fix commit excluded the CHANGELOG file that the pre-commit hook regenerated and staged, so the pushed checkout remained two commits behind in CI. | Verify run `29265743791`; `tools/git-hooks/pre-commit:77-94`; commit `47e1096f`. | A locally green hook can still publish a red commit when generated side effects are outside the explicit commit pathspec. |
 
 ## Lifecycle
 

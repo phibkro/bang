@@ -264,5 +264,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — #135 — match on an application-spine scrutinee now parses (`a6e9eb9f`)
 - **hooks** — pre-push WIP guard — marker-anchored, not substring (its own prose title was the first false positive) (`5312ec04`)
 - **tooling** — close release and docs false-greens (`265c3e67`)
+- **tooling** — make reference gate checkout-faithful (`47e1096f`)
 
 <!-- END GENERATED changelog -->
