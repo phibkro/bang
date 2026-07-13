@@ -24,8 +24,11 @@ while read -r _local_ref local_sha remote_ref remote_sha; do
   else
     range="$remote_sha..$local_sha"
   fi
+  # Marker-anchored, not substring: real WIP commits PREFIX the subject
+  # ("WIP(d5-s1): …"); prose mentions ("the pre-push WIP guard") must pass.
+  # %h precedes the subject, hence the "hash + start-of-subject" anchor.
   bad=$(git log --format='%h %s' "$range" 2>/dev/null \
-        | grep -iE 'WIP|DO[ -]NOT[ -]MERGE' || true)
+        | grep -iE '^[0-9a-f]+ (WIP\b|\[?WIP\]?:)|DO[ -]NOT[ -]MERGE' || true)
   if [ -n "$bad" ]; then
     echo "❌ pre-push: WIP/DO-NOT-MERGE commit(s) would land on origin/main:" >&2
     echo "$bad" | sed 's/^/    /' >&2
