@@ -1,68 +1,139 @@
-# Core implementation — architectural overview
+# Core implementation — current architecture
 
-> The map of *what we've built and how the pieces couple* — so we can reason about which decisions
-> reinforce each other and which work against each other. Code is the source of truth; this is the
-> approximation that makes the coupling **visible** (the thing whose absence let ADR-0053's cap bug hide).
-> Generated-where-possible, hand-written for the interaction judgement. Links to ADRs/refs, never restates them.
+> **Summary:** BANG has one graded-CBPV semantic core observed through several representations. The source oracle defines behavior; the calculated machine is the executable compiler specification; Wasm 3.0 is the target; each arrow carries its own proof or differential-test status.
 
-## 1. The pipeline (ADR-0016, architecture in force)
+Read this page to answer three questions:
 
+1. Which representation or engine am I looking at?
+2. What evidence connects it to the source meaning?
+3. Which tier owns a change, and what may that tier import?
+
+Architecture decisions remain authoritative: [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) fixes the two-hop shape, [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) revises the target to Wasm 3.0, and [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md) separates source equivalence from compilation simulation.
+
+## 1. One meaning, several representations
+
+```mermaid
+flowchart LR
+  S[Source text] -->|tested frontend| C[Graded-CBPV Comp]
+  C -->|kernel semantics| O[Source.eval oracle]
+  C -->|state reification| D[evalD]
+  D -->|calculation| VM[CalcVM compile + exec]
+  D -->|environments + readback proof| E[evalE default engine]
+  VM -->|annotated forward simulation| W[Formal Wasm 3.0 machine]
+  C -->|text emission| G[WasmGC / WAT]
+  G -->|differential test| R[Wasmtime]
 ```
-  source  ──►  graded-CBPV semantics  ──►  CalcVM (Bahr–Hutton)  ──►  WasmFX (Benton–Hur LR)
-              the executable spec          calculated machine        verified compiler output
+
+**Reading the diagram:** solid arrows are transformations or execution paths. The label names the evidence expected at that boundary; it does not imply that every arrow has the same verification status.
+
+| Representation | Role | Evidence boundary |
+|---|---|---|
+| Surface parser, modules, inference, elaboration | Human/agent-facing language → monomorphic `Comp` | Tested superset: corpus, structured diagnostics, and differential engine tests |
+| `Source.eval` | Substitution-based CK kernel semantics; the behavioral oracle | Verified core in `Bang/Core/Semantics*` and public theorem façade `Bang/Spec.lean` |
+| `evalD` | Same semantics with handler state reified into explicit stores | `Bang.CalcVM.evalD_agrees_source` |
+| `compile` + `exec` | Calculated instruction machine; executable compiler specification | `Bang.CalcVM.compile_correct` composed with `evalD_agrees_source` |
+| `evalE` | Environment/closure representation used by the default CLI engine | Readback agreement with `evalD`; differential example battery |
+| formal Wasm target (`Bang/Backend/Wasm.lean`) | Lean model used for compiler simulation | `compile_forward_sim`, an annotated one-way simulation |
+| concrete WasmGC emitter (`Bang/Backend/WasmEmit.lean`) | Emits real WAT/WasmGC executed by Wasmtime | Tested stratum: real-engine differential harnesses against the source result |
+| host IO driver (`Main.lean`) | Grants, records, and replays ambient effects outside the pure evaluators | Tested boundary; least-authority grants and replay traces, not a kernel primitive |
+
+The namespace `Wasmfx` survives in parts of the formal Lean model for historical reasons. It does **not** make WasmFX the current product target. ADR-0059 makes stock Wasm 3.0 primary; WasmFX is a future fast path for the post-v1 general-resumption slot only.
+
+<!-- BEGIN GENERATED architecture-assertions (just architecture-assertions) — do not hand-edit -->
+### Architecture assertions
+
+_Generated from Lean source, module paths, and accepted ADRs. This is a reviewable projection, not a second architecture authority._
+
+| Fact | Current value | Authority |
+|---|---|---|
+| Compiler target | **Wasm 3.0**, grade-directed; WasmFX is only a future general-case fast path | [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) |
+| Source equivalence | binary biorthogonal LR: `lr_sound`, `lr_fundamental` | [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md), `Bang/Spec.lean`, `Bang/Audit.lean` |
+| Compilation correctness | annotated forward simulation: `compile_forward_sim` | [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md), `Bang/Spec.lean`, `Bang/Audit.lean` |
+| CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases compiled | `Main.lean:Engine`, `Main.lean:parseEngine` |
+| Module graph | 58 modules · 116 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | `tools/import_facts.py` over `Bang/**/*.lean` |
+| Architecture lineage | ADR-0016 two-hop shape, target revised by ADR-0059 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) |
+<!-- END GENERATED architecture-assertions -->
+
+## 2. Proof arrows are different claims
+
+```mermaid
+flowchart LR
+  P1[Source program P] <-->|binary LR / contextual equivalence| P2[Source program Q]
+  S[Source execution] -->|annotated forward simulation| T[Compiled target execution]
 ```
 
-Two verification spines ride this: the **calculated VM** (`compile, Code, exec` derived from `eval`) and
-the **step-indexed logical relation** (`lr_sound`/`lr_fundamental`, the Compat layer) that backs
-`compile_forward_sim`. Both are checked against `exec` (invariant #1: proof rides the reference).
+**Reading the diagram:** the upper arrow compares two source programs in arbitrary contexts; the lower arrow preserves one source execution into one target execution.
 
-## 2. The module graph — the "V" (enforced by `tools/arch-check.sh`)
+| Question | Method | Headline theorems |
+|---|---|---|
+| Are two source programs contextually indistinguishable? | Binary, step-indexed, biorthogonal logical relation | `lr_fundamental`, `lr_sound`, `zero_usage_erasable` |
+| Does compiling a source success preserve its value? | One-way annotated forward simulation | `compile_forward_sim` |
+
+Do not describe compiler correctness as “the Benton–Hur LR.” The LR and simulation are complementary, not interchangeable; ADR-0035 is the decision record.
+
+## 3. The dependency V
+
+Dependencies point inward at Core even though program data flows Frontend → Core → Backend.
+
+| Tier | Owns | Dependency rule |
+|---|---|---|
+| Core | IR, rows/grades, typing, kernel semantics, syntactic soundness | Imports no outer tier |
+| Frontend | Surface syntax, modules, inference/elaboration, formatter, diagnostics, query/rewrite/lint | May import Core; never Backend |
+| Backend | `evalD`, calculated machines, environment machine, formal Wasm, concrete emitter | May import Core; never Frontend |
+| Meta | Binary logical relations and contextual-equivalence proofs | Consumes the lower V |
+| Witness | Executable regressions, countermodels, fuzzers, law/proof-export evidence | Consumes lower tiers; is not imported by them |
+| Reify | Standalone calculated-machine proof laboratory | Consumer tier, not the production CalcVM pipeline |
+| Apex | `Spec`, `Audit`, `Distribution`, `Examples` | Public façade and gates; may import all tiers |
+
+`tools/import_facts.py` is the single parser/classifier for the graph and the dependency fitness check. `tools/arch-check.py` enforces the V. Unknown tiers and missing internal imports fail rather than silently falling into a default layer.
 
 <!-- BEGIN GENERATED import-graph (just import-graph) — do not hand-edit -->
-_Generated by `tools/gen-import-graph.py` from the `import Bang.*` edges. Node label = `module (LOC · fan-in)`. Tiers are the restructure target (task #17); files are flat in `Bang/` until the post-reshape move._
+_Generated by `tools/gen-import-graph.py` through `tools/import_facts.py` from current `import Bang.*` and `public import Bang.*` edges. Node label = `module (LOC · fan-in)`; an arrow `A → B` means A imports B._
 
 ```mermaid
 graph TD
-  subgraph tier_Frontend["Frontend — text → IR"]
-    Frontend_NamedCore["Frontend.NamedCore<br/>386L · fan-in 0"]
-  end
-  subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
-    Backend_AbstractMachine["Backend.AbstractMachine<br/>6871L · fan-in 0"]
-    Backend_EnvMachine["Backend.EnvMachine<br/>3624L · fan-in 0"]
-    Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>144L · fan-in 0"]
-    Backend_U5bComplete["Backend.U5bComplete<br/>1649L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 0"]
-    Backend_WasmEmit["Backend.WasmEmit<br/>1757L · fan-in 0"]
-    Core_CapCoh["Core.CapCoh<br/>566L · fan-in 0"]
-    Core_EffectRow["Core.EffectRow<br/>203L · fan-in 0"]
-    Core_Freshness["Core.Freshness<br/>833L · fan-in 0"]
-    Core_Grade["Core.Grade<br/>84L · fan-in 0"]
-    Core_IR["Core.IR<br/>440L · fan-in 0"]
-    Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
-    Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>621L · fan-in 0"]
-    Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
-    Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 0"]
-    Core_Soundness["Core.Soundness<br/>3400L · fan-in 0"]
-    Core_Typing["Core.Typing<br/>510L · fan-in 0"]
-    Examples["Examples<br/>510L · fan-in 0"]
-    Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>320L · fan-in 0"]
-    Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>1139L · fan-in 0"]
+  subgraph tier_Frontend["Frontend — text → typed core"]
+    Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 1"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>320L · fan-in 1"]
+    Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 1"]
+    Frontend_Format["Frontend.Format<br/>1139L · fan-in 4"]
     Frontend_Lint["Frontend.Lint<br/>289L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>899L · fan-in 0"]
+    Frontend_NamedCore["Frontend.NamedCore<br/>386L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>899L · fan-in 3"]
     Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3406L · fan-in 1"]
+    Frontend_Surface["Frontend.Surface<br/>3406L · fan-in 7"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>9490L · fan-in 0"]
-    Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
-    Meta_LR["Meta.LR<br/>1998L · fan-in 0"]
-    Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 0"]
-    Reify_CalcReifyRef["Reify.CalcReifyRef<br/>164L · fan-in 0"]
-    Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
-    Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>9490L · fan-in 5"]
+  end
+  subgraph tier_Core["Core — IR · typing · semantics · soundness"]
+    Core_CapCoh["Core.CapCoh<br/>566L · fan-in 1"]
+    Core_EffectRow["Core.EffectRow<br/>203L · fan-in 1"]
+    Core_Freshness["Core.Freshness<br/>833L · fan-in 5"]
+    Core_Grade["Core.Grade<br/>84L · fan-in 11"]
+    Core_IR["Core.IR<br/>440L · fan-in 7"]
+    Core_Semantics["Core.Semantics<br/>25L · fan-in 16"]
+    Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 2"]
+    Core_Semantics_Eval["Core.Semantics.Eval<br/>621L · fan-in 3"]
+    Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 1"]
+    Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 2"]
+    Core_Soundness["Core.Soundness<br/>3400L · fan-in 10"]
+    Core_Typing["Core.Typing<br/>510L · fan-in 7"]
+  end
+  subgraph tier_Backend["Backend — calculated machines → Wasm 3.0"]
+    Backend_AbstractMachine["Backend.AbstractMachine<br/>6871L · fan-in 8"]
+    Backend_EnvMachine["Backend.EnvMachine<br/>3624L · fan-in 0"]
+    Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>143L · fan-in 1"]
+    Backend_U5bComplete["Backend.U5bComplete<br/>1649L · fan-in 1"]
+    Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 4"]
+    Backend_WasmEmit["Backend.WasmEmit<br/>1757L · fan-in 1"]
+  end
+  subgraph tier_Meta["Meta — contextual equivalence"]
+    Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 1"]
+    Meta_LR["Meta.LR<br/>1998L · fan-in 2"]
+  end
+  subgraph tier_Witness["Witness — executable evidence and counterexamples"]
+    Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 1"]
     Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>261L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
@@ -71,10 +142,10 @@ graph TD
     Witness_D5ParamHandlerWitness["Witness.D5ParamHandlerWitness<br/>161L · fan-in 0"]
     Witness_EffectTraceWitness["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
-    Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
+    Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 2"]
     Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
-    Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
-    Witness_LawTest["Witness.LawTest<br/>693L · fan-in 0"]
+    Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 1"]
+    Witness_LawTest["Witness.LawTest<br/>693L · fan-in 1"]
     Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_ScopedCapWitness["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
@@ -82,271 +153,226 @@ graph TD
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
     Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
-  subgraph tier_Apex["Apex — verification spine + gate"]
+  subgraph tier_Reify["Reify — calculated-machine proof laboratory"]
+    Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 2"]
+    Reify_CalcReifyRef["Reify.CalcReifyRef<br/>164L · fan-in 1"]
+    Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
+  end
+  subgraph tier_Apex["Apex — public theorem façade · audit · distribution"]
     Audit["Audit<br/>69L · fan-in 0"]
     Distribution["Distribution<br/>67L · fan-in 0"]
-    Spec["Spec<br/>358L · fan-in 0"]
+    Examples["Examples<br/>510L · fan-in 0"]
+    Spec["Spec<br/>358L · fan-in 2"]
   end
+  Audit --> Backend_AbstractMachine
+  Audit --> Backend_Rung5ProofGrade
+  Audit --> Frontend_Surface
+  Audit --> Spec
+  Backend_AbstractMachine --> Core_CapCoh
+  Backend_AbstractMachine --> Core_Semantics
+  Backend_EnvMachine --> Backend_AbstractMachine
+  Backend_EnvMachine --> Core_Semantics
+  Backend_Rung5ProofGrade --> Backend_Wasm
+  Backend_Rung5ProofGrade --> Backend_WasmEmit
+  Backend_U5bComplete --> Backend_AbstractMachine
+  Backend_U5bComplete --> Core_Freshness
+  Backend_Wasm --> Backend_AbstractMachine
+  Backend_Wasm --> Backend_U5bComplete
+  Backend_Wasm --> Core_Freshness
+  Backend_Wasm --> Core_IR
+  Backend_Wasm --> Core_Semantics
+  Backend_Wasm --> Core_Typing
+  Backend_WasmEmit --> Backend_AbstractMachine
+  Core_CapCoh --> Core_Freshness
+  Core_Freshness --> Core_Soundness
+  Core_IR --> Core_EffectRow
+  Core_Semantics --> Core_Semantics_Dispatch
+  Core_Semantics --> Core_Semantics_Eval
+  Core_Semantics --> Core_Semantics_Invariants
+  Core_Semantics --> Core_Semantics_Subst
+  Core_Semantics_Dispatch --> Core_Semantics_Subst
+  Core_Semantics_Eval --> Core_Semantics_Dispatch
+  Core_Semantics_Invariants --> Core_Semantics_Eval
+  Core_Semantics_Subst --> Core_IR
+  Core_Semantics_Subst --> Core_Typing
+  Core_Soundness --> Core_IR
+  Core_Soundness --> Core_Semantics
+  Core_Soundness --> Core_Typing
+  Core_Typing --> Core_IR
+  Distribution --> Spec
+  Examples --> Backend_AbstractMachine
+  Examples --> Frontend_Surface
+  Examples --> Frontend_TypeCheck
+  Frontend_Annotate --> Frontend_Query
+  Frontend_Diagnostics --> Frontend_DiagCodes
+  Frontend_Diagnostics --> Frontend_TypeCheck
+  Frontend_Format --> Frontend_Surface
+  Frontend_Lint --> Frontend_Format
+  Frontend_Lint --> Frontend_Query
+  Frontend_NamedCore --> Core_Semantics
+  Frontend_Query --> Frontend_Diagnostics
+  Frontend_Rewrite --> Frontend_Annotate
+  Frontend_Rewrite --> Frontend_Format
+  Frontend_Rewrite --> Frontend_Query
+  Frontend_Surface --> Core_Semantics
   Frontend_Surface_PropTest --> Frontend_Surface
+  Frontend_Surface_Trait --> Frontend_Surface
+  Frontend_TypeCheck --> Core_Grade
+  Frontend_TypeCheck --> Core_Typing
+  Frontend_TypeCheck --> Frontend_Format
+  Frontend_TypeCheck --> Frontend_Surface
+  Meta_BinaryLR --> Core_IR
+  Meta_BinaryLR --> Core_Semantics
+  Meta_BinaryLR --> Core_Soundness
+  Meta_BinaryLR --> Core_Typing
+  Meta_BinaryLR --> Meta_LR
+  Meta_LR --> Core_IR
+  Meta_LR --> Core_Semantics
+  Meta_LR --> Core_Typing
+  Reify_CalcReifyRef --> Reify_CalcReify
+  Reify_CalcReifySim --> Reify_CalcReify
+  Reify_CalcReifySim --> Reify_CalcReifyRef
+  Spec --> Backend_Wasm
+  Spec --> Core_IR
+  Spec --> Core_Semantics
+  Spec --> Core_Soundness
+  Spec --> Core_Typing
+  Spec --> Meta_BinaryLR
+  Spec --> Meta_LR
+  Witness_AgreeOutcome --> Backend_AbstractMachine
+  Witness_BinopTyping --> Core_Grade
+  Witness_BinopTyping --> Core_Soundness
+  Witness_BoccRegress --> Core_Grade
+  Witness_BoccRegress --> Core_Soundness
+  Witness_CapEscapeWitness --> Core_Grade
+  Witness_CapEscapeWitness --> Core_Semantics
+  Witness_CapEscapeWitness --> Witness_LWRegress
+  Witness_CtrGradeRefute --> Core_Grade
+  Witness_CtrGradeRefute --> Core_Soundness
+  Witness_CustomStage1Refute --> Backend_Wasm
+  Witness_D5ParamHandlerWitness --> Core_Grade
+  Witness_D5ParamHandlerWitness --> Core_Semantics
+  Witness_EffectTraceWitness --> Core_Semantics_Eval
+  Witness_ElabFuzz --> Frontend_Format
+  Witness_ElabFuzz --> Frontend_Surface
+  Witness_ElabFuzz --> Frontend_TypeCheck
+  Witness_ElabFuzz --> Witness_Fuzz
+  Witness_Fuzz --> Backend_AbstractMachine
+  Witness_Fuzz --> Witness_AgreeOutcome
+  Witness_GradePolyReturner --> Core_Grade
+  Witness_GradePolyReturner --> Core_Soundness
+  Witness_LWRegress --> Core_Grade
+  Witness_LWRegress --> Core_Semantics
+  Witness_LawTest --> Core_Semantics
+  Witness_LawTest --> Frontend_TypeCheck
+  Witness_LawTest --> Witness_Fuzz
+  Witness_ProofExport --> Core_Semantics
+  Witness_ProofExport --> Frontend_TypeCheck
+  Witness_ProofExport --> Witness_LawTest
+  Witness_ReturnEscapeReach --> Core_Grade
+  Witness_ReturnEscapeReach --> Core_Soundness
+  Witness_ScopedCapWitness --> Core_Grade
+  Witness_ScopedCapWitness --> Core_Soundness
+  Witness_SendableFragment --> Core_Freshness
+  Witness_SendableFragment --> Core_Semantics
+  Witness_StateEscapeWitness --> Core_Grade
+  Witness_StateEscapeWitness --> Core_Semantics
+  Witness_StateEscapeWitness --> Core_Soundness
+  Witness_VcapFreeRefute --> Backend_Wasm
+  Witness_VcapFreeRefute --> Core_Freshness
 ```
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 3406 | 1 |
+| `Core.Semantics` | Core | 25 | 16 |
+| `Core.Grade` | Core | 84 | 11 |
+| `Core.Soundness` | Core | 3400 | 10 |
+| `Backend.AbstractMachine` | Backend | 6871 | 8 |
+| `Core.IR` | Core | 440 | 7 |
+| `Core.Typing` | Core | 510 | 7 |
+| `Frontend.Surface` | Frontend | 3406 | 7 |
+| `Core.Freshness` | Core | 833 | 5 |
+| `Frontend.TypeCheck` | Frontend | 9490 | 5 |
+| `Backend.Wasm` | Backend | 2931 | 4 |
+| `Frontend.Format` | Frontend | 1139 | 4 |
+| `Core.Semantics.Eval` | Core | 621 | 3 |
+| `Frontend.Query` | Frontend | 899 | 3 |
+| `Core.Semantics.Dispatch` | Core | 273 | 2 |
+| `Core.Semantics.Subst` | Core | 947 | 2 |
+| `Meta.LR` | Meta | 1998 | 2 |
+| `Reify.CalcReify` | Reify | 283 | 2 |
+| `Spec` | Apex | 358 | 2 |
+| `Witness.Fuzz` | Witness | 281 | 2 |
+| `Backend.Rung5ProofGrade` | Backend | 143 | 1 |
+| `Backend.U5bComplete` | Backend | 1649 | 1 |
+| `Backend.WasmEmit` | Backend | 1757 | 1 |
+| `Core.CapCoh` | Core | 566 | 1 |
+| `Core.EffectRow` | Core | 203 | 1 |
+| `Core.Semantics.Invariants` | Core | 264 | 1 |
+| `Frontend.Annotate` | Frontend | 252 | 1 |
+| `Frontend.DiagCodes` | Frontend | 320 | 1 |
+| `Frontend.Diagnostics` | Frontend | 227 | 1 |
+| `Meta.BinaryLR` | Meta | 1854 | 1 |
+| `Reify.CalcReifyRef` | Reify | 164 | 1 |
+| `Witness.AgreeOutcome` | Witness | 236 | 1 |
+| `Witness.LWRegress` | Witness | 100 | 1 |
+| `Witness.LawTest` | Witness | 693 | 1 |
 | `Audit` | Apex | 69 | 0 |
-| `Backend.AbstractMachine` | ? | 6871 | 0 |
-| `Backend.EnvMachine` | ? | 3624 | 0 |
-| `Backend.Rung5ProofGrade` | ? | 144 | 0 |
-| `Backend.U5bComplete` | ? | 1649 | 0 |
-| `Backend.Wasm` | ? | 2931 | 0 |
-| `Backend.WasmEmit` | ? | 1757 | 0 |
-| `Core.CapCoh` | ? | 566 | 0 |
-| `Core.EffectRow` | ? | 203 | 0 |
-| `Core.Freshness` | ? | 833 | 0 |
-| `Core.Grade` | ? | 84 | 0 |
-| `Core.IR` | ? | 440 | 0 |
-| `Core.Semantics` | ? | 25 | 0 |
-| `Core.Semantics.Dispatch` | ? | 273 | 0 |
-| `Core.Semantics.Eval` | ? | 621 | 0 |
-| `Core.Semantics.Invariants` | ? | 264 | 0 |
-| `Core.Semantics.Subst` | ? | 947 | 0 |
-| `Core.Soundness` | ? | 3400 | 0 |
-| `Core.Typing` | ? | 510 | 0 |
+| `Backend.EnvMachine` | Backend | 3624 | 0 |
 | `Distribution` | Apex | 67 | 0 |
-| `Examples` | ? | 510 | 0 |
-| `Frontend.Annotate` | ? | 252 | 0 |
-| `Frontend.DiagCodes` | ? | 320 | 0 |
-| `Frontend.Diagnostics` | ? | 227 | 0 |
-| `Frontend.Format` | ? | 1139 | 0 |
-| `Frontend.Lint` | ? | 289 | 0 |
+| `Examples` | Apex | 510 | 0 |
+| `Frontend.Lint` | Frontend | 289 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 899 | 0 |
-| `Frontend.Rewrite` | ? | 313 | 0 |
-| `Frontend.Surface.PropTest` | ? | 127 | 0 |
-| `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 9490 | 0 |
-| `Meta.BinaryLR` | ? | 1854 | 0 |
-| `Meta.LR` | ? | 1998 | 0 |
-| `Reify.CalcReify` | ? | 283 | 0 |
-| `Reify.CalcReifyRef` | ? | 164 | 0 |
-| `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 358 | 0 |
-| `Witness.AgreeOutcome` | ? | 236 | 0 |
-| `Witness.BinopTyping` | ? | 70 | 0 |
-| `Witness.BoccRegress` | ? | 261 | 0 |
-| `Witness.CapEscapeWitness` | ? | 72 | 0 |
-| `Witness.CtrGradeRefute` | ? | 138 | 0 |
-| `Witness.CustomStage1Refute` | ? | 39 | 0 |
-| `Witness.D5ParamHandlerWitness` | ? | 161 | 0 |
-| `Witness.EffectTraceWitness` | ? | 127 | 0 |
-| `Witness.ElabFuzz` | ? | 430 | 0 |
-| `Witness.Fuzz` | ? | 281 | 0 |
-| `Witness.GradePolyReturner` | ? | 165 | 0 |
-| `Witness.LWRegress` | ? | 100 | 0 |
-| `Witness.LawTest` | ? | 693 | 0 |
-| `Witness.ProofExport` | ? | 372 | 0 |
-| `Witness.ReturnEscapeReach` | ? | 121 | 0 |
-| `Witness.ScopedCapWitness` | ? | 141 | 0 |
-| `Witness.SendableFragment` | ? | 148 | 0 |
-| `Witness.StateEscapeWitness` | ? | 73 | 0 |
-| `Witness.VcapFreeRefute` | ? | 55 | 0 |
+| `Frontend.Rewrite` | Frontend | 313 | 0 |
+| `Frontend.Surface.PropTest` | Frontend | 127 | 0 |
+| `Frontend.Surface.Trait` | Frontend | 418 | 0 |
+| `Reify.CalcReifySim` | Reify | 1436 | 0 |
+| `Witness.BinopTyping` | Witness | 70 | 0 |
+| `Witness.BoccRegress` | Witness | 261 | 0 |
+| `Witness.CapEscapeWitness` | Witness | 72 | 0 |
+| `Witness.CtrGradeRefute` | Witness | 138 | 0 |
+| `Witness.CustomStage1Refute` | Witness | 39 | 0 |
+| `Witness.D5ParamHandlerWitness` | Witness | 161 | 0 |
+| `Witness.EffectTraceWitness` | Witness | 127 | 0 |
+| `Witness.ElabFuzz` | Witness | 430 | 0 |
+| `Witness.GradePolyReturner` | Witness | 165 | 0 |
+| `Witness.ProofExport` | Witness | 372 | 0 |
+| `Witness.ReturnEscapeReach` | Witness | 121 | 0 |
+| `Witness.ScopedCapWitness` | Witness | 141 | 0 |
+| `Witness.SendableFragment` | Witness | 148 | 0 |
+| `Witness.StateEscapeWitness` | Witness | 73 | 0 |
+| `Witness.VcapFreeRefute` | Witness | 55 | 0 |
 <!-- END GENERATED import-graph -->
 
-**What the shape reveals** (from `import` DAG + per-symbol reference counts):
+The generated graph reports direct imports and direct fan-in. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving a module.
 
-- **`Operational` is the single load-bearing hub** (fan-in 10). Healthy otherwise: complexity lives in the
-  big *leaves* (CalcVM/Metatheory/Compile/Compat, fan-in 1–2 — write-once proof bodies), coupling lives in
-  the *small* core (Core/Syntax/Operational). The hub is the exception: small-ish, but high fan-in **and**
-  high internal density.
-- **The "V" is real and enforced**: Frontend (Surface/Syntax/NamedCore) and Backend (CalcVM/Compile) cannot
-  reach into each other; they meet only at Core.
+## 4. Contributor routing
 
-**Per-module role** (absorbed from the retired `Bang.lean` barrel; the build closure is now the
-`Bang.+` lake glob in `lakefile.toml`, not a hand-maintained import list):
-
-| module | role |
-|---|---|
-| `EffectRow` | K1: effect-row algebra (the sound unifier) |
-| `Core` · `Syntax` · `Operational` · `LR` · `Compile` · `Spec` | the Spec spine — `Spec` re-exports the rest (frozen theorems) |
-| `Mult` | concrete QTT instance of `[Semiring Mult]` |
-| `Metatheory` | syntactic metatheory: weakening + graded substitution (backs `subst_value`) |
-| `Compat` · `Distribution` | Phase B targets |
-| `Audit` | the `#print axioms` gate |
-| `Surface` | tracer bullet: surface → graded-CBPV `Comp` → `Source.eval` → value (additive layer, outside the spine) |
-| `Surface.Trait` | laws-as-algebraic-interfaces surface (ADR-0040): trait/impl + proof-first discharge ladder |
-| `Frontend.NamedCore` | the canonical core made WRITABLE (ADR-0046/0047): named S-expr IR + name→de-Bruijn elaboration |
-| `CalcReify` · `CalcReifyRef` · `CalcReifySim` · `CalcVM` | K3: the calculated machine (the paused reification frontier, ADR-0015) |
-| `Freshness` · `CapCoh` · `Model` | LIVE freshness layer + cap-coherence (`Model` engine/diagonal dead per ADR-0063, see §6) |
-| `*Regress` · `*Witness` · `*Refute` · `*Probe` | committed regression/refutation witnesses (the `H→False` do-not-weaken gate) — now in the build closure via the glob (#81) |
-
-## 3. The coupling map — cross-cutting representations (the part that bites)
-
-A concern's *blast radius* is how many modules reference it, independent of the import graph:
-
-| concern | # modules | reads as… |
+| Change | Start at | Required cross-check |
 |---|---|---|
-| effect rows (`Eff`/`labelEff`) | 14 | total pervasion — the type-level spine (by design, ADR-0001/0018) |
-| `handlesOp` (dispatch) | 9 | effect dispatch is everywhere → the ADR-0054 blast radius |
-| `substFrom`/`shiftFrom` | 7 | substitution pervasive |
-| `splitAt` (LEGACY dynamic dispatch) | 6 | still smeared despite ADR-0045 static dispatch → **debt** |
-| caps (`CapResolves`/`staticSplit`/`shiftCap`) | 4–5 | the cap representation — **kernel-confined, NOT in CalcVM/Compile** |
-| `closeC` | 4 | `closeC ≡ Comp.subst`, in LR/Compat/Metatheory — **the bug's fingerprint** |
+| Syntax, inference, modules, diagnostics | `Bang/Frontend/` | Follow every relevant surface traversal; run structured CLI/corpus gates |
+| Kernel behavior or typing rule | `Bang/Core/` | Preserve the five-primitive boundary; run proof and axiom gates |
+| Calculated machine or formal target | `Bang/Backend/AbstractMachine.lean`, `Bang/Backend/Wasm.lean` | Tie execution back to `Source.eval`; preserve simulation statements |
+| Concrete WasmGC emission | `Bang/Backend/WasmEmit.lean` | Run the real Wasmtime differential harness, not only Lean tests |
+| Contextual equivalence | `Bang/Meta/` | Keep LR claims separate from compilation simulation |
+| Public theorem or trust claim | `Bang/Spec.lean`, `Bang/Audit.lean` | `#print axioms`; trusted set must remain within `{propext, Classical.choice, Quot.sound}` |
+| Evidence/counterexample | `Bang/Witness/` | State whether it is a regression, refutation, fuzz pole, or tested law |
 
-### The missing seam (architectural root of the ADR-0053 mistake)
+## 5. Current boundary versus horizon
 
-The cap representation lives in `Operational` (the hub) **and** is mirrored by `closeC ≡ subst` in the LR.
-There is **no boundary isolating "how dispatch resolves a handler" from "how subst/closeC closes an
-environment"** — so any cap change must stay consistent across the kernel↔LR seam *simultaneously*.
+- **Current:** v1 handlers are abortive or one-shot tail-resumptive; stock Wasm 3.0 exceptions, tail calls, GC values, and the tested concrete emitter are sufficient for the shipped path.
+- **Post-v1 horizon:** general/multishot resumptions may use the GC-frame-chain slot, with WasmFX as a swappable fast path once standardized and deployed.
+- **Separate laboratory:** `Bang/Reify/` studies calculated handler machines; it is not another production execution path.
+- **Volatile project position:** read repository-local `CONTEXT.md` in a checkout. This page intentionally contains no active-branch, checkpoint, or issue-status narrative.
 
-```
-  cap representation is load-bearing in FOUR places at once:
-     kernel dispatch (absSplit) · Comp.subst · LR closeC(≡subst) · CalcVM evalD
-                                       └──────── the SAME function ────────┘
-```
+## 6. Gates
 
-That absent seam is why absolute caps *looked* safe in isolation: nothing showed that a substitution-time
-shift (migration soundness) and an unshifted `closeC` (the LR 5→2 win) are the **same knob in opposite
-positions**. ADR-0054's generative-identity representation **decouples** them (a stable identity → `subst`
-doesn't shift → `closeC` mirrors no shift → the kernel↔LR cap-consistency obligation disappears).
-
-## 4. Symbol coupling — file boundaries vs logical units
-
-Move-analysis (symbol defined in A, used predominantly in B) shows three places where **file boundaries do
-not match logical units**:
-
-```
-1. LR defines, Compat uses — nearly ONE unit split across two files
-     closeC 86/90 · closeV 72/72 · VrelK 71/71 · CrelK 63/68 · KrelS 87/89 · EnvRelK 37/38  → in Compat
-   LR.lean = "the relation DEFINITIONS", Compat.lean = "the fundamental-theorem PROOFS over them".
-
-2. MISLOCATED: Stack.plug / Cxt.plug — defined in LR, used 80/89× in COMPILE
-   machine/continuation ops living in the relation file, serving the backend → wrong layer.
-
-3. The HUB is overloaded: Operational = kernel-reduction + cap-dispatch + LWT-invariants + substitution
-   (FOUR concerns, fan-in 9). The reason the cap concern smeared and the seam above is missing.
+```bash
+python3 tools/import_facts.py --self-test
+python3 tools/arch-check.py
+python3 tools/gen-import-graph.py --check
+python3 tools/check-architecture-assertions.py --check
+just fitness
 ```
 
-## 5. Decision interaction — what reinforces vs what fights
-
-```
-  REINFORCING                                         IN TENSION
-  ─────────────────────────────────────────────────────────────────────────────────────────
-  effect rows = sets (0001/0018)                      LR-simplicity  ⟂  migration-soundness
-    → lacks-discipline → no_accidental_handling          single-int cap: absolute(0053, unsound)
-    → drops Biernacki ρ-maps (0024)                       vs relative+shift(0046, LR wall)
-  STM-as-handler (0030) → 5 primitives hold              → resolved by identity caps (0054)
-  calculated VM (0016) — machine is an OUTPUT          dynamic dispatch(0023/0024) vs static(0045)
-  stratification: verified core + tested superset        → kernel vs evalD DISAGREE (0052, lexical)
-    at a typed seam (0026/0028)                        the dispatch⟂subst HUB coupling (this doc §3)
-```
-
-The single most useful entry: **`LR-simplicity ⟂ migration-soundness`** — the axis ADR-0053 (unsound) and
-ADR-0054 (the fix) live on, and the reason a representation change is forced rather than a patch (the shared
-`subst`/`closeC` knob, §3).
-
-## 6. Cleanup + restructuring (status + target)
-
-### Done
-- **−316 LOC**: the dead `WellCapped`/`WCComp` island removed from the hub (superseded by `LWConfig`,
-  ADR-0045). `Operational` 1265 → 949. Verified `lake build Bang.Compat` = 711 jobs green. (`d1f0916`)
-
-### NOT dead (corrected)
-- **CalcReify\*** (~1850 LOC) is the ADR-0015 *paused reification frontier* (multi-shot/non-tail handler
-  representation), deliberately in the build so its #guards gate — **not** the ADR-0051 rejected recast.
-
-### Target restructuring (gated on the tree being green — see below)
-```
-  split Operational along its 4 concerns:
-     Bang.Kernel       (reduction · Source.step · eval)
-     Bang.Dispatch     (staticSplit/absSplit · handlesOp · the cap-resolution surface)
-     Bang.Invariants   (LWT · LWConfig · HasConfig)
-     Bang.Subst        (shiftFrom · substFrom · the closeC-mirrored substitution theory)
-  relocate Stack.plug / Cxt.plug  LR → the machine layer (Operational/Eval), where Compile uses them
-  reorganise LR/Compat around logical units (value-rel · stack-rel · compat-lemmas), not def-vs-proof
-  prune: legacy splitAt (6 modules) once dispatch settles; the orphaned WC helpers (CtxKindEq, hframes…)
-```
-
-**Timing.** The restructuring is entangled with the **red-by-design** build (deferred CalcVM route-B,
-ADR-0052): `plug` is used by Compile (red), and splitting `Operational` rewrites imports in all 9
-dependents including red CalcVM/Compile/Surface — module-boundary moves there cannot be *verified* until the
-tree gates green. So execute the code-moves **after** the CalcVM route-B lands (or as tightly-scoped moves
-contained within the green subset). Doing them now would add unverifiable changes to red modules — the exact
-way a hidden break hides.
-
-### Tier + rename map — the legibility layer (task #17; gated on green tree)
-
-The deeper concern-splits above are the *hard* refactor. Sitting on top is a cheap **legibility** win: move
-the flat `Bang/*.lean` files into tier directories AND rename to communicate concern — so `ls Bang/` shows
-the architecture, and `arch-check`'s layer becomes **path-derived (GENERATE)** instead of a hand-map. The
-tier map below is the single source already encoded in `tools/gen-import-graph.py` (the §2 diagram); the move
-makes the files match it. **Headline renames** (`Operational→Kernel`, `Core→IR`, `Syntax→Typing`,
-`Metatheory→Soundness`):
-
-```
-Bang/Core/        the narrow waist (IR · typing · kernel · algebras)
-  EffectRow                              → Core.EffectRow        (effect-row algebra)        [keep]
-  Mult                                   → Core.Grade            (QTT multiplicity grade)    ★ rename
-  Core   (Val/Comp/Handler · VTy/CTy)    → Core.IR               (the IR — terms + types)    ★ rename
-  Syntax (HasVTy/HasCTy judgments)       → Core.Typing           (it's TYPING, not syntax)   ★ rename
-  Operational (Source.eval · dispatch)   → Core.Kernel           (the reference semantics)   ★ rename
-        └ or split per the concern-split above: Kernel · Dispatch · Invariants · Subst
-Bang/Frontend/    text → IR
-  Surface · Surface.Trait · NamedCore    → Frontend.{Surface,Trait,NamedCore}
-Bang/Backend/     IR → calc-VM → WasmFX
-  CalcVM                                 → Backend.CalcVM        (calculated machine)        [keep]
-  Compile                                → Backend.Wasm          (the WasmFX lowering)       ★ rename
-Bang/Meta/        the proofs
-  Metatheory (progress/preservation)     → Meta.Soundness                                    ★ rename
-  LR                                     → Meta.LogRel           (or keep LR)                 ~ optional
-  Compat (binary-LR diagonal)            → Meta.Compat / Meta.BinaryLR                        ~ optional
-Bang/ (apex, top-level)
-  Spec  (verification spine)             → Spec                                              [keep]
-  Audit (the gate)                       → Audit                                             [keep]
-  Distribution                           → Meta.Distribution
-Bang/Regress/     CapEscapeWitness · LWRegress         (build-gated witnesses)
-Bang/Reify/       CalcReify{,Ref,Sim}                  (ADR-0015 paused frontier; NOT dead — §6 above)
-```
-
-This refines **ADR-0048** (which named only Frontend/Core/Backend, lumping the proofs into Core): add the
-**Meta** tier (proofs depend on Core+Backend, feed the apex). Worth an ADR-0048 amendment when executed.
-Mechanical once green: rename + `git mv` into tiers · update `Bang.lean` (could itself become generated) ·
-flip `arch-check`'s `layer_of` from the case-map to `Bang.<Tier>.*` path-derivation · the `gen-import-graph`
-`TIER` map then becomes the *truth*, not a forward-declaration.
-
-### Module system + deep-module target (verified v4.30, 2026-06-26 spike)
-
-The toolchain (Lean v4.30) ships the **module system**, and a spike empirically gated what it buys us.
-This **revises the "many public peers" target above** — the real target is deep modules
-(directories with hidden internals), not a flat split.
-
-**What the spike verified (empirically gated, not from docs):**
-- The module system IS available and **HEADER-DRIVEN** — a `module` line at the top of a file; **no
-  lakefile change**. `module` / `public` / `public import` all parse.
-- A non-`public` def is **HIDDEN from importers** (cross-file encapsulation) — and even **CLASSIC
-  (non-module) importers respect it**. The boundary holds regardless of whether the importer opted in.
-- Module mode is **PRIVATE-BY-DEFAULT**: a plain `def` is module-local; `public` opts into the
-  interface. **Mathlib-interop works** — module files import and use Mathlib normally.
-
-**→ Incremental BOTTOM-UP migration is viable.** Module-ify a leaf, mark its internals non-`public`,
-and its (still-classic) importers automatically see only the public interface AND still compile.
-**No big-bang.** The v4.30 module system **dissolves the encapsulation-vs-incrementality tradeoff**
-that forced the earlier flat-peer target.
-
-**DEEP-MODULE TARGET (revised).** Not single large files, not many flat peers, but
-**DIRECTORIES-WITH-HIDDEN-INTERNALS** — ~12 public modules:
-
-```
-  Algebra · Syntax · Typing · Semantics · Safety · Model(=LR+Compat)
-  · CalcVM · Compile · Surface · Spec · Audit · Witness
-```
-
-Each module = a `module` **barrel** re-exporting only its `public` interface; the internals are plain
-files (non-`public`), hidden behind it.
-
-**SEQUENCING.** The restructure **TRAILS GREEN, module-by-module** — each module is restructured +
-module-ified **the moment inc-5/inc-6 greens it** (boundary moves in still-red modules stay
-unverifiable until then, per §6 "Timing" above). Module-ify **bottom-up** (leaves first).
-
-## See also
-- ADR-0016 (architecture in force) · ADR-0054 (the cap representation) · ADR-0052 (CalcVM route-B, the red)
-- `CLAUDE.md` (the stratification principle, the invariants) · `tools/arch-check.sh` (the V fitness function)
+For theorem trust, run `just axioms`; for the full repository gate, run `just verify` from the Nix development shell.

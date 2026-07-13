@@ -145,6 +145,7 @@ regen-all:
     python3 tools/refs.py build
     python3 tools/gen-gate-index.py
     python3 tools/gen-import-graph.py
+    python3 tools/check-architecture-assertions.py
     python3 tools/gen-proof-assets.py
     python3 tools/gen-changelog.py
     python3 tools/gen-reference.py
@@ -232,7 +233,8 @@ fitness:
     bash tools/check-loop-audit.sh
     bash tools/check-adr-links.sh
     python3 tools/gen-adr-index.py --check
-    bash tools/arch-check.sh
+    python3 tools/import_facts.py --self-test
+    python3 tools/arch-check.py
     bash tools/check-audit-sync.sh
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
@@ -249,6 +251,7 @@ fitness:
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
+    python3 tools/check-architecture-assertions.py --check
     python3 tools/gen-proof-assets.py --check
     python3 tools/check-doc-pins.py
     python3 tools/gen-changelog.py --check
@@ -282,6 +285,10 @@ gate-index:
 # Regenerate the module dependency graph (mermaid + fan-in) in docs/architecture/core-overview.md §2 from the import edges.
 import-graph:
     python3 tools/gen-import-graph.py
+
+# Regenerate the current architecture assertion snapshot from code and accepted ADRs.
+architecture-assertions:
+    python3 tools/check-architecture-assertions.py
 
 # Regenerate docs/notes/README.md (the design-notes map) from each note's `note-status` frontmatter.
 notes-index:

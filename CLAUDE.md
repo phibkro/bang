@@ -23,7 +23,7 @@ its trigger arises.
 | **What an `incN` is** (the increment unit: scoped→de-risked→ground→done→merged) | `docs/notes/increment-lifecycle.md` |
 | **Codebase maintenance** (objects · rungs · cadence · debt-prevention) | `.claude/codebase-maintenance.md` |
 | **Active in-flight work** | `paths/PATH-*.md` |
-| **Architecture in force** | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |
+| **Architecture in force** (ADR-0016 as revised by ADR-0059; proof-method split ADR-0035) | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
@@ -156,7 +156,7 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 5. **Kernel stays at five primitives:** thunk · force · effect rows · handlers · STM. Adding a sixth is a spec change requiring an ADR.
 6. **No implicit capture; reactivity is the operator, not a keyword.** (ADR-0005, ADR-0006)
 7. **Performance is second-class.** Optimize only where it touches the user; a slow correct path beats a fast unverified one.
-8. **Effect TS is not the target.** The calculated VM is canonical; the WasmFX backend is the verified compiler target. (ADR-0016, formerly ADR-0004; supersedes ADR-0003)
+8. **Effect TS is not the target.** The calculated VM is canonical; Wasm 3.0 is the verified compiler target. WasmFX is a future fast path for the post-v1 general-resumption slot. (ADR-0016 as revised by ADR-0059; supersedes ADR-0003)
 
 ## Do NOT
 

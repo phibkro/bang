@@ -28,60 +28,66 @@ export default defineConfig({
   // Cross-link to the progress dashboard (a static page merged in by CI at
   // /bang/dashboard/ — outside Vocs's routes, so a full-URL external link).
   topNav: [{ text: 'Dashboard ↗', link: 'https://phibkro.github.io/bang/dashboard/' }],
-  // Sidebar is hand-curated (mirrors CLAUDE.md reference index). Pages
-  // themselves are symlinks to the repo's real markdown (see sync-docs.mjs).
+  // Stable public learning/contributor routes. Volatile CONTEXT/active-path state
+  // stays repository-local by ADR-0108 (enforced by sync-docs.mjs's source map).
   sidebar: [
     {
-      text: 'Start here',
+      text: 'Start',
       items: [
-        { text: 'What BANG is (README)', link: '/' },
-        { text: 'Onboarding', link: '/ONBOARDING' },
-        { text: 'Contributing', link: '/CONTRIBUTING' },
-        { text: 'Current position (CONTEXT)', link: '/CONTEXT' },
-        { text: 'Roadmap', link: '/ROADMAP' },
-        { text: 'Agent guide (CLAUDE)', link: '/CLAUDE' },
+        { text: 'What BANG is', link: '/' },
+        { text: 'Contributor quickstart', link: '/ONBOARDING' },
       ],
     },
     {
       // Generated FROM tour-manifest.mjs (the SSoT for lesson order/titles) —
       // never hand-duplicated, so the sidebar cannot drift from gen-tour.mjs's
       // own page list.
-      text: 'Tour',
+      text: 'Learn',
       items: [
-        { text: 'Overview', link: '/tour' },
+        { text: 'Guided tour', link: '/tour' },
         ...lessons.map((l) => ({ text: `${l.n}. ${l.title}`, link: `/tour/${l.slug}` })),
       ],
     },
     {
       text: 'Reference',
       items: [
-        { text: 'Language reference', link: '/reference/language' },
-        { text: 'Product definition (PRD)', link: '/PRD' },
+        { text: 'Language and CLI', link: '/reference/language' },
+        { text: 'Current architecture', link: '/architecture/core-overview' },
+        { text: 'Product definition', link: '/PRD' },
         { text: 'Changelog', link: '/CHANGELOG' },
       ],
     },
     {
-      text: 'Architecture — ADRs',
-      collapsed: true,
+      text: 'Contribute',
       items: [
-        { text: 'ADR index', link: '/decisions/README' },
-        { text: '0016 — Two-hop architecture', link: '/decisions/0016-two-hop-architecture-calcvm-and-wasmfx' },
+        { text: 'Contribution workflow', link: '/CONTRIBUTING' },
+        { text: 'Agent guide', link: '/CLAUDE' },
+        { text: 'Decision index', link: '/decisions/README' },
       ],
     },
     {
-      text: 'Design notes',
+      text: 'Architecture decisions',
+      collapsed: true,
+      items: [
+        { text: '0016 — Two-hop architecture', link: '/decisions/0016-two-hop-architecture-calcvm-and-wasmfx' },
+        { text: '0035 — Equivalence vs simulation', link: '/decisions/0035-lr-for-equivalence-simulation-for-compilation' },
+        { text: '0059 — Wasm 3.0 target', link: '/decisions/0059-wasm3-grade-directed-pluggable-backend' },
+      ],
+    },
+    {
+      text: 'Advanced design',
       collapsed: true,
       items: [
         { text: 'Notes index', link: '/notes/README' },
-        { text: 'Open questions', link: '/notes/OPEN_QUESTIONS' },
         { text: 'Design-space map', link: '/notes/design-space-map' },
         { text: 'Stdlib map', link: '/notes/stdlib-map' },
       ],
     },
     {
-      text: 'Long-range roadmap',
+      text: 'Roadmap',
       collapsed: true,
       items: [
+        { text: 'Checkpoint map', link: '/ROADMAP' },
         { text: 'Project roadmap', link: '/roadmap/project-roadmap' },
         { text: 'Northstar roadmap', link: '/roadmap/bang-northstar-roadmap' },
       ],

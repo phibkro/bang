@@ -30,15 +30,20 @@ const mermaidDir = join(siteDir, 'public', 'mermaid')
 const basePath = (readFileSync(join(siteDir, 'vocs.config.ts'), 'utf8')
   .match(/basePath:\s*['"]([^'"]*)['"]/)?.[1]) ?? ''
 
+// Stable product/contributor roots only. ADR-0108 keeps volatile work state
+// (`CONTEXT.md`, active paths, scratch research) repository-local.
+const repositoryOnlyRoots = new Set(['CONTEXT.md'])
 const rootFiles = {
   'index.md': 'README.md',
   'ONBOARDING.md': 'ONBOARDING.md',
   'CONTRIBUTING.md': 'CONTRIBUTING.md',
-  'CONTEXT.md': 'CONTEXT.md',
   'ROADMAP.md': 'ROADMAP.md',
   'CLAUDE.md': 'CLAUDE.md',
   'CHANGELOG.md': 'CHANGELOG.md',
   'PRD.md': 'docs/PRD.md',
+}
+for (const src of Object.values(rootFiles)) {
+  if (repositoryOnlyRoots.has(src)) throw new Error(`public docs boundary violation: ${src}`)
 }
 const dirs = {
   reference: 'docs/reference',
@@ -48,6 +53,10 @@ const dirs = {
   architecture: 'docs/architecture',
   spec: 'docs/spec',
 }
+const publishedDocRoute = new RegExp(
+  `\\]\\(docs\\/(${Object.keys(dirs).join('|')})\\/([^)]+?)\\.md(#[^)]*)?\\)`,
+  'g',
+)
 
 // --- MDX-safe transform -----------------------------------------------------
 // Operate line-by-line, tracking fenced code blocks (``` / ~~~) where MDX does
@@ -135,7 +144,13 @@ function renderMermaid(code) {
 // (`http`) and pure-anchor (`#`) targets. ([[wikilinks]] are flattened globally in
 // mdxSafe, since they wrap across lines.)
 function rewriteLinks(line) {
-  return line.replace(/\]\((?!https?:|#)([^)]+?)\.md(#[^)]*)?\)/g, ']($1$2)')
+  // Root docs link into the repository as `docs/<section>/x.md`, while Vocs
+  // mounts those trees at `/<section>/x`. Normalize that one source→route seam,
+  // then apply the ordinary extension drop for same-tree relative links.
+  return line
+    .replace(publishedDocRoute, '](/$1/$2$3)')
+    .replace(/\]\(docs\/PRD\.md(#[^)]*)?\)/g, '](/PRD$1)')
+    .replace(/\]\((?!https?:|#)([^)]+?)\.md(#[^)]*)?\)/g, ']($1$2)')
 }
 
 // --- emit -------------------------------------------------------------------

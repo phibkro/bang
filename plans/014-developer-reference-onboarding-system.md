@@ -1,9 +1,10 @@
 # Plan 014 — Developer reference and onboarding system
 
-- **Status:** PLANNING — operator approved the direction; Phase 0 decisions remain open
+- **Status:** IN REVIEW — Phase 0 settled by ADR-0108; Phase 1 implemented and verified in the documentation worktree, awaiting landing
 - **Priority:** P1 documentation architecture
 - **Effort:** XL, delivered as independently gated vertical slices
 - **Depends on:** current architecture roots and existing Vocs/tour/reference generators
+- **Decision contract:** ADR-0108
 - **Research basis:** code-first exploration on 2026-07-13; existing docs compared only after the independent model was drafted
 
 ## Destination
@@ -12,16 +13,20 @@ A git-native, generated-where-possible documentation and learning system in the 
 
 Success is demonstrated by newcomer tasks and drift gates, not by page count.
 
-## Phase 0 — settle the remaining product decisions (Wayfinder frontier)
+## Phase 0 — product contract settled
 
-Before implementation, resolve four named decisions with the operator. These are decisions, not build tickets:
+**Source of truth:** ADR-0108. The executable constraints are:
 
-1. **Primary newcomer and graduation target** — prioritize general language implementers, Lean proof engineers, backend engineers, or agents; choose the first-hour and first-day tasks each must pass.
-2. **Published vs contributor-only boundary** — decide whether proof internals, active project state, and agent operations remain on the public site or move behind a Contributor section/profile.
-3. **Media production contract** — choose silent caption-led animation vs human narration, hosting/storage limits, brand style, and supported accessibility baseline.
-4. **Canonical program journey** — choose the minimal fixture used across diagrams, stepper, video, and onboarding. Recommendation: a two-handler logger swap plus a smaller thunk/force precursor; do not force one example to teach every concept.
+| Dimension | Settled direction |
+|---|---|
+| Primary newcomer | General language implementer; specialist proof/backend/tooling/docs/agent routes branch after the common journey. |
+| Publishing boundary | One public Vocs site with a curated stable contributor section; volatile `CONTEXT.md`, active paths, scratch research, and operational state remain repo-only. |
+| Media | Caption-led deterministic generated assets with transcripts and reduced-motion/static fallbacks; narration is optional. |
+| Program journey | Tiny thunk/force precursor → logger-counting handler example; logger-counting anchors the first cross-medium vertical slice. |
 
-If this effort will span multiple contributors/sessions, create a Wayfinder map in GitHub Issues after these decisions, with research/prototype/grilling tickets and explicit blockers. Do not pre-slice implementation work while these choices remain foggy.
+The first-hour and first-day graduation evidence, rejected alternatives, storage contract, and revisit triggers live in ADR-0108 rather than being duplicated here.
+
+Before parallel implementation begins, create the Wayfinder issue map from the phase sequence below, with explicit research/prototype/grilling blockers. Phase 1 root repair may begin without waiting for media or trace prototypes.
 
 ## Agent orchestration
 
@@ -54,6 +59,8 @@ Run at most **two expensive agents concurrently** on workstation. The host's cgr
 Every delegation names: destination, allowed paths, forbidden paths, source-of-truth inputs, expected artifact, validation command, stop conditions, and structured result fields (`files`, `claims`, `commands`, `risks`, `open_questions`).
 
 ## Phase 1 — repair the roots before adding branches
+
+**Status:** IMPLEMENTED and verified (`lake build`, `just fitness`, `just verify`, focused CLI batteries, and the Vocs production build); not yet committed or merged.
 
 ### Deliverables
 
