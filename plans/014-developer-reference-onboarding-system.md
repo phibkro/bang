@@ -1,6 +1,6 @@
 # Plan 014 — Developer reference and onboarding system
 
-- **Status:** IN REVIEW — Phase 0 settled by ADR-0108; Phase 1 implemented and verified in the documentation worktree, awaiting landing
+- **Status:** IN REVIEW — Phase 0/1 plus feedback fixes F-006–F-008 implemented and verified on draft PR #141, awaiting review/landing
 - **Priority:** P1 documentation architecture
 - **Effort:** XL, delivered as independently gated vertical slices
 - **Depends on:** current architecture roots and existing Vocs/tour/reference generators

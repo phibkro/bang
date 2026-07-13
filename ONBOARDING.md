@@ -107,7 +107,7 @@ Each route ends in a bounded pull-request-shaped change, not a reading marathon.
 | Frontend / language | `Bang/Frontend/Surface.lean`, `Bang/Frontend/TypeCheck.lean`, generated language reference | Add or adjust one syntax/checker fixture and every affected traversal | `just check Bang/Frontend/TypeCheck.lean` plus the relevant CLI/corpus script |
 | Kernel / proof | `Bang/Spec.lean`, `Bang/Core/`, `docs/notes/spec-proof-discipline.md` | Close or adapt one small lemma without changing a frozen headline statement | `just check <file>` then `just axioms` |
 | Machine / backend | `Bang/Backend/AbstractMachine.lean`, `Wasm.lean`, `WasmEmit.lean` | Trace one constructor through source, `evalD`, compile/exec, and its differential fixture | `just check <file>` plus the relevant real-engine differential harness |
-| Tooling / docs / examples | `tools/`, `docs/architecture/`, `examples/` | Add one generated fact, checked example, or diagnostic projection without copying its source fact | generator `--check`, `tools/check-refs.py`, then `just fitness` |
+| Tooling / docs / examples | `tools/`, `docs/architecture/`, `examples/` | Add one generated fact, checked example, or diagnostic projection without copying its source fact | generator `--check`, `tools/check-refs.py`, `just site-build` for public pages, then `just fitness` |
 | Coding agent | `CLAUDE.md`, repository-local `CONTEXT.md`, `docs/decisions/README.md`, active `paths/` | Identify the authority, isolate a worktree, make one bounded edit, and report the observed gate | smallest relevant gate, then `just verify` |
 
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a change. It defines the issue → branch/worktree → PR workflow and one-writer-per-file discipline.

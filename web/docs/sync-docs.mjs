@@ -11,7 +11,7 @@
 //   README.md    -> index.md            => /
 //   <NAME>.md    -> <name>.md  (root)   => /<name>
 //   docs/<dir>/* -> <dir>/*             => /<dir>/<file>
-import { mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync, mkdtempSync } from 'node:fs'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -29,6 +29,8 @@ const pagesDir = join(siteDir, 'src', 'pages')
 const mermaidDir = join(siteDir, 'public', 'mermaid')
 const basePath = (readFileSync(join(siteDir, 'vocs.config.ts'), 'utf8')
   .match(/basePath:\s*['"]([^'"]*)['"]/)?.[1]) ?? ''
+const strictMermaid = process.env.BANG_SITE_STRICT_MERMAID === '1'
+  || process.argv.includes('--strict-mermaid')
 
 // Stable product/contributor roots only. ADR-0108 keeps volatile work state
 // (`CONTEXT.md`, active paths, scratch research) repository-local.
@@ -115,9 +117,8 @@ function mdxSafe(src) {
 // source → stable name + dedup) and return its site-root path for a markdown image.
 // mmdc is the mermaid-cli (dev shell / a site devDep). One fixed theme — a static
 // SVG can't follow the site's dark/light toggle — so `default` + a white background
-// reads legibly under BOTH modes (dark text on a white card). Returns null on
-// failure so the caller falls back to the pointer note for just THAT diagram
-// (never breaks the build).
+// reads legibly under BOTH modes (dark text on a white card). Authoring sync/dev may
+// fall back per diagram; production `build` is strict and fails before publishing.
 function renderMermaid(code) {
   const hash = createHash('sha256').update(code).digest('hex').slice(0, 16)
   const dest = join(mermaidDir, `${hash}.svg`)
@@ -132,7 +133,11 @@ function renderMermaid(code) {
       { stdio: 'pipe', timeout: 180000 })
     return `${basePath}/mermaid/${hash}.svg`
   } catch (e) {
-    console.warn(`sync-docs: mermaid render failed, falling back to pointer note: ${String(e.stderr || e.message).slice(-300)}`)
+    const detail = String(e.stderr || e.message).slice(-300)
+    if (strictMermaid) {
+      throw new Error(`sync-docs: strict Mermaid render failed for ${hash}: ${detail}`, { cause: e })
+    }
+    console.warn(`sync-docs: mermaid render failed for ${hash}, falling back to pointer note: ${detail}`)
     return null
   } finally {
     rmSync(d, { recursive: true, force: true })
@@ -175,11 +180,13 @@ mkdirSync(pagesDir, { recursive: true })
 // Reset the pre-rendered mermaid SVGs too, so a removed/edited diagram leaves no orphan.
 rmSync(mermaidDir, { recursive: true, force: true })
 for (const [page, src] of Object.entries(rootFiles)) {
-  try { emit(join(repoRoot, src), join(pagesDir, page)) }
-  catch { console.warn(`skip missing ${src}`) }
+  const source = join(repoRoot, src)
+  if (existsSync(source)) emit(source, join(pagesDir, page))
+  else console.warn(`skip missing ${src}`)
 }
 for (const [seg, src] of Object.entries(dirs)) {
-  try { emitTree(join(repoRoot, src), join(pagesDir, seg)) }
-  catch { console.warn(`skip missing ${src}`) }
+  const source = join(repoRoot, src)
+  if (existsSync(source)) emitTree(source, join(pagesDir, seg))
+  else console.warn(`skip missing ${src}`)
 }
 console.log('sync-docs: MDX-safe pages generated under src/pages')

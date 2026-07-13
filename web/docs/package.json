@@ -5,7 +5,7 @@
   "scripts": {
     "sync": "node sync-docs.mjs && node gen-tour.mjs",
     "dev": "node sync-docs.mjs && node gen-tour.mjs && vocs dev",
-    "build": "node sync-docs.mjs && node gen-tour.mjs && vocs build",
+    "build": "node sync-docs.mjs --strict-mermaid && node gen-tour.mjs && vocs build",
     "preview": "vocs preview"
   },
   "dependencies": {

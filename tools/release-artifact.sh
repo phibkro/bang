@@ -3,17 +3,19 @@
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # release-artifact.sh — the strip + smoke + name recipe for a release binary, as ONE
 # script so CI (.github/workflows/release.yml) and the local dry-run run the identical
-# steps (no drift between "what CI does" and "what I proved locally"). Given a version
-# and a target triple, it:
+# steps (no drift between "what CI does" and "what I proved locally"). Given an asset
+# version, target triple, and optional real release tag, it:
 #   1. copies .lake/build/bin/bang → the asset path, strips it, reports both sizes;
-#   2. smoke-tests the STRIPPED binary (eval, caesar example, check --json exit code);
-#   3. on success, emits `asset=` / `path=` to $GITHUB_OUTPUT (CI) or stdout (local).
+#   2. for a tag build, proves the STRIPPED binary reports that exact tag version;
+#   3. smoke-tests the STRIPPED binary (eval, caesar example, check --json exit code);
+#   4. on success, emits `asset=` / `path=` to $GITHUB_OUTPUT (CI) or stdout (local).
 # Fail-loud: any smoke failure exits non-zero BEFORE the artifact is declared good, so a
 # stripped binary that lost behaviour never reaches a Release.
 set -euo pipefail
 
-VERSION="${1:?usage: release-artifact.sh <version> <triple>}"
-TRIPLE="${2:?usage: release-artifact.sh <version> <triple>}"
+VERSION="${1:?usage: release-artifact.sh <asset-version> <triple> [release-tag]}"
+TRIPLE="${2:?usage: release-artifact.sh <asset-version> <triple> [release-tag]}"
+RELEASE_TAG="${3:-}"
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
@@ -75,6 +77,12 @@ echo "── artifact size ──"
 echo "  unstripped: $(human "$UNSTRIPPED_SRC_BYTES")  ($UNSTRIPPED_SRC_BYTES bytes)"
 echo "  stripped:   $(human "$STRIPPED_BYTES")  ($STRIPPED_BYTES bytes)"
 echo "  $DENIX_NOTE"
+
+if [[ -n "$RELEASE_TAG" ]]; then
+  bash tools/check-release-version.sh "$RELEASE_TAG" "$OUT"
+else
+  echo "release-version: SKIP — untagged artifact '$VERSION'; smoke-tested but not publishable as a release."
+fi
 
 # --- 2. smoke the STRIPPED + de-nixed binary ---------------------------------------
 # The proof that stripping + the interpreter rewrite preserved behaviour. Each check is

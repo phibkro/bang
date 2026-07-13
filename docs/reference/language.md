@@ -888,7 +888,7 @@ not six independent implementations.
 {
   "ok": true,
   "schemaVersion": 1,
-  "bangVersion": "0.1.0",
+  "bangVersion": "0.1.1",
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],

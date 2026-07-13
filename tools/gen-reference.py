@@ -909,7 +909,7 @@ def render():
     L.append("{")
     L.append('  "ok": true,')
     L.append('  "schemaVersion": 1,')
-    L.append('  "bangVersion": "0.1.0",')
+    L.append('  "bangVersion": "0.1.1",')
     L.append('  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",')
     L.append('               "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,')
     L.append('               "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],')

@@ -109,6 +109,11 @@ test-82-verbs:
 test-cli:
     bash tools/test-cli.sh
 
+# Exact release tag ↔ binary provenance poles: accepts only byte-exact `bang X.Y.Z`,
+# rejects stale/suffixed/noisy/nonzero binaries and malformed tags. Part of verify.
+test-release-version:
+    bash tools/test-release-version.sh
+
 # Gate for `bang test` (#60's CLI wiring over the landed LawTest/lawInstancesOf
 # seam): a real true trait law (PASS), a deliberately false one (FAIL +
 # counterexample), no-laws-found (vacuous success), and the decls-only-input
@@ -434,12 +439,17 @@ pole:
     bash tools/tool-log.sh pole
     lake exe graph --to Bang.Audit import-graph.dot
 
+# Production-equivalent Vocs build: enter the opt-in flake-pinned Bun/Chromium shell,
+# install the locked JS graph, require every Mermaid SVG, then build the static site.
+site-build:
+    nix develop .#site --command bash tools/site-build.sh
+
 # The release battery (plan 011) — clean+main+verify gates, extracts notes since the
 # previous tag (reuses gen-changelog.py's own derivation, re-windowed — CHANGELOG.md has
 # no per-version sections to slice), creates a LOCAL annotated tag, and PRINTS the publish
 # commands without running them. The operator's finger stays on the publish button:
-#   just release v0.2.0              # normal
-#   just release v0.2.0 --skip-verify  # loud-warns, skips the `just verify` gate
+#   just release v0.2.0                # normal
+#   just release v0.2.0 --skip-verify  # skips only the broad suite; release gates remain
 release VERSION *ARGS:
     bash tools/release.sh {{VERSION}} {{ARGS}}
 

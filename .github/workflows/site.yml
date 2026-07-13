@@ -4,9 +4,8 @@ name: Site
 # give (pages.yml triggers push-to-main only, so a PR touching web/docs/** or docs/** currently
 # gets no CI signal until after merge). This workflow never deploys and carries no `pages:`
 # permission; it exists purely to catch a broken site build before it lands. Mirrors
-# pages.yml's build step (same chromium fix for mmdc/mermaid-cli) — if that step's shape
-# changes, update both (plan 011; landing pages.yml already covers deploy, so this workflow
-# stays intentionally narrow rather than duplicating it).
+# pages.yml calls the same `tools/site-build.sh` interface. Strict Mermaid rendering means
+# a missing browser or broken diagram fails here instead of publishing a pointer-note fallback.
 
 on:
   push:
@@ -14,10 +13,28 @@ on:
     paths:
       - "web/docs/**"
       - "docs/**"
+      - "README.md"
+      - "ONBOARDING.md"
+      - "CONTRIBUTING.md"
+      - "ROADMAP.md"
+      - "CLAUDE.md"
+      - "CHANGELOG.md"
+      - "tools/site-build.sh"
+      - "flake.nix"
+      - "justfile"
   pull_request:
     paths:
       - "web/docs/**"
       - "docs/**"
+      - "README.md"
+      - "ONBOARDING.md"
+      - "CONTRIBUTING.md"
+      - "ROADMAP.md"
+      - "CLAUDE.md"
+      - "CHANGELOG.md"
+      - "tools/site-build.sh"
+      - "flake.nix"
+      - "justfile"
   workflow_dispatch:
 
 permissions:
@@ -35,13 +52,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
 
-      - name: Build vocs docs site (validation only — output is not published)
-        run: |
-          cd web/docs
-          bun install --frozen-lockfile
-          # mmdc (mermaid-cli) pre-renders diagrams to static SVG — needs a headless
-          # browser; bun blocks postinstall, so install it explicitly (matches pages.yml).
-          # Falls back to pointer-notes if this fails (sync-docs.mjs), so this step isn't
-          # itself a hard gate on chromium — the real gate is `bun run build` exiting 0.
-          bunx puppeteer browsers install chrome-headless-shell
-          bun run build
+      - name: Build strict Vocs docs site (validation only — output is not published)
+        run: bash tools/site-build.sh

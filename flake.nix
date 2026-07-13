@@ -102,6 +102,18 @@
             echo "Fresh? Read ONBOARDING.md → CLAUDE.md → ROADMAP.md → CONTEXT.md"
           '';
         };
+
+        # Opt-in production docs shell. Keep Bun + Chromium out of the default
+        # Lean loop; `nix develop .#site --command just site-build` is the one
+        # local equivalent of the CI/Pages rendering gate.
+        devShells.site = pkgs.mkShell {
+          buildInputs = [ pkgs.bun pkgs.chromium pkgs.just pkgs.git ];
+          PUPPETEER_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+          shellHook = ''
+            echo "bang-lang — strict Vocs site shell"
+            echo "  just site-build      # locked install + strict Mermaid + Vocs build"
+          '';
+        };
       }
     );
 }

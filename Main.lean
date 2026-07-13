@@ -48,12 +48,11 @@ import Bang.Witness.LawTest
 open Bang
 open Bang.Surface
 
-/-- The `bang` CLI's SINGLE SOURCE OF TRUTH for its version string (issue #67/#69): every
-version-facing surface (`--version`, and the v0.1.0 release-checklist's "self-identifying
-binary" requirement) reads THIS constant — never a second hand-copied literal. Pre-tag: no
-`git tag` has been cut yet (issue #69's checklist is still open), so this is the honest
-pre-release marker; bump it here, in ONE place, at tag time. -/
-def bangVersion : String := "0.1.0"
+/-- The `bang` CLI's SINGLE SOURCE OF TRUTH for compiler provenance: every
+version-facing surface (`--version`, query dumps, and release identity gates) reads THIS
+constant — never a second hand-copied runtime value. Bump it in the release-preparation
+commit; `tools/check-release-version.sh` then prevents a mismatched tag or artifact. -/
+def bangVersion : String := "0.1.1"
 
 /-- Default fuel for `Source.eval`. The kernel has no primitive arithmetic, so
 programs are small; the in-repo `#guard` demos top out around 200. 100000 is a

@@ -151,7 +151,7 @@ let
   # ── bang (pure) ──────────────────────────────────────────────────────────────
   bang = pkgs.stdenv.mkDerivation (leanCcEnv // {
     pname = "bang";
-    version = "0.1.0";
+    version = "0.1.1";
     inherit src;
 
     nativeBuildInputs = [ toolchain pkgs.stdenv.cc pkgs.git pkgs.jq ];
