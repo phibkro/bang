@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# tool: role=check couples=git-hooks/pre-commit runs-in=hook
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
+# pre-push hook — refuse to push WIP-marked commits to origin/main.
+#
+# The failure this prevents (memory `push-during-ic-flight`): a default `git push`
+# ships EVERY commit ahead of origin — including a lane's red-by-design
+# WIP/DO-NOT-MERGE pin that was merged or committed onto main by mistake.
+# Lane BRANCHES may carry WIP commits freely; main may not.
+#
+# Override (loudly, e.g. pushing a deliberate revert of a WIP commit):
+#   BANGLANG_ALLOW_WIP_PUSH=1 git push
+
+set -euo pipefail
+
+[ "${BANGLANG_ALLOW_WIP_PUSH:-0}" = "1" ] && exit 0
+
+fail=0
+while read -r _local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue  # branch delete
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    range="$local_sha"          # new remote branch: scan everything reachable
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  bad=$(git log --format='%h %s' "$range" 2>/dev/null \
+        | grep -iE 'WIP|DO[ -]NOT[ -]MERGE' || true)
+  if [ -n "$bad" ]; then
+    echo "❌ pre-push: WIP/DO-NOT-MERGE commit(s) would land on origin/main:" >&2
+    echo "$bad" | sed 's/^/    /' >&2
+    echo "   Push the lane branch instead, or BANGLANG_ALLOW_WIP_PUSH=1 to override (loudly)." >&2
+    fail=1
+  fi
+done
+
+exit "$fail"

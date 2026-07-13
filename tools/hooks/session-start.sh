@@ -15,3 +15,9 @@ if [ -x tools/orient.sh ]; then
 else
   echo "(tools/orient.sh missing — run `just setup` to bootstrap)"
 fi
+
+# Prose-staleness posture (subsecond: git hash compares) — agents land knowing
+# which notes are stale BEFORE citing them. Full report: `just doc-pins`.
+if command -v python3 >/dev/null 2>&1 && [ -f tools/check-doc-pins.py ]; then
+  python3 tools/check-doc-pins.py 2>/dev/null | grep -E '^(pinned|STALE|REVIEW)' | head -8 || true
+fi
