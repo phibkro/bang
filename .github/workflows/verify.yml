@@ -50,6 +50,9 @@ jobs:
           key: lean-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}
           restore-keys: lean-${{ runner.os }}-
 
+      - name: Default dev shell provides Python jsonschema
+        run: nix develop --command python3 -c 'import jsonschema'
+
       - name: just verify (selfcheck + build + examples + audit)
         run: nix develop --command just verify
 
