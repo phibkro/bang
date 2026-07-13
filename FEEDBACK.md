@@ -11,6 +11,7 @@
 | F-014 | The new self-test exercised only synthetic sets and was invoked as a second indistinguishable fitness leg. | `tools/check-refs.py:self_test`; duplicate `check-refs.py` entries in generated `.claude/codebase-maintenance.md`. | The exact Git/source-scan regression was untested while gate documentation became misleading. |
 | F-015 | Adding argparse replaced the checker's positional repository-root interface with `--root`. | `python3 tools/check-refs.py /tmp/lang-bang-doc-research` exits 2 on the first draft. | Existing wrappers or contributors using the prior interface break unnecessarily. |
 | F-016 | The pathspec-scoped fix commit excluded the CHANGELOG file that the pre-commit hook regenerated and staged, so the pushed checkout remained two commits behind in CI. | Verify run `29265743791`; `tools/git-hooks/pre-commit:77-94`; commit `47e1096f`. | A locally green hook can still publish a red commit when generated side effects are outside the explicit commit pathspec. |
+| F-017 | `gen-changelog.py` used Git's context-dependent `%h` abbreviation, so CI's all-ref object database could render different hash widths from the developer clone; it also silently converted any `git log` failure into an empty commit set. | Verify run `29266633839`; exact merge commit `627b1e10` passes locally but fails in CI; `tools/gen-changelog.py:48-53`. | A generated artifact varies with unrelated fetched objects, while history-resolution failures masquerade as ordinary “≥2 commits behind” drift. |
 
 ## Lifecycle
 

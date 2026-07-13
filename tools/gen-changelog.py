@@ -34,7 +34,7 @@ END = "<!-- END GENERATED changelog -->"
 # The MVP product era began at the direction-shift (the GitHub-issues migration). Commits before
 # this are the v1-verification grind (out of product-changelog scope). Anchored to the commit, not
 # a tag, because the repo has no release tags yet; switch to `git describe --tags` once it does.
-BASELINE = "833e3a9"
+BASELINE = "833e3a95f1c668b9346d35dcfcf06ee4c72c3160"
 
 # (type, heading) — only PRODUCT-NOTABLE types. docs/chore/wip/test/tooling/refactor/simplify are
 # dev-noise and excluded by construction (the entry-test below only keeps these three).
@@ -43,24 +43,31 @@ SECTIONS = [("feat", "Features"), ("fix", "Fixes"), ("perf", "Performance")]
 # `<sha>\x1f<type>(scope)!?: subject`  — `\x1f` (unit separator) can't appear in a subject.
 ENTRY_RE = re.compile(
     r"^(?P<sha>[0-9a-f]+)\x1f(?P<type>[a-z]+)(\((?P<scope>[^)]+)\))?(?P<bang>!)?: (?P<subject>.+)$")
+FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def commits(root: str, end: str = "HEAD") -> list[str]:
-    """Conventional-commit subjects since the MVP baseline, oldest-first."""
+def commits(root: str, end: str = "HEAD", start: str = BASELINE) -> list[str]:
+    """Conventional-commit subjects in start..end, oldest-first."""
     res = subprocess.run(
-        ["git", "-C", root, "log", f"{BASELINE}..{end}", "--reverse", "--format=%h\x1f%s"],
+        ["git", "-C", root, "log", f"{start}..{end}", "--reverse", "--format=%H\x1f%s"],
         capture_output=True, text=True)
-    return res.stdout.splitlines() if res.returncode == 0 else []
+    if res.returncode != 0:
+        detail = res.stderr.strip() or f"git log exited {res.returncode}"
+        raise RuntimeError(f"cannot derive changelog history for {end}: {detail}")
+    return res.stdout.splitlines()
 
 
-def entries(root: str, end: str = "HEAD") -> dict[str, list[tuple]]:
+def entries(root: str, end: str = "HEAD", start: str = BASELINE) -> dict[str, list[tuple]]:
     buckets: dict[str, list[tuple]] = {t: [] for t, _ in SECTIONS}
-    for line in commits(root, end):
+    for line in commits(root, end, start):
         m = ENTRY_RE.match(line)
         if not m or m.group("type") not in buckets:
             continue
+        sha = m.group("sha")
+        if not FULL_SHA_RE.fullmatch(sha):
+            raise RuntimeError(f"git log returned a non-full commit id: {sha!r}")
         buckets[m.group("type")].append(
-            (m.group("scope"), m.group("subject"), m.group("sha"), bool(m.group("bang"))))
+            (m.group("scope"), m.group("subject"), sha[:8], bool(m.group("bang"))))
     return buckets
 
 
@@ -100,7 +107,12 @@ def main() -> int:
 
     root = os.path.abspath(args.root)
     path = os.path.abspath(args.file or os.path.join(root, "CHANGELOG.md"))
-    block = render(root)
+    try:
+        block = render(root)
+        parent_block = render(root, "HEAD~1") if args.check else None
+    except RuntimeError as exc:
+        print(f"── changelog ──\nFAIL: {exc}")
+        return 1
 
     if not os.path.exists(path):
         if args.check:
@@ -122,7 +134,7 @@ def main() -> int:
         # itself, so the pre-commit hook's maintainable invariant is file ≡ render(parent).
         # A checkout is therefore legitimately ONE commit behind (the self-hash lag);
         # accept HEAD~1, still fail at two-or-more behind (genuine staleness).
-        if splice(md, render(root, "HEAD~1")) == md:
+        if parent_block is not None and splice(md, parent_block) == md:
             print("── changelog ──\nPASS: CHANGELOG.md ≡ the commits as of HEAD~1 "
                   "(the self-hash fixpoint lag — resyncs on the next `just changelog`).")
             return 0

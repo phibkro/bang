@@ -116,20 +116,9 @@ sys.path.insert(0, os.path.join(root, "tools"))  # gen-changelog imports genbloc
 spec.loader.exec_module(gen_changelog)
 
 if range_start:
-    # Reuse commits()/entries() but scoped to <prev-tag>..HEAD instead of BASELINE..HEAD —
-    # the same ENTRY_RE/SECTIONS derivation, just re-windowed to this release.
-    import subprocess
-    res = subprocess.run(
-        ["git", "-C", root, "log", f"{range_start}..HEAD", "--reverse", "--format=%h\x1f%s"],
-        capture_output=True, text=True)
-    lines = res.stdout.splitlines() if res.returncode == 0 else []
-    buckets = {t: [] for t, _ in gen_changelog.SECTIONS}
-    for line in lines:
-        m = gen_changelog.ENTRY_RE.match(line)
-        if not m or m.group("type") not in buckets:
-            continue
-        buckets[m.group("type")].append(
-            (m.group("scope"), m.group("subject"), m.group("sha"), bool(m.group("bang"))))
+    # Same parser, fixed-width commit IDs, and fail-loud history handling as CHANGELOG.md;
+    # only the release window differs.
+    buckets = gen_changelog.entries(root, start=range_start)
 else:
     buckets = gen_changelog.entries(root)
 
