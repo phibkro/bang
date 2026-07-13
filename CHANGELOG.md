@@ -265,5 +265,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **hooks** — pre-push WIP guard — marker-anchored, not substring (its own prose title was the first false positive) (`5312ec04`)
 - **tooling** — close release and docs false-greens (`265c3e67`)
 - **tooling** — make reference gate checkout-faithful (`47e1096f`)
+- **tooling** — make changelog hashes deterministic (`15be6a42`)
 
 <!-- END GENERATED changelog -->

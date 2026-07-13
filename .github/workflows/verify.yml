@@ -27,6 +27,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      # pull_request checks run on a synthetic merge commit; changelog history belongs
+      # to the PR head, which is the stable source commit the generated file can name.
+      CHANGELOG_END: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:

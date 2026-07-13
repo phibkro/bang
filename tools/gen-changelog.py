@@ -19,6 +19,7 @@ Zero dependencies (stdlib), like the other tools/ generators.
 Usage:
     gen-changelog.py                # rewrite the block in ./CHANGELOG.md
     gen-changelog.py --check        # gate: file ≡ a fresh render (drift = exit 1)
+    gen-changelog.py --check --end <sha>  # check an explicit history endpoint
 """
 from __future__ import annotations
 
@@ -55,6 +56,29 @@ def commits(root: str, end: str = "HEAD", start: str = BASELINE) -> list[str]:
         detail = res.stderr.strip() or f"git log exited {res.returncode}"
         raise RuntimeError(f"cannot derive changelog history for {end}: {detail}")
     return res.stdout.splitlines()
+
+
+def git_text(root: str, *args: str) -> str:
+    res = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+    if res.returncode != 0:
+        detail = res.stderr.strip() or f"git {' '.join(args)} exited {res.returncode}"
+        raise RuntimeError(detail)
+    return res.stdout.strip()
+
+
+def lag_refs(root: str, end: str) -> list[str]:
+    """The sole parent that may satisfy the one-commit self-hash lag.
+
+    Never guess across a merge. Callers checking a synthetic merge must declare the
+    source commit through `--end` / `CHANGELOG_END`.
+    """
+    fields = git_text(root, "rev-list", "--parents", "-n", "1", end).split()
+    parents = fields[1:]
+    if len(parents) > 1:
+        raise RuntimeError(
+            f"{end} is a merge commit; set --end or CHANGELOG_END to the source commit"
+        )
+    return parents
 
 
 def entries(root: str, end: str = "HEAD", start: str = BASELINE) -> dict[str, list[tuple]]:
@@ -102,14 +126,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=".", help="repo root (default: cwd)")
     ap.add_argument("--file", default=None, help="changelog path (default: <root>/CHANGELOG.md)")
+    ap.add_argument(
+        "--end",
+        default=os.environ.get("CHANGELOG_END", "HEAD"),
+        help="history endpoint (default: CHANGELOG_END or HEAD)",
+    )
     ap.add_argument("--check", action="store_true", help="gate: file ≡ fresh render (drift → exit 1)")
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
     path = os.path.abspath(args.file or os.path.join(root, "CHANGELOG.md"))
     try:
-        block = render(root)
-        parent_block = render(root, "HEAD~1") if args.check else None
+        block = render(root, args.end)
     except RuntimeError as exc:
         print(f"── changelog ──\nFAIL: {exc}")
         return 1
@@ -130,14 +158,21 @@ def main() -> int:
         if splice(md, block) == md:
             print("── changelog ──\nPASS: CHANGELOG.md ≡ the conventional commits.")
             return 0
-        # The fixpoint tolerance: a commit cannot contain a changelog that includes
-        # itself, so the pre-commit hook's maintainable invariant is file ≡ render(parent).
-        # A checkout is therefore legitimately ONE commit behind (the self-hash lag);
-        # accept HEAD~1, still fail at two-or-more behind (genuine staleness).
-        if parent_block is not None and splice(md, parent_block) == md:
-            print("── changelog ──\nPASS: CHANGELOG.md ≡ the commits as of HEAD~1 "
-                  "(the self-hash fixpoint lag — resyncs on the next `just changelog`).")
-            return 0
+        # A commit cannot contain a changelog entry for its own not-yet-existing hash.
+        # The caller declares the history endpoint; only that commit's sole parent may
+        # satisfy the one-commit fixpoint lag.
+        try:
+            candidates = lag_refs(root, args.end)
+            for ref in candidates:
+                if splice(md, render(root, ref)) != md:
+                    continue
+                short = git_text(root, "rev-parse", "--short=8", ref)
+                print(f"── changelog ──\nPASS: CHANGELOG.md ≡ the commits as of {short} "
+                      "(the self-hash fixpoint lag — resyncs on the next `just changelog`).")
+                return 0
+        except RuntimeError as exc:
+            print(f"── changelog ──\nFAIL: cannot check changelog fixpoint: {exc}")
+            return 1
         print("── changelog ──\nFAIL: CHANGELOG.md is stale (≥2 commits behind) — run `just changelog`.")
         return 1
 
