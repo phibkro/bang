@@ -231,7 +231,7 @@ the flagged set — it was part of the 20→21 clean move (§8.5).
   spine — likely cut from this paper's claims (§11 item 4).
 - **8.5 `seq_unit` is now DISCHARGED — axiom-clean** (left-unit law for sequencing,
   `Spec.lean:294`, `[propext, Classical.choice, Quot.sound]`; was `sorryAx` at the prior census).
-  Part of the 20→21 clean move. The proof (`seq_unit_proof`, `Meta/LR.lean:1185`) is purely
+  Part of the 20→21 clean move. The proof (`seq_unit_proof`, `Bang/Meta/LR.lean:1185`) is purely
   OPERATIONAL — no LR machinery: both foci `seqComp (ret v) c` and `c` reshape under the same
   observation context `C` to configs that share stack + counter and differ only by a 2-step head
   reduction, closed through `converges_plug_iff` in both `⊑` directions

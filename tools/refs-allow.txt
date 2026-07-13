@@ -74,15 +74,10 @@ Bang/Operational.lean
 Bang/CalcVM.lean
 Bang/Compile.lean
 
-# ── F. /tmp scratch counterexamples narrated by retrospective docs ─────────────────
-# ADR-0023 + two ARCHIVED PATHs cite one-shot /tmp/*.lean probes from their own sessions.
-# /tmp is volatile by construction (tmpfiles cleanup) — the refs existed when written,
-# and the docs are historical narrative, not current pointers. The probes' CONTENT is
-# reproduced/summarized inline in those docs; nothing to recover. Future docs: put
-# probes in scratch/ (tracked) if a doc will cite them.
-/tmp/cex_check.lean
-/tmp/machine_test.lean
-Init/Data/Format/Basic.lean  # Lean TOOLCHAIN source (Std.Format home), not a repo path — cited by the #58 formatting survey + ADR-0090 as the host Wadler engine
+# ── F. External toolchain source ────────────────────────────────────────────────────
+# Lean TOOLCHAIN source (Std.Format home), not a repo path — cited by the #58
+# formatting survey + ADR-0090 as the host Wadler engine.
+Init/Data/Format/Basic.lean
 
 # ADR-0096 (the LR freshness-carrier design consult) cites krnl3's four wall
 # witnesses, which live on branch feat-lr-final-wall @ 2b0948e (the design-consult's

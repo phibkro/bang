@@ -1,6 +1,6 @@
 # Plan 014 — Developer reference and onboarding system
 
-- **Status:** IN REVIEW — Phase 0/1 plus feedback fixes F-006–F-008 implemented and verified on draft PR #141, awaiting review/landing
+- **Status:** IN REVIEW — Phase 0/1 and its feedback fixes are implemented and verified on draft PR #141, awaiting landing
 - **Priority:** P1 documentation architecture
 - **Effort:** XL, delivered as independently gated vertical slices
 - **Depends on:** current architecture roots and existing Vocs/tour/reference generators
@@ -60,7 +60,7 @@ Every delegation names: destination, allowed paths, forbidden paths, source-of-t
 
 ## Phase 1 — repair the roots before adding branches
 
-**Status:** IMPLEMENTED and verified (`lake build`, `just fitness`, `just verify`, focused CLI batteries, and the Vocs production build); not yet committed or merged.
+**Status:** COMPLETE — deliverables implemented and verified (`lake build`, `just fitness`, `just verify`, focused CLI batteries, and the Vocs production build). See the plan status above for integration state.
 
 ### Deliverables
 

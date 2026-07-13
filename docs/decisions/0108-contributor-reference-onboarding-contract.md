@@ -5,7 +5,7 @@
 - **Status**: Accepted
 - **Summary**: The contributor-reference system optimizes first for a general language implementer, while branching into specialist human and agent routes; uses one public Vocs site with a curated product/contributor split and keeps volatile work state repo-only; ships deterministic caption-led generated media with transcripts and reduced-motion fallbacks, without requiring narration; and teaches one journey through two fixtures — a tiny thunk/force precursor followed by the logger-counting handler example. These choices settle Plan 014 Phase 0 and make Phase 1 executable.
 - **Depends-on**: ADR-0077 (documentation placement by audience × temporality), ADR-0078 (git-native knowledge and GitHub workflow)
-- **Relates-to**: `plans/014-developer-reference-onboarding-system.md`, `research/independent-reference-outline.md`, `research/existing-docs-gap-analysis.md`, existing Vocs/tour/reference generators
+- **Relates-to**: `plans/014-developer-reference-onboarding-system.md`, existing Vocs/tour/reference generators
 
 - **Date**: 2026-07-13
 - **Deciders**: operator
