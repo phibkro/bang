@@ -17,11 +17,17 @@ set -euo pipefail
 input=$(cat)
 file=$(echo "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null || echo "")
 
-# Only fire for Bang/*.lean files (the kernel we care about; not legacy Calc*)
+# Only fire for the proof-spine files (post-#108 TIER paths — the flat Bang/X.lean
+# list went stale after the restructure and silently killed this hook for months).
+# Deliberately EXCLUDES the elaboration giants (AbstractMachine, EnvMachine,
+# Frontend/TypeCheck): `lake env lean` on them takes minutes — lanes there run
+# `just check FILE` / lean-lsp deliberately, not per-edit.
 case "$file" in
-  */Bang/Spec.lean|*/Bang/IR.lean|*/Bang/Typing.lean|*/Bang/Semantics.lean| \
-  */Bang/LR.lean|*/Bang/Wasm.lean|*/Bang/Grade.lean|*/Bang/BinaryLR.lean| \
-  */Bang/Distribution.lean|*/Bang/Audit.lean|*/Bang/EffectRow.lean|*/Bang/Semantics/Eval.lean)
+  */Bang/Spec.lean|*/Bang/Core/IR.lean|*/Bang/Core/Typing.lean| \
+  */Bang/Core/Semantics.lean|*/Bang/Core/Semantics/*.lean| \
+  */Bang/Meta/LR.lean|*/Bang/Meta/BinaryLR.lean|*/Bang/Backend/Wasm.lean| \
+  */Bang/Core/Grade.lean|*/Bang/Core/EffectRow.lean| \
+  */Bang/Distribution.lean|*/Bang/Audit.lean)
     ;;
   *) exit 0 ;;
 esac
