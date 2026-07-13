@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/Frontend/Surface.lean,docs/reference/language.md runs-in=fitness
+# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
 """Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained.
 
 Sources of truth (the generate rung of the derivation ladder):
-  • Bang/Frontend/Surface.lean — the `Surf` and `Ty` inductives. Each constructor's trailing
-    `-- comment` IS the surface form, so they generate the SYNTAX + TYPES reference.
+  • docfacts/language.json — the serialized language/diagnostic/prelude/CLI consumer boundary.
   • Bang/Examples.lean + Bang/Frontend/TypeCheck.lean — the `#guard` corpus. `runYieldsInt "src" N`
     (program ⟹ value) and `display "src" == "type"` (program : type) generate the EXAMPLES reference.
     Every example is gated by `lake build`, so a doc derived from them CANNOT drift.
@@ -16,77 +15,17 @@ import re
 import sys
 import pathlib
 
+from docfacts_language import load_language_fact
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SURFACE = ROOT / "Bang/Frontend/Surface.lean"
-DIAGCODES = ROOT / "Bang/Frontend/DiagCodes.lean"
 IR = ROOT / "Bang/Core/IR.lean"
 EVAL = ROOT / "Bang/Core/Semantics/Eval.lean"
 TYPECHECK = ROOT / "Bang/Frontend/TypeCheck.lean"
-PRELUDE = ROOT / "Prelude.bang"
 SOURCES = [ROOT / "Bang/Examples.lean", TYPECHECK]
 OUT = ROOT / "docs/reference/language.md"
 
 STR = r'"((?:[^"\\]|\\.)*)"'  # a Lean string literal (with escapes)
-
-
-def first_sentence(s):
-    s = re.sub(r"\s+", " ", s).strip()
-    m = re.match(r"(.*?\.)(?:\s|$)", s)
-    return (m.group(1) if m else s).strip()
-
-
-def extract_labels(text):
-    """(name, value, summary) for each `/-- … -/ def <name>Label : Label := <n>`."""
-    rows = []
-    for m in re.finditer(r"/--(.*?)-/\s*def\s+(\w+Label)\s*:\s*Label\s*:=\s*(\d+)", text, re.S):
-        rows.append((m.group(2), m.group(3), first_sentence(m.group(1))))
-    return rows
-
-
-def extract_diag_codes(text):
-    """(code, summary, has_example) for each `DiagEntry` in `def registry` (DiagCodes.lean, plan 013 s5).
-
-    The registry is the SINGLE SOURCE OF TRUTH for diagnostic codes; this derives the reference's
-    codes section from it (drift unrepresentable). Each entry is a `{ code := "B0xx" … summary := "…"
-    … example? := (some "…"|none) }` record. `summary` is a single string literal; `example?` presence
-    is `some` vs `none`."""
-    m = re.search(r"def registry\s*:\s*List DiagEntry\s*:=\s*\[(.*?)\n\]", text, re.S)
-    if not m:
-        sys.exit("gen-reference: could not locate `def registry` — the diagnostic-codes section is keyed off it.")
-    body = m.group(1)
-    rows = []
-    # split on the record openers; each entry starts `{ code := "…"`.
-    for em in re.finditer(r"\{\s*code\s*:=\s*" + STR, body):
-        start = em.start()
-        # the entry spans from this `{` to the matching top-level `}` — find it by brace-matching,
-        # ignoring braces inside string literals.
-        depth, i, in_str, esc = 0, start, False, False
-        while i < len(body):
-            c = body[i]
-            if in_str:
-                if esc:
-                    esc = False
-                elif c == "\\":
-                    esc = True
-                elif c == '"':
-                    in_str = False
-            else:
-                if c == '"':
-                    in_str = True
-                elif c == "{":
-                    depth += 1
-                elif c == "}":
-                    depth -= 1
-                    if depth == 0:
-                        break
-            i += 1
-        entry = body[start:i + 1]
-        code = em.group(1)
-        sm = re.search(r"summary\s*:=\s*" + STR, entry)
-        summary = sm.group(1) if sm else ""
-        has_example = re.search(r"example\?\s*:=\s*some", entry) is not None
-        rows.append((code, summary, has_example))
-    return rows
 
 
 def extract_constructors(text, name):
@@ -105,58 +44,6 @@ def extract_constructors(text, name):
                 rows.append((cm.group(1), cm.group(2).strip(), (cm.group(3) or "").strip()))
         elif s.startswith(("deriving", "inductive", "end", "def", "@", "abbrev")):
             break
-    return rows
-
-
-def extract_inductive(text, name):
-    """`| ctor : sig  -- comment` rows of `inductive <name> where … deriving`."""
-    m = re.search(rf"inductive {name} where\n(.*?)\n\s*deriving", text, re.S)
-    if not m:
-        return []
-    rows = []
-    for line in m.group(1).splitlines():
-        cm = re.match(r"\s*\|\s*(\w+)\s*:.*?--\s*(.*)", line)
-        if cm:
-            # the comment is `<form>   <note>` (2+ spaces separate the form from any description)
-            parts = re.split(r"\s{2,}", cm.group(2).strip(), maxsplit=1)
-            form = parts[0]
-            note = parts[1].strip() if len(parts) > 1 else ""
-            rows.append((cm.group(1), form, note))
-    return rows
-
-
-def extract_op_table(text):
-    """(op, leftBP, rightBP) for each `| "op" => some (lbp, rbp, …)` in `def opInfo` (ADR-0071 ①).
-
-    The precedence table is a pure function of this reified operator table — the same table the
-    Pratt loop (`pOp`) consults — so the doc cannot claim a precedence the parser doesn't have."""
-    m = re.search(r"def opInfo.*?\n(.*?)\n\s*\|\s*_\s*=>\s*none", text, re.S)
-    if not m:
-        sys.exit("gen-reference: could not locate `def opInfo` — the precedence table is keyed off it.")
-    rows = []
-    for line in m.group(1).splitlines():
-        cm = re.match(rf'\s*\|\s*{STR}\s*=>\s*some\s*\(\s*(\d+)\s*,\s*(\d+)\s*,', line)
-        if cm:
-            rows.append((cm.group(1), int(cm.group(2)), int(cm.group(3))))
-    return rows
-
-
-def extract_keyword_rules(text):
-    """(keyword, form) for each reified `Rule` in `def keywordRule` (ADR-0071 ②).
-
-    Renders the surface shape by walking the rule's `choices`: `.kw "x"`→`x`, `.refE`→`<expr>`,
-    `.refA`→`<atom>`, `.refI`→`<ident>`, `.optAs`→`[as <ident>]` (the optional named-cap binder,
-    ADR-0072). The same rules `pRuleDrive` interprets, so the grammar tracks the parser."""
-    m = re.search(r"def keywordRule.*?\n(.*?)\n\s*\|\s*_\s*=>\s*none", text, re.S)
-    if not m:
-        sys.exit("gen-reference: could not locate `def keywordRule` — the keyword grammar is keyed off it.")
-    slot = {"refE": "<expr>", "refA": "<atom>", "refI": "<ident>", "optAs": "[as <ident>]"}
-    rows = []
-    for cm in re.finditer(r'\|\s*"([^"]+)"\s*=>\s*some\s*⟨\[(.*?)\]\s*,', m.group(1)):
-        parts = []
-        for c in re.finditer(r'\.kw\s*"([^"]*)"|\.(refE|refA|refI|optAs)', cm.group(2)):
-            parts.append(c.group(1) if c.group(1) is not None else slot[c.group(2)])
-        rows.append((cm.group(1), " ".join(parts)))
     return rows
 
 
@@ -181,53 +68,6 @@ def extract_result_ctors(text):
         elif s.startswith(("deriving", "inductive", "end", "def", "@", "abbrev", "/-")):
             break
     return names
-
-
-# The 3 STRING-STDLIB names (concat/reverse/eq) vs the GENERIC-PRELUDE remainder -- Prelude.bang
-# carries NO section markers (it is comment-free, matching the examples/*.bang convention: `bang
-# fmt` strips `--` comments, so a commented module permanently fails `bang lint`'s
-# `fmt-divergence` check), so the split is this fixed NAME set instead of a text boundary.
-STDLIB_NAMES = {"concat", "reverse", "eq", "strLength", "intToStr"}
-
-
-def extract_prelude_decl_names(prelude_text):
-    """Every `pub let[ rec] NAME` decl name in `Prelude.bang`, in SOURCE ORDER -- the name/order
-    SSoT (ADR-0098: the module itself, not a Lean string bucket)."""
-    names = re.findall(r"^pub let(?: rec)? (\w+)", prelude_text, re.M)
-    if not names:
-        sys.exit("gen-reference: no `pub let` entries found in Prelude.bang.")
-    return names
-
-
-def extract_prelude_sigs(typecheck_text):
-    """(name -> sig) from `TypeCheck.lean`'s `preludeSigs` table -- the DESCRIPTIVE signature SSoT
-    (ADR-0098 sec preludeSigs): bang's surface has no generic function-type ascription (`pub let
-    mapOption : (a -> b) -> ... = ...` rejects -- generics elaborate to MONO, ADR-0075/0079), so a
-    generic entry's signature cannot live as checked syntax IN `Prelude.bang` the way `concat :
-    Str -> Str -> Str` does; `preludeSigs` is the one hand-maintained escape hatch, kept honest by
-    the corpus `#guard`s that exercise every entry against these exact shapes."""
-    m = re.search(r"def preludeSigs\b.*?:=\s*\n\s*\[(.*?)\]\s*\n", typecheck_text, re.S)
-    if not m:
-        sys.exit("gen-reference: could not locate `def preludeSigs` -- the stdlib/generic-prelude sections are keyed off it.")
-    sigs = {}
-    for nm, sig in re.findall(r'\(\s*"(\w+)"\s*,\s*"([^"]*)"\s*\)', m.group(1)):
-        sigs[nm] = sig
-    if not sigs:
-        sys.exit("gen-reference: `preludeSigs` parsed to no entries -- the head-literal shape changed.")
-    return sigs
-
-
-def extract_stdlib(prelude_text, sigs):
-    """(name, sig) for the 3 STRING STDLIB entries (concat/reverse/eq), in `Prelude.bang`'s OWN
-    declared order -- `reverse` has no signature (an accumulator fold; true in the retired string
-    bucket too, not new here)."""
-    return [(n, sigs.get(n)) for n in extract_prelude_decl_names(prelude_text) if n in STDLIB_NAMES]
-
-
-def extract_generic_prelude(prelude_text, sigs):
-    """(name, sig) for every OTHER `Prelude.bang` entry (mapOption, the isos, the #105 first
-    slice, the char kit), in `Prelude.bang`'s OWN declared order."""
-    return [(n, sigs.get(n)) for n in extract_prelude_decl_names(prelude_text) if n not in STDLIB_NAMES]
 
 
 def parse_examples(path):
@@ -274,8 +114,8 @@ def parse_examples(path):
 
 
 def render():
+    language = load_language_fact()
     surf = SURFACE.read_text()
-    diagcodes = DIAGCODES.read_text()
     typecheck = TYPECHECK.read_text()
     L = []
     L.append("# BANG — language reference")
@@ -283,8 +123,8 @@ def render():
     L.append("<!-- GENERATED by tools/gen-reference.py from the verified source — do not hand-edit. -->")
     L.append("<!-- Run `just reference` to regenerate; `gen-reference.py --check` gates it. -->")
     L.append("")
-    L.append("Derived from the code: the surface forms are the `Surf`/`Ty` constructor comments in")
-    L.append("`Bang/Frontend/Surface.lean`; every example is a `#guard` gated by `lake build`, so")
+    L.append("Derived from the code through the schema-validated `docfacts/language.json` bundle;")
+    L.append("every example is a `#guard` gated by `lake build`, so")
     L.append("nothing here can drift from what the language actually does.")
     L.append("")
 
@@ -292,16 +132,16 @@ def render():
     L.append("")
     L.append("| Form | Notes |")
     L.append("|---|---|")
-    for _name, form, note in extract_inductive(surf, "Surf"):
-        L.append(f"| `{form}` | {note} |")
+    for row in language["surface"]["forms"]:
+        L.append(f"| `{row['form']}` | {row['notes']} |")
     L.append("")
 
     L.append("## Types")
     L.append("")
     L.append("| Type | Notes |")
     L.append("|---|---|")
-    for _name, form, note in extract_inductive(surf, "Ty"):
-        L.append(f"| `{form}` | {note} |")
+    for row in language["surface"]["types"]:
+        L.append(f"| `{row['form']}` | {row['notes']} |")
     L.append("")
 
     L.append("## Grammar")
@@ -319,9 +159,11 @@ def render():
     L.append("")
     L.append("| Operator | leftBP | rightBP | Associativity |")
     L.append("|---|---|---|---|")
-    for op, lbp, rbp in extract_op_table(surf):
+    for row in language["grammar"]["operators"]:
+        lbp = row["leftBindingPower"]
+        rbp = row["rightBindingPower"]
         assoc = "left" if lbp < rbp else "right" if lbp > rbp else "non"
-        L.append(f"| `{op}` | {lbp} | {rbp} | {assoc} |")
+        L.append(f"| `{row['symbol']}` | {lbp} | {rbp} | {assoc} |")
     L.append("")
     L.append("### Keyword-led constructs")
     L.append("")
@@ -332,8 +174,8 @@ def render():
     L.append("")
     L.append("| Keyword | Form |")
     L.append("|---|---|")
-    for kw, form in extract_keyword_rules(surf):
-        L.append(f"| `{kw}` | `{form}` |")
+    for row in language["grammar"]["keywordRules"]:
+        L.append(f"| `{row['keyword']}` | `{row['form']}` |")
     L.append("")
 
     if "def pLetBindings" not in surf:
@@ -395,9 +237,10 @@ def render():
     L.append("See `examples/mutual-parity` for the N-way cycle (a three-sibling `and` group).")
     L.append("")
 
-    if "a bare function is a computation" not in diagcodes:
+    diagnostic_by_code = {row["code"]: row for row in language["diagnostics"]["registry"]}
+    if "a bare function is a computation" not in diagnostic_by_code.get("B015", {}).get("anchors", []):
         sys.exit(
-            "gen-reference: the B015 'bare function' anchor not found in DiagCodes.lean — the "
+            "gen-reference: the B015 'bare function' fact is missing — the "
             "'Binding a function' note below is keyed off it (issue #121)."
         )
     L.append("### Binding a function (issue #121)")
@@ -712,8 +555,8 @@ def render():
     L.append("")
     L.append("| Label | Value | Channel |")
     L.append("|---|---|---|")
-    for name, val, summ in extract_labels(surf):
-        L.append(f"| `{name}` | {val} | {summ} |")
+    for row in language["grammar"]["effectLabels"]:
+        L.append(f"| `{row['name']}` | {row['value']} | {row['summary']} |")
     L.append("")
 
     L.append("## Kernel primitives (the IR the surface lowers to)")
@@ -745,11 +588,14 @@ def render():
     L.append("")
     L.append("| Function | Signature |")
     L.append("|---|---|")
-    prelude_text = PRELUDE.read_text()
-    prelude_sigs = extract_prelude_sigs(TYPECHECK.read_text())
-    for name, sig in extract_stdlib(prelude_text, prelude_sigs):
+    prelude = language["prelude"]
+    standard_names = set(prelude["standardNames"])
+    for declaration in prelude["declarations"]:
+        if declaration["name"] not in standard_names:
+            continue
+        sig = declaration["signature"]
         cell = f"`{sig}`" if sig else "— (no top-level annotation — see `Prelude.bang`)"
-        L.append(f"| `{name}` | {cell} |")
+        L.append(f"| `{declaration['name']}` | {cell} |")
     L.append("")
     L.append("Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound")
     L.append("over-approximation: they terminate but the certifier can't prove it, so they run correctly.")
@@ -767,9 +613,12 @@ def render():
     L.append("")
     L.append("| Function | Signature |")
     L.append("|---|---|")
-    for name, sig in extract_generic_prelude(prelude_text, prelude_sigs):
+    for declaration in prelude["declarations"]:
+        if declaration["name"] in standard_names:
+            continue
+        sig = declaration["signature"]
         cell = f"`{sig}`" if sig else "— (see `Prelude.bang`)"
-        L.append(f"| `{name}` | {cell} |")
+        L.append(f"| `{declaration['name']}` | {cell} |")
     L.append("")
     L.append("**Bound-free generics** (`take`/`drop`/`length`/`append`/`zip`/`range`/`replicate` — no")
     L.append("trait bound, a free element-type variable) need their instantiation ANCHORED at each call")
@@ -1273,6 +1122,40 @@ def render():
     L.append("fails LOUD naming the artifact.")
     L.append("")
 
+    L.append("## CLI contract")
+    L.append("")
+    L.append("GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded dispatcher arms.")
+    L.append("")
+    L.append("| Command path | Principal flags | Synopsis |")
+    L.append("|---|---|---|")
+    for command in language["cli"]["commands"]:
+        path = " ".join(command["path"])
+        flags = ", ".join(f"`{flag}`" for flag in command["principalFlags"]) or "—"
+        synopsis = command["synopsis"].replace("|", "\\|")
+        L.append(f"| `bang {path}` | {flags} | `{synopsis}` |")
+    L.append("")
+    L.append("| Exit scope | Code | Contract |")
+    L.append("|---|---:|---|")
+    for contract in language["cli"]["exitContracts"]:
+        L.append(f"| `{contract['scope']}` | {contract['code']} | {contract['meaning']} |")
+    L.append("")
+    L.append("### Evidence")
+    L.append("")
+    L.append("| Label | Claim | Sources | Validating commands |")
+    L.append("|---|---|---|---|")
+    evidence_by_id = {row["id"]: row for row in language["evidence"]}
+    referenced_evidence = []
+    for family in ("surface", "grammar", "diagnostics", "prelude", "cli"):
+        for evidence_id in language[family]["evidence"]:
+            if evidence_id not in referenced_evidence:
+                referenced_evidence.append(evidence_id)
+    for evidence_id in referenced_evidence:
+        evidence = evidence_by_id[evidence_id]
+        sources = "<br>".join(f"`{source}`" for source in evidence["sources"])
+        commands = "<br>".join(f"`{command}`" for command in evidence["commands"])
+        L.append(f"| `{evidence['label']}` | {evidence['claim']} | {sources} | {commands} |")
+    L.append("")
+
     L.append("## Diagnostic codes (`bang explain`)")
     L.append("")
     L.append("GENERATED from the registry in `Bang/Frontend/DiagCodes.lean` (plan 013 s5) — the SINGLE")
@@ -1284,9 +1167,9 @@ def render():
     L.append("")
     L.append("| Code | Summary | `explain` example |")
     L.append("|---|---|---|")
-    for code, summary, has_example in extract_diag_codes(diagcodes):
-        ex = "yes" if has_example else "—"
-        L.append(f"| `{code}` | {summary} | {ex} |")
+    for diagnostic in language["diagnostics"]["registry"]:
+        ex = "yes" if diagnostic["example"] is not None else "—"
+        L.append(f"| `{diagnostic['code']}` | {diagnostic['summary']} | {ex} |")
     L.append("")
 
     return "\n".join(L) + "\n"

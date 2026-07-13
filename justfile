@@ -153,6 +153,7 @@ regen-all:
     python3 tools/check-architecture-assertions.py
     python3 tools/gen-proof-assets.py
     python3 tools/gen-changelog.py
+    python3 tools/docfacts_language.py
     python3 tools/gen-reference.py
     python3 tools/docfacts_logger.py
     python3 tools/gen-tmgrammar.py
@@ -261,6 +262,7 @@ fitness:
     python3 tools/gen-proof-assets.py --check
     python3 tools/check-doc-pins.py
     python3 tools/gen-changelog.py --check
+    python3 tools/docfacts_language.py --check
     python3 tools/gen-reference.py --check
     python3 tools/docfacts_logger.py --check
     python3 tools/gen-tmgrammar.py --check
@@ -325,25 +327,34 @@ llms-txt:
 changelog:
     python3 tools/gen-changelog.py
 
+# Regenerate the schema-validated language/diagnostic/prelude/CLI fact bundle.
+docfacts-language:
+    python3 tools/docfacts_language.py
+
 # Regenerate the schema-validated logger-counting docfact and its standalone Markdown consumer.
 docfacts-logger:
     python3 tools/docfacts_logger.py
 
 # Cheap docfact drift + known-bad schema/semantic poles. Part of `just fitness`.
 docs-check:
+    python3 tools/docfacts_language.py --check
     python3 tools/docfacts_logger.py --check
+
+# Focused executable agreement for the serialized language docfact seam.
+test-docfacts-language:
+    bash tools/test-docfacts-language.sh
 
 # Executable logger-counting evidence: env/oracle/compiled output + check/query. Part of verify.
 test-docfacts-logger:
     bash tools/test-docfacts-logger.sh
 
 # Regenerate docs/reference/language.md from the Surf/Ty constructor comments + the verified #guard corpus.
-reference:
+reference: docfacts-language
     python3 tools/gen-reference.py
 
 # Regenerate web/docs/bang.tmLanguage.json — the TextMate grammar derived from the reified parser
 # tables (opInfo/keywordRule/pIdent) in Bang/Frontend/Surface.lean. `--check` gates it in fitness.
-tmgrammar:
+tmgrammar: docfacts-language
     python3 tools/gen-tmgrammar.py
 
 # Regenerate _site/index.html — the glanceable progress dashboard (milestones + ◊-map + proof-state + pulse).
