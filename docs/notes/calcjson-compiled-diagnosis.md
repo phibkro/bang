@@ -1,4 +1,5 @@
 <!-- note-status: active -->
+<!-- describes: examples/calc examples/json Bang/Backend/WasmEmit.lean @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
 # calc / json on the compiled + emitted paths — diagnosis
 
 > **DIAGNOSIS probe** (deliverable = root causes + fix plan; no code fixes this lane).

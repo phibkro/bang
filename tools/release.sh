@@ -74,6 +74,13 @@ else
   fi
 fi
 
+# --- gate 5: doc pins STRICT — a release may not ship prose known-stale against its
+# own sources (warn-tier in fitness becomes fail-tier here; restamp or amend first).
+if ! python3 tools/check-doc-pins.py --strict; then
+  echo "release: stale doc pins — re-verify + restamp the flagged notes before tagging." >&2
+  exit 1
+fi
+
 # --- extract notes: conventional-commit entries since the previous tag ---
 PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
 if [[ -n "$PREV_TAG" ]]; then

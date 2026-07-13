@@ -1,4 +1,5 @@
 <!-- note-status: active -->
+<!-- describes: Bang/Backend/AbstractMachine.lean tools/clone-report.py tools/leanlex.py @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
 # Clone triage — duplication census + the extraction map
 
 > **Instrument:** `just clones` (`tools/clone-report.py`, Lean-aware token-window

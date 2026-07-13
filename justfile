@@ -127,6 +127,12 @@ clones *ARGS:
 proof-assets:
     python3 tools/gen-proof-assets.py
 
+# Doc-staleness over git pins: every note declares `<!-- describes: <paths> @ <sha> -->`
+# or opts out (`describes: none`). Warn-tier in fitness; `just doc-pins --strict`
+# (stale = fail) belongs in the release ritual.
+doc-pins *ARGS:
+    python3 tools/check-doc-pins.py {{ARGS}}
+
 # Regenerate EVERY derived artifact in one shot — the write-side twin of the fitness
 # checks. Run before committing anything that touches generators' inputs; kills the
 # one-stale-leg-per-hook-cycle onion at landings.
@@ -244,6 +250,7 @@ fitness:
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
     python3 tools/gen-proof-assets.py --check
+    python3 tools/check-doc-pins.py
     python3 tools/gen-changelog.py --check
     python3 tools/gen-reference.py --check
     python3 tools/gen-tmgrammar.py --check

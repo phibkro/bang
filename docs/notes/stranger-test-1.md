@@ -1,4 +1,5 @@
 <!-- note-status: active -->
+<!-- describes: none -->
 # Stranger test — round 1 (2026-07-09)
 
 > The first outer-loop probe: a zero-prior agent, roleplay-strict (README + generated

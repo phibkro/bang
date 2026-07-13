@@ -1,4 +1,5 @@
 <!-- note-status: active -->
+<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-rung5-print-diff.sh tools/emit-rung5-effects-diff.sh @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
 # Emission rung-5 design — unifying effects onto the GC path (the "closures + handlers" rung)
 
 > **Verdict (one sentence).** Rung 5 unifies the two disjoint lowerings (inline rungs 1-3 for the
