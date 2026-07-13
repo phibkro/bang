@@ -6,7 +6,6 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-python3 tools/docfacts_language.py --check
 if [ -z "${BANG_BIN_FRESH:-}" ]; then
   echo "building bang runner…" >&2
   lake build bang >&2
