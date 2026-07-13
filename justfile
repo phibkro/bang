@@ -118,6 +118,15 @@ test-cli:
 test-law:
     bash tools/test-law.sh
 
+# Rank duplicated code windows in Bang/ (extraction candidates; triage lives in
+# docs/notes/clone-triage.md). ARGS pass through, e.g. `just clones --window 8`.
+clones *ARGS:
+    python3 tools/clone-report.py {{ARGS}}
+
+# Regenerate docs/notes/proof-assets.md (the reusable-proof-assets inventory).
+proof-assets:
+    python3 tools/gen-proof-assets.py
+
 # Regenerate EVERY derived artifact in one shot — the write-side twin of the fitness
 # checks. Run before committing anything that touches generators' inputs; kills the
 # one-stale-leg-per-hook-cycle onion at landings.
@@ -130,6 +139,7 @@ regen-all:
     python3 tools/refs.py build
     python3 tools/gen-gate-index.py
     python3 tools/gen-import-graph.py
+    python3 tools/gen-proof-assets.py
     python3 tools/gen-changelog.py
     python3 tools/gen-reference.py
     python3 tools/gen-tmgrammar.py
@@ -233,6 +243,7 @@ fitness:
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
+    python3 tools/gen-proof-assets.py --check
     python3 tools/gen-changelog.py --check
     python3 tools/gen-reference.py --check
     python3 tools/gen-tmgrammar.py --check

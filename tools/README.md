@@ -4,7 +4,7 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (17)
+## gen (18)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
@@ -19,6 +19,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `Bang/**/*.lean`, `docs/architecture/core-overview.md`, `genblock.py` | the module dependency graph, generated from the `import` edges |
 | [`gen-llms-txt.py`](gen-llms-txt.py) | `fitness` | `CLAUDE.md`, `llms.txt` | generate llms.txt (the LLM-doc-index standard, llmstxt.org) |
 | [`gen-notes-index.py`](gen-notes-index.py) | `fitness` | `docs/notes/*.md`, `docs/notes/README.md` | generate docs/notes/README.md, the notes map |
+| [`gen-proof-assets.py`](gen-proof-assets.py) | `fitness` | `Bang/**/*.lean`, `docs/notes/proof-assets.md`, `tools/leanlex.py` | generate the reusable-proof-assets inventory |
 | [`gen-proof-state.py`](gen-proof-state.py) | `fitness` | `Bang/Audit.lean`, `burndown.sh`, `CONTEXT.md`, `genblock.py` | generate CONTEXT.md's proof-state line from the gate (the root) |
 | [`gen-questions-index.py`](gen-questions-index.py) | `fitness` | `docs/notes/questions/*.md`, `docs/notes/OPEN_QUESTIONS.md`, `genblock.py` | the design-question ledger, generated from the OKF files |
 | [`gen-reference.py`](gen-reference.py) | `fitness` | `Bang/Frontend/Surface.lean`, `docs/reference/language.md` | Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained |
@@ -120,6 +121,22 @@ __
 |---|---|---|---|
 | [`bench/g2-components/run.sh`](bench/g2-components/run.sh) | `manual` | `docs/notes/wasm-concurrency-survey.md` | the G2 measurement harness (issue #116) |
 | [`bench/wasi-async/run.sh`](bench/wasi-async/run.sh) | `manual` | `docs/notes/wasm-concurrency-survey.md` | the WASI-0.3 async spike (Q(conc-3) / G8, the ADR-0101 backend gate) |
+
+## analysis (1)
+
+__
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`clone-report.py`](clone-report.py) | `manual` | `Bang/**/*.lean`, `tools/leanlex.py` | rank duplicated code windows in Lean sources |
+
+## lib (1)
+
+__
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
 
 ## release (1)
 
