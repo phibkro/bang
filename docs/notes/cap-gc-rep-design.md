@@ -1,4 +1,5 @@
 <!-- note-status: active -->
+<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-escape-diff.sh @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
 # First-class-capability GC rep — design (#133)
 
 > **Design-probe deliverable, no emitter change lands here** (probe phase = docs/notes + scratch

@@ -1,4 +1,5 @@
 <!-- note-status: active -->
+<!-- describes: examples/calc @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
 # Dogfood findings — a multi-module calculator written in bang
 
 > `examples/calc/` is a real program: a lexer → parser → evaluator arithmetic

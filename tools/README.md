@@ -29,7 +29,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
 
-## check (21)
+## check (22)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -43,6 +43,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-audit-sync.sh`](check-audit-sync.sh) | `fitness` | `Bang/Spec.lean`, `Bang/Audit.lean` | keep the soundness gate ≡ the headline-theorem set |
 | [`check-context-claims.py`](check-context-claims.py) | `fitness` | `CONTEXT.md`, `gen-proof-state.py` | CONTEXT prose vs the generated proof-state (drift gate) |
 | [`check-doc-hygiene.py`](check-doc-hygiene.py) | `fitness` | `docs/notes/*.md`, `docs-allow.txt` | the doc-reachability / staleness fitness function |
+| [`check-doc-pins.py`](check-doc-pins.py) | `fitness` | `docs/notes/*.md`, `tools/doc-pins-baseline.txt` | doc-staleness detection over git's Merkle DAG |
 | [`check-git-hygiene.sh`](check-git-hygiene.sh) | `fitness` | `setup.sh` | multi-worktree git-store safety fitness function (#40) |
 | [`check-loop-audit.sh`](check-loop-audit.sh) | `fitness` | `docs/notes/loop-audit.md`, `ROADMAP.md` | loop-audit freshness fitness function |
 | [`check-onboarding-refs.py`](check-onboarding-refs.py) | `fitness` | `ONBOARDING.md`, `CLAUDE.md` | ONBOARDING's note references ⊆ CLAUDE's index (drift gate) |
