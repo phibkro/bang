@@ -14,7 +14,7 @@ from pathlib import Path
 
 from docfacts_architecture import parse_fact as parse_architecture_fact
 from docfacts_proof import parse_fact as parse_proof_fact, validate_cross_fact
-from genblock import splice, validate_mermaid
+from genblock import semantic_mermaid_id, splice, validate_mermaid
 from jsonschema.exceptions import ValidationError
 
 PIPELINE_BEGIN = "<!-- BEGIN GENERATED architecture-pipeline (just architecture-assertions) — do not hand-edit -->"
@@ -52,7 +52,7 @@ def code(value: object) -> str:
 
 
 def mermaid_id(value: str) -> str:
-    return "n_" + value.encode("utf-8").hex()
+    return semantic_mermaid_id(value)
 
 
 def mermaid_label(value: object) -> str:

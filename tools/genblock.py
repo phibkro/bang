@@ -20,6 +20,25 @@ import subprocess
 import tempfile
 
 
+def semantic_mermaid_id(value: str, prefix: str = "n") -> str:
+    """Encode a readable, injective Mermaid identifier from a semantic name."""
+    encoded = []
+    for character in value:
+        if character.isascii() and character.isalnum():
+            encoded.append(character)
+        elif character == "-":
+            encoded.append("_")
+        elif character == "_":
+            encoded.append("__")
+        elif character == ".":
+            encoded.append("_dot_")
+        elif character == "'":
+            encoded.append("_prime_")
+        else:
+            encoded.append(f"_u{ord(character):04x}_")
+    return f"{prefix}_{''.join(encoded)}"
+
+
 def marker_bounds(md: str, begin: str, end: str) -> tuple[int, int]:
     """Return one ordered marker pair or fail loud on malformed generated regions."""
     if md.count(begin) != 1 or md.count(end) != 1:

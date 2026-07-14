@@ -20,7 +20,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
 | [`gen-deadcode-imports.py`](gen-deadcode-imports.py) | `manual` | `tools/DeadCode.lean`, `Bang/**/*.lean`, `Main.lean` | keep tools/DeadCode.lean's import block ≡ the module set |
 | [`gen-gate-index.py`](gen-gate-index.py) | `fitness` | `justfile`, `.claude/codebase-maintenance.md`, `genblock.py` | the gate composition, generated from the justfile (the root) |
-| [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `docfacts/architecture.json`, `docfacts/schema/architecture.schema.json`, `docs/architecture/core-overview.md`, `docfacts_architecture.py`, `genblock.py` | Generate the current BANG module graph from serialized architecture facts.""" |
+| [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `docfacts/architecture.json`, `docfacts/schema/architecture.schema.json`, `docs/architecture/core-overview.md`, `docfacts_architecture.py`, `genblock.py` | Generate BANG's C4 component dependency view from serialized architecture facts.""" |
 | [`gen-llms-txt.py`](gen-llms-txt.py) | `fitness` | `CLAUDE.md`, `llms.txt` | generate llms.txt (the LLM-doc-index standard, llmstxt.org) |
 | [`gen-notes-index.py`](gen-notes-index.py) | `fitness` | `docs/notes/*.md`, `docs/notes/README.md` | generate docs/notes/README.md, the notes map |
 | [`gen-proof-assets.py`](gen-proof-assets.py) | `fitness` | `Bang/**/*.lean`, `docs/notes/proof-assets.md`, `tools/leanlex.py` | generate the reusable-proof-assets inventory |

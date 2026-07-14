@@ -15,24 +15,24 @@ Architecture decisions remain authoritative: [ADR-0016](../decisions/0016-two-ho
 <!-- BEGIN GENERATED architecture-pipeline (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
-  n_63616c63766d["CalcVM compile + exec"]
-  n_636f6d70["Graded-CBPV Comp"]
-  n_656d69747465642d776174["WasmGC / WAT"]
-  n_656e762d656e67696e65["evalE default engine"]
-  n_6576616c64["evalD"]
-  n_736f757263652d6576616c["Source.eval oracle"]
-  n_736f757263652d657865637574696f6e["Source execution"]
-  n_736f757263652d74657874["Source text"]
-  n_7461726765742d657865637574696f6e["Formal target execution"]
-  n_7761736d74696d65["Wasmtime"]
-  n_636f6d70 -->|implemented · WasmGC text emission| n_656d69747465642d776174
-  n_636f6d70 -->|implemented · kernel interpretation| n_736f757263652d6576616c
-  n_656d69747465642d776174 -->|differential-tested · real-engine execution| n_7761736d74696d65
-  n_6576616c64 -->|proven · calculation| n_63616c63766d
-  n_6576616c64 -->|differential-tested · environment evaluation and readback| n_656e762d656e67696e65
-  n_736f757263652d6576616c -->|proven · state reification| n_6576616c64
-  n_736f757263652d657865637574696f6e -->|proven · annotated forward simulation| n_7461726765742d657865637574696f6e
-  n_736f757263652d74657874 -->|differential-tested · frontend lowering| n_636f6d70
+  n_calcvm["CalcVM compile + exec"]
+  n_comp["Graded-CBPV Comp"]
+  n_emitted_wat["WasmGC / WAT"]
+  n_env_engine["evalE default engine"]
+  n_evald["evalD"]
+  n_source_eval["Source.eval oracle"]
+  n_source_execution["Source execution"]
+  n_source_text["Source text"]
+  n_target_execution["Formal target execution"]
+  n_wasmtime["Wasmtime"]
+  n_comp -->|implemented · WasmGC text emission| n_emitted_wat
+  n_comp -->|implemented · kernel interpretation| n_source_eval
+  n_emitted_wat -->|differential-tested · real-engine execution| n_wasmtime
+  n_evald -->|proven · calculation| n_calcvm
+  n_evald -->|differential-tested · environment evaluation and readback| n_env_engine
+  n_source_eval -->|proven · state reification| n_evald
+  n_source_execution -->|proven · annotated forward simulation| n_target_execution
+  n_source_text -->|differential-tested · frontend lowering| n_comp
 ```
 
 **Reading the diagram:** each edge label is the serialized evidence label followed by the serialized method; labels do not imply a stronger status.
@@ -73,12 +73,12 @@ _Generated from validated committed architecture and proof facts. The JSON is th
 <!-- BEGIN GENERATED proof-arrows (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
-  n_736f757263652d657865637574696f6e["Source execution"]
-  n_736f757263652d70726f6772616d2d6c656674["Source program P"]
-  n_736f757263652d70726f6772616d2d7269676874["Source program Q"]
-  n_7461726765742d657865637574696f6e["Formal target execution"]
-  n_736f757263652d70726f6772616d2d6c656674 <-->|binary biorthogonal LR · implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`| n_736f757263652d70726f6772616d2d7269676874
-  n_736f757263652d657865637574696f6e -->|annotated forward simulation · proven| n_7461726765742d657865637574696f6e
+  n_source_execution["Source execution"]
+  n_source_program_left["Source program P"]
+  n_source_program_right["Source program Q"]
+  n_target_execution["Formal target execution"]
+  n_source_program_left <-->|binary biorthogonal LR · implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`| n_source_program_right
+  n_source_execution -->|annotated forward simulation · proven| n_target_execution
 ```
 
 | Question / endpoint type | Direction | Method and theorem refs | Evidence status |
@@ -127,280 +127,63 @@ _Live validator: `python3 tools/docfacts_proof.py --live-check`._
 | `Bang.CalcVM.run_evalD` | `Bang/Backend/AbstractMachine.lean:5494` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
 <!-- END GENERATED audited-axioms -->
 
-## 3. The dependency V
+## 3. C4 component dependencies
 
-Dependencies point inward at Core even though program data flows Frontend → Core → Backend.
+The useful architecture zoom is the **component** level: repository tiers such as `Frontend`, `Core`, and `Backend`. Individual Lean modules are code-level detail—kept exact in the serialized fact, but intentionally omitted from the visual.
 
-| Tier | Owns | Dependency rule |
-|---|---|---|
-| Core | IR, rows/grades, typing, kernel semantics, syntactic soundness | Imports no outer tier |
-| Frontend | Surface syntax, modules, inference/elaboration, formatter, diagnostics, query/rewrite/lint | May import Core; never Backend |
-| Backend | `evalD`, calculated machines, environment machine, formal Wasm, concrete emitter | May import Core; never Frontend |
-| Meta | Binary logical relations and contextual-equivalence proofs | Consumes the lower V |
-| Witness | Executable regressions, countermodels, fuzzers, law/proof-export evidence | Consumes lower tiers; is not imported by them |
-| Reify | Standalone calculated-machine proof laboratory | Consumer tier, not the production CalcVM pipeline |
-| Apex | `Spec`, `Audit`, `Distribution`, `Examples` | Public façade and gates; may import all tiers |
-
-`tools/import_facts.py` is the single parser/classifier for the graph and the dependency fitness check. `tools/arch-check.py` enforces the V. Unknown tiers and missing internal imports fail rather than silently falling into a default layer.
+The dependency V still points inward at Core even though program data flows Frontend → Core → Backend. `tools/import_facts.py` is the single parser/classifier; `tools/arch-check.py` enforces the V. Unknown tiers and missing internal imports fail rather than silently falling into a default component.
 
 <!-- BEGIN GENERATED import-graph (just import-graph) — do not hand-edit -->
-_Generated by `tools/gen-import-graph.py` from validated `docfacts/architecture.json` module records. Node label = `module (LOC · fan-in)`; an arrow `A → B` means A imports B._
+BANG uses the [C4 abstraction hierarchy](https://c4model.com/abstractions) to choose a useful zoom level for this page:
+
+| C4 abstraction | BANG mapping | This view |
+|---|---|---|
+| Software system | BANG implementation and toolchain | Shown as the outer boundary |
+| Container | Lean compiler/reference toolchain | Shown as the application boundary |
+| Component | 7 repository tiers (`Frontend`, `Core`, …) | Dependency nodes below |
+| Code | 58 Lean modules and 116 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
+
+A C4 [component](https://c4model.com/abstractions/component) is related functionality behind a defined interface and is not separately deployable. That matches these tiers better than C4's application/data-store [container](https://c4model.com/abstractions/container) term.
 
 ```mermaid
-graph TD
-  subgraph tier_Frontend["Frontend — text → typed core"]
-    n_42616e672e46726f6e74656e642e416e6e6f74617465["Frontend.Annotate<br/>252L · fan-in 1"]
-    n_42616e672e46726f6e74656e642e44696167436f646573["Frontend.DiagCodes<br/>320L · fan-in 1"]
-    n_42616e672e46726f6e74656e642e446961676e6f7374696373["Frontend.Diagnostics<br/>227L · fan-in 1"]
-    n_42616e672e46726f6e74656e642e466f726d6174["Frontend.Format<br/>1139L · fan-in 4"]
-    n_42616e672e46726f6e74656e642e4c696e74["Frontend.Lint<br/>289L · fan-in 0"]
-    n_42616e672e46726f6e74656e642e4e616d6564436f7265["Frontend.NamedCore<br/>386L · fan-in 0"]
-    n_42616e672e46726f6e74656e642e5175657279["Frontend.Query<br/>899L · fan-in 3"]
-    n_42616e672e46726f6e74656e642e52657772697465["Frontend.Rewrite<br/>313L · fan-in 0"]
-    n_42616e672e46726f6e74656e642e53757266616365["Frontend.Surface<br/>3406L · fan-in 7"]
-    n_42616e672e46726f6e74656e642e537572666163652e50726f7054657374["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
-    n_42616e672e46726f6e74656e642e537572666163652e5472616974["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    n_42616e672e46726f6e74656e642e54797065436865636b["Frontend.TypeCheck<br/>9490L · fan-in 5"]
+flowchart LR
+  subgraph system_BANG["Software system: BANG implementation"]
+    subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
+      component_Frontend["Frontend<br/>12 modules · 17266 LOC"]
+      component_Core["Core<br/>12 modules · 8166 LOC"]
+      component_Backend["Backend<br/>6 modules · 16975 LOC"]
+      component_Meta["Meta<br/>2 modules · 3852 LOC"]
+      component_Witness["Witness<br/>19 modules · 3683 LOC"]
+      component_Reify["Reify<br/>3 modules · 1883 LOC"]
+      component_Apex["Apex<br/>4 modules · 1004 LOC"]
+    end
   end
-  subgraph tier_Core["Core — IR · typing · semantics · soundness"]
-    n_42616e672e436f72652e436170436f68["Core.CapCoh<br/>566L · fan-in 1"]
-    n_42616e672e436f72652e456666656374526f77["Core.EffectRow<br/>203L · fan-in 1"]
-    n_42616e672e436f72652e46726573686e657373["Core.Freshness<br/>833L · fan-in 5"]
-    n_42616e672e436f72652e4772616465["Core.Grade<br/>84L · fan-in 11"]
-    n_42616e672e436f72652e4952["Core.IR<br/>440L · fan-in 7"]
-    n_42616e672e436f72652e53656d616e74696373["Core.Semantics<br/>25L · fan-in 16"]
-    n_42616e672e436f72652e53656d616e746963732e4469737061746368["Core.Semantics.Dispatch<br/>273L · fan-in 2"]
-    n_42616e672e436f72652e53656d616e746963732e4576616c["Core.Semantics.Eval<br/>621L · fan-in 3"]
-    n_42616e672e436f72652e53656d616e746963732e496e76617269616e7473["Core.Semantics.Invariants<br/>264L · fan-in 1"]
-    n_42616e672e436f72652e53656d616e746963732e5375627374["Core.Semantics.Subst<br/>947L · fan-in 2"]
-    n_42616e672e436f72652e536f756e646e657373["Core.Soundness<br/>3400L · fan-in 10"]
-    n_42616e672e436f72652e547970696e67["Core.Typing<br/>510L · fan-in 7"]
-  end
-  subgraph tier_Backend["Backend — calculated machines → Wasm 3.0"]
-    n_42616e672e4261636b656e642e41627374726163744d616368696e65["Backend.AbstractMachine<br/>6871L · fan-in 8"]
-    n_42616e672e4261636b656e642e456e764d616368696e65["Backend.EnvMachine<br/>3624L · fan-in 0"]
-    n_42616e672e4261636b656e642e52756e673550726f6f664772616465["Backend.Rung5ProofGrade<br/>143L · fan-in 1"]
-    n_42616e672e4261636b656e642e553562436f6d706c657465["Backend.U5bComplete<br/>1649L · fan-in 1"]
-    n_42616e672e4261636b656e642e5761736d["Backend.Wasm<br/>2931L · fan-in 4"]
-    n_42616e672e4261636b656e642e5761736d456d6974["Backend.WasmEmit<br/>1757L · fan-in 1"]
-  end
-  subgraph tier_Meta["Meta — contextual equivalence"]
-    n_42616e672e4d6574612e42696e6172794c52["Meta.BinaryLR<br/>1854L · fan-in 1"]
-    n_42616e672e4d6574612e4c52["Meta.LR<br/>1998L · fan-in 2"]
-  end
-  subgraph tier_Witness["Witness — executable evidence and counterexamples"]
-    n_42616e672e5769746e6573732e41677265654f7574636f6d65["Witness.AgreeOutcome<br/>236L · fan-in 1"]
-    n_42616e672e5769746e6573732e42696e6f70547970696e67["Witness.BinopTyping<br/>70L · fan-in 0"]
-    n_42616e672e5769746e6573732e426f636352656772657373["Witness.BoccRegress<br/>261L · fan-in 0"]
-    n_42616e672e5769746e6573732e4361704573636170655769746e657373["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
-    n_42616e672e5769746e6573732e4374724772616465526566757465["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
-    n_42616e672e5769746e6573732e437573746f6d537461676531526566757465["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
-    n_42616e672e5769746e6573732e4435506172616d48616e646c65725769746e657373["Witness.D5ParamHandlerWitness<br/>161L · fan-in 0"]
-    n_42616e672e5769746e6573732e45666665637454726163655769746e657373["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
-    n_42616e672e5769746e6573732e456c616246757a7a["Witness.ElabFuzz<br/>430L · fan-in 0"]
-    n_42616e672e5769746e6573732e46757a7a["Witness.Fuzz<br/>281L · fan-in 2"]
-    n_42616e672e5769746e6573732e4772616465506f6c7952657475726e6572["Witness.GradePolyReturner<br/>165L · fan-in 0"]
-    n_42616e672e5769746e6573732e4c5752656772657373["Witness.LWRegress<br/>100L · fan-in 1"]
-    n_42616e672e5769746e6573732e4c617754657374["Witness.LawTest<br/>693L · fan-in 1"]
-    n_42616e672e5769746e6573732e50726f6f664578706f7274["Witness.ProofExport<br/>372L · fan-in 0"]
-    n_42616e672e5769746e6573732e52657475726e4573636170655265616368["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
-    n_42616e672e5769746e6573732e53636f7065644361705769746e657373["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
-    n_42616e672e5769746e6573732e53656e6461626c65467261676d656e74["Witness.SendableFragment<br/>148L · fan-in 0"]
-    n_42616e672e5769746e6573732e53746174654573636170655769746e657373["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
-    n_42616e672e5769746e6573732e5663617046726565526566757465["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
-  end
-  subgraph tier_Reify["Reify — calculated-machine proof laboratory"]
-    n_42616e672e52656966792e43616c635265696679["Reify.CalcReify<br/>283L · fan-in 2"]
-    n_42616e672e52656966792e43616c635265696679526566["Reify.CalcReifyRef<br/>164L · fan-in 1"]
-    n_42616e672e52656966792e43616c63526569667953696d["Reify.CalcReifySim<br/>1436L · fan-in 0"]
-  end
-  subgraph tier_Apex["Apex — public theorem façade · audit · distribution"]
-    n_42616e672e4175646974["Audit<br/>69L · fan-in 0"]
-    n_42616e672e446973747269627574696f6e["Distribution<br/>67L · fan-in 0"]
-    n_42616e672e4578616d706c6573["Examples<br/>510L · fan-in 0"]
-    n_42616e672e53706563["Spec<br/>358L · fan-in 2"]
-  end
-  n_42616e672e4175646974 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e4175646974 --> n_42616e672e4261636b656e642e52756e673550726f6f664772616465
-  n_42616e672e4175646974 --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e4175646974 --> n_42616e672e53706563
-  n_42616e672e4261636b656e642e41627374726163744d616368696e65 --> n_42616e672e436f72652e436170436f68
-  n_42616e672e4261636b656e642e41627374726163744d616368696e65 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e4261636b656e642e456e764d616368696e65 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e4261636b656e642e456e764d616368696e65 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e4261636b656e642e52756e673550726f6f664772616465 --> n_42616e672e4261636b656e642e5761736d
-  n_42616e672e4261636b656e642e52756e673550726f6f664772616465 --> n_42616e672e4261636b656e642e5761736d456d6974
-  n_42616e672e4261636b656e642e553562436f6d706c657465 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e4261636b656e642e553562436f6d706c657465 --> n_42616e672e436f72652e46726573686e657373
-  n_42616e672e4261636b656e642e5761736d --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e4261636b656e642e5761736d --> n_42616e672e4261636b656e642e553562436f6d706c657465
-  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e46726573686e657373
-  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e4952
-  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e547970696e67
-  n_42616e672e4261636b656e642e5761736d456d6974 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e436f72652e436170436f68 --> n_42616e672e436f72652e46726573686e657373
-  n_42616e672e436f72652e46726573686e657373 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e436f72652e4952 --> n_42616e672e436f72652e456666656374526f77
-  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e4469737061746368
-  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e4576616c
-  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e496e76617269616e7473
-  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e5375627374
-  n_42616e672e436f72652e53656d616e746963732e4469737061746368 --> n_42616e672e436f72652e53656d616e746963732e5375627374
-  n_42616e672e436f72652e53656d616e746963732e4576616c --> n_42616e672e436f72652e53656d616e746963732e4469737061746368
-  n_42616e672e436f72652e53656d616e746963732e496e76617269616e7473 --> n_42616e672e436f72652e53656d616e746963732e4576616c
-  n_42616e672e436f72652e53656d616e746963732e5375627374 --> n_42616e672e436f72652e4952
-  n_42616e672e436f72652e53656d616e746963732e5375627374 --> n_42616e672e436f72652e547970696e67
-  n_42616e672e436f72652e536f756e646e657373 --> n_42616e672e436f72652e4952
-  n_42616e672e436f72652e536f756e646e657373 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e436f72652e536f756e646e657373 --> n_42616e672e436f72652e547970696e67
-  n_42616e672e436f72652e547970696e67 --> n_42616e672e436f72652e4952
-  n_42616e672e446973747269627574696f6e --> n_42616e672e53706563
-  n_42616e672e4578616d706c6573 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e4578616d706c6573 --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e4578616d706c6573 --> n_42616e672e46726f6e74656e642e54797065436865636b
-  n_42616e672e46726f6e74656e642e416e6e6f74617465 --> n_42616e672e46726f6e74656e642e5175657279
-  n_42616e672e46726f6e74656e642e446961676e6f7374696373 --> n_42616e672e46726f6e74656e642e44696167436f646573
-  n_42616e672e46726f6e74656e642e446961676e6f7374696373 --> n_42616e672e46726f6e74656e642e54797065436865636b
-  n_42616e672e46726f6e74656e642e466f726d6174 --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e46726f6e74656e642e4c696e74 --> n_42616e672e46726f6e74656e642e466f726d6174
-  n_42616e672e46726f6e74656e642e4c696e74 --> n_42616e672e46726f6e74656e642e5175657279
-  n_42616e672e46726f6e74656e642e4e616d6564436f7265 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e46726f6e74656e642e5175657279 --> n_42616e672e46726f6e74656e642e446961676e6f7374696373
-  n_42616e672e46726f6e74656e642e52657772697465 --> n_42616e672e46726f6e74656e642e416e6e6f74617465
-  n_42616e672e46726f6e74656e642e52657772697465 --> n_42616e672e46726f6e74656e642e466f726d6174
-  n_42616e672e46726f6e74656e642e52657772697465 --> n_42616e672e46726f6e74656e642e5175657279
-  n_42616e672e46726f6e74656e642e53757266616365 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e46726f6e74656e642e537572666163652e50726f7054657374 --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e46726f6e74656e642e537572666163652e5472616974 --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e436f72652e4772616465
-  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e436f72652e547970696e67
-  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e46726f6e74656e642e466f726d6174
-  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e4952
-  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e547970696e67
-  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e4d6574612e4c52
-  n_42616e672e4d6574612e4c52 --> n_42616e672e436f72652e4952
-  n_42616e672e4d6574612e4c52 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e4d6574612e4c52 --> n_42616e672e436f72652e547970696e67
-  n_42616e672e52656966792e43616c635265696679526566 --> n_42616e672e52656966792e43616c635265696679
-  n_42616e672e52656966792e43616c63526569667953696d --> n_42616e672e52656966792e43616c635265696679
-  n_42616e672e52656966792e43616c63526569667953696d --> n_42616e672e52656966792e43616c635265696679526566
-  n_42616e672e53706563 --> n_42616e672e4261636b656e642e5761736d
-  n_42616e672e53706563 --> n_42616e672e436f72652e4952
-  n_42616e672e53706563 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e53706563 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e53706563 --> n_42616e672e436f72652e547970696e67
-  n_42616e672e53706563 --> n_42616e672e4d6574612e42696e6172794c52
-  n_42616e672e53706563 --> n_42616e672e4d6574612e4c52
-  n_42616e672e5769746e6573732e41677265654f7574636f6d65 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e5769746e6573732e42696e6f70547970696e67 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e42696e6f70547970696e67 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e426f636352656772657373 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e426f636352656772657373 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e4361704573636170655769746e657373 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e4361704573636170655769746e657373 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e4361704573636170655769746e657373 --> n_42616e672e5769746e6573732e4c5752656772657373
-  n_42616e672e5769746e6573732e4374724772616465526566757465 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e4374724772616465526566757465 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e437573746f6d537461676531526566757465 --> n_42616e672e4261636b656e642e5761736d
-  n_42616e672e5769746e6573732e4435506172616d48616e646c65725769746e657373 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e4435506172616d48616e646c65725769746e657373 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e45666665637454726163655769746e657373 --> n_42616e672e436f72652e53656d616e746963732e4576616c
-  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e46726f6e74656e642e466f726d6174
-  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e46726f6e74656e642e53757266616365
-  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e46726f6e74656e642e54797065436865636b
-  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e5769746e6573732e46757a7a
-  n_42616e672e5769746e6573732e46757a7a --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
-  n_42616e672e5769746e6573732e46757a7a --> n_42616e672e5769746e6573732e41677265654f7574636f6d65
-  n_42616e672e5769746e6573732e4772616465506f6c7952657475726e6572 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e4772616465506f6c7952657475726e6572 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e4c5752656772657373 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e4c5752656772657373 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e4c617754657374 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e4c617754657374 --> n_42616e672e46726f6e74656e642e54797065436865636b
-  n_42616e672e5769746e6573732e4c617754657374 --> n_42616e672e5769746e6573732e46757a7a
-  n_42616e672e5769746e6573732e50726f6f664578706f7274 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e50726f6f664578706f7274 --> n_42616e672e46726f6e74656e642e54797065436865636b
-  n_42616e672e5769746e6573732e50726f6f664578706f7274 --> n_42616e672e5769746e6573732e4c617754657374
-  n_42616e672e5769746e6573732e52657475726e4573636170655265616368 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e52657475726e4573636170655265616368 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e53636f7065644361705769746e657373 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e53636f7065644361705769746e657373 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e53656e6461626c65467261676d656e74 --> n_42616e672e436f72652e46726573686e657373
-  n_42616e672e5769746e6573732e53656e6461626c65467261676d656e74 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e53746174654573636170655769746e657373 --> n_42616e672e436f72652e4772616465
-  n_42616e672e5769746e6573732e53746174654573636170655769746e657373 --> n_42616e672e436f72652e53656d616e74696373
-  n_42616e672e5769746e6573732e53746174654573636170655769746e657373 --> n_42616e672e436f72652e536f756e646e657373
-  n_42616e672e5769746e6573732e5663617046726565526566757465 --> n_42616e672e4261636b656e642e5761736d
-  n_42616e672e5769746e6573732e5663617046726565526566757465 --> n_42616e672e436f72652e46726573686e657373
+  component_Frontend -->|4 code imports| component_Core
+  component_Backend -->|8 code imports| component_Core
+  component_Meta -->|7 code imports| component_Core
+  component_Witness -->|5 code imports| component_Frontend
+  component_Witness -->|27 code imports| component_Core
+  component_Witness -->|4 code imports| component_Backend
+  component_Apex -->|3 code imports| component_Frontend
+  component_Apex -->|4 code imports| component_Core
+  component_Apex -->|4 code imports| component_Backend
+  component_Apex -->|2 code imports| component_Meta
 ```
 
-| module | tier | LOC | fan-in |
-|---|---|---|---|
-| `Core.Semantics` | Core | 25 | 16 |
-| `Core.Grade` | Core | 84 | 11 |
-| `Core.Soundness` | Core | 3400 | 10 |
-| `Backend.AbstractMachine` | Backend | 6871 | 8 |
-| `Core.IR` | Core | 440 | 7 |
-| `Core.Typing` | Core | 510 | 7 |
-| `Frontend.Surface` | Frontend | 3406 | 7 |
-| `Core.Freshness` | Core | 833 | 5 |
-| `Frontend.TypeCheck` | Frontend | 9490 | 5 |
-| `Backend.Wasm` | Backend | 2931 | 4 |
-| `Frontend.Format` | Frontend | 1139 | 4 |
-| `Core.Semantics.Eval` | Core | 621 | 3 |
-| `Frontend.Query` | Frontend | 899 | 3 |
-| `Core.Semantics.Dispatch` | Core | 273 | 2 |
-| `Core.Semantics.Subst` | Core | 947 | 2 |
-| `Meta.LR` | Meta | 1998 | 2 |
-| `Reify.CalcReify` | Reify | 283 | 2 |
-| `Spec` | Apex | 358 | 2 |
-| `Witness.Fuzz` | Witness | 281 | 2 |
-| `Backend.Rung5ProofGrade` | Backend | 143 | 1 |
-| `Backend.U5bComplete` | Backend | 1649 | 1 |
-| `Backend.WasmEmit` | Backend | 1757 | 1 |
-| `Core.CapCoh` | Core | 566 | 1 |
-| `Core.EffectRow` | Core | 203 | 1 |
-| `Core.Semantics.Invariants` | Core | 264 | 1 |
-| `Frontend.Annotate` | Frontend | 252 | 1 |
-| `Frontend.DiagCodes` | Frontend | 320 | 1 |
-| `Frontend.Diagnostics` | Frontend | 227 | 1 |
-| `Meta.BinaryLR` | Meta | 1854 | 1 |
-| `Reify.CalcReifyRef` | Reify | 164 | 1 |
-| `Witness.AgreeOutcome` | Witness | 236 | 1 |
-| `Witness.LWRegress` | Witness | 100 | 1 |
-| `Witness.LawTest` | Witness | 693 | 1 |
-| `Audit` | Apex | 69 | 0 |
-| `Backend.EnvMachine` | Backend | 3624 | 0 |
-| `Distribution` | Apex | 67 | 0 |
-| `Examples` | Apex | 510 | 0 |
-| `Frontend.Lint` | Frontend | 289 | 0 |
-| `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Rewrite` | Frontend | 313 | 0 |
-| `Frontend.Surface.PropTest` | Frontend | 127 | 0 |
-| `Frontend.Surface.Trait` | Frontend | 418 | 0 |
-| `Reify.CalcReifySim` | Reify | 1436 | 0 |
-| `Witness.BinopTyping` | Witness | 70 | 0 |
-| `Witness.BoccRegress` | Witness | 261 | 0 |
-| `Witness.CapEscapeWitness` | Witness | 72 | 0 |
-| `Witness.CtrGradeRefute` | Witness | 138 | 0 |
-| `Witness.CustomStage1Refute` | Witness | 39 | 0 |
-| `Witness.D5ParamHandlerWitness` | Witness | 161 | 0 |
-| `Witness.EffectTraceWitness` | Witness | 127 | 0 |
-| `Witness.ElabFuzz` | Witness | 430 | 0 |
-| `Witness.GradePolyReturner` | Witness | 165 | 0 |
-| `Witness.ProofExport` | Witness | 372 | 0 |
-| `Witness.ReturnEscapeReach` | Witness | 121 | 0 |
-| `Witness.ScopedCapWitness` | Witness | 141 | 0 |
-| `Witness.SendableFragment` | Witness | 148 | 0 |
-| `Witness.StateEscapeWitness` | Witness | 73 | 0 |
-| `Witness.VcapFreeRefute` | Witness | 55 | 0 |
+**Reading the diagram:** arrows are dependencies between C4 components; edge labels aggregate the 68 code-level imports that cross a component boundary. Internal module-to-module imports are deliberately omitted from the visual.
+
+| Component (repository tier) | Responsibility | Modules | LOC | Depends on |
+|---|---|---:|---:|---|
+| `Frontend` | text → typed core | 12 | 17266 | `Core` (4) |
+| `Core` | IR · typing · semantics · soundness | 12 | 8166 | — |
+| `Backend` | calculated machines → Wasm 3.0 | 6 | 16975 | `Core` (8) |
+| `Meta` | contextual-equivalence metatheory | 2 | 3852 | `Core` (7) |
+| `Witness` | executable evidence and counterexamples | 19 | 3683 | `Frontend` (5), `Core` (27), `Backend` (4) |
+| `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |
+| `Apex` | public theorem façade · audit · distribution | 4 | 1004 | `Frontend` (3), `Core` (4), `Backend` (4), `Meta` (2) |
 <!-- END GENERATED import-graph -->
 
-The generated graph reports direct imports and direct fan-in. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving a module.
+The generated graph reports aggregate direct imports that cross component boundaries. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving code.
 
 ## 4. Contributor routing
 

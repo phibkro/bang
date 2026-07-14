@@ -62,8 +62,14 @@ for malformed in (
 
 renderer = runpy.run_path(str(root / "tools/check-architecture-assertions.py"))
 assert renderer["code"]("` **FLAGGED** `") == "`` ` **FLAGGED** ` ``"
+assert renderer["mermaid_id"]("source-execution") == "n_source_execution"
 import_graph = runpy.run_path(str(root / "tools/gen-import-graph.py"))
+assert import_graph["node_id"]("Bang.Core.IR") == "component_Bang_dot_Core_dot_IR"
 assert import_graph["node_id"]("Bang.A_B") != import_graph["node_id"]("Bang.A.B")
+component_view = import_graph["render"](architecture)
+assert "Frontend.Surface" not in component_view
+for component in import_graph["COMPONENT_ORDER"]:
+    assert f'{import_graph["node_id"](component)}["{component}<br/>' in component_view
 
 print(
     "docfacts architecture/proof: PASS — "
