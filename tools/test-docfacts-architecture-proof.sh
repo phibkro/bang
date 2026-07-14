@@ -6,15 +6,18 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel)
 cd "$ROOT"
 
+python3 tools/symbols.py --self-test
 python3 tools/docfacts_architecture.py --self-test
 python3 tools/docfacts_architecture.py --check
 python3 tools/docfacts_proof.py --self-test
 python3 tools/docfacts_proof.py --check
 python3 tools/docfacts_proof.py --cross-check
+python3 tools/check-architecture-assertions.py --self-test
 
 python3 - <<'PY'
 import copy
 import json
+import runpy
 import sys
 from pathlib import Path
 
@@ -24,6 +27,7 @@ root = Path.cwd()
 sys.path.insert(0, str(root / "tools"))
 from docfacts_architecture import SELF_TEST_POLES as ARCHITECTURE_POLES
 from docfacts_proof import SELF_TEST_POLES as PROOF_POLES, validate_cross_fact
+from genblock import splice
 
 architecture = json.loads((root / "docfacts/architecture.json").read_text(encoding="utf-8"))
 proof = json.loads((root / "docfacts/proof.json").read_text(encoding="utf-8"))
@@ -34,7 +38,7 @@ assert architecture["target"]["name"] == "Wasm 3.0"
 assert architecture["engines"]["default"] == "env"
 assert architecture["engines"]["aliases"] == {"--compiled": "compiled"}
 assert ARCHITECTURE_POLES == 21, "architecture pole total moved"
-assert PROOF_POLES == 15, "proof pole total moved"
+assert PROOF_POLES == 16, "proof pole total moved"
 
 mismatched = copy.deepcopy(proof)
 mismatched["proofArrows"][1]["to"] = "mismatched-target"
@@ -44,6 +48,22 @@ except ValidationError:
     pass
 else:
     raise AssertionError("cross-fact endpoint mismatch was accepted")
+
+for malformed in (
+    "END body BEGIN",
+    "BEGIN body END\nBEGIN body END",
+):
+    try:
+        splice(malformed, "BEGIN", "END", "BEGIN generated END")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("malformed generated markers were accepted")
+
+renderer = runpy.run_path(str(root / "tools/check-architecture-assertions.py"))
+assert renderer["code"]("` **FLAGGED** `") == "`` ` **FLAGGED** ` ``"
+import_graph = runpy.run_path(str(root / "tools/gen-import-graph.py"))
+assert import_graph["node_id"]("Bang.A_B") != import_graph["node_id"]("Bang.A.B")
 
 print(
     "docfacts architecture/proof: PASS — "

@@ -387,14 +387,8 @@ def build_fact() -> dict:
     }
 
 
-def validate_fact(fact: dict) -> None:
+def validate_serialized_fact(fact: dict) -> None:
     schema_validator(SCHEMA_PATH).validate(fact)
-    authoritative = build_fact()
-    for field in ("target", "proofMethods", "engines", "tiers", "modules", "adrs"):
-        if fact[field] != authoritative[field]:
-            raise ValidationError(
-                f"{field} does not match its source-derived inventory"
-            )
     check_sorted_unique(fact["tiers"], lambda item: item["name"], "tiers")
     check_sorted_unique(fact["modules"], lambda item: item["name"], "modules")
     check_sorted_unique(fact["nodes"], lambda item: item["id"], "nodes")
@@ -417,12 +411,22 @@ def validate_fact(fact: dict) -> None:
             raise ValidationError(
                 f"public symbols are not deterministic: {module['name']}"
             )
-        checked_repo_path(ROOT, module["path"])
-    check_evidence_sources(ROOT, fact["evidence"])
-    for node in fact["nodes"]:
-        for source in node["sources"]:
-            checked_repo_path(ROOT, source)
-    validate_evidence_commands(ROOT, fact["evidence"])
+    module_names = {module["name"] for module in fact["modules"]}
+    for module in fact["modules"]:
+        unknown_imports = set(module["directImports"]) - module_names
+        if unknown_imports:
+            raise ValidationError(
+                f"module imports are absent from serialized inventory: {sorted(unknown_imports)}"
+            )
+    tier_totals = {
+        item["name"]: (item["moduleCount"], item["loc"]) for item in fact["tiers"]
+    }
+    derived_totals = {}
+    for module in fact["modules"]:
+        count, loc = derived_totals.get(module["tier"], (0, 0))
+        derived_totals[module["tier"]] = (count + 1, loc + module["loc"])
+    if tier_totals != derived_totals:
+        raise ValidationError("tier totals disagree with serialized module records")
 
     all_structural = fact["nodes"] + fact["arrows"] + fact["proofArrows"]
     reject_duplicate_ids(fact["evidence"] + all_structural, "architecture/evidence")
@@ -492,9 +496,26 @@ def validate_fact(fact: dict) -> None:
                 )
 
 
+def validate_fact(fact: dict) -> None:
+    validate_serialized_fact(fact)
+    authoritative = build_fact()
+    for field, expected in authoritative.items():
+        if fact[field] != expected:
+            raise ValidationError(
+                f"{field} does not match its source-derived inventory"
+            )
+    for module in fact["modules"]:
+        checked_repo_path(ROOT, module["path"])
+    check_evidence_sources(ROOT, fact["evidence"])
+    for node in fact["nodes"]:
+        for source in node["sources"]:
+            checked_repo_path(ROOT, source)
+    validate_evidence_commands(ROOT, fact["evidence"])
+
+
 def parse_fact(serialized: str) -> dict:
     return reload_and_validate(
-        serialized, schema_validator(SCHEMA_PATH), [validate_fact]
+        serialized, schema_validator(SCHEMA_PATH), [validate_serialized_fact]
     )
 
 

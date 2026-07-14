@@ -137,11 +137,11 @@ def parse_axioms(text: str) -> dict[str, list[str]]:
 
 
 def reference_matches(written_ref: str, report_name: str) -> bool:
-    return (
-        report_name == written_ref
-        or report_name.endswith("." + written_ref)
-        or written_ref.endswith("." + report_name)
-    )
+    if report_name == written_ref:
+        return True
+    if "." in written_ref:
+        return False
+    return report_name == f"Bang.{written_ref}"
 
 
 def resolve_reports(

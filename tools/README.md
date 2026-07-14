@@ -10,7 +10,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
-| [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/0016-*.md`, `docs/decisions/0035-*.md`, `docs/decisions/0059-*.md`, `docs/architecture/core-overview.md`, `architecture_facts.py`, `import_facts.py` | Generate/check the current architecture snapshot from code and accepted ADRs.""" |
+| [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `docfacts/architecture.json`, `docfacts/proof.json`, `docfacts/schema/architecture.schema.json`, `docfacts/schema/proof.schema.json`, `docs/architecture/core-overview.md`, `docfacts_architecture.py`, `docfacts_proof.py`, `genblock.py` | Render/check architecture and proof projections from committed documentation facts.""" |
 | [`docfacts_architecture.py`](docfacts_architecture.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/*.md`, `docfacts/schema/architecture.schema.json`, `docfacts/architecture.json` | Generate and validate the source-derived BANG architecture documentation fact.""" |
 | [`docfacts_logger.py`](docfacts_logger.py) | `fitness` | `examples/logger-counting`, `docfacts/schema/*.schema.json`, `docs/reference/examples/logger-counting.md` | generate and validate the logger-counting documentation fact |
 | [`docfacts_proof.py`](docfacts_proof.py) | `fitness` | `Bang/**/*.lean`, `Bang/Audit.lean`, `Bang/Spec.lean`, `lean-toolchain`, `lakefile.toml`, `lake-manifest.json`, `docfacts/schema/proof.schema.json`, `docfacts/proof.json` | Generate, statically check, and live-check BANG proof documentation facts.""" |
@@ -20,7 +20,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
 | [`gen-deadcode-imports.py`](gen-deadcode-imports.py) | `manual` | `tools/DeadCode.lean`, `Bang/**/*.lean`, `Main.lean` | keep tools/DeadCode.lean's import block ≡ the module set |
 | [`gen-gate-index.py`](gen-gate-index.py) | `fitness` | `justfile`, `.claude/codebase-maintenance.md`, `genblock.py` | the gate composition, generated from the justfile (the root) |
-| [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `Bang/**/*.lean`, `docs/architecture/core-overview.md`, `genblock.py`, `import_facts.py` | current BANG module graph from shared internal-import facts |
+| [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `docfacts/architecture.json`, `docfacts/schema/architecture.schema.json`, `docs/architecture/core-overview.md`, `docfacts_architecture.py`, `genblock.py` | Generate the current BANG module graph from serialized architecture facts.""" |
 | [`gen-llms-txt.py`](gen-llms-txt.py) | `fitness` | `CLAUDE.md`, `llms.txt` | generate llms.txt (the LLM-doc-index standard, llmstxt.org) |
 | [`gen-notes-index.py`](gen-notes-index.py) | `fitness` | `docs/notes/*.md`, `docs/notes/README.md` | generate docs/notes/README.md, the notes map |
 | [`gen-proof-assets.py`](gen-proof-assets.py) | `fitness` | `Bang/**/*.lean`, `docs/notes/proof-assets.md`, `tools/leanlex.py` | generate the reusable-proof-assets inventory |
@@ -29,11 +29,11 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-reference.py`](gen-reference.py) | `fitness` | `Bang/Frontend/Surface.lean`, `docs/reference/language.md` | Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained |
 | [`gen-tmgrammar.py`](gen-tmgrammar.py) | `fitness` | `Bang/Frontend/Surface.lean`, `web/docs/bang.tmLanguage.json` | Generate web/docs/bang.tmLanguage.json — a TextMate grammar DERIVED from the reified parser tables |
 | [`gen-tools-index.py`](gen-tools-index.py) | `fitness` | `tools/*.sh`, `tools/*.py`, `tools/*.mjs`, `tools/README.md` | generate tools/README.md, the tools map |
-| [`genblock.py`](genblock.py) | `manual` | `gen-gate-index.py`, `gen-import-graph.py`, `gen-proof-state.py`, `gen-questions-index.py` | shared generator primitives |
+| [`genblock.py`](genblock.py) | `manual` | `check-architecture-assertions.py`, `gen-gate-index.py`, `gen-import-graph.py`, `gen-proof-state.py`, `gen-questions-index.py` | shared generator primitives |
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean`, `leanlex.py` | Generate source-syntax symbol indexes for the Lean source tree |
 
-## check (24)
+## check (25)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -41,6 +41,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 |---|---|---|---|
 | [`arch-check.py`](arch-check.py) | `fitness` | `Bang/**/*.lean`, `import_facts.py` | Enforce BANG's path-derived inward dependency V over shared import facts.""" |
 | [`audit.sh`](audit.sh) | `verify` | `Bang/**/*.lean`, `Bang/Audit.lean` | belt-and-suspenders CI guard. The real guarantee is Audit.lean |
+| [`autoquality.sh`](autoquality.sh) | `fitness,hook` | `flake.nix`, `justfile`, `tools/autoquality-files.txt`, `tools/git-hooks/pre-commit`, `tools/hooks/post-edit-check.sh` | Pinned formatter/linter entry point for maintained Python and shell tooling |
 | [`burndown.sh`](burndown.sh) | `manual` | `Bang/**/*.lean` | Phase B burndown chart |
 | [`check-adr-links.sh`](check-adr-links.sh) | `fitness` | `docs/decisions/*.md` | ADR integrity lint for docs/decisions/ |
 | [`check-all-modules.sh`](check-all-modules.sh) | `fitness` | `Bang/**/*.lean` | structural fitness for the module-system migration (Phase 1a) |
@@ -58,8 +59,8 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
 | [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt` | orientation-doc SHA reachability fitness function |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
-| [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
-| [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
+| [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `autoquality.sh`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
+| [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh`, `autoquality.sh`, `.claude/settings.json` | Claude Code PostToolUse feedback for Edit/Write |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/sync-docs.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |

@@ -12,64 +12,120 @@ Architecture decisions remain authoritative: [ADR-0016](../decisions/0016-two-ho
 
 ## 1. One meaning, several representations
 
+<!-- BEGIN GENERATED architecture-pipeline (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
-  S[Source text] -->|tested frontend| C[Graded-CBPV Comp]
-  C -->|kernel semantics| O[Source.eval oracle]
-  C -->|state reification| D[evalD]
-  D -->|calculation| VM[CalcVM compile + exec]
-  D -->|environments + readback proof| E[evalE default engine]
-  VM -->|annotated forward simulation| W[Formal Wasm 3.0 machine]
-  C -->|text emission| G[WasmGC / WAT]
-  G -->|differential test| R[Wasmtime]
+  n_63616c63766d["CalcVM compile + exec"]
+  n_636f6d70["Graded-CBPV Comp"]
+  n_656d69747465642d776174["WasmGC / WAT"]
+  n_656e762d656e67696e65["evalE default engine"]
+  n_6576616c64["evalD"]
+  n_736f757263652d6576616c["Source.eval oracle"]
+  n_736f757263652d657865637574696f6e["Source execution"]
+  n_736f757263652d74657874["Source text"]
+  n_7461726765742d657865637574696f6e["Formal target execution"]
+  n_7761736d74696d65["Wasmtime"]
+  n_636f6d70 -->|implemented · WasmGC text emission| n_656d69747465642d776174
+  n_636f6d70 -->|implemented · kernel interpretation| n_736f757263652d6576616c
+  n_656d69747465642d776174 -->|differential-tested · real-engine execution| n_7761736d74696d65
+  n_6576616c64 -->|proven · calculation| n_63616c63766d
+  n_6576616c64 -->|differential-tested · environment evaluation and readback| n_656e762d656e67696e65
+  n_736f757263652d6576616c -->|proven · state reification| n_6576616c64
+  n_736f757263652d657865637574696f6e -->|proven · annotated forward simulation| n_7461726765742d657865637574696f6e
+  n_736f757263652d74657874 -->|differential-tested · frontend lowering| n_636f6d70
 ```
 
-**Reading the diagram:** solid arrows are transformations or execution paths. The label names the evidence expected at that boundary; it does not imply that every arrow has the same verification status.
+**Reading the diagram:** each edge label is the serialized evidence label followed by the serialized method; labels do not imply a stronger status.
 
-| Representation | Role | Evidence boundary |
-|---|---|---|
-| Surface parser, modules, inference, elaboration | Human/agent-facing language → monomorphic `Comp` | Tested superset: corpus, structured diagnostics, and differential engine tests |
-| `Source.eval` | Substitution-based CK kernel semantics; the behavioral oracle | Verified core in `Bang/Core/Semantics*` and public theorem façade `Bang/Spec.lean` |
-| `evalD` | Same semantics with handler state reified into explicit stores | `Bang.CalcVM.evalD_agrees_source` |
-| `compile` + `exec` | Calculated instruction machine; executable compiler specification | `Bang.CalcVM.compile_correct` composed with `evalD_agrees_source` |
-| `evalE` | Environment/closure representation used by the default CLI engine | Readback agreement with `evalD`; differential example battery |
-| formal Wasm target (`Bang/Backend/Wasm.lean`) | Lean model used for compiler simulation | `compile_forward_sim`, an annotated one-way simulation |
-| concrete WasmGC emitter (`Bang/Backend/WasmEmit.lean`) | Emits real WAT/WasmGC executed by Wasmtime | Tested stratum: real-engine differential harnesses against the source result |
-| host IO driver (`Main.lean`) | Grants, records, and replays ambient effects outside the pure evaluators | Tested boundary; least-authority grants and replay traces, not a kernel primitive |
+| Representation | Kind | Sources | Outgoing boundaries |
+|---|---|---|---|
+| `CalcVM compile + exec` | machine | `Bang/Backend/AbstractMachine.lean` | — |
+| `Graded-CBPV Comp` | core-ir | `Bang/Core/IR.lean` | WasmGC text emission → `WasmGC / WAT` (implemented); kernel interpretation → `Source.eval oracle` (implemented) |
+| `WasmGC / WAT` | emitted-wat | `Bang/Backend/WasmEmit.lean` | real-engine execution → `Wasmtime` (differential-tested) |
+| `evalE default engine` | environment-machine | `Bang/Backend/EnvMachine.lean`, `Main.lean` | — |
+| `evalD` | state-semantics | `Bang/Backend/AbstractMachine.lean` | calculation → `CalcVM compile + exec` (proven); environment evaluation and readback → `evalE default engine` (differential-tested) |
+| `Source.eval oracle` | source-semantics | `Bang/Core/Semantics/Eval.lean` | state reification → `evalD` (proven) |
+| `Source execution` | source-execution | `Bang/Spec.lean` | annotated forward simulation → `Formal target execution` (proven) |
+| `Source text` | text | `Bang/Frontend/Surface.lean` | frontend lowering → `Graded-CBPV Comp` (differential-tested) |
+| `Formal target execution` | target-execution | `Bang/Backend/Wasm.lean` | — |
+| `Wasmtime` | runtime | `tools/emit-rung4-diff.sh` | — |
+<!-- END GENERATED architecture-pipeline -->
 
 The namespace `Wasmfx` survives in parts of the formal Lean model for historical reasons. It does **not** make WasmFX the current product target. ADR-0059 makes stock Wasm 3.0 primary; WasmFX is a future fast path for the post-v1 general-resumption slot only.
 
 <!-- BEGIN GENERATED architecture-assertions (just architecture-assertions) — do not hand-edit -->
 ### Architecture assertions
 
-_Generated from Lean source, module paths, and accepted ADRs. This is a reviewable projection, not a second architecture authority._
+_Generated from validated committed architecture and proof facts. The JSON is the consumer seam; source checks remain in the fact producers._
 
-| Fact | Current value | Authority |
+| Fact | Current value | Source/evidence |
 |---|---|---|
-| Compiler target | **Wasm 3.0**, grade-directed; WasmFX is only a future general-case fast path | [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) |
-| Source equivalence | binary biorthogonal LR: `lr_sound`, `lr_fundamental` | [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md), `Bang/Spec.lean`, `Bang/Audit.lean` |
-| Compilation correctness | annotated forward simulation: `compile_forward_sim` | [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md), `Bang/Spec.lean`, `Bang/Audit.lean` |
-| CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases compiled | `Main.lean:Engine`, `Main.lean:parseEngine` |
-| Module graph | 58 modules · 116 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | `tools/import_facts.py` over `Bang/**/*.lean` |
-| Architecture lineage | ADR-0016 two-hop shape, target revised by ADR-0059 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) |
+| Compiler target | **Wasm 3.0**, grade-directed pluggable backend; WasmFX: future general-case fast path | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md` |
+| Source equivalence | binary biorthogonal LR: `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; `Bang/Spec.lean`, `Bang/Meta/LR.lean`, `Bang/Meta/BinaryLR.lean`, `Bang/Audit.lean`; validate: `lake env lean Bang/Audit.lean` |
+| Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`; validate: `lake env lean Bang/Audit.lean` |
+| CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases `compiled` | `Bang/Backend/EnvMachine.lean`, `Main.lean`, `docs/decisions/0094-env-semantics-in-the-machine-layer.md` |
+| Module graph | 58 modules · 116 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 58 serialized module records in `docfacts/architecture.json` |
+| Architecture lineage | ADR-0016 two-hop shape; target refined by ADR-0059 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented) |
 <!-- END GENERATED architecture-assertions -->
 
 ## 2. Proof arrows are different claims
 
+<!-- BEGIN GENERATED proof-arrows (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
-  P1[Source program P] <-->|binary LR / contextual equivalence| P2[Source program Q]
-  S[Source execution] -->|annotated forward simulation| T[Compiled target execution]
+  n_736f757263652d657865637574696f6e["Source execution"]
+  n_736f757263652d70726f6772616d2d6c656674["Source program P"]
+  n_736f757263652d70726f6772616d2d7269676874["Source program Q"]
+  n_7461726765742d657865637574696f6e["Formal target execution"]
+  n_736f757263652d70726f6772616d2d6c656674 <-->|binary biorthogonal LR · implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`| n_736f757263652d70726f6772616d2d7269676874
+  n_736f757263652d657865637574696f6e -->|annotated forward simulation · proven| n_7461726765742d657865637574696f6e
 ```
 
-**Reading the diagram:** the upper arrow compares two source programs in arbitrary contexts; the lower arrow preserves one source execution into one target execution.
-
-| Question | Method | Headline theorems |
-|---|---|---|
-| Are two source programs contextually indistinguishable? | Binary, step-indexed, biorthogonal logical relation | `lr_fundamental`, `lr_sound`, `zero_usage_erasable` |
-| Does compiling a source success preserve its value? | One-way annotated forward simulation | `compile_forward_sim` |
+| Question / endpoint type | Direction | Method and theorem refs | Evidence status |
+|---|---|---|---|
+| source-programs: `Source program P` → `Source program Q` | bidirectional-contextual | binary biorthogonal LR; `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; validate: `lake env lean Bang/Audit.lean` |
+| source-to-target-executions: `Source execution` → `Formal target execution` | forward | annotated forward simulation; `Bang.compile_forward_sim` | proven; validate: `lake env lean Bang/Audit.lean` |
+<!-- END GENERATED proof-arrows -->
 
 Do not describe compiler correctness as “the Benton–Hur LR.” The LR and simulation are complementary, not interchangeable; ADR-0035 is the decision record.
+
+### Audited theorem census
+
+<!-- BEGIN GENERATED audited-axioms (just architecture-assertions) — do not hand-edit -->
+**Census:** 27 enrolled theorems · 22 trusted · 5 flagged · 2 with no axioms.
+
+_Live validator: `python3 tools/docfacts_proof.py --live-check`._
+
+| Theorem | Source | Axiom set | Status/evidence |
+|---|---|---|---|
+| `Bang.lr_sound` | `Bang/Spec.lean:249` | `Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | flagged |
+| `Bang.lr_fundamental` | `Bang/Spec.lean:280` | `Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | flagged |
+| `Bang.lr_fundamental_closed` | `Bang/Spec.lean:290` | `Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | flagged |
+| `Bang.seq_unit` | `Bang/Spec.lean:306` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.compile_forward_sim` | `Bang/Spec.lean:338` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.compile_forward_sim_pure` | `Bang/Backend/Wasm.lean:2771` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.source_eval_to_exec` | `Bang/Backend/Wasm.lean:2759` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.Rung5ProofGrade.s5_effectful_forward_sim` | `Bang/Backend/Rung5ProofGrade.lean:101` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.Rung5ProofGrade.s5_exec_wexec_lockstep` | `Bang/Backend/Rung5ProofGrade.lean:110` | `Quot.sound`, `propext` | trusted · proven |
+| `Bang.compile_well_typed` | `Bang/Spec.lean:320` | `propext` | trusted · proven |
+| `Bang.handler_compiles` | `Bang/Spec.lean:345` | `sorryAx` | flagged |
+| `Bang.zero_grade_no_code` | `Bang/Spec.lean:349` | `propext` | trusted · proven |
+| `Bang.subst_value` | `Bang/Spec.lean:104` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.preservation` | `Bang/Spec.lean:119` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.progress` | `Bang/Spec.lean:134` | `Quot.sound`, `propext` | trusted · proven |
+| `Bang.type_safety` | `Bang/Spec.lean:156` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.no_accidental_handling` | `Bang/Spec.lean:60` | — | trusted · proven |
+| `Bang.no_accidental_handling_custom` | `Bang/Spec.lean:71` | `propext` | trusted · proven |
+| `Bang.custom_program_safe` | `Bang/Spec.lean:84` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.rowinst_requires_disjoint` | `Bang/Spec.lean:49` | — | trusted · proven |
+| `Bang.effect_sound` | `Bang/Spec.lean:200` | `Quot.sound`, `propext` | trusted · proven |
+| `Bang.zero_usage_erasable` | `Bang/Spec.lean:165` | `propext`, `sorryAx` | flagged |
+| `Bang.Surface.cell_reflects_latest` | `Bang/Frontend/Surface.lean:2828` | `propext` | trusted · proven |
+| `Bang.CalcVM.compile_correct` | `Bang/Backend/AbstractMachine.lean:3456` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.CalcVM.evalD_agrees_source` | `Bang/Backend/AbstractMachine.lean:6843` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.CalcVM.sim` | `Bang/Backend/AbstractMachine.lean:2296` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.CalcVM.run_evalD` | `Bang/Backend/AbstractMachine.lean:5494` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+<!-- END GENERATED audited-axioms -->
 
 ## 3. The dependency V
 
@@ -88,198 +144,198 @@ Dependencies point inward at Core even though program data flows Frontend → Co
 `tools/import_facts.py` is the single parser/classifier for the graph and the dependency fitness check. `tools/arch-check.py` enforces the V. Unknown tiers and missing internal imports fail rather than silently falling into a default layer.
 
 <!-- BEGIN GENERATED import-graph (just import-graph) — do not hand-edit -->
-_Generated by `tools/gen-import-graph.py` through `tools/import_facts.py` from current `import Bang.*` and `public import Bang.*` edges. Node label = `module (LOC · fan-in)`; an arrow `A → B` means A imports B._
+_Generated by `tools/gen-import-graph.py` from validated `docfacts/architecture.json` module records. Node label = `module (LOC · fan-in)`; an arrow `A → B` means A imports B._
 
 ```mermaid
 graph TD
   subgraph tier_Frontend["Frontend — text → typed core"]
-    Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 1"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>320L · fan-in 1"]
-    Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 1"]
-    Frontend_Format["Frontend.Format<br/>1139L · fan-in 4"]
-    Frontend_Lint["Frontend.Lint<br/>289L · fan-in 0"]
-    Frontend_NamedCore["Frontend.NamedCore<br/>386L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>899L · fan-in 3"]
-    Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3406L · fan-in 7"]
-    Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
-    Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>9490L · fan-in 5"]
+    n_42616e672e46726f6e74656e642e416e6e6f74617465["Frontend.Annotate<br/>252L · fan-in 1"]
+    n_42616e672e46726f6e74656e642e44696167436f646573["Frontend.DiagCodes<br/>320L · fan-in 1"]
+    n_42616e672e46726f6e74656e642e446961676e6f7374696373["Frontend.Diagnostics<br/>227L · fan-in 1"]
+    n_42616e672e46726f6e74656e642e466f726d6174["Frontend.Format<br/>1139L · fan-in 4"]
+    n_42616e672e46726f6e74656e642e4c696e74["Frontend.Lint<br/>289L · fan-in 0"]
+    n_42616e672e46726f6e74656e642e4e616d6564436f7265["Frontend.NamedCore<br/>386L · fan-in 0"]
+    n_42616e672e46726f6e74656e642e5175657279["Frontend.Query<br/>899L · fan-in 3"]
+    n_42616e672e46726f6e74656e642e52657772697465["Frontend.Rewrite<br/>313L · fan-in 0"]
+    n_42616e672e46726f6e74656e642e53757266616365["Frontend.Surface<br/>3406L · fan-in 7"]
+    n_42616e672e46726f6e74656e642e537572666163652e50726f7054657374["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
+    n_42616e672e46726f6e74656e642e537572666163652e5472616974["Frontend.Surface.Trait<br/>418L · fan-in 0"]
+    n_42616e672e46726f6e74656e642e54797065436865636b["Frontend.TypeCheck<br/>9490L · fan-in 5"]
   end
   subgraph tier_Core["Core — IR · typing · semantics · soundness"]
-    Core_CapCoh["Core.CapCoh<br/>566L · fan-in 1"]
-    Core_EffectRow["Core.EffectRow<br/>203L · fan-in 1"]
-    Core_Freshness["Core.Freshness<br/>833L · fan-in 5"]
-    Core_Grade["Core.Grade<br/>84L · fan-in 11"]
-    Core_IR["Core.IR<br/>440L · fan-in 7"]
-    Core_Semantics["Core.Semantics<br/>25L · fan-in 16"]
-    Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 2"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>621L · fan-in 3"]
-    Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 1"]
-    Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 2"]
-    Core_Soundness["Core.Soundness<br/>3400L · fan-in 10"]
-    Core_Typing["Core.Typing<br/>510L · fan-in 7"]
+    n_42616e672e436f72652e436170436f68["Core.CapCoh<br/>566L · fan-in 1"]
+    n_42616e672e436f72652e456666656374526f77["Core.EffectRow<br/>203L · fan-in 1"]
+    n_42616e672e436f72652e46726573686e657373["Core.Freshness<br/>833L · fan-in 5"]
+    n_42616e672e436f72652e4772616465["Core.Grade<br/>84L · fan-in 11"]
+    n_42616e672e436f72652e4952["Core.IR<br/>440L · fan-in 7"]
+    n_42616e672e436f72652e53656d616e74696373["Core.Semantics<br/>25L · fan-in 16"]
+    n_42616e672e436f72652e53656d616e746963732e4469737061746368["Core.Semantics.Dispatch<br/>273L · fan-in 2"]
+    n_42616e672e436f72652e53656d616e746963732e4576616c["Core.Semantics.Eval<br/>621L · fan-in 3"]
+    n_42616e672e436f72652e53656d616e746963732e496e76617269616e7473["Core.Semantics.Invariants<br/>264L · fan-in 1"]
+    n_42616e672e436f72652e53656d616e746963732e5375627374["Core.Semantics.Subst<br/>947L · fan-in 2"]
+    n_42616e672e436f72652e536f756e646e657373["Core.Soundness<br/>3400L · fan-in 10"]
+    n_42616e672e436f72652e547970696e67["Core.Typing<br/>510L · fan-in 7"]
   end
   subgraph tier_Backend["Backend — calculated machines → Wasm 3.0"]
-    Backend_AbstractMachine["Backend.AbstractMachine<br/>6871L · fan-in 8"]
-    Backend_EnvMachine["Backend.EnvMachine<br/>3624L · fan-in 0"]
-    Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>143L · fan-in 1"]
-    Backend_U5bComplete["Backend.U5bComplete<br/>1649L · fan-in 1"]
-    Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 4"]
-    Backend_WasmEmit["Backend.WasmEmit<br/>1757L · fan-in 1"]
+    n_42616e672e4261636b656e642e41627374726163744d616368696e65["Backend.AbstractMachine<br/>6871L · fan-in 8"]
+    n_42616e672e4261636b656e642e456e764d616368696e65["Backend.EnvMachine<br/>3624L · fan-in 0"]
+    n_42616e672e4261636b656e642e52756e673550726f6f664772616465["Backend.Rung5ProofGrade<br/>143L · fan-in 1"]
+    n_42616e672e4261636b656e642e553562436f6d706c657465["Backend.U5bComplete<br/>1649L · fan-in 1"]
+    n_42616e672e4261636b656e642e5761736d["Backend.Wasm<br/>2931L · fan-in 4"]
+    n_42616e672e4261636b656e642e5761736d456d6974["Backend.WasmEmit<br/>1757L · fan-in 1"]
   end
   subgraph tier_Meta["Meta — contextual equivalence"]
-    Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 1"]
-    Meta_LR["Meta.LR<br/>1998L · fan-in 2"]
+    n_42616e672e4d6574612e42696e6172794c52["Meta.BinaryLR<br/>1854L · fan-in 1"]
+    n_42616e672e4d6574612e4c52["Meta.LR<br/>1998L · fan-in 2"]
   end
   subgraph tier_Witness["Witness — executable evidence and counterexamples"]
-    Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 1"]
-    Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
-    Witness_BoccRegress["Witness.BoccRegress<br/>261L · fan-in 0"]
-    Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
-    Witness_CtrGradeRefute["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
-    Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
-    Witness_D5ParamHandlerWitness["Witness.D5ParamHandlerWitness<br/>161L · fan-in 0"]
-    Witness_EffectTraceWitness["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
-    Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
-    Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 2"]
-    Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
-    Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 1"]
-    Witness_LawTest["Witness.LawTest<br/>693L · fan-in 1"]
-    Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
-    Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
-    Witness_ScopedCapWitness["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
-    Witness_SendableFragment["Witness.SendableFragment<br/>148L · fan-in 0"]
-    Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
-    Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
+    n_42616e672e5769746e6573732e41677265654f7574636f6d65["Witness.AgreeOutcome<br/>236L · fan-in 1"]
+    n_42616e672e5769746e6573732e42696e6f70547970696e67["Witness.BinopTyping<br/>70L · fan-in 0"]
+    n_42616e672e5769746e6573732e426f636352656772657373["Witness.BoccRegress<br/>261L · fan-in 0"]
+    n_42616e672e5769746e6573732e4361704573636170655769746e657373["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
+    n_42616e672e5769746e6573732e4374724772616465526566757465["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
+    n_42616e672e5769746e6573732e437573746f6d537461676531526566757465["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
+    n_42616e672e5769746e6573732e4435506172616d48616e646c65725769746e657373["Witness.D5ParamHandlerWitness<br/>161L · fan-in 0"]
+    n_42616e672e5769746e6573732e45666665637454726163655769746e657373["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
+    n_42616e672e5769746e6573732e456c616246757a7a["Witness.ElabFuzz<br/>430L · fan-in 0"]
+    n_42616e672e5769746e6573732e46757a7a["Witness.Fuzz<br/>281L · fan-in 2"]
+    n_42616e672e5769746e6573732e4772616465506f6c7952657475726e6572["Witness.GradePolyReturner<br/>165L · fan-in 0"]
+    n_42616e672e5769746e6573732e4c5752656772657373["Witness.LWRegress<br/>100L · fan-in 1"]
+    n_42616e672e5769746e6573732e4c617754657374["Witness.LawTest<br/>693L · fan-in 1"]
+    n_42616e672e5769746e6573732e50726f6f664578706f7274["Witness.ProofExport<br/>372L · fan-in 0"]
+    n_42616e672e5769746e6573732e52657475726e4573636170655265616368["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
+    n_42616e672e5769746e6573732e53636f7065644361705769746e657373["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
+    n_42616e672e5769746e6573732e53656e6461626c65467261676d656e74["Witness.SendableFragment<br/>148L · fan-in 0"]
+    n_42616e672e5769746e6573732e53746174654573636170655769746e657373["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
+    n_42616e672e5769746e6573732e5663617046726565526566757465["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
   subgraph tier_Reify["Reify — calculated-machine proof laboratory"]
-    Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 2"]
-    Reify_CalcReifyRef["Reify.CalcReifyRef<br/>164L · fan-in 1"]
-    Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
+    n_42616e672e52656966792e43616c635265696679["Reify.CalcReify<br/>283L · fan-in 2"]
+    n_42616e672e52656966792e43616c635265696679526566["Reify.CalcReifyRef<br/>164L · fan-in 1"]
+    n_42616e672e52656966792e43616c63526569667953696d["Reify.CalcReifySim<br/>1436L · fan-in 0"]
   end
   subgraph tier_Apex["Apex — public theorem façade · audit · distribution"]
-    Audit["Audit<br/>69L · fan-in 0"]
-    Distribution["Distribution<br/>67L · fan-in 0"]
-    Examples["Examples<br/>510L · fan-in 0"]
-    Spec["Spec<br/>358L · fan-in 2"]
+    n_42616e672e4175646974["Audit<br/>69L · fan-in 0"]
+    n_42616e672e446973747269627574696f6e["Distribution<br/>67L · fan-in 0"]
+    n_42616e672e4578616d706c6573["Examples<br/>510L · fan-in 0"]
+    n_42616e672e53706563["Spec<br/>358L · fan-in 2"]
   end
-  Audit --> Backend_AbstractMachine
-  Audit --> Backend_Rung5ProofGrade
-  Audit --> Frontend_Surface
-  Audit --> Spec
-  Backend_AbstractMachine --> Core_CapCoh
-  Backend_AbstractMachine --> Core_Semantics
-  Backend_EnvMachine --> Backend_AbstractMachine
-  Backend_EnvMachine --> Core_Semantics
-  Backend_Rung5ProofGrade --> Backend_Wasm
-  Backend_Rung5ProofGrade --> Backend_WasmEmit
-  Backend_U5bComplete --> Backend_AbstractMachine
-  Backend_U5bComplete --> Core_Freshness
-  Backend_Wasm --> Backend_AbstractMachine
-  Backend_Wasm --> Backend_U5bComplete
-  Backend_Wasm --> Core_Freshness
-  Backend_Wasm --> Core_IR
-  Backend_Wasm --> Core_Semantics
-  Backend_Wasm --> Core_Typing
-  Backend_WasmEmit --> Backend_AbstractMachine
-  Core_CapCoh --> Core_Freshness
-  Core_Freshness --> Core_Soundness
-  Core_IR --> Core_EffectRow
-  Core_Semantics --> Core_Semantics_Dispatch
-  Core_Semantics --> Core_Semantics_Eval
-  Core_Semantics --> Core_Semantics_Invariants
-  Core_Semantics --> Core_Semantics_Subst
-  Core_Semantics_Dispatch --> Core_Semantics_Subst
-  Core_Semantics_Eval --> Core_Semantics_Dispatch
-  Core_Semantics_Invariants --> Core_Semantics_Eval
-  Core_Semantics_Subst --> Core_IR
-  Core_Semantics_Subst --> Core_Typing
-  Core_Soundness --> Core_IR
-  Core_Soundness --> Core_Semantics
-  Core_Soundness --> Core_Typing
-  Core_Typing --> Core_IR
-  Distribution --> Spec
-  Examples --> Backend_AbstractMachine
-  Examples --> Frontend_Surface
-  Examples --> Frontend_TypeCheck
-  Frontend_Annotate --> Frontend_Query
-  Frontend_Diagnostics --> Frontend_DiagCodes
-  Frontend_Diagnostics --> Frontend_TypeCheck
-  Frontend_Format --> Frontend_Surface
-  Frontend_Lint --> Frontend_Format
-  Frontend_Lint --> Frontend_Query
-  Frontend_NamedCore --> Core_Semantics
-  Frontend_Query --> Frontend_Diagnostics
-  Frontend_Rewrite --> Frontend_Annotate
-  Frontend_Rewrite --> Frontend_Format
-  Frontend_Rewrite --> Frontend_Query
-  Frontend_Surface --> Core_Semantics
-  Frontend_Surface_PropTest --> Frontend_Surface
-  Frontend_Surface_Trait --> Frontend_Surface
-  Frontend_TypeCheck --> Core_Grade
-  Frontend_TypeCheck --> Core_Typing
-  Frontend_TypeCheck --> Frontend_Format
-  Frontend_TypeCheck --> Frontend_Surface
-  Meta_BinaryLR --> Core_IR
-  Meta_BinaryLR --> Core_Semantics
-  Meta_BinaryLR --> Core_Soundness
-  Meta_BinaryLR --> Core_Typing
-  Meta_BinaryLR --> Meta_LR
-  Meta_LR --> Core_IR
-  Meta_LR --> Core_Semantics
-  Meta_LR --> Core_Typing
-  Reify_CalcReifyRef --> Reify_CalcReify
-  Reify_CalcReifySim --> Reify_CalcReify
-  Reify_CalcReifySim --> Reify_CalcReifyRef
-  Spec --> Backend_Wasm
-  Spec --> Core_IR
-  Spec --> Core_Semantics
-  Spec --> Core_Soundness
-  Spec --> Core_Typing
-  Spec --> Meta_BinaryLR
-  Spec --> Meta_LR
-  Witness_AgreeOutcome --> Backend_AbstractMachine
-  Witness_BinopTyping --> Core_Grade
-  Witness_BinopTyping --> Core_Soundness
-  Witness_BoccRegress --> Core_Grade
-  Witness_BoccRegress --> Core_Soundness
-  Witness_CapEscapeWitness --> Core_Grade
-  Witness_CapEscapeWitness --> Core_Semantics
-  Witness_CapEscapeWitness --> Witness_LWRegress
-  Witness_CtrGradeRefute --> Core_Grade
-  Witness_CtrGradeRefute --> Core_Soundness
-  Witness_CustomStage1Refute --> Backend_Wasm
-  Witness_D5ParamHandlerWitness --> Core_Grade
-  Witness_D5ParamHandlerWitness --> Core_Semantics
-  Witness_EffectTraceWitness --> Core_Semantics_Eval
-  Witness_ElabFuzz --> Frontend_Format
-  Witness_ElabFuzz --> Frontend_Surface
-  Witness_ElabFuzz --> Frontend_TypeCheck
-  Witness_ElabFuzz --> Witness_Fuzz
-  Witness_Fuzz --> Backend_AbstractMachine
-  Witness_Fuzz --> Witness_AgreeOutcome
-  Witness_GradePolyReturner --> Core_Grade
-  Witness_GradePolyReturner --> Core_Soundness
-  Witness_LWRegress --> Core_Grade
-  Witness_LWRegress --> Core_Semantics
-  Witness_LawTest --> Core_Semantics
-  Witness_LawTest --> Frontend_TypeCheck
-  Witness_LawTest --> Witness_Fuzz
-  Witness_ProofExport --> Core_Semantics
-  Witness_ProofExport --> Frontend_TypeCheck
-  Witness_ProofExport --> Witness_LawTest
-  Witness_ReturnEscapeReach --> Core_Grade
-  Witness_ReturnEscapeReach --> Core_Soundness
-  Witness_ScopedCapWitness --> Core_Grade
-  Witness_ScopedCapWitness --> Core_Soundness
-  Witness_SendableFragment --> Core_Freshness
-  Witness_SendableFragment --> Core_Semantics
-  Witness_StateEscapeWitness --> Core_Grade
-  Witness_StateEscapeWitness --> Core_Semantics
-  Witness_StateEscapeWitness --> Core_Soundness
-  Witness_VcapFreeRefute --> Backend_Wasm
-  Witness_VcapFreeRefute --> Core_Freshness
+  n_42616e672e4175646974 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e4175646974 --> n_42616e672e4261636b656e642e52756e673550726f6f664772616465
+  n_42616e672e4175646974 --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e4175646974 --> n_42616e672e53706563
+  n_42616e672e4261636b656e642e41627374726163744d616368696e65 --> n_42616e672e436f72652e436170436f68
+  n_42616e672e4261636b656e642e41627374726163744d616368696e65 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e4261636b656e642e456e764d616368696e65 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e4261636b656e642e456e764d616368696e65 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e4261636b656e642e52756e673550726f6f664772616465 --> n_42616e672e4261636b656e642e5761736d
+  n_42616e672e4261636b656e642e52756e673550726f6f664772616465 --> n_42616e672e4261636b656e642e5761736d456d6974
+  n_42616e672e4261636b656e642e553562436f6d706c657465 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e4261636b656e642e553562436f6d706c657465 --> n_42616e672e436f72652e46726573686e657373
+  n_42616e672e4261636b656e642e5761736d --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e4261636b656e642e5761736d --> n_42616e672e4261636b656e642e553562436f6d706c657465
+  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e46726573686e657373
+  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e4952
+  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e4261636b656e642e5761736d --> n_42616e672e436f72652e547970696e67
+  n_42616e672e4261636b656e642e5761736d456d6974 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e436f72652e436170436f68 --> n_42616e672e436f72652e46726573686e657373
+  n_42616e672e436f72652e46726573686e657373 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e436f72652e4952 --> n_42616e672e436f72652e456666656374526f77
+  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e4469737061746368
+  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e4576616c
+  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e496e76617269616e7473
+  n_42616e672e436f72652e53656d616e74696373 --> n_42616e672e436f72652e53656d616e746963732e5375627374
+  n_42616e672e436f72652e53656d616e746963732e4469737061746368 --> n_42616e672e436f72652e53656d616e746963732e5375627374
+  n_42616e672e436f72652e53656d616e746963732e4576616c --> n_42616e672e436f72652e53656d616e746963732e4469737061746368
+  n_42616e672e436f72652e53656d616e746963732e496e76617269616e7473 --> n_42616e672e436f72652e53656d616e746963732e4576616c
+  n_42616e672e436f72652e53656d616e746963732e5375627374 --> n_42616e672e436f72652e4952
+  n_42616e672e436f72652e53656d616e746963732e5375627374 --> n_42616e672e436f72652e547970696e67
+  n_42616e672e436f72652e536f756e646e657373 --> n_42616e672e436f72652e4952
+  n_42616e672e436f72652e536f756e646e657373 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e436f72652e536f756e646e657373 --> n_42616e672e436f72652e547970696e67
+  n_42616e672e436f72652e547970696e67 --> n_42616e672e436f72652e4952
+  n_42616e672e446973747269627574696f6e --> n_42616e672e53706563
+  n_42616e672e4578616d706c6573 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e4578616d706c6573 --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e4578616d706c6573 --> n_42616e672e46726f6e74656e642e54797065436865636b
+  n_42616e672e46726f6e74656e642e416e6e6f74617465 --> n_42616e672e46726f6e74656e642e5175657279
+  n_42616e672e46726f6e74656e642e446961676e6f7374696373 --> n_42616e672e46726f6e74656e642e44696167436f646573
+  n_42616e672e46726f6e74656e642e446961676e6f7374696373 --> n_42616e672e46726f6e74656e642e54797065436865636b
+  n_42616e672e46726f6e74656e642e466f726d6174 --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e46726f6e74656e642e4c696e74 --> n_42616e672e46726f6e74656e642e466f726d6174
+  n_42616e672e46726f6e74656e642e4c696e74 --> n_42616e672e46726f6e74656e642e5175657279
+  n_42616e672e46726f6e74656e642e4e616d6564436f7265 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e46726f6e74656e642e5175657279 --> n_42616e672e46726f6e74656e642e446961676e6f7374696373
+  n_42616e672e46726f6e74656e642e52657772697465 --> n_42616e672e46726f6e74656e642e416e6e6f74617465
+  n_42616e672e46726f6e74656e642e52657772697465 --> n_42616e672e46726f6e74656e642e466f726d6174
+  n_42616e672e46726f6e74656e642e52657772697465 --> n_42616e672e46726f6e74656e642e5175657279
+  n_42616e672e46726f6e74656e642e53757266616365 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e46726f6e74656e642e537572666163652e50726f7054657374 --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e46726f6e74656e642e537572666163652e5472616974 --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e436f72652e4772616465
+  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e436f72652e547970696e67
+  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e46726f6e74656e642e466f726d6174
+  n_42616e672e46726f6e74656e642e54797065436865636b --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e4952
+  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e436f72652e547970696e67
+  n_42616e672e4d6574612e42696e6172794c52 --> n_42616e672e4d6574612e4c52
+  n_42616e672e4d6574612e4c52 --> n_42616e672e436f72652e4952
+  n_42616e672e4d6574612e4c52 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e4d6574612e4c52 --> n_42616e672e436f72652e547970696e67
+  n_42616e672e52656966792e43616c635265696679526566 --> n_42616e672e52656966792e43616c635265696679
+  n_42616e672e52656966792e43616c63526569667953696d --> n_42616e672e52656966792e43616c635265696679
+  n_42616e672e52656966792e43616c63526569667953696d --> n_42616e672e52656966792e43616c635265696679526566
+  n_42616e672e53706563 --> n_42616e672e4261636b656e642e5761736d
+  n_42616e672e53706563 --> n_42616e672e436f72652e4952
+  n_42616e672e53706563 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e53706563 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e53706563 --> n_42616e672e436f72652e547970696e67
+  n_42616e672e53706563 --> n_42616e672e4d6574612e42696e6172794c52
+  n_42616e672e53706563 --> n_42616e672e4d6574612e4c52
+  n_42616e672e5769746e6573732e41677265654f7574636f6d65 --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e5769746e6573732e42696e6f70547970696e67 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e42696e6f70547970696e67 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e426f636352656772657373 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e426f636352656772657373 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e4361704573636170655769746e657373 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e4361704573636170655769746e657373 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e4361704573636170655769746e657373 --> n_42616e672e5769746e6573732e4c5752656772657373
+  n_42616e672e5769746e6573732e4374724772616465526566757465 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e4374724772616465526566757465 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e437573746f6d537461676531526566757465 --> n_42616e672e4261636b656e642e5761736d
+  n_42616e672e5769746e6573732e4435506172616d48616e646c65725769746e657373 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e4435506172616d48616e646c65725769746e657373 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e45666665637454726163655769746e657373 --> n_42616e672e436f72652e53656d616e746963732e4576616c
+  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e46726f6e74656e642e466f726d6174
+  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e46726f6e74656e642e53757266616365
+  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e46726f6e74656e642e54797065436865636b
+  n_42616e672e5769746e6573732e456c616246757a7a --> n_42616e672e5769746e6573732e46757a7a
+  n_42616e672e5769746e6573732e46757a7a --> n_42616e672e4261636b656e642e41627374726163744d616368696e65
+  n_42616e672e5769746e6573732e46757a7a --> n_42616e672e5769746e6573732e41677265654f7574636f6d65
+  n_42616e672e5769746e6573732e4772616465506f6c7952657475726e6572 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e4772616465506f6c7952657475726e6572 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e4c5752656772657373 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e4c5752656772657373 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e4c617754657374 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e4c617754657374 --> n_42616e672e46726f6e74656e642e54797065436865636b
+  n_42616e672e5769746e6573732e4c617754657374 --> n_42616e672e5769746e6573732e46757a7a
+  n_42616e672e5769746e6573732e50726f6f664578706f7274 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e50726f6f664578706f7274 --> n_42616e672e46726f6e74656e642e54797065436865636b
+  n_42616e672e5769746e6573732e50726f6f664578706f7274 --> n_42616e672e5769746e6573732e4c617754657374
+  n_42616e672e5769746e6573732e52657475726e4573636170655265616368 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e52657475726e4573636170655265616368 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e53636f7065644361705769746e657373 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e53636f7065644361705769746e657373 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e53656e6461626c65467261676d656e74 --> n_42616e672e436f72652e46726573686e657373
+  n_42616e672e5769746e6573732e53656e6461626c65467261676d656e74 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e53746174654573636170655769746e657373 --> n_42616e672e436f72652e4772616465
+  n_42616e672e5769746e6573732e53746174654573636170655769746e657373 --> n_42616e672e436f72652e53656d616e74696373
+  n_42616e672e5769746e6573732e53746174654573636170655769746e657373 --> n_42616e672e436f72652e536f756e646e657373
+  n_42616e672e5769746e6573732e5663617046726565526566757465 --> n_42616e672e4261636b656e642e5761736d
+  n_42616e672e5769746e6573732e5663617046726565526566757465 --> n_42616e672e436f72652e46726573686e657373
 ```
 
 | module | tier | LOC | fan-in |

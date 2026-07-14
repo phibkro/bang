@@ -173,13 +173,24 @@ def collect_public_symbols(
     symbols = []
     for source_path in source_paths if source_paths is not None else lean_files(root):
         relative = source_path.relative_to(root).as_posix()
-        symbols.extend(
-            public_symbols_from_text(
-                source_path.read_text(encoding="utf-8"),
-                relative,
-                module_name(source_path, root),
-            )
+        text = source_path.read_text(encoding="utf-8")
+        projected = public_symbols_from_text(
+            text,
+            relative,
+            module_name(source_path, root),
         )
+        syntax = strip_comments(text)
+        declares_public = re.search(r"^\s*public\s+section\b", syntax, re.MULTILINE)
+        declares_public = declares_public or re.search(
+            rf"^\s*(?:@\[[^\]]*\]\s*)*public\s+(?:{KINDS})\b",
+            syntax,
+            re.MULTILINE,
+        )
+        if declares_public and not projected:
+            raise SymbolFactsError(
+                f"{relative}: public syntax produced no declaration inventory"
+            )
+        symbols.extend(projected)
     return symbols
 
 
@@ -227,6 +238,13 @@ end Bang
         source.write_text("public def Visible := 1\n", encoding="utf-8")
         projected = collect_public_symbols(root, [source])
         assert [symbol["name"] for symbol in projected] == ["Visible"]
+        source.write_text("public section\nend\n", encoding="utf-8")
+        try:
+            collect_public_symbols(root, [source])
+        except SymbolFactsError:
+            pass
+        else:
+            raise AssertionError("empty public syntax inventory did not fail")
 
 
 def render_text(
@@ -272,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.self_test:
             self_test()
             current = collect_public_symbols(ROOT)
+            if not current:
+                raise SymbolFactsError("current public declaration inventory is empty")
             print(
                 f"symbols: PASS — public syntax poles hold; {len(current)} current public declarations."
             )

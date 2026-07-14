@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "docfacts/schema/proof.schema.json"
 FACT_PATH = ROOT / "docfacts/proof.json"
 ARCHITECTURE_PATH = ROOT / "docfacts/architecture.json"
-SELF_TEST_POLES = 15
+SELF_TEST_POLES = 16
 
 
 class ProofFactsError(ValueError):
@@ -226,26 +226,12 @@ def synthetic_report_entries() -> list[tuple[str, list[str]]]:
     return entries
 
 
-def validate_fact(fact: dict) -> None:
+def validate_serialized_fact(fact: dict) -> None:
     schema_validator(SCHEMA_PATH).validate(fact)
-    if fact["sourceFingerprint"] != proof_fingerprint():
-        raise ValidationError("proof source fingerprint is stale")
-    if fact["specHeadlines"] != spec_headlines():
-        raise ValidationError("Spec headline inventory is stale")
-    source_enrollments = audit_facts.enrollments(ROOT)
-    if [(item["writtenRef"], item["auditLine"]) for item in fact["enrollments"]] != [
-        (item.written_ref, item.line) for item in source_enrollments
-    ]:
-        raise ValidationError("Audit enrollment inventory is stale")
-    if len(fact["specHeadlines"]) != 18 or len(fact["enrollments"]) != 27:
-        raise ValidationError("current Spec/Audit cardinality pole moved")
-
     if fact["trustedAxioms"] != sorted(audit_facts.TRUSTED):
         raise ValidationError("trusted axiom set drifted")
-    if fact["proofArrows"] != proof_arrows() or fact["evidence"] != sorted(
-        proof_evidence(), key=lambda item: item["id"]
-    ):
-        raise ValidationError("proof arrows or evidence drifted")
+    if fact["proofArrows"] != proof_arrows():
+        raise ValidationError("proof arrow semantics drifted")
     check_sorted_unique(
         fact["specHeadlines"], lambda item: item["source"]["line"], "Spec headlines"
     )
@@ -257,10 +243,7 @@ def validate_fact(fact: dict) -> None:
     reject_duplicate_ids(
         fact["enrollments"] + fact["proofArrows"] + fact["evidence"], "proof"
     )
-    check_evidence_sources(ROOT, fact["evidence"])
-    validate_evidence_commands(ROOT, fact["evidence"])
 
-    all_symbols = source_symbols()
     spec_names = {item["name"] for item in fact["specHeadlines"]}
     enrolled_spec = set()
     report_names = []
@@ -271,9 +254,6 @@ def validate_fact(fact: dict) -> None:
                 f"canonical report name does not resolve written ref: {item['writtenRef']}"
             )
         report_names.append(item["reportName"])
-        expected_source = resolve_definition(item["writtenRef"], all_symbols)
-        if item["definitionSource"] != expected_source:
-            raise ValidationError(f"definition source drifted: {item['writtenRef']}")
         trusted = set(item["axioms"]) <= audit_facts.TRUSTED
         expected_class = "trusted" if trusted else "flagged"
         if item["classification"] != expected_class:
@@ -349,9 +329,33 @@ def validate_fact(fact: dict) -> None:
         raise ValidationError("LR and simulation proof semantics drifted")
 
 
+def validate_fact(fact: dict) -> None:
+    validate_serialized_fact(fact)
+    if fact["sourceFingerprint"] != proof_fingerprint():
+        raise ValidationError("proof source fingerprint is stale")
+    if fact["specHeadlines"] != spec_headlines():
+        raise ValidationError("Spec headline inventory is stale")
+    source_enrollments = audit_facts.enrollments(ROOT)
+    if [(item["writtenRef"], item["auditLine"]) for item in fact["enrollments"]] != [
+        (item.written_ref, item.line) for item in source_enrollments
+    ]:
+        raise ValidationError("Audit enrollment inventory is stale")
+    if len(fact["specHeadlines"]) != 18 or len(fact["enrollments"]) != 27:
+        raise ValidationError("current Spec/Audit cardinality pole moved")
+    if fact["evidence"] != sorted(proof_evidence(), key=lambda item: item["id"]):
+        raise ValidationError("proof evidence drifted")
+    all_symbols = source_symbols()
+    for item in fact["enrollments"]:
+        expected_source = resolve_definition(item["writtenRef"], all_symbols)
+        if item["definitionSource"] != expected_source:
+            raise ValidationError(f"definition source drifted: {item['writtenRef']}")
+    check_evidence_sources(ROOT, fact["evidence"])
+    validate_evidence_commands(ROOT, fact["evidence"])
+
+
 def parse_fact(serialized: str) -> dict:
     return reload_and_validate(
-        serialized, schema_validator(SCHEMA_PATH), [validate_fact]
+        serialized, schema_validator(SCHEMA_PATH), [validate_serialized_fact]
     )
 
 
@@ -428,6 +432,10 @@ def self_test() -> int:
     mutate(
         "stale-theorem",
         lambda fact: fact["enrollments"][0].update(reportName="Bang.stale_theorem"),
+    )
+    mutate(
+        "qualified-suffix-spoof",
+        lambda fact: fact["enrollments"][0].update(reportName="Other.Bang.lr_sound"),
     )
     mutate("missing-theorem", lambda fact: fact["enrollments"].pop())
     invented = copy.deepcopy(base["enrollments"][-1])
@@ -546,10 +554,19 @@ def write_output() -> int:
     return 0
 
 
+def print_axiom_census(fact: dict) -> None:
+    print("── audited theorem axioms ──")
+    for item in fact["enrollments"]:
+        axioms = ", ".join(item["axioms"]) or "none"
+        marker = "✓" if item["classification"] == "trusted" else "⚠"
+        print(f"{marker} {item['reportName']}: [{axioms}]")
+
+
 def check_output(live: bool) -> int:
     if not FACT_PATH.is_file():
         raise ProofFactsError(f"missing committed fact: {FACT_PATH.relative_to(ROOT)}")
     committed = parse_fact(FACT_PATH.read_text(encoding="utf-8"))
+    validate_fact(committed)
     if live:
         expected = live_fact()
         validate_fact(expected)
@@ -557,6 +574,7 @@ def check_output(live: bool) -> int:
             raise ProofFactsError(
                 "committed proof fact differs from fresh authoritative Audit output"
             )
+        print_axiom_census(expected)
         print(
             f"docfacts-proof: LIVE OK — {len(expected['specHeadlines'])} Spec headlines, {len(expected['enrollments'])} unique Audit reports"
         )
