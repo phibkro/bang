@@ -23,6 +23,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/decisions/README.md](docs/decisions/README.md) — All ADRs (why-we-chose-X log)
 - [docs/notes/OPEN_QUESTIONS.md](docs/notes/OPEN_QUESTIONS.md) — Deferred design questions
 - [docs/notes/design-space-map.md](docs/notes/design-space-map.md) — Design-space survey (open language-design questions + neighbour languages)
+- [docs/notes/term-relation-algebra-survey.md](docs/notes/term-relation-algebra-survey.md) — Term Relation Algebra survey (Gavazzo LICS'26 · post-v1 metatheory sidecar · effectful fresh-identity spike gate · not a current LR/compiler route)
 - [docs/notes/structok-multiarg-design.md](docs/notes/structok-multiarg-design.md) — structOK multi-arg descent design (#50 · the ADR-0091 fork's full analysis)
 - [docs/notes/multishot-survey.md](docs/notes/multishot-survey.md) — Multi-shot survey (Q22/Q27 · one-shot-precedent · WasmFX backend constraint · verification-tax · the labelling-vs-closure verdict-shape)
 - [docs/notes/distributed-story.md](docs/notes/distributed-story.md) — Distributed-systems story (post-v1 arc: nondeterminism-as-effect · DST-as-handler · certified CRDTs · CALM-as-grade · the KV-store hello-world)

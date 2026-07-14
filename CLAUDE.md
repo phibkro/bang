@@ -27,6 +27,7 @@ its trigger arises.
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
+| **Term Relation Algebra survey** (Gavazzo LICS'26 · post-v1 metatheory sidecar · effectful fresh-identity spike gate · not a current LR/compiler route) | `docs/notes/term-relation-algebra-survey.md` |
 | **structOK multi-arg descent design** (#50 · the ADR-0091 fork's full analysis) | `docs/notes/structok-multiarg-design.md` |
 | **Multi-shot survey** (Q22/Q27 · one-shot-precedent · WasmFX backend constraint · verification-tax · the labelling-vs-closure verdict-shape) | `docs/notes/multishot-survey.md` |
 | **Distributed-systems story** (post-v1 arc: nondeterminism-as-effect · DST-as-handler · certified CRDTs · CALM-as-grade · the KV-store hello-world) | `docs/notes/distributed-story.md` |
