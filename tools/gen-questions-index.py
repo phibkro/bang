@@ -164,8 +164,8 @@ def render(questions):
         L.append("")
         for qid, fm in sorted(rows, key=lambda p: int(p[0][1:])):
             ties = ", ".join(fm["ties"]) if fm["ties"] else "—"
-            L.append(f"- **[{qid} — {fm['title']}]({fm['_file']})** — {fm['description']} "
-                     f"· _{fm['status']}_  ")
+            L.append(f"- **[{qid} — {fm['title']}](questions/{fm['_file']})** — {fm['description']} "
+                     f"· _{fm['status']}_ \\")
             L.append(f"  ties: {ties}")
         L.append("")
 
@@ -187,7 +187,7 @@ def render(questions):
         L.append(f"### {status} ({len(rows)})")
         L.append("")
         for qid, fm in sorted(rows, key=lambda p: int(p[0][1:])):
-            L.append(f"- [{qid} — {fm['title']}]({fm['_file']})  · {marker(fm)}")
+            L.append(f"- [{qid} — {fm['title']}](questions/{fm['_file']})  · {marker(fm)}")
         L.append("")
 
     # ── View 3: the tie graph ──

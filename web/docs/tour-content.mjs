@@ -1,17 +1,10 @@
-// The tour's LESSON MANIFEST — the one hand-authored artifact of the tour
-// pipeline (interactive-tour-design.md §4). Everything else per lesson (the
-// code, the expected output) is READ from examples/<name>/ at generation
-// time, never copied by hand — gen-tour.mjs fails loudly if a referenced
-// example or its expected.txt goes missing (drift-proof by construction).
-//
-// Each lesson names one or more `examples/<name>/` seeds. `seeds` is an
-// array so a lesson can contrast two programs (e.g. #8's handler swap) —
-// each seed renders as its own code block + expected-output pair, in order.
-export const lessons = [
+// Tour lesson CONTENT only. Page identity, title, route, order, prerequisites,
+// and navigation live in page-manifest.json; this module owns prose, teaching
+// metadata, and canonical example seeds. gen-tour.mjs requires a bijection
+// between these content keys and the manifest's tour-lesson pages.
+export const lessonContent = [
   {
-    n: 1,
-    slug: '01-values-and-force',
-    title: 'Values are thunks; `$` forces',
+    key: 'values-and-force',
     teaches: 'description-vs-value, `$` (ADR-0007)',
     seeds: ['effect-op-arith'],
     prose: `
@@ -27,9 +20,7 @@ the way you'd expect from reading it left to right.
 `,
   },
   {
-    n: 2,
-    slug: '02-functions-and-recursion',
-    title: 'Functions & recursion',
+    key: 'functions-and-recursion',
     teaches: 'a generic `let rec` over your own data, no trait bound',
     seeds: ['list-basics'],
     prose: `
@@ -42,9 +33,7 @@ it, so nothing polymorphic ever reaches the kernel.
 `,
   },
   {
-    n: 3,
-    slug: '03-your-own-data',
-    title: 'Your own data',
+    key: 'your-own-data',
     teaches: '`data`, constructors, pattern match, `deriving`',
     seeds: ['derive-eq-ord'],
     prose: `
@@ -56,9 +45,7 @@ directly inside an ordinary \`match\`.
 `,
   },
   {
-    n: 4,
-    slug: '04-match-wildcards-and-mutual-recursion',
-    title: 'Pattern match: wildcards & mutual recursion',
+    key: 'match-and-mutual-recursion',
     teaches: 'the `_` wildcard arm, `let rec … and …` mutual recursion',
     seeds: ['wildcard-match', 'mutual-parity'],
     prose: `
@@ -74,9 +61,7 @@ first. Below, \`even\`/\`odd\` hand off to each other, and a three-way group
 `,
   },
   {
-    n: 5,
-    slug: '05-state-as-a-library',
-    title: 'State as a library',
+    key: 'state-as-a-library',
     teaches: 'State is a handler, not a keyword',
     seeds: ['state'],
     prose: `
@@ -88,9 +73,7 @@ privileged primitive is STM, and even that ships as a handler in v1).
 `,
   },
   {
-    n: 6,
-    slug: '06-handling-an-effect',
-    title: 'Handling an effect',
+    key: 'handling-an-effect',
     teaches: '`with`, catching `raise`',
     seeds: ['handle'],
     prose: `
@@ -101,9 +84,7 @@ for effects you declare yourself, next.
 `,
   },
   {
-    n: 7,
-    slug: '07-declare-your-own-effect',
-    title: 'Declare your own effect',
+    key: 'declare-your-own-effect',
     teaches: '`effect` decl, `perform`, handle end-to-end',
     seeds: ['handle-custom-tracer'],
     prose: `
@@ -115,9 +96,7 @@ effects, not just user-defined data.
 `,
   },
   {
-    n: 8,
-    slug: '08-swap-the-handler',
-    title: 'Swap the handler, keep the program',
+    key: 'swap-the-handler',
     teaches: 'the same program under two different handlers',
     seeds: ['logger-silent', 'logger-counting'],
     prose: `
@@ -130,9 +109,7 @@ the language.
 `,
   },
   {
-    n: 9,
-    slug: '09-identity-dispatch',
-    title: 'Identity dispatch (the lexical cap)',
+    key: 'identity-dispatch',
     teaches: 'why nesting the same effect twice does NOT pick the nearest handler',
     seeds: ['handle-custom-nested'],
     prose: `
@@ -145,9 +122,7 @@ carries which specific handler instance it names, not just an effect label.
 `,
   },
   {
-    n: 10,
-    slug: '10-generation-as-an-effect',
-    title: 'Generation as an effect',
+    key: 'generation-as-an-effect',
     teaches: 'seeded, replayable nondeterminism — the DST warm-up',
     seeds: ['gen-seed-a', 'gen-seed-b'],
     prose: `

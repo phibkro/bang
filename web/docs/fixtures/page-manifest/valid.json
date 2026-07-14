@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "repository": {
+    "url": "https://github.com/phibkro/bang",
+    "branch": "main"
+  },
+  "basePath": "/bang",
+  "sections": [
+    { "id": "start", "title": "Start", "order": 10 },
+    { "id": "learn", "title": "Learn", "order": 20 },
+    { "id": "reference", "title": "Reference", "order": 30 },
+    { "id": "contribute", "title": "Contribute", "order": 40 },
+    { "id": "architecture", "title": "Architecture", "order": 50 },
+    { "id": "project", "title": "Project", "order": 60, "collapsed": true }
+  ],
+  "publications": [
+    {
+      "kind": "exact",
+      "mode": "managed",
+      "source": "README.md",
+      "route": "/"
+    }
+  ],
+  "pages": [
+    {
+      "id": "what-bang-is",
+      "title": "What BANG is",
+      "section": "start",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": [],
+      "status": { "kind": "not-applicable", "reason": "navigation-only" },
+      "target": { "kind": "markdown", "path": "README.md", "route": "/" },
+      "navigation": { "order": 10 }
+    }
+  ]
+}
