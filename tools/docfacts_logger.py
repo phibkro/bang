@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=examples/logger-counting,docfacts/schema/example.schema.json,docs/reference/examples/logger-counting.md runs-in=fitness
+# tool: role=gen couples=examples/logger-counting,docfacts/schema/*.schema.json,docs/reference/examples/logger-counting.md runs-in=fitness
 """docfacts_logger.py — generate and validate the logger-counting documentation fact.
 
 The committed JSON fact is the consumer boundary: Markdown is rendered only after
@@ -13,8 +13,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
+
+from docfacts_common import (
+    check_evidence_sources,
+    checked_repo_path,
+    reload_and_validate,
+    render_json,
+    schema_validator,
+    serialization_consumer_pole,
+)
 
 ROOT = Path(
     subprocess.run(
@@ -99,46 +107,29 @@ def build_fact() -> dict:
     }
 
 
-def validator() -> Draft202012Validator:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
-
-
-def checked_repo_path(path: str) -> Path:
-    candidate = (ROOT / path).resolve()
-    try:
-        candidate.relative_to(ROOT.resolve())
-    except ValueError as error:
-        raise ValidationError(f"path escapes the repository: {path}") from error
-    if not candidate.is_file():
-        raise ValidationError(f"repo source path does not exist: {path}")
-    return candidate
+def validate_repo_references(fact: dict) -> None:
+    checked_repo_path(ROOT, fact["program"]["path"])
+    checked_repo_path(ROOT, fact["expectedOutput"]["path"])
+    check_evidence_sources(ROOT, fact["evidence"])
+    for related in fact["relatedExamples"]:
+        checked_repo_path(ROOT, related["path"])
 
 
 def validate_fact(fact: dict) -> None:
-    validator().validate(fact)
-    checked_repo_path(fact["program"]["path"])
-    checked_repo_path(fact["expectedOutput"]["path"])
-    for evidence in fact["evidence"]:
-        for source in evidence["sources"]:
-            checked_repo_path(source)
-    for related in fact["relatedExamples"]:
-        checked_repo_path(related["path"])
+    schema_validator(SCHEMA_PATH).validate(fact)
+    validate_repo_references(fact)
 
 
 def parse_fact(serialized: str) -> dict:
-    fact = json.loads(serialized)
-    validate_fact(fact)
-    return fact
+    return reload_and_validate(
+        serialized,
+        schema_validator(SCHEMA_PATH),
+        [validate_repo_references],
+    )
 
 
 def load_committed_fact() -> dict:
     return parse_fact(FACT_PATH.read_text(encoding="utf-8"))
-
-
-def render_json(fact: dict) -> str:
-    return json.dumps(fact, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
 def public_source_link(path: str, label: str | None = None) -> str:
@@ -217,23 +208,6 @@ def expect_invalid(name: str, fact: dict) -> bool:
     return False
 
 
-def serialization_consumer_pole(base: dict) -> bool:
-    serialized_fact = copy.deepcopy(base)
-    serialized_fact["title"] = "Serialized consumer pole"
-    serialized = render_json(serialized_fact)
-    serialized_fact["title"] = "Unserialized mutation"
-    markdown = render_markdown(parse_fact(serialized))
-    passed = (
-        "# Serialized consumer pole" in markdown
-        and "# Unserialized mutation" not in markdown
-    )
-    if passed:
-        print("✓ serialized JSON is the Markdown consumer boundary")
-    else:
-        print("✗ Markdown bypassed the serialized JSON boundary", file=sys.stderr)
-    return passed
-
-
 def self_test() -> int:
     base = build_fact()
     validate_fact(base)
@@ -268,7 +242,12 @@ def self_test() -> int:
     cases.append(("invalid-refusal-vocabulary", invalid_refusal))
 
     passed = sum(expect_invalid(name, fact) for name, fact in cases)
-    passed += serialization_consumer_pole(base)
+    serialized_pole = serialization_consumer_pole(base, parse_fact, render_markdown)
+    if serialized_pole:
+        print("✓ serialized JSON is the Markdown consumer boundary")
+    else:
+        print("✗ Markdown bypassed the serialized JSON boundary", file=sys.stderr)
+    passed += serialized_pole
     total = len(cases) + 1
     print(f"docfacts-logger self-test: {passed}/{total} poles passed.")
     return 0 if passed == total else 1

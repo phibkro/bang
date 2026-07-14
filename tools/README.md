@@ -10,9 +10,9 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
-| [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/0016-*.md`, `docs/decisions/0035-*.md`, `docs/decisions/0059-*.md`, `docs/architecture/core-overview.md`, `import_facts.py` | Generate/check the current architecture snapshot from code and accepted ADRs.""" |
-| [`docfacts_logger.py`](docfacts_logger.py) | `fitness` | `examples/logger-counting`, `docfacts/schema/example.schema.json`, `docs/reference/examples/logger-counting.md` | generate and validate the logger-counting documentation fact |
-| [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
+| [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/0016-*.md`, `docs/decisions/0035-*.md`, `docs/decisions/0059-*.md`, `docs/architecture/core-overview.md`, `architecture_facts.py`, `import_facts.py` | Generate/check the current architecture snapshot from code and accepted ADRs.""" |
+| [`docfacts_logger.py`](docfacts_logger.py) | `fitness` | `examples/logger-counting`, `docfacts/schema/*.schema.json`, `docs/reference/examples/logger-counting.md` | generate and validate the logger-counting documentation fact |
+| [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `adr_facts.py`, `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
 | [`gen-agent-pack.py`](gen-agent-pack.py) | `fitness` | `.claude/lane-discipline.md`, `.claude/agents/*.md`, `genblock.py` | splice the lane-discipline pack into each subagent role file |
 | [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md` | generate CHANGELOG.md from conventional commits (the GENERATE rung) |
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
@@ -22,14 +22,14 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-llms-txt.py`](gen-llms-txt.py) | `fitness` | `CLAUDE.md`, `llms.txt` | generate llms.txt (the LLM-doc-index standard, llmstxt.org) |
 | [`gen-notes-index.py`](gen-notes-index.py) | `fitness` | `docs/notes/*.md`, `docs/notes/README.md` | generate docs/notes/README.md, the notes map |
 | [`gen-proof-assets.py`](gen-proof-assets.py) | `fitness` | `Bang/**/*.lean`, `docs/notes/proof-assets.md`, `tools/leanlex.py` | generate the reusable-proof-assets inventory |
-| [`gen-proof-state.py`](gen-proof-state.py) | `fitness` | `Bang/Audit.lean`, `burndown.sh`, `CONTEXT.md`, `genblock.py` | generate CONTEXT.md's proof-state line from the gate (the root) |
+| [`gen-proof-state.py`](gen-proof-state.py) | `fitness` | `Bang/Audit.lean`, `audit_facts.py`, `burndown.sh`, `CONTEXT.md`, `genblock.py` | generate CONTEXT.md's proof-state line from the gate (the root) |
 | [`gen-questions-index.py`](gen-questions-index.py) | `fitness` | `docs/notes/questions/*.md`, `docs/notes/OPEN_QUESTIONS.md`, `genblock.py` | the design-question ledger, generated from the OKF files |
 | [`gen-reference.py`](gen-reference.py) | `fitness` | `Bang/Frontend/Surface.lean`, `docs/reference/language.md` | Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained |
 | [`gen-tmgrammar.py`](gen-tmgrammar.py) | `fitness` | `Bang/Frontend/Surface.lean`, `web/docs/bang.tmLanguage.json` | Generate web/docs/bang.tmLanguage.json — a TextMate grammar DERIVED from the reified parser tables |
 | [`gen-tools-index.py`](gen-tools-index.py) | `fitness` | `tools/*.sh`, `tools/*.py`, `tools/*.mjs`, `tools/README.md` | generate tools/README.md, the tools map |
 | [`genblock.py`](genblock.py) | `manual` | `gen-gate-index.py`, `gen-import-graph.py`, `gen-proof-state.py`, `gen-questions-index.py` | shared generator primitives |
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
-| [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
+| [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean`, `leanlex.py` | Generate source-syntax symbol indexes for the Lean source tree |
 
 ## check (24)
 

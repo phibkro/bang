@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/Audit.lean,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
+# tool: role=gen couples=Bang/Audit.lean,audit_facts.py,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
 """gen-proof-state.py — generate CONTEXT.md's proof-state line from the gate (the root).
 
 CONTEXT.md hand-maintains a "proof-state" summary (which headline theorems are
@@ -36,90 +36,13 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import subprocess
 import sys
+
+from audit_facts import axiom_report, classify, headlines, parse_axioms, run
 
 BEGIN = "<!-- BEGIN GENERATED proof-state (just proof-state) — do not hand-edit -->"
 END = "<!-- END GENERATED proof-state -->"
-
-# The trusted-3: an axiom set ⊆ this is "clean". Anything else (incl. sorryAx) flags.
-TRUSTED = {"propext", "Classical.choice", "Quot.sound"}
-
-HEADLINE_RE = re.compile(r"^\s*#print axioms\s+(\S+)\s*$")
-# `'Bang.foo' depends on axioms: [propext, Classical.choice]` — list may span lines.
-DEPENDS_RE = re.compile(r"'([^']+)' depends on axioms:\s*\[([^\]]*)\]", re.DOTALL)
-# `'Bang.foo' does not depend on any axioms`
-NODEPS_RE = re.compile(r"'([^']+)' does not depend on any axioms")
 TOTAL_RE = re.compile(r"^TOTAL\s+(\d+)\s+(\d+)\s+(\d+)")
-
-
-def headlines(lean_root: str) -> list[str]:
-    """The headline theorem names from the active `#print axioms` lines in Audit.lean."""
-    path = os.path.join(lean_root, "Bang", "Audit.lean")
-    out = []
-    for line in open(path, encoding="utf-8").read().splitlines():
-        m = HEADLINE_RE.match(line)
-        if m:
-            out.append(m.group(1))
-    return out
-
-
-def run(cmd: list[str], cwd: str):
-    """Run a command; return (rc, combined-output) or None if the binary is missing."""
-    try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=900)
-        return p.returncode, (p.stdout or "") + (p.stderr or "")
-    except FileNotFoundError:
-        return None
-    except subprocess.TimeoutExpired:
-        return 1, ""
-
-
-def axiom_report(lean_root: str, build: bool):
-    """Force a fresh read of the axiom gate. Returns the report text, or None if
-    `lake` is unavailable (→ caller SKIPs). `touch` always; `--build` rebuilds the
-    import oleans first (authoritative, for the generate path)."""
-    audit = os.path.join(lean_root, "Bang", "Audit.lean")
-    if build:
-        if run(["lake", "build", "Bang.Audit"], lean_root) is None:
-            return None
-    if os.path.exists(audit):
-        os.utime(audit, None)  # touch: re-elaborate Audit against current oleans
-    res = run(["lake", "env", "lean", "Bang/Audit.lean"], lean_root)
-    return None if res is None else res[1]
-
-
-def parse_axioms(text: str) -> dict[str, list[str]]:
-    """fullname -> axiom list, from a `lake env lean Bang/Audit.lean` report."""
-    found: dict[str, list[str]] = {}
-    for name in NODEPS_RE.findall(text):
-        found[name] = []
-    for name, axs in DEPENDS_RE.findall(text):
-        found[name] = [a.strip() for a in axs.split(",") if a.strip()]
-    return found
-
-
-def match(headline: str, report: dict[str, list[str]]):
-    """An Audit headline (`lr_sound`, resolved to `Bang.lr_sound`) vs a fully-qualified
-    report name. Dot-anchored so `compile_forward_sim` ≠ `compile_forward_sim_pure`."""
-    for name, axs in report.items():
-        if name == headline or name.endswith("." + headline) or headline.endswith("." + name):
-            return axs
-    return None
-
-
-def classify(lean_root: str, report: dict[str, list[str]]):
-    """(clean, pending, flagged) — flagged is [(headline, [bad+axioms])]."""
-    clean, pending, flagged = [], [], []
-    for h in headlines(lean_root):
-        axs = match(h, report)
-        if axs is None:
-            pending.append(h)
-        elif set(axs) <= TRUSTED:
-            clean.append(h)
-        else:
-            flagged.append((h, axs))
-    return clean, pending, flagged
 
 
 def sorry_total(lean_root: str):

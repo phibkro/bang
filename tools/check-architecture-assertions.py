@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/**/*.lean,Main.lean,docs/decisions/0016-*.md,docs/decisions/0035-*.md,docs/decisions/0059-*.md,docs/architecture/core-overview.md,import_facts.py runs-in=fitness
+# tool: role=gen couples=Bang/**/*.lean,Main.lean,docs/decisions/0016-*.md,docs/decisions/0035-*.md,docs/decisions/0059-*.md,docs/architecture/core-overview.md,architecture_facts.py,import_facts.py runs-in=fitness
 """Generate/check the current architecture snapshot from code and accepted ADRs."""
 
 from __future__ import annotations
@@ -11,77 +11,18 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
+from architecture_facts import (
+    ArchitectureFactsError as AssertionSourceError,
+    derive_decision_facts,
+    derive_engine_facts,
+    read_source as read,
+    require_source as require,
+)
 from genblock import splice
 from import_facts import ImportFactsError, scan_bang
 
 GEN_BEGIN = "<!-- BEGIN GENERATED architecture-assertions (just architecture-assertions) — do not hand-edit -->"
 GEN_END = "<!-- END GENERATED architecture-assertions -->"
-
-
-class AssertionSourceError(ValueError):
-    """An authority no longer contains one unambiguous architecture fact."""
-
-
-def read(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise AssertionSourceError(f"missing authority: {path}") from exc
-
-
-def require(text: str, pattern: str, source: Path, description: str) -> re.Match[str]:
-    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not match:
-        raise AssertionSourceError(f"cannot derive {description} from {source}")
-    return match
-
-
-def derive_engine_facts(main_path: Path) -> tuple[tuple[str, ...], str, str]:
-    text = read(main_path)
-    block = require(
-        text,
-        r"inductive Engine where(?P<body>.*?)\n\n/-- Parse the engine selector.*?\ndef parseEngine .*?:=\n(?P<parser>.*?)(?=\n\n/-- Parse `--fuel)",
-        main_path,
-        "engine declarations and parseEngine",
-    )
-    engines = tuple(re.findall(r"^\s*\|\s*(\w+)\s*$", block.group("body"), re.MULTILINE))
-    parser = block.group("parser")
-    branches = tuple(re.findall(r"(?:then|else)\s+\.([A-Za-z_]\w*)", parser))
-    if not engines or not branches or any(branch not in engines for branch in branches):
-        raise AssertionSourceError(f"ambiguous engine branches in {main_path}")
-    alias = require(parser, r'flags\.contains "(--compiled)"', main_path, "compiled alias").group(1)
-    return engines, branches[-1], alias
-
-
-def derive_decision_facts(root: Path) -> tuple[str, str, str]:
-    adr0016 = root / "docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md"
-    adr0035 = root / "docs/decisions/0035-lr-for-equivalence-simulation-for-compilation.md"
-    adr0059 = root / "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md"
-
-    base = read(adr0016)
-    proof = read(adr0035)
-    target = read(adr0059)
-
-    require(base, r"two-hop", adr0016, "two-hop architecture")
-    target_name = require(
-        target,
-        r"compile to \*\*(Wasm 3\.0)\*\* with a \*\*grade-directed, pluggable backend\*\*",
-        adr0059,
-        "primary target",
-    ).group(1)
-    require(
-        target,
-        r"WasmFX is a\s+post-standardization fast-path for the `general` case only",
-        adr0059,
-        "WasmFX future slot",
-    )
-    require(
-        proof,
-        r"Biorthogonal LR proves .*contextual-equivalence.*annotated simulation.*`compile_forward_sim`",
-        adr0035,
-        "proof-method split",
-    )
-    return target_name, "binary biorthogonal LR", "annotated forward simulation"
 
 
 def derive_theorem_facts(root: Path) -> tuple[str, ...]:
