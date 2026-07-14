@@ -53,6 +53,7 @@ README = DECISIONS / "README.md"
 BEGIN = "<!-- BEGIN GENERATED ADR INDEX — do not edit; run `just adr-index` -->"
 END = "<!-- END GENERATED ADR INDEX -->"
 
+
 def collect() -> list[dict]:
     return collect_adr_facts(DECISIONS)
 
@@ -81,9 +82,11 @@ def render(adrs: list[dict]) -> str:
         am = join_links(nums(f.get("amends", "")), by_num)
         am_by = join_links(a["amended_by"], by_num)
         resolves = ", ".join(f"Q{q}" for q in qnums(f.get("resolves", ""))) or "—"
-        deps = join_links(nums(f.get("depends-on", "") or f.get("dependson", "")), by_num)
+        deps = join_links(
+            nums(f.get("depends-on", "") or f.get("dependson", "")), by_num
+        )
         title = (a["title"] or "—").replace("|", "\\|")
-        summary = (f.get("summary", "—")).replace("|", "\\|")
+        summary = (a["field_heads"].get("summary", "—")).replace("|", "\\|")
         out.append(
             f"| [{a['num']}]({a['file']}) | {status_of(f)} | {title} | {summary} "
             f"| {sup} / {sup_by} | {am} / {am_by} | {resolves} | {deps} |"
@@ -119,16 +122,31 @@ def splice(readme_text: str, generated: str) -> str:
     """Replace the BEGIN..END region; if absent, append it after the preamble."""
     if BEGIN in readme_text and END in readme_text:
         pre = readme_text[: readme_text.index(BEGIN)]
-        post = readme_text[readme_text.index(END) + len(END):]
+        post = readme_text[readme_text.index(END) + len(END) :]
         return pre + generated + post
     # First run: append to the end, preserving all hand-written content above.
-    sep = "" if readme_text.endswith("\n\n") else ("\n" if readme_text.endswith("\n") else "\n\n")
+    sep = (
+        ""
+        if readme_text.endswith("\n\n")
+        else ("\n" if readme_text.endswith("\n") else "\n\n")
+    )
     return readme_text + sep + generated + "\n"
 
 
 def main() -> int:
-    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
-    except Exception: pass
+    try:
+        __import__("subprocess").run(
+            [
+                "bash",
+                __import__("os").path.join(
+                    __import__("os").path.dirname(__file__), "tool-log.sh"
+                ),
+                __import__("os").path.basename(__file__),
+            ],
+            check=False,
+        )  # tool-log (plan 012)
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true", help="exit 1 if README is stale")
     args = ap.parse_args()
@@ -142,10 +160,14 @@ def main() -> int:
         rc = 0
         if new != current:
             print("FAIL: docs/decisions/README.md generated region is STALE.")
-            print("      Run `just adr-index` to regenerate. Diff (current → expected):")
+            print(
+                "      Run `just adr-index` to regenerate. Diff (current → expected):"
+            )
             diff = difflib.unified_diff(
-                current.splitlines(), new.splitlines(),
-                fromfile="README.md (committed)", tofile="README.md (regenerated)",
+                current.splitlines(),
+                new.splitlines(),
+                fromfile="README.md (committed)",
+                tofile="README.md (regenerated)",
                 lineterm="",
             )
             print("\n".join(diff))

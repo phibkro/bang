@@ -46,6 +46,12 @@
           "uniqueItems": true
         }
       }
+    },
+    "identifiedEvidence": {
+      "allOf": [
+        { "$ref": "#/$defs/evidence" },
+        { "required": ["id"] }
+      ]
     }
   }
 }

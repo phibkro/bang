@@ -8,12 +8,20 @@ import re
 from pathlib import Path
 
 FIELD_RE = re.compile(
-    r"^\s*[-*]\s*\*{0,2}([A-Za-z][\w -]*?)\*{0,2}\s*:\s*\*{0,2}\s*(.*\S)\s*$"
+    r"^\s*[-*]\s*\*{0,2}([A-Za-z][\w -]*?)\*{0,2}\s*:\s*\*{0,2}\s*(.*\S)?\s*$"
 )
 H1_RE = re.compile(r"^#\s+(.*\S)\s*$")
 TITLE_STRIP_RE = re.compile(r"^(?:ADR[- ]?)?\d{4}\s*[·—–-]\s*", re.IGNORECASE)
 SENTINEL = "<!-- adr-frontmatter -->"
 Q_INDEX_RE = re.compile(r"^- \[Q(\d+)\b.*?\]\([^)]*\)(?:\s*·\s*(.*))?$")
+RELATIONSHIP_FIELDS = (
+    "supersedes",
+    "amends",
+    "refines",
+    "seealso",
+    "dependson",
+    "resolves",
+)
 
 
 def norm_key(key: str) -> str:
@@ -25,13 +33,52 @@ def nums(value: str) -> list[str]:
 
 
 def qnums(value: str) -> list[str]:
+    if not re.match(r"^\s*Q\d+\b", value):
+        return []
     return re.findall(r"\bQ(\d+)\b", value)
+
+
+def _frontmatter_fields(
+    lines: list[str], path: Path
+) -> tuple[dict[str, str], dict[str, str], int]:
+    if SENTINEL not in lines:
+        raise SystemExit(
+            f"FAIL: {path.name} has no `{SENTINEL}` frontmatter block.\n"
+            "      Every ADR needs the machine-frontmatter block (run the sweep)."
+        )
+    start = lines.index(SENTINEL) + 1
+    fields: dict[str, str] = {}
+    field_heads: dict[str, str] = {}
+    current: str | None = None
+    block_end = len(lines)
+    saw_field = False
+    for index in range(start, len(lines)):
+        line = lines[index]
+        match = FIELD_RE.match(line)
+        if match:
+            current = norm_key(match.group(1))
+            value = (match.group(2) or "").strip()
+            fields[current] = value
+            field_heads[current] = value
+            saw_field = True
+            continue
+        if not line.strip():
+            if saw_field:
+                block_end = index
+                break
+            continue
+        if current is None or not line[:1].isspace():
+            block_end = index
+            break
+        fields[current] = " ".join(
+            part for part in (fields[current], line.strip()) if part
+        )
+    return fields, field_heads, block_end
 
 
 def parse_adr(path: Path) -> dict:
     num = path.name[:4]
     title = None
-    fields: dict[str, str] = {}
     lines = path.read_text(encoding="utf-8").splitlines()
 
     for line in lines:
@@ -40,37 +87,17 @@ def parse_adr(path: Path) -> dict:
             title = TITLE_STRIP_RE.sub("", match.group(1)).strip()
             break
 
-    if SENTINEL not in lines:
-        raise SystemExit(
-            f"FAIL: {path.name} has no `{SENTINEL}` frontmatter block.\n"
-            "      Every ADR needs the machine-frontmatter block (run the sweep)."
-        )
-    start = lines.index(SENTINEL) + 1
-    in_bullets = False
-    block_end = len(lines)
-    for offset, line in enumerate(lines[start:]):
-        match = FIELD_RE.match(line)
-        if match:
-            fields[norm_key(match.group(1))] = match.group(2).strip()
-            in_bullets = True
-        elif line.strip() == "":
-            if in_bullets:
-                block_end = start + offset
-                break
-        else:
-            block_end = start + offset
-            break
-
+    fields, field_heads, block_end = _frontmatter_fields(lines, path)
     prose_status = None
     for line in lines[block_end:]:
         match = FIELD_RE.match(line)
         if match and norm_key(match.group(1)) == "status":
-            prose_status = match.group(2).strip()
+            prose_status = (match.group(2) or "").strip()
             break
     if prose_status is None:
         for index, line in enumerate(lines):
             if line.strip() == "## Status":
-                for following in lines[index + 1:]:
+                for following in lines[index + 1 :]:
                     if following.strip():
                         prose_status = following.strip()
                         break
@@ -81,6 +108,7 @@ def parse_adr(path: Path) -> dict:
         "file": path.name,
         "title": title,
         "fields": fields,
+        "field_heads": field_heads,
         "prose_status": prose_status,
     }
 
@@ -92,8 +120,7 @@ def status_of(fields: dict[str, str]) -> str:
 
 def collect(decisions: Path) -> list[dict]:
     adrs = [
-        parse_adr(path)
-        for path in sorted(decisions.glob("[0-9][0-9][0-9][0-9]-*.md"))
+        parse_adr(path) for path in sorted(decisions.glob("[0-9][0-9][0-9][0-9]-*.md"))
     ]
     by_num = {adr["num"]: adr for adr in adrs}
     for adr in adrs:
@@ -106,7 +133,22 @@ def collect(decisions: Path) -> list[dict]:
         for target in nums(adr["fields"].get("amends", "")):
             if target in by_num:
                 by_num[target]["amended_by"].append(adr["num"])
+    for adr in adrs:
+        adr["superseded_by"].sort()
+        adr["amended_by"].sort()
     return adrs
+
+
+def relationship_fields(fields: dict[str, str]) -> dict[str, str]:
+    names = {
+        "supersedes": "supersedes",
+        "amends": "amends",
+        "refines": "refines",
+        "seealso": "seeAlso",
+        "dependson": "dependsOn",
+        "resolves": "resolves",
+    }
+    return {names[key]: fields[key] for key in RELATIONSHIP_FIELDS if fields.get(key)}
 
 
 def parse_open_questions(path: Path) -> dict[int, dict]:

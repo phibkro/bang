@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shlex
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,34 @@ def reject_duplicate_ids(records: Iterable[dict], description: str = "records") 
         if record_id in seen:
             raise ValidationError(f"duplicate {description} id: {record_id}")
         seen.add(record_id)
+
+
+def check_sorted_unique(
+    values: list, key: Callable[[Any], Any], description: str
+) -> None:
+    keys = [key(value) for value in values]
+    if keys != sorted(keys) or len(keys) != len(set(keys)):
+        raise ValidationError(
+            f"{description} must be uniquely and deterministically sorted"
+        )
+
+
+def validate_evidence_commands(root: Path, evidence: Iterable[dict]) -> None:
+    for record in evidence:
+        for command in record["commands"]:
+            tokens = shlex.split(command)
+            if not tokens:
+                raise ValidationError(f"empty evidence command in {record['id']}")
+            if tokens[0] in {"bash", "python3"}:
+                if len(tokens) < 2 or not tokens[1].startswith("tools/"):
+                    raise ValidationError(f"unsupported evidence command: {command}")
+                checked_repo_path(root, tokens[1])
+            elif tokens[:3] == ["lake", "env", "lean"] and len(tokens) == 4:
+                checked_repo_path(root, tokens[3])
+            elif tokens[:2] == ["lake", "build"] and len(tokens) == 3:
+                checked_repo_path(root, tokens[2].replace(".", "/") + ".lean")
+            else:
+                raise ValidationError(f"unsupported evidence command: {command}")
 
 
 def serialization_consumer_pole(

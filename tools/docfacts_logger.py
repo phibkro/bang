@@ -259,7 +259,10 @@ def check_outputs() -> int:
     expected_json = render_json(expected_fact)
     stale = []
 
-    if not FACT_PATH.is_file() or FACT_PATH.read_text(encoding="utf-8") != expected_json:
+    if (
+        not FACT_PATH.is_file()
+        or FACT_PATH.read_text(encoding="utf-8") != expected_json
+    ):
         stale.append(FACT_PATH.relative_to(ROOT))
 
     try:

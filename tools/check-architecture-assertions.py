@@ -33,28 +33,58 @@ def derive_theorem_facts(root: Path) -> tuple[str, ...]:
     names = ("lr_sound", "lr_fundamental", "compile_forward_sim")
     for name in names:
         require(spec, rf"^theorem {name}\b", spec_path, f"theorem {name}")
-        require(audit, rf"^#print axioms {name}\b", audit_path, f"Audit enrollment for {name}")
+        require(
+            audit,
+            rf"^#print axioms {name}\b",
+            audit_path,
+            f"Audit enrollment for {name}",
+        )
     return names
 
 
 def validate_current_snapshots(root: Path, target: str, default_engine: str) -> None:
     snapshots = {
-        root / "README.md": (target, "forward simulation", "logical relation", "ADR-0059"),
-        root / "ONBOARDING.md": (target, "forward simulation", "logical relation", "ADR-0059"),
-        root / "docs/architecture/core-overview.md": (target, "forward simulation", "logical relation", "ADR-0059"),
+        root / "README.md": (
+            target,
+            "forward simulation",
+            "logical relation",
+            "ADR-0059",
+        ),
+        root / "ONBOARDING.md": (
+            target,
+            "forward simulation",
+            "logical relation",
+            "ADR-0059",
+        ),
+        root / "docs/architecture/core-overview.md": (
+            target,
+            "forward simulation",
+            "logical relation",
+            "ADR-0059",
+        ),
         root / "CLAUDE.md": (target, "ADR-0059", "ADR-0035"),
     }
     for path, markers in snapshots.items():
         text = read(path)
         for marker in markers:
             if marker not in text:
-                raise AssertionSourceError(f"current snapshot {path} is missing derived marker {marker!r}")
-        if re.search(r"WasmFX (?:backend )?is the (?:verified )?(?:compiler |compilation )?target", text):
-            raise AssertionSourceError(f"current snapshot {path} restores WasmFX as the primary target")
+                raise AssertionSourceError(
+                    f"current snapshot {path} is missing derived marker {marker!r}"
+                )
+        if re.search(
+            r"WasmFX (?:backend )?is the (?:verified )?(?:compiler |compilation )?target",
+            text,
+        ):
+            raise AssertionSourceError(
+                f"current snapshot {path} restores WasmFX as the primary target"
+            )
 
     readme = read(root / "README.md")
     onboarding = read(root / "ONBOARDING.md")
-    for path, text in ((root / "README.md", readme), (root / "ONBOARDING.md", onboarding)):
+    for path, text in (
+        (root / "README.md", readme),
+        (root / "ONBOARDING.md", onboarding),
+    ):
         if not re.search(rf"`{re.escape(default_engine)}`\s*\|\s*Default", text):
             raise AssertionSourceError(
                 f"current snapshot {path} does not identify derived default engine {default_engine!r}"
@@ -91,7 +121,9 @@ def render(root: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if the committed block is stale")
+    parser.add_argument(
+        "--check", action="store_true", help="fail if the committed block is stale"
+    )
     parser.add_argument(
         "--root",
         default=os.environ.get("REFS_ROOT", "."),
@@ -115,13 +147,19 @@ def main() -> int:
 
     if args.check:
         if updated != current:
-            print("architecture-assertions: FAIL — generated snapshot is stale; run `just architecture-assertions`.")
+            print(
+                "architecture-assertions: FAIL — generated snapshot is stale; run `just architecture-assertions`."
+            )
             return 1
-        print("architecture-assertions: PASS — generated snapshot matches code and accepted ADRs.")
+        print(
+            "architecture-assertions: PASS — generated snapshot matches code and accepted ADRs."
+        )
         return 0
 
     doc.write_text(updated, encoding="utf-8")
-    print("architecture-assertions: regenerated docs/architecture/core-overview.md snapshot.")
+    print(
+        "architecture-assertions: regenerated docs/architecture/core-overview.md snapshot."
+    )
     return 0
 
 

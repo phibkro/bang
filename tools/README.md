@@ -4,14 +4,16 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (20)
+## gen (22)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
 | [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/0016-*.md`, `docs/decisions/0035-*.md`, `docs/decisions/0059-*.md`, `docs/architecture/core-overview.md`, `architecture_facts.py`, `import_facts.py` | Generate/check the current architecture snapshot from code and accepted ADRs.""" |
+| [`docfacts_architecture.py`](docfacts_architecture.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/*.md`, `docfacts/schema/architecture.schema.json`, `docfacts/architecture.json` | Generate and validate the source-derived BANG architecture documentation fact.""" |
 | [`docfacts_logger.py`](docfacts_logger.py) | `fitness` | `examples/logger-counting`, `docfacts/schema/*.schema.json`, `docs/reference/examples/logger-counting.md` | generate and validate the logger-counting documentation fact |
+| [`docfacts_proof.py`](docfacts_proof.py) | `fitness` | `Bang/**/*.lean`, `Bang/Audit.lean`, `Bang/Spec.lean`, `lean-toolchain`, `lakefile.toml`, `lake-manifest.json`, `docfacts/schema/proof.schema.json`, `docfacts/proof.json` | Generate, statically check, and live-check BANG proof documentation facts.""" |
 | [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `adr_facts.py`, `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
 | [`gen-agent-pack.py`](gen-agent-pack.py) | `fitness` | `.claude/lane-discipline.md`, `.claude/agents/*.md`, `genblock.py` | splice the lane-discipline pack into each subagent role file |
 | [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md` | generate CHANGELOG.md from conventional commits (the GENERATE rung) |
@@ -62,7 +64,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/sync-docs.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (28)
+## test (29)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -83,6 +85,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |
 | [`test-cli.sh`](test-cli.sh) | `verify` | — | the non-interactive gate for `bang`'s TOP-LEVEL CLI hygiene (issue #66/#67) |
 | [`test-compiled-dogfood.sh`](test-compiled-dogfood.sh) | `verify` | `examples/calc`, `examples/json` | the --compiled DIFFERENTIAL gate for the dogfood programs (#135) |
+| [`test-docfacts-architecture-proof.sh`](test-docfacts-architecture-proof.sh) | `fitness` | `docfacts/architecture.json`, `docfacts/proof.json`, `tools/docfacts_architecture.py`, `tools/docfacts_proof.py` | (no purpose comment) |
 | [`test-docfacts-logger.sh`](test-docfacts-logger.sh) | `verify` | `examples/logger-counting`, `docfacts/examples/logger-counting.json` | executable evidence for the logger-counting docfact |
 | [`test-explain.sh`](test-explain.sh) | `verify` | `Bang/Frontend/DiagCodes.lean` | the CLI gate for stable diagnostic codes + `bang explain` (plan 013 slice 5) |
 | [`test-fmt.sh`](test-fmt.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang fmt` (issue #58's CLI half) |
@@ -120,6 +123,19 @@ _Lane scripts — one-off orchestration helpers._
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
 
+## lib (6)
+
+__
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`adr_facts.py`](adr_facts.py) | `fitness` | `docs/decisions/*.md`, `docs/notes/OPEN_QUESTIONS.md`, `gen-adr-index.py` | Authoritative ADR frontmatter, relationship, question, and status facts.""" |
+| [`architecture_facts.py`](architecture_facts.py) | `fitness` | `Main.lean`, `docs/decisions/0016-*.md`, `docs/decisions/0035-*.md`, `docs/decisions/0059-*.md` | Source-derived architecture facts shared by documentation projections.""" |
+| [`audit_facts.py`](audit_facts.py) | `fitness` | `Bang/Audit.lean`, `gen-proof-state.py` | Audit enrollment, command, axiom-report, and trusted-three classification facts.""" |
+| [`docfacts_common.py`](docfacts_common.py) | `fitness` | `docfacts/schema/*.schema.json`, `docfacts/**/*.json` | Shared schema, repository-path, and serialization checks for documentation facts.""" |
+| [`import_facts.py`](import_facts.py) | `fitness` | `Bang/**/*.lean`, `gen-import-graph.py`, `arch-check.py` | Shared, fail-loud facts for BANG's internal Lean module graph.""" |
+| [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
+
 ## wrapper (1)
 
 __
@@ -144,15 +160,6 @@ __
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
 | [`clone-report.py`](clone-report.py) | `manual` | `Bang/**/*.lean`, `tools/leanlex.py` | rank duplicated code windows in Lean sources |
-
-## lib (2)
-
-__
-
-| script | runs-in | couples-with | purpose |
-|---|---|---|---|
-| [`import_facts.py`](import_facts.py) | `fitness` | `Bang/**/*.lean`, `gen-import-graph.py`, `arch-check.py` | Shared, fail-loud facts for BANG's internal Lean module graph.""" |
-| [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
 
 ## release (1)
 

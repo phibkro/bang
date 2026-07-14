@@ -14,6 +14,8 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from leanlex import strip_comments
@@ -70,7 +72,9 @@ def collect_symbols(root: Path = ROOT) -> list[dict]:
     symbols = []
     for path in lean_files(root):
         relative = path.relative_to(root).as_posix()
-        for line_number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        for line_number, line in enumerate(
+            path.read_text(errors="replace").splitlines(), 1
+        ):
             parsed = declaration(line)
             if parsed is None:
                 continue
@@ -99,9 +103,13 @@ def public_symbols_from_text(text: str, path: str, module: str) -> list[dict]:
             kind = scope.group("kind")
             visibility = scope.group("visibility")
             if visibility == "public" and kind != "section":
-                raise SymbolFactsError(f"{path}:{line_number}: public {kind} is not a visibility scope")
+                raise SymbolFactsError(
+                    f"{path}:{line_number}: public {kind} is not a visibility scope"
+                )
             inherited_public = any(entry[2] for entry in scopes)
-            scopes.append((kind, scope.group("name"), inherited_public or visibility == "public"))
+            scopes.append(
+                (kind, scope.group("name"), inherited_public or visibility == "public")
+            )
             continue
         closing = END.match(line)
         if closing:
@@ -120,7 +128,9 @@ def public_symbols_from_text(text: str, path: str, module: str) -> list[dict]:
                 None,
             )
             if matching is None:
-                raise SymbolFactsError(f"{path}:{line_number}: unmatched end {closing_name}")
+                raise SymbolFactsError(
+                    f"{path}:{line_number}: unmatched end {closing_name}"
+                )
             del scopes[matching:]
             continue
 
@@ -157,9 +167,11 @@ def public_symbols_from_text(text: str, path: str, module: str) -> list[dict]:
     return symbols
 
 
-def collect_public_symbols(root: Path = ROOT) -> list[dict]:
+def collect_public_symbols(
+    root: Path = ROOT, source_paths: Iterable[Path] | None = None
+) -> list[dict]:
     symbols = []
-    for source_path in lean_files(root):
+    for source_path in source_paths if source_paths is not None else lean_files(root):
         relative = source_path.relative_to(root).as_posix()
         symbols.extend(
             public_symbols_from_text(
@@ -208,8 +220,18 @@ end Bang
     else:
         raise AssertionError("unclosed mutual did not fail")
 
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "Bang/Untracked.lean"
+        source.parent.mkdir()
+        source.write_text("public def Visible := 1\n", encoding="utf-8")
+        projected = collect_public_symbols(root, [source])
+        assert [symbol["name"] for symbol in projected] == ["Visible"]
 
-def render_text(symbols: list[dict], by_file: bool, pattern: str | None, public: bool) -> None:
+
+def render_text(
+    symbols: list[dict], by_file: bool, pattern: str | None, public: bool
+) -> None:
     path_key = "path" if public else "file"
     if by_file:
         current = None
@@ -250,7 +272,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.self_test:
             self_test()
             current = collect_public_symbols(ROOT)
-            print(f"symbols: PASS — public syntax poles hold; {len(current)} current public declarations.")
+            print(
+                f"symbols: PASS — public syntax poles hold; {len(current)} current public declarations."
+            )
             return 0
         symbols = collect_public_symbols(ROOT) if args.public else collect_symbols(ROOT)
     except (AssertionError, SymbolFactsError, subprocess.CalledProcessError) as error:

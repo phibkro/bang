@@ -2,7 +2,12 @@
 
 **Summary:** Open, actionable bugs, DX friction, and improvement opportunities discovered while executing Plan 014.
 
-No open findings.
+## Open findings
+
+| ID | Finding | Failure scenario | Evidence | Graduation gate |
+|---|---|---|---|---|
+| F1 | Python/Shell quality checks are ad hoc, not lifecycle-wired. | A later edit bypasses the manually invoked Ruff/ShellCheck commands; formatting or lint drift reaches review before anyone notices. | `tools/*.py`, `tools/test-docfacts-architecture-proof.sh`; current checks use an ad-hoc Nix shell. | Pin the tools, provide one repository command, run fast formatting/lint feedback after edits, and block pre-commit on its check mode. |
+| F2 | The P2.2 sibling fact schema duplicates the evidence vocabulary and inspects `example.schema.json` internals. | Integrating PR #156 after the shared `common.schema.json` migration can leave language facts on a parallel vocabulary or break their compatibility check despite both sibling PRs being green alone. | PR #156: [language schema](https://github.com/phibkro/bang/blob/6ed2e3159dfe4ead692fc00d8fde57972ebcf32a/docfacts/schema/language.schema.json) and [generator](https://github.com/phibkro/bang/blob/6ed2e3159dfe4ead692fc00d8fde57972ebcf32a/tools/docfacts_language.py); this branch: `docfacts/schema/common.schema.json`. | During sibling integration, migrate the language schema/tool to the shared common definition and run both P2.2 and P2.3 fact batteries. |
 
 ## Lifecycle
 
