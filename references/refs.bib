@@ -1761,3 +1761,28 @@
             form of the survey's §4 finiteness criterion, and the analysis probe 2 would simplify
             into a fitness gate.},
 }
+
+% ─── Algebraic formal-system metatheory ─────────────────────────────────────
+
+@inproceedings{gavazzo-lics26-tra,
+  keywords = {topic:verified-semantics topic:metatheory role:frontier},
+  sha256 = {09c4737fd2a1059aa77288d637bcecd79fcf2f802b195d37c28c7537dbcb8c57},
+  author    = {Gavazzo, Francesco},
+  title     = {An Algebraic Approach to Formal System Metatheory},
+  booktitle = {41st Annual ACM/IEEE Symposium on Logic in Computer Science (LICS 2026)},
+  series    = {Leibniz International Proceedings in Informatics (LIPIcs)},
+  volume    = 380,
+  pages     = {50:1--50:31},
+  year      = 2026,
+  doi       = {10.4230/LIPIcs.LICS.2026.50},
+  url       = {https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.LICS.2026.50},
+  note      = {Introduces Term Relation Algebras (TRAs), a pointfree algebra of structurally
+               defined term predicates. Deterministic ground rules plus algebraic inversion and
+               conservation principles yield confluence of parallel reduction, determinism of
+               induced big-step evaluation, and congruence of applicative bisimilarity. For bang,
+               this is a post-v1 metatheory SIDECAR candidate, not a replacement for graded CBPV,
+               BinaryLR, the CalcVM calculation, or cross-language compiler simulation. Effects,
+               quantitative relations, logical relations, and mechanization are outside the paper's
+               established envelope. Adoption is gated by an effectful fresh-identity probe; see
+               docs/notes/term-relation-algebra-survey.md.},
+}

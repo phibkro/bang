@@ -770,6 +770,23 @@
     "sha256_pinned": ""
   },
   {
+    "key": "gavazzo-lics26-tra",
+    "title": "An Algebraic Approach to Formal System Metatheory",
+    "year": "2026",
+    "doi": "10.4230/LIPIcs.LICS.2026.50",
+    "eprint": "",
+    "topics": [
+      "verified-semantics",
+      "metatheory"
+    ],
+    "grounds": [],
+    "role": "frontier",
+    "ondisk": true,
+    "hop": "adjacent",
+    "path": "references/papers/adjacent/gavazzo-lics26-tra.pdf",
+    "sha256_pinned": "09c4737fd2a1059aa77288d637bcecd79fcf2f802b195d37c28c7537dbcb8c57"
+  },
+  {
     "key": "heijltjes-mfps25-fmc-iii-control",
     "title": "The Functional Machine Calculus III: Control",
     "year": "2025",

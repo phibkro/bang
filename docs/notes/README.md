@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (75)
+## active (76)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -79,6 +79,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`stranger-test-5.md`](stranger-test-5.md) — Stranger test — round 5 (pre-v0.2)
 - [`structok-multiarg-design.md`](structok-multiarg-design.md) — `structOK` multi-arg / accumulator descent — design note (#50)
 - [`tactics-survey.md`](tactics-survey.md) — Lean 4 tactics + tooling survey (for bang-lang verification)
+- [`term-relation-algebra-survey.md`](term-relation-algebra-survey.md) — Term Relation Algebras for bang — applicability of Gavazzo LICS 2026
 - [`traction-survey.md`](traction-survey.md) — Traction survey — how new-age languages got adopted, mapped to a bang plan
 - [`traits-prelude-survey.md`](traits-prelude-survey.md) — Traits / typeclasses prelude survey — the census + the derivability matrix
 - [`type-power-entry-design.md`](type-power-entry-design.md) — Type-power wave — entry-slice design (Wave E, ROADMAP §Pre-v1 type-power ladder)
