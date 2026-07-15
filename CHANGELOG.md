@@ -271,5 +271,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **ci** — bind changelog gate to PR head (`0ca4de14`)
 - **site** — resolve shared docfact schemas (`18ba9ebe`)
 - **onboarding** — make readiness and evidence fail loud (`377187b5`)
+- **onboarding** — bind artifacts and public routes (`425656c1`)
 
 <!-- END GENERATED changelog -->
