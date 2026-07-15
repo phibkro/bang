@@ -1,0 +1,758 @@
+{
+  "enrollments": [
+    {
+      "auditLine": 27,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext",
+        "sorryAx"
+      ],
+      "classification": "flagged",
+      "definitionSource": {
+        "line": 249,
+        "path": "Bang/Spec.lean"
+      },
+      "id": "bang-lr-sound",
+      "reportName": "Bang.lr_sound",
+      "specHeadline": true,
+      "writtenRef": "lr_sound"
+    },
+    {
+      "auditLine": 28,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext",
+        "sorryAx"
+      ],
+      "classification": "flagged",
+      "definitionSource": {
+        "line": 280,
+        "path": "Bang/Spec.lean"
+      },
+      "id": "bang-lr-fundamental",
+      "reportName": "Bang.lr_fundamental",
+      "specHeadline": true,
+      "writtenRef": "lr_fundamental"
+    },
+    {
+      "auditLine": 29,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext",
+        "sorryAx"
+      ],
+      "classification": "flagged",
+      "definitionSource": {
+        "line": 290,
+        "path": "Bang/Spec.lean"
+      },
+      "id": "bang-lr-fundamental-closed",
+      "reportName": "Bang.lr_fundamental_closed",
+      "specHeadline": true,
+      "writtenRef": "lr_fundamental_closed"
+    },
+    {
+      "auditLine": 31,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 306,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-seq-unit",
+      "reportName": "Bang.seq_unit",
+      "specHeadline": true,
+      "writtenRef": "seq_unit"
+    },
+    {
+      "auditLine": 32,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 338,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-compile-forward-sim",
+      "reportName": "Bang.compile_forward_sim",
+      "specHeadline": true,
+      "writtenRef": "compile_forward_sim"
+    },
+    {
+      "auditLine": 35,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 2771,
+        "path": "Bang/Backend/Wasm.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-compile-forward-sim-pure",
+      "reportName": "Bang.compile_forward_sim_pure",
+      "specHeadline": false,
+      "writtenRef": "Bang.compile_forward_sim_pure"
+    },
+    {
+      "auditLine": 36,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 2759,
+        "path": "Bang/Backend/Wasm.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-source-eval-to-exec",
+      "reportName": "Bang.source_eval_to_exec",
+      "specHeadline": false,
+      "writtenRef": "Bang.source_eval_to_exec"
+    },
+    {
+      "auditLine": 43,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 101,
+        "path": "Bang/Backend/Rung5ProofGrade.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-rung5proofgrade-s5-effectful-forward-sim",
+      "reportName": "Bang.Rung5ProofGrade.s5_effectful_forward_sim",
+      "specHeadline": false,
+      "writtenRef": "Bang.Rung5ProofGrade.s5_effectful_forward_sim"
+    },
+    {
+      "auditLine": 44,
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 110,
+        "path": "Bang/Backend/Rung5ProofGrade.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-rung5proofgrade-s5-exec-wexec-lockstep",
+      "reportName": "Bang.Rung5ProofGrade.s5_exec_wexec_lockstep",
+      "specHeadline": false,
+      "writtenRef": "Bang.Rung5ProofGrade.s5_exec_wexec_lockstep"
+    },
+    {
+      "auditLine": 45,
+      "axioms": [
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 320,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-compile-well-typed",
+      "reportName": "Bang.compile_well_typed",
+      "specHeadline": true,
+      "writtenRef": "compile_well_typed"
+    },
+    {
+      "auditLine": 46,
+      "axioms": [
+        "sorryAx"
+      ],
+      "classification": "flagged",
+      "definitionSource": {
+        "line": 345,
+        "path": "Bang/Spec.lean"
+      },
+      "id": "bang-handler-compiles",
+      "reportName": "Bang.handler_compiles",
+      "specHeadline": true,
+      "writtenRef": "handler_compiles"
+    },
+    {
+      "auditLine": 47,
+      "axioms": [
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 349,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-zero-grade-no-code",
+      "reportName": "Bang.zero_grade_no_code",
+      "specHeadline": true,
+      "writtenRef": "zero_grade_no_code"
+    },
+    {
+      "auditLine": 48,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 104,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-subst-value",
+      "reportName": "Bang.subst_value",
+      "specHeadline": true,
+      "writtenRef": "subst_value"
+    },
+    {
+      "auditLine": 49,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 119,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-preservation",
+      "reportName": "Bang.preservation",
+      "specHeadline": true,
+      "writtenRef": "preservation"
+    },
+    {
+      "auditLine": 50,
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 134,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-progress",
+      "reportName": "Bang.progress",
+      "specHeadline": true,
+      "writtenRef": "progress"
+    },
+    {
+      "auditLine": 51,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 156,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-type-safety",
+      "reportName": "Bang.type_safety",
+      "specHeadline": true,
+      "writtenRef": "type_safety"
+    },
+    {
+      "auditLine": 52,
+      "axioms": [],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 60,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-no-accidental-handling",
+      "reportName": "Bang.no_accidental_handling",
+      "specHeadline": true,
+      "writtenRef": "no_accidental_handling"
+    },
+    {
+      "auditLine": 55,
+      "axioms": [
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 71,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-no-accidental-handling-custom",
+      "reportName": "Bang.no_accidental_handling_custom",
+      "specHeadline": true,
+      "writtenRef": "no_accidental_handling_custom"
+    },
+    {
+      "auditLine": 56,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 84,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-custom-program-safe",
+      "reportName": "Bang.custom_program_safe",
+      "specHeadline": true,
+      "writtenRef": "custom_program_safe"
+    },
+    {
+      "auditLine": 57,
+      "axioms": [],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 49,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-rowinst-requires-disjoint",
+      "reportName": "Bang.rowinst_requires_disjoint",
+      "specHeadline": true,
+      "writtenRef": "rowinst_requires_disjoint"
+    },
+    {
+      "auditLine": 61,
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 200,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-effect-sound",
+      "reportName": "Bang.effect_sound",
+      "specHeadline": true,
+      "writtenRef": "effect_sound"
+    },
+    {
+      "auditLine": 62,
+      "axioms": [
+        "propext",
+        "sorryAx"
+      ],
+      "classification": "flagged",
+      "definitionSource": {
+        "line": 165,
+        "path": "Bang/Spec.lean"
+      },
+      "id": "bang-zero-usage-erasable",
+      "reportName": "Bang.zero_usage_erasable",
+      "specHeadline": true,
+      "writtenRef": "zero_usage_erasable"
+    },
+    {
+      "auditLine": 63,
+      "axioms": [
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 2828,
+        "path": "Bang/Frontend/Surface.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-surface-cell-reflects-latest",
+      "reportName": "Bang.Surface.cell_reflects_latest",
+      "specHeadline": false,
+      "writtenRef": "Bang.Surface.cell_reflects_latest"
+    },
+    {
+      "auditLine": 64,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 3456,
+        "path": "Bang/Backend/AbstractMachine.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-calcvm-compile-correct",
+      "reportName": "Bang.CalcVM.compile_correct",
+      "specHeadline": false,
+      "writtenRef": "Bang.CalcVM.compile_correct"
+    },
+    {
+      "auditLine": 65,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 6843,
+        "path": "Bang/Backend/AbstractMachine.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-calcvm-evald-agrees-source",
+      "reportName": "Bang.CalcVM.evalD_agrees_source",
+      "specHeadline": false,
+      "writtenRef": "Bang.CalcVM.evalD_agrees_source"
+    },
+    {
+      "auditLine": 67,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 2296,
+        "path": "Bang/Backend/AbstractMachine.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-calcvm-sim",
+      "reportName": "Bang.CalcVM.sim",
+      "specHeadline": false,
+      "writtenRef": "Bang.CalcVM.sim"
+    },
+    {
+      "auditLine": 68,
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "classification": "trusted",
+      "definitionSource": {
+        "line": 5494,
+        "path": "Bang/Backend/AbstractMachine.lean"
+      },
+      "evidenceLabel": "proven",
+      "id": "bang-calcvm-run-evald",
+      "reportName": "Bang.CalcVM.run_evalD",
+      "specHeadline": false,
+      "writtenRef": "Bang.CalcVM.run_evalD"
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Enrollment, source-location, Spec-headline, fingerprint, and axiom classifications are deterministic projections of tracked proof sources and fresh kernel output.",
+      "commands": [
+        "python3 tools/docfacts_proof.py --live-check"
+      ],
+      "id": "audit-generated",
+      "label": "generated",
+      "sources": [
+        "Bang/Audit.lean",
+        "Bang/Spec.lean",
+        "tools/docfacts_proof.py"
+      ]
+    },
+    {
+      "claim": "The binary biorthogonal LR contextual-equivalence headlines are source-defined and Audit-enrolled. Their per-theorem axiom sets, not this method label, decide whether they are trusted or flagged.",
+      "commands": [
+        "lake env lean Bang/Audit.lean"
+      ],
+      "id": "lr-audit-status",
+      "label": "implemented",
+      "sources": [
+        "Bang/Spec.lean",
+        "Bang/Meta/LR.lean",
+        "Bang/Meta/BinaryLR.lean",
+        "Bang/Audit.lean"
+      ]
+    },
+    {
+      "claim": "Bang.compile_forward_sim is trusted-Audit-backed support for the one-way source-execution to formal-target-execution simulation, under the theorem's VcapFree and successful-source premises.",
+      "commands": [
+        "lake env lean Bang/Audit.lean"
+      ],
+      "id": "simulation-proven",
+      "label": "proven",
+      "sources": [
+        "Bang/Spec.lean",
+        "Bang/Backend/Wasm.lean",
+        "Bang/Audit.lean"
+      ]
+    }
+  ],
+  "id": "proof",
+  "kind": "proof",
+  "proofArrows": [
+    {
+      "direction": "bidirectional-contextual",
+      "endpointType": "source-programs",
+      "evidenceId": "lr-audit-status",
+      "from": "source-program-left",
+      "id": "contextual-equivalence",
+      "method": "binary biorthogonal LR",
+      "theoremRefs": [
+        "Bang.lr_fundamental",
+        "Bang.lr_sound"
+      ],
+      "to": "source-program-right"
+    },
+    {
+      "direction": "forward",
+      "endpointType": "source-to-target-executions",
+      "evidenceId": "simulation-proven",
+      "from": "source-execution",
+      "id": "source-target-forward-simulation",
+      "method": "annotated forward simulation",
+      "theoremRefs": [
+        "Bang.compile_forward_sim"
+      ],
+      "to": "target-execution"
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceFingerprint": {
+    "algorithm": "sha256-sorted-path-content",
+    "digest": "9bc630df4d837aaaddf88e49ef3acce3441e6cccc5b1751800627fd0f54ff2f7",
+    "paths": [
+      "Bang/Audit.lean",
+      "Bang/Backend/AbstractMachine.lean",
+      "Bang/Backend/EnvMachine.lean",
+      "Bang/Backend/Rung5ProofGrade.lean",
+      "Bang/Backend/U5bComplete.lean",
+      "Bang/Backend/Wasm.lean",
+      "Bang/Backend/WasmEmit.lean",
+      "Bang/Core/CapCoh.lean",
+      "Bang/Core/EffectRow.lean",
+      "Bang/Core/Freshness.lean",
+      "Bang/Core/Grade.lean",
+      "Bang/Core/IR.lean",
+      "Bang/Core/Semantics.lean",
+      "Bang/Core/Semantics/Dispatch.lean",
+      "Bang/Core/Semantics/Eval.lean",
+      "Bang/Core/Semantics/Invariants.lean",
+      "Bang/Core/Semantics/Subst.lean",
+      "Bang/Core/Soundness.lean",
+      "Bang/Core/Typing.lean",
+      "Bang/Distribution.lean",
+      "Bang/Examples.lean",
+      "Bang/Frontend/Annotate.lean",
+      "Bang/Frontend/DiagCodes.lean",
+      "Bang/Frontend/Diagnostics.lean",
+      "Bang/Frontend/Format.lean",
+      "Bang/Frontend/Lint.lean",
+      "Bang/Frontend/NamedCore.lean",
+      "Bang/Frontend/Query.lean",
+      "Bang/Frontend/Rewrite.lean",
+      "Bang/Frontend/Surface.lean",
+      "Bang/Frontend/Surface/PropTest.lean",
+      "Bang/Frontend/Surface/Trait.lean",
+      "Bang/Frontend/TypeCheck.lean",
+      "Bang/Meta/BinaryLR.lean",
+      "Bang/Meta/LR.lean",
+      "Bang/Reify/CalcReify.lean",
+      "Bang/Reify/CalcReifyRef.lean",
+      "Bang/Reify/CalcReifySim.lean",
+      "Bang/Spec.lean",
+      "Bang/Witness/AgreeOutcome.lean",
+      "Bang/Witness/BinopTyping.lean",
+      "Bang/Witness/BoccRegress.lean",
+      "Bang/Witness/CapEscapeWitness.lean",
+      "Bang/Witness/CtrGradeRefute.lean",
+      "Bang/Witness/CustomStage1Refute.lean",
+      "Bang/Witness/D5ParamHandlerWitness.lean",
+      "Bang/Witness/EffectTraceWitness.lean",
+      "Bang/Witness/ElabFuzz.lean",
+      "Bang/Witness/Fuzz.lean",
+      "Bang/Witness/GradePolyReturner.lean",
+      "Bang/Witness/LWRegress.lean",
+      "Bang/Witness/LawTest.lean",
+      "Bang/Witness/ProofExport.lean",
+      "Bang/Witness/ReturnEscapeReach.lean",
+      "Bang/Witness/ScopedCapWitness.lean",
+      "Bang/Witness/SendableFragment.lean",
+      "Bang/Witness/StateEscapeWitness.lean",
+      "Bang/Witness/VcapFreeRefute.lean",
+      "lake-manifest.json",
+      "lakefile.toml",
+      "lean-toolchain"
+    ]
+  },
+  "specHeadlines": [
+    {
+      "kind": "theorem",
+      "name": "Bang.rowinst_requires_disjoint",
+      "source": {
+        "line": 49,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.no_accidental_handling",
+      "source": {
+        "line": 60,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.no_accidental_handling_custom",
+      "source": {
+        "line": 71,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.custom_program_safe",
+      "source": {
+        "line": 84,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.subst_value",
+      "source": {
+        "line": 104,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.preservation",
+      "source": {
+        "line": 119,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.progress",
+      "source": {
+        "line": 134,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.type_safety",
+      "source": {
+        "line": 156,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.zero_usage_erasable",
+      "source": {
+        "line": 165,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.effect_sound",
+      "source": {
+        "line": 200,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.lr_sound",
+      "source": {
+        "line": 249,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.lr_fundamental",
+      "source": {
+        "line": 280,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.lr_fundamental_closed",
+      "source": {
+        "line": 290,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.seq_unit",
+      "source": {
+        "line": 306,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.compile_well_typed",
+      "source": {
+        "line": 320,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.compile_forward_sim",
+      "source": {
+        "line": 338,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.handler_compiles",
+      "source": {
+        "line": 345,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.zero_grade_no_code",
+      "source": {
+        "line": 349,
+        "path": "Bang/Spec.lean"
+      }
+    }
+  ],
+  "summary": "Kernel-reported axiom sets, Spec headline enrollment, proof-method arrows, and a dirty-tree-sensitive proof-source fingerprint.",
+  "title": "BANG proof inventory",
+  "trustedAxioms": [
+    "Classical.choice",
+    "Quot.sound",
+    "propext"
+  ]
+}

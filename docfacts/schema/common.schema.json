@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bang-lang.org/docfacts/schema/common.schema.json",
+  "title": "BANG documentation fact shared definitions",
+  "$defs": {
+    "nonemptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kebabId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "evidenceLabel": {
+      "enum": [
+        "proven",
+        "differential-tested",
+        "generated",
+        "implemented",
+        "proposed"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "claim", "sources", "commands"],
+      "properties": {
+        "id": { "$ref": "#/$defs/kebabId" },
+        "label": { "$ref": "#/$defs/evidenceLabel" },
+        "claim": { "$ref": "#/$defs/nonemptyString" },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/repoPath" },
+          "uniqueItems": true
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonemptyString" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "identifiedEvidence": {
+      "allOf": [
+        { "$ref": "#/$defs/evidence" },
+        { "required": ["id"] }
+      ]
+    }
+  }
+}

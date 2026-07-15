@@ -63,9 +63,9 @@
     "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } }
   },
   "$defs": {
-    "nonempty": { "type": "string", "minLength": 1 },
-    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-    "repoPath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+    "nonempty": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+    "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+    "repoPath": { "$ref": "common.schema.json#/$defs/repoPath" },
     "evidenceRefs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
     "surfaceRow": {
       "type": "object", "additionalProperties": false, "required": ["name", "form", "notes"],
@@ -117,15 +117,6 @@
       "type": "object", "additionalProperties": false, "required": ["scope", "code", "meaning"],
       "properties": { "scope": { "$ref": "#/$defs/nonempty" }, "code": { "type": "integer", "minimum": 0 }, "meaning": { "$ref": "#/$defs/nonempty" } }
     },
-    "evidence": {
-      "type": "object", "additionalProperties": false, "required": ["id", "label", "claim", "sources", "commands"],
-      "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "label": { "enum": ["proven", "differential-tested", "generated", "implemented", "proposed"] },
-        "claim": { "$ref": "#/$defs/nonempty" },
-        "sources": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/repoPath" } },
-        "commands": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
-      }
-    }
+    "evidence": { "$ref": "common.schema.json#/$defs/identifiedEvidence" }
   }
 }
