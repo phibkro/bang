@@ -18,6 +18,11 @@ default:
 setup:
     bash tools/setup.sh
 
+# One pinned formatter/linter entry point. The PostToolUse hook calls the same
+# underlying script with one safely quoted changed-file path.
+autoquality:
+    bash tools/autoquality.sh
+
 # One-shot orient — position, active path, burndown, recent commits, next steps.
 orient:
     bash tools/orient.sh
@@ -149,10 +154,14 @@ regen-all:
     python3 tools/gen-llms-txt.py
     python3 tools/refs.py build
     python3 tools/gen-gate-index.py
+    python3 tools/docfacts_architecture.py
+    # proof docfacts EXCLUDED: live-Audit/build-dependent, like proof-state below.
+    # Use `just proof-docfacts` when proof inputs move.
     python3 tools/gen-import-graph.py
     python3 tools/check-architecture-assertions.py
     python3 tools/gen-proof-assets.py
     python3 tools/gen-changelog.py
+    python3 tools/docfacts_language.py
     python3 tools/gen-reference.py
     python3 tools/docfacts_logger.py
     python3 tools/gen-tmgrammar.py
@@ -232,6 +241,7 @@ wasmfx-probe:
 # adr-check is HERE (not just in `just verify`)
 # so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
+    just autoquality
     bash tools/check-primitives.sh
     bash tools/check-git-hygiene.sh
     bash tools/check-sha-reachable.sh
@@ -261,8 +271,10 @@ fitness:
     python3 tools/gen-proof-assets.py --check
     python3 tools/check-doc-pins.py
     python3 tools/gen-changelog.py --check
+    python3 tools/docfacts_language.py --check
     python3 tools/gen-reference.py --check
     python3 tools/docfacts_logger.py --check
+    bash tools/test-docfacts-architecture-proof.sh
     BANG_SITE_SCHEMA_ADAPTER=python node web/docs/test-site-model.mjs
     BANG_SITE_SCHEMA_ADAPTER=python node web/docs/site-model.mjs --check
     python3 tools/gen-tmgrammar.py --check
@@ -327,27 +339,56 @@ llms-txt:
 changelog:
     python3 tools/gen-changelog.py
 
+# Regenerate the schema-validated language/diagnostic/prelude/CLI fact bundle.
+docfacts-language:
+    python3 tools/docfacts_language.py
+
 # Regenerate the schema-validated logger-counting docfact and its standalone Markdown consumer.
 docfacts-logger:
     python3 tools/docfacts_logger.py
 
+# Regenerate source-derived architecture facts (no Lean build).
+architecture-docfacts:
+    python3 tools/docfacts_architecture.py
+
+# Regenerate proof facts from a fresh authoritative Audit build/elaboration.
+proof-docfacts:
+    python3 tools/docfacts_proof.py
+
+# Static schema/source/fingerprint checks, cross-fact checks, consumer boundary,
+# and the 36 architecture/proof falsification poles. Part of `just fitness`.
+test-docfacts-architecture-proof:
+    bash tools/test-docfacts-architecture-proof.sh
+
+# Focused static architecture/proof documentation-fact gate.
+docfacts-architecture-proof-check:
+    bash tools/test-docfacts-architecture-proof.sh
+    python3 tools/check-architecture-assertions.py --check
+    python3 tools/gen-import-graph.py --check
+
 # Cheap documentation-fact + page-manifest schema/semantic poles. Part of `just fitness`.
 docs-check:
+    python3 tools/docfacts_language.py --check
     python3 tools/docfacts_logger.py --check
+    just docfacts-architecture-proof-check
     BANG_SITE_SCHEMA_ADAPTER=python node web/docs/test-site-model.mjs
     BANG_SITE_SCHEMA_ADAPTER=python node web/docs/site-model.mjs --check
+
+# Focused executable agreement for the serialized language docfact seam.
+test-docfacts-language:
+    bash tools/test-docfacts-language.sh
 
 # Executable logger-counting evidence: env/oracle/compiled output + check/query. Part of verify.
 test-docfacts-logger:
     bash tools/test-docfacts-logger.sh
 
 # Regenerate docs/reference/language.md from the Surf/Ty constructor comments + the verified #guard corpus.
-reference:
+reference: docfacts-language
     python3 tools/gen-reference.py
 
 # Regenerate web/docs/bang.tmLanguage.json — the TextMate grammar derived from the reified parser
 # tables (opInfo/keywordRule/pIdent) in Bang/Frontend/Surface.lean. `--check` gates it in fitness.
-tmgrammar:
+tmgrammar: docfacts-language
     python3 tools/gen-tmgrammar.py
 
 # Regenerate _site/index.html — the glanceable progress dashboard (milestones + ◊-map + proof-state + pulse).
@@ -415,10 +456,11 @@ loogle QUERY:
 clean:
     -rm -rf .lake
 
-# Run the headline-theorem #print axioms gate (per-theorem axiom report).
+# Run the headline-theorem gate once: fresh Audit build/elaboration, readable
+# normalized census, and exact comparison with committed proof documentation facts.
 axioms:
     bash tools/tool-log.sh axioms
-    lake env lean Bang/Audit.lean
+    python3 tools/docfacts_proof.py --live-check
 
 # Advisory dead-code scan: Bang.* decls unreachable from the Audit headlines +
 # the `bang` CLI entry. NEVER a gate — output curates via tools/deadcode-allow.txt.
