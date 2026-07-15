@@ -154,6 +154,7 @@ regen-all:
     python3 tools/gen-proof-assets.py
     python3 tools/gen-changelog.py
     python3 tools/gen-reference.py
+    python3 tools/docfacts_logger.py
     python3 tools/gen-tmgrammar.py
     # gen-proof-state EXCLUDED: build-dependent — in a build-less clone it emits a FALSE
     # census block into CONTEXT.md (toolmap finding 2026-07-09). Use `just proof-state` after a build.
@@ -261,6 +262,7 @@ fitness:
     python3 tools/check-doc-pins.py
     python3 tools/gen-changelog.py --check
     python3 tools/gen-reference.py --check
+    python3 tools/docfacts_logger.py --check
     python3 tools/gen-tmgrammar.py --check
 
 # Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
@@ -322,6 +324,18 @@ llms-txt:
 # Regenerate CHANGELOG.md (product MVP increments) from conventional commits since the MVP baseline.
 changelog:
     python3 tools/gen-changelog.py
+
+# Regenerate the schema-validated logger-counting docfact and its standalone Markdown consumer.
+docfacts-logger:
+    python3 tools/docfacts_logger.py
+
+# Cheap docfact drift + known-bad schema/semantic poles. Part of `just fitness`.
+docs-check:
+    python3 tools/docfacts_logger.py --check
+
+# Executable logger-counting evidence: env/oracle/compiled output + check/query. Part of verify.
+test-docfacts-logger:
+    bash tools/test-docfacts-logger.sh
 
 # Regenerate docs/reference/language.md from the Surf/Ty constructor comments + the verified #guard corpus.
 reference:

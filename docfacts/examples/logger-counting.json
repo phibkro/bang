@@ -1,0 +1,59 @@
+{
+  "concepts": [
+    "effect-handlers",
+    "custom-effects",
+    "differential-testing"
+  ],
+  "evidence": [
+    {
+      "claim": "The env, oracle, and compiled engines each produce the committed expected output byte-for-byte; check --json and query dump also succeed.",
+      "commands": [
+        "just test-docfacts-logger"
+      ],
+      "label": "differential-tested",
+      "sources": [
+        "examples/logger-counting/main.bang",
+        "examples/logger-counting/expected.txt",
+        "tools/test-docfacts-logger.sh"
+      ]
+    },
+    {
+      "claim": "The docfact and this reference page are deterministic renderings of the canonical example files.",
+      "commands": [
+        "just docs-check"
+      ],
+      "label": "generated",
+      "sources": [
+        "examples/logger-counting/main.bang",
+        "examples/logger-counting/expected.txt",
+        "docfacts/schema/example.schema.json",
+        "tools/docfacts_logger.py"
+      ]
+    }
+  ],
+  "expectedOutput": {
+    "path": "examples/logger-counting/expected.txt",
+    "text": "3\n"
+  },
+  "id": "logger-counting",
+  "kind": "example",
+  "program": {
+    "path": "examples/logger-counting/main.bang",
+    "text": "effect Log { log : Int -> Int }\n\nhandle\n  (logger.log(10)) + (logger.log(20)) + (logger.log(30))\nwith Log as logger {\n  log(msg) => 1\n}\n"
+  },
+  "refusalClass": null,
+  "relatedExamples": [
+    {
+      "id": "logger-silent",
+      "path": "examples/logger-silent/main.bang"
+    }
+  ],
+  "schemaVersion": 1,
+  "summary": "A custom Log handler turns three log operations into the value 3 by returning one from each operation.",
+  "supportedEngines": [
+    "env",
+    "oracle",
+    "compiled"
+  ],
+  "title": "Logger counting"
+}
