@@ -11,60 +11,32 @@
 //   README.md    -> index.md            => /
 //   <NAME>.md    -> <name>.md  (root)   => /<name>
 //   docs/<dir>/* -> <dir>/*             => /<dir>/<file>
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, rmSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { escapeProse } from './mdx-safe.mjs'
+import { compileSite, rewriteMarkdownLinks } from './site-model.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
 const pagesDir = join(siteDir, 'src', 'pages')
-// Pre-rendered mermaid SVGs land here; vite copies site/public → the site root,
-// served under basePath. vocs does NOT rewrite markdown-image src with basePath
-// (it does for links/its own assets), so we prepend it ourselves — read from the
-// vocs config (single source of truth, no second copy of the deploy path).
 const mermaidDir = join(siteDir, 'public', 'mermaid')
-const basePath = (readFileSync(join(siteDir, 'vocs.config.ts'), 'utf8')
-  .match(/basePath:\s*['"]([^'"]*)['"]/)?.[1]) ?? ''
+const site = compileSite({
+  manifestPath: join(siteDir, 'page-manifest.json'),
+  repoRoot,
+})
+const basePath = site.basePath
 const strictMermaid = process.env.BANG_SITE_STRICT_MERMAID === '1'
   || process.argv.includes('--strict-mermaid')
-
-// Stable product/contributor roots only. ADR-0108 keeps volatile work state
-// (`CONTEXT.md`, active paths, scratch research) repository-local.
-const repositoryOnlyRoots = new Set(['CONTEXT.md'])
-const rootFiles = {
-  'index.md': 'README.md',
-  'ONBOARDING.md': 'ONBOARDING.md',
-  'CONTRIBUTING.md': 'CONTRIBUTING.md',
-  'ROADMAP.md': 'ROADMAP.md',
-  'CLAUDE.md': 'CLAUDE.md',
-  'CHANGELOG.md': 'CHANGELOG.md',
-  'PRD.md': 'docs/PRD.md',
-}
-for (const src of Object.values(rootFiles)) {
-  if (repositoryOnlyRoots.has(src)) throw new Error(`public docs boundary violation: ${src}`)
-}
-const dirs = {
-  reference: 'docs/reference',
-  decisions: 'docs/decisions',
-  notes: 'docs/notes',
-  roadmap: 'docs/roadmap',
-  architecture: 'docs/architecture',
-  spec: 'docs/spec',
-}
-const publishedDocRoute = new RegExp(
-  `\\]\\(docs\\/(${Object.keys(dirs).join('|')})\\/([^)]+?)\\.md(#[^)]*)?\\)`,
-  'g',
-)
 
 // --- MDX-safe transform -----------------------------------------------------
 // Operate line-by-line, tracking fenced code blocks (``` / ~~~) where MDX does
 // NOT parse JSX. Outside fences, protect inline-code spans (`...`) and escape the
 // characters MDX treats as JSX/expression starts in the remaining prose.
-function mdxSafe(src) {
+function mdxSafe(src, sourcePath) {
   // Drop HTML comments everywhere (MDX has no `<!-- -->`); they're doc-internal.
   src = src.replace(/<!--[\s\S]*?-->/g, '')
   // Flatten [[wikilinks]] -> plain text (whole-text: they wrap across lines in our
@@ -92,7 +64,7 @@ function mdxSafe(src) {
       continue
     }
     if (inFence) { out.push(line); continue }
-    out.push(escapeProse(rewriteLinks(line)))
+    out.push(escapeProse(rewriteMarkdownLinks({ line, site, repoRoot, sourcePath })))
   }
   // Vocs's CLIENT mermaid component's render effect loops on our pages
   // (colorScheme-keyed useEffect → infinite re-render, the "reload" bug). Instead
@@ -144,49 +116,20 @@ function renderMermaid(code) {
   }
 }
 
-// Rewrite for Vocs routing: relative `*.md` links -> extensionless (Vocs drops the
-// `.md` from routes, so `[x](foo.md)` would 404 — `[x](foo)` resolves). Skip external
-// (`http`) and pure-anchor (`#`) targets. ([[wikilinks]] are flattened globally in
-// mdxSafe, since they wrap across lines.)
-function rewriteLinks(line) {
-  // Root docs link into the repository as `docs/<section>/x.md`, while Vocs
-  // mounts those trees at `/<section>/x`. Normalize that one source→route seam,
-  // then apply the ordinary extension drop for same-tree relative links.
-  return line
-    .replace(publishedDocRoute, '](/$1/$2$3)')
-    .replace(/\]\(docs\/PRD\.md(#[^)]*)?\)/g, '](/PRD$1)')
-    .replace(/\]\((?!https?:|#)([^)]+?)\.md(#[^)]*)?\)/g, ']($1$2)')
-}
-
 // --- emit -------------------------------------------------------------------
-function emit(srcAbs, destAbs) {
-  const ext = extname(srcAbs)
+function emit(sourcePath, outputPath) {
+  const ext = extname(sourcePath)
   if (ext !== '.md' && ext !== '.mdx') return
-  mkdirSync(dirname(destAbs), { recursive: true })
-  writeFileSync(destAbs.replace(/\.mdx$/, '.md'), mdxSafe(readFileSync(srcAbs, 'utf8')))
-}
-
-function emitTree(srcDir, destDir) {
-  for (const name of readdirSync(srcDir)) {
-    const s = join(srcDir, name)
-    const d = join(destDir, name)
-    if (statSync(s).isDirectory()) emitTree(s, d)
-    else emit(s, d)
-  }
+  const destination = join(pagesDir, outputPath)
+  mkdirSync(dirname(destination), { recursive: true })
+  writeFileSync(destination, mdxSafe(readFileSync(join(repoRoot, sourcePath), 'utf8'), sourcePath))
 }
 
 rmSync(pagesDir, { recursive: true, force: true })
 mkdirSync(pagesDir, { recursive: true })
-// Reset the pre-rendered mermaid SVGs too, so a removed/edited diagram leaves no orphan.
 rmSync(mermaidDir, { recursive: true, force: true })
-for (const [page, src] of Object.entries(rootFiles)) {
-  const source = join(repoRoot, src)
-  if (existsSync(source)) emit(source, join(pagesDir, page))
-  else console.warn(`skip missing ${src}`)
-}
-for (const [seg, src] of Object.entries(dirs)) {
-  const source = join(repoRoot, src)
-  if (existsSync(source)) emitTree(source, join(pagesDir, seg))
-  else console.warn(`skip missing ${src}`)
-}
-console.log('sync-docs: MDX-safe pages generated under src/pages')
+const publicationPages = site.emittedPages.filter((page) => !page.source.startsWith('@'))
+for (const page of publicationPages) emit(page.source, page.outputPath)
+console.log(
+  `sync-docs: ${publicationPages.length} manifest-selected MDX-safe pages generated`,
+)

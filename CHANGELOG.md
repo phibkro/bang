@@ -267,5 +267,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — make reference gate checkout-faithful (`47e1096f`)
 - **tooling** — make changelog hashes deterministic (`15be6a42`)
 - **ci** — bind changelog gate to PR head (`0ca4de14`)
+- **site** — resolve shared docfact schemas (`18ba9ebe`)
 
 <!-- END GENERATED changelog -->

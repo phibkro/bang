@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=check couples=flake.nix,web/docs/package.json,web/docs/sync-docs.mjs,.github/workflows/site.yml,.github/workflows/pages.yml,.github/workflows/release.yml runs-in=ci
+# tool: role=check couples=flake.nix,web/docs/package.json,web/docs/page-manifest.json,web/docs/site-model.mjs,web/docs/sync-docs.mjs,web/docs/site-smoke.mjs,.github/workflows/site.yml,.github/workflows/pages.yml,.github/workflows/release.yml runs-in=ci
 # One production-site build interface for contributors, CI, Pages, and releases.
 set -euo pipefail
 

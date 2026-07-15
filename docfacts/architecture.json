@@ -1589,6 +1589,21 @@
       "status": "Accepted",
       "summary": "The contributor-reference system optimizes first for a general language implementer, while branching into specialist human and agent routes; uses one public Vocs site with a curated product/contributor split and keeps volatile work state repo-only; ships deterministic caption-led generated media with transcripts and reduced-motion fallbacks, without requiring narration; and teaches one journey through two fixtures — a tiny thunk/force precursor followed by the logger-counting handler example. These choices settle Plan 014 Phase 0 and make Phase 1 executable.",
       "title": "Contributor reference and onboarding contract"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0109",
+      "lifecycle": [],
+      "path": "docs/decisions/0109-page-manifest-is-the-publication-and-navigation-authority.md",
+      "relationships": {
+        "dependsOn": "ADR-0077 (documentation placement by audience × temporality), ADR-0078 (git-native knowledge and GitHub workflow), ADR-0108 (contributor reference and onboarding contract)"
+      },
+      "status": "Accepted",
+      "summary": "One schema-validated page manifest defines the public Vocs publication map and generated navigation; Vocs, repository-page projection, tour generation, and route checks consume one compiled site model. Volatile current-work pages remain repository-only links, and displayed evidence status resolves from serialized Phase 2 facts rather than styling or copied labels.",
+      "title": "Page manifest is the publication and navigation authority"
     }
   ],
   "arrows": [

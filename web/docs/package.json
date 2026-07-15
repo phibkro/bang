@@ -3,15 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sync": "node sync-docs.mjs && node gen-tour.mjs",
-    "dev": "node sync-docs.mjs && node gen-tour.mjs && vocs dev",
-    "build": "node sync-docs.mjs --strict-mermaid && node gen-tour.mjs && vocs build",
+    "manifest:check": "node test-site-model.mjs && node site-model.mjs --check",
+    "sync": "node sync-docs.mjs && node gen-tour.mjs && node check-generated-site.mjs",
+    "dev": "bun run manifest:check && bun run sync && vocs dev",
+    "build": "bun run manifest:check && node sync-docs.mjs --strict-mermaid && node gen-tour.mjs && node check-generated-site.mjs && vocs build && node fix-vocs-basepath.mjs && node site-smoke.mjs",
     "preview": "vocs preview"
   },
   "dependencies": {
+    "ajv": "8.17.1",
+    "vite": "^8.1.3",
     "vocs": "^2.3.3",
-    "waku": "^1.0.0-beta.6",
-    "vite": "^8.1.3"
+    "waku": "^1.0.0-beta.6"
   },
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2"

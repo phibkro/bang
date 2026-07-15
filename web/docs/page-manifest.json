@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "repository": {
+    "url": "https://github.com/phibkro/bang",
+    "branch": "main"
+  },
+  "basePath": "/bang",
+  "sections": [
+    { "id": "start", "title": "Start", "order": 10 },
+    { "id": "learn", "title": "Learn", "order": 20 },
+    { "id": "reference", "title": "Reference", "order": 30 },
+    { "id": "contribute", "title": "Contribute", "order": 40 },
+    { "id": "architecture", "title": "Architecture", "order": 50, "collapsed": true },
+    { "id": "project", "title": "Project", "order": 60, "collapsed": true }
+  ],
+  "publications": [
+    { "kind": "exact", "mode": "managed", "source": "README.md", "route": "/" },
+    { "kind": "exact", "mode": "managed", "source": "ONBOARDING.md", "route": "/ONBOARDING" },
+    { "kind": "exact", "mode": "managed", "source": "CONTRIBUTING.md", "route": "/CONTRIBUTING" },
+    { "kind": "exact", "mode": "managed", "source": "ROADMAP.md", "route": "/ROADMAP" },
+    { "kind": "exact", "mode": "managed", "source": "CLAUDE.md", "route": "/CLAUDE" },
+    { "kind": "exact", "mode": "managed", "source": "CHANGELOG.md", "route": "/CHANGELOG" },
+    { "kind": "exact", "mode": "managed", "source": "docs/PRD.md", "route": "/PRD" },
+    {
+      "kind": "tree",
+      "mode": "managed",
+      "sourceRoot": "docs/reference",
+      "routePrefix": "/reference",
+      "defaults": {
+        "audience": ["consumer", "contributor", "agent"],
+        "lifecycle": "snapshot",
+        "status": { "kind": "not-applicable", "reason": "managed-page" }
+      }
+    },
+    {
+      "kind": "tree",
+      "mode": "managed",
+      "sourceRoot": "docs/architecture",
+      "routePrefix": "/architecture",
+      "defaults": {
+        "audience": ["contributor", "agent"],
+        "lifecycle": "snapshot",
+        "status": { "kind": "not-applicable", "reason": "managed-page" }
+      }
+    },
+    {
+      "kind": "tree",
+      "mode": "managed",
+      "sourceRoot": "docs/roadmap",
+      "routePrefix": "/roadmap",
+      "defaults": {
+        "audience": ["contributor", "agent"],
+        "lifecycle": "next",
+        "status": { "kind": "not-applicable", "reason": "managed-page" }
+      }
+    },
+    {
+      "kind": "tree",
+      "mode": "catalog",
+      "sourceRoot": "docs/decisions",
+      "routePrefix": "/decisions",
+      "defaults": {
+        "audience": ["contributor", "agent"],
+        "lifecycle": "snapshot",
+        "status": { "kind": "not-applicable", "reason": "catalog-page" }
+      }
+    },
+    {
+      "kind": "tree",
+      "mode": "catalog",
+      "sourceRoot": "docs/notes",
+      "routePrefix": "/notes",
+      "defaults": {
+        "audience": ["contributor", "agent"],
+        "lifecycle": "snapshot",
+        "status": { "kind": "not-applicable", "reason": "catalog-page" }
+      }
+    },
+    {
+      "kind": "tree",
+      "mode": "catalog",
+      "sourceRoot": "docs/spec",
+      "routePrefix": "/spec",
+      "defaults": {
+        "audience": ["contributor", "agent"],
+        "lifecycle": "snapshot",
+        "status": { "kind": "not-applicable", "reason": "catalog-page" }
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "what-bang-is",
+      "title": "What BANG is",
+      "section": "start",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": [],
+      "status": { "kind": "not-applicable", "reason": "navigation-only" },
+      "target": { "kind": "markdown", "path": "README.md", "route": "/" },
+      "navigation": { "order": 10 }
+    },
+    {
+      "id": "contributor-quickstart",
+      "title": "Contributor quickstart",
+      "section": "start",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["what-bang-is"],
+      "status": { "kind": "not-applicable", "reason": "workflow-page" },
+      "target": { "kind": "markdown", "path": "ONBOARDING.md", "route": "/ONBOARDING" },
+      "navigation": { "order": 20 }
+    },
+    {
+      "id": "guided-tour",
+      "title": "Guided tour",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["what-bang-is"],
+      "status": { "kind": "not-applicable", "reason": "generated-index" },
+      "target": { "kind": "tour-index", "route": "/tour" },
+      "navigation": { "order": 10 }
+    },
+    {
+      "id": "values-and-force",
+      "title": "Values are thunks; `$` forces",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["guided-tour"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/01-values-and-force", "contentKey": "values-and-force" },
+      "navigation": { "order": 20 }
+    },
+    {
+      "id": "functions-and-recursion",
+      "title": "Functions & recursion",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["values-and-force"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/02-functions-and-recursion", "contentKey": "functions-and-recursion" },
+      "navigation": { "order": 30 }
+    },
+    {
+      "id": "your-own-data",
+      "title": "Your own data",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["functions-and-recursion"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/03-your-own-data", "contentKey": "your-own-data" },
+      "navigation": { "order": 40 }
+    },
+    {
+      "id": "match-and-mutual-recursion",
+      "title": "Pattern match: wildcards & mutual recursion",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["your-own-data"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/04-match-wildcards-and-mutual-recursion", "contentKey": "match-and-mutual-recursion" },
+      "navigation": { "order": 50 }
+    },
+    {
+      "id": "state-as-a-library",
+      "title": "State as a library",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["match-and-mutual-recursion"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/05-state-as-a-library", "contentKey": "state-as-a-library" },
+      "navigation": { "order": 60 }
+    },
+    {
+      "id": "handling-an-effect",
+      "title": "Handling an effect",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["state-as-a-library"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/06-handling-an-effect", "contentKey": "handling-an-effect" },
+      "navigation": { "order": 70 }
+    },
+    {
+      "id": "declare-your-own-effect",
+      "title": "Declare your own effect",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["handling-an-effect"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/07-declare-your-own-effect", "contentKey": "declare-your-own-effect" },
+      "navigation": { "order": 80 }
+    },
+    {
+      "id": "swap-the-handler",
+      "title": "Swap the handler, keep the program",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["declare-your-own-effect"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/08-swap-the-handler", "contentKey": "swap-the-handler" },
+      "navigation": { "order": 90 }
+    },
+    {
+      "id": "identity-dispatch",
+      "title": "Identity dispatch (the lexical cap)",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["swap-the-handler"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/09-identity-dispatch", "contentKey": "identity-dispatch" },
+      "navigation": { "order": 100 }
+    },
+    {
+      "id": "generation-as-an-effect",
+      "title": "Generation as an effect",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["identity-dispatch"],
+      "status": { "kind": "not-applicable", "reason": "generated-lesson" },
+      "target": { "kind": "tour-lesson", "route": "/tour/10-generation-as-an-effect", "contentKey": "generation-as-an-effect" },
+      "navigation": { "order": 110 }
+    },
+    {
+      "id": "language-and-cli",
+      "title": "Language and CLI",
+      "section": "reference",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["guided-tour"],
+      "status": { "kind": "not-applicable", "reason": "generated-reference" },
+      "target": { "kind": "markdown", "path": "docs/reference/language.md", "route": "/reference/language" },
+      "navigation": { "order": 10 }
+    },
+    {
+      "id": "logger-counting-evidence",
+      "title": "Logger counting evidence",
+      "section": "reference",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["swap-the-handler"],
+      "status": {
+        "kind": "evidence",
+        "fact": "docfacts/examples/logger-counting.json",
+        "schema": "docfacts/schema/example.schema.json",
+        "pointer": "/evidence/0"
+      },
+      "target": { "kind": "markdown", "path": "docs/reference/examples/logger-counting.md", "route": "/reference/examples/logger-counting" },
+      "navigation": { "order": 20 }
+    },
+    {
+      "id": "product-definition",
+      "title": "Product definition",
+      "section": "reference",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["what-bang-is"],
+      "status": { "kind": "not-applicable", "reason": "product-page" },
+      "target": { "kind": "markdown", "path": "docs/PRD.md", "route": "/PRD" },
+      "navigation": { "order": 30 }
+    },
+    {
+      "id": "contribution-workflow",
+      "title": "Contribution workflow",
+      "section": "contribute",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["contributor-quickstart"],
+      "status": { "kind": "not-applicable", "reason": "workflow-page" },
+      "target": { "kind": "markdown", "path": "CONTRIBUTING.md", "route": "/CONTRIBUTING" },
+      "navigation": { "order": 10 }
+    },
+    {
+      "id": "agent-guide",
+      "title": "Agent guide",
+      "section": "contribute",
+      "audience": ["agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["contribution-workflow"],
+      "status": { "kind": "not-applicable", "reason": "workflow-page" },
+      "target": { "kind": "markdown", "path": "CLAUDE.md", "route": "/CLAUDE" },
+      "navigation": { "order": 20 }
+    },
+    {
+      "id": "current-architecture",
+      "title": "Current architecture",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["what-bang-is"],
+      "status": { "kind": "not-applicable", "reason": "architecture-page" },
+      "target": { "kind": "markdown", "path": "docs/architecture/core-overview.md", "route": "/architecture/core-overview" },
+      "navigation": { "order": 10 }
+    },
+    {
+      "id": "decision-index",
+      "title": "Decision index",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["current-architecture"],
+      "status": { "kind": "not-applicable", "reason": "generated-index" },
+      "target": { "kind": "markdown", "path": "docs/decisions/README.md", "route": "/decisions/README" },
+      "navigation": { "order": 20 }
+    },
+    {
+      "id": "two-hop-architecture",
+      "title": "0016 — Two-hop architecture",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "done",
+      "prerequisites": ["current-architecture"],
+      "status": { "kind": "not-applicable", "reason": "decision-page" },
+      "target": { "kind": "markdown", "path": "docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md", "route": "/decisions/0016-two-hop-architecture-calcvm-and-wasmfx" },
+      "navigation": { "order": 30 }
+    },
+    {
+      "id": "equivalence-vs-simulation",
+      "title": "0035 — Equivalence vs simulation",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "done",
+      "prerequisites": ["two-hop-architecture"],
+      "status": { "kind": "not-applicable", "reason": "decision-page" },
+      "target": { "kind": "markdown", "path": "docs/decisions/0035-lr-for-equivalence-simulation-for-compilation.md", "route": "/decisions/0035-lr-for-equivalence-simulation-for-compilation" },
+      "navigation": { "order": 40 }
+    },
+    {
+      "id": "wasm3-target",
+      "title": "0059 — Wasm 3.0 target",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "done",
+      "prerequisites": ["two-hop-architecture"],
+      "status": { "kind": "not-applicable", "reason": "decision-page" },
+      "target": { "kind": "markdown", "path": "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md", "route": "/decisions/0059-wasm3-grade-directed-pluggable-backend" },
+      "navigation": { "order": 50 }
+    },
+    {
+      "id": "notes-index",
+      "title": "Notes index",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["current-architecture"],
+      "status": { "kind": "not-applicable", "reason": "generated-index" },
+      "target": { "kind": "markdown", "path": "docs/notes/README.md", "route": "/notes/README" },
+      "navigation": { "order": 60 }
+    },
+    {
+      "id": "design-space-map",
+      "title": "Design-space map",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["notes-index"],
+      "status": { "kind": "not-applicable", "reason": "design-reference" },
+      "target": { "kind": "markdown", "path": "docs/notes/design-space-map.md", "route": "/notes/design-space-map" },
+      "navigation": { "order": 70 }
+    },
+    {
+      "id": "stdlib-map",
+      "title": "Stdlib map",
+      "section": "architecture",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["notes-index"],
+      "status": { "kind": "not-applicable", "reason": "design-reference" },
+      "target": { "kind": "markdown", "path": "docs/notes/stdlib-map.md", "route": "/notes/stdlib-map" },
+      "navigation": { "order": 80 }
+    },
+    {
+      "id": "changelog",
+      "title": "Changelog",
+      "section": "project",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "done",
+      "prerequisites": ["what-bang-is"],
+      "status": { "kind": "not-applicable", "reason": "project-history" },
+      "target": { "kind": "markdown", "path": "CHANGELOG.md", "route": "/CHANGELOG" },
+      "navigation": { "order": 10 }
+    },
+    {
+      "id": "checkpoint-map",
+      "title": "Checkpoint map · Next",
+      "section": "project",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "next",
+      "prerequisites": ["contributor-quickstart"],
+      "status": { "kind": "not-applicable", "reason": "project-roadmap" },
+      "target": { "kind": "markdown", "path": "ROADMAP.md", "route": "/ROADMAP" },
+      "navigation": { "order": 20 }
+    },
+    {
+      "id": "project-roadmap",
+      "title": "Project roadmap · Next",
+      "section": "project",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "next",
+      "prerequisites": ["checkpoint-map"],
+      "status": { "kind": "not-applicable", "reason": "project-roadmap" },
+      "target": { "kind": "markdown", "path": "docs/roadmap/project-roadmap.md", "route": "/roadmap/project-roadmap" },
+      "navigation": { "order": 30 }
+    },
+    {
+      "id": "northstar-roadmap",
+      "title": "Northstar roadmap · Next",
+      "section": "project",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "next",
+      "prerequisites": ["checkpoint-map"],
+      "status": { "kind": "not-applicable", "reason": "project-roadmap" },
+      "target": { "kind": "markdown", "path": "docs/roadmap/bang-northstar-roadmap.md", "route": "/roadmap/bang-northstar-roadmap" },
+      "navigation": { "order": 40 }
+    },
+    {
+      "id": "current-context",
+      "title": "Current context · Repo ↗",
+      "section": "project",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "now",
+      "prerequisites": ["contributor-quickstart"],
+      "status": { "kind": "not-applicable", "reason": "repository-state" },
+      "target": { "kind": "repository-link", "path": "CONTEXT.md", "view": "blob" },
+      "navigation": { "order": 50 }
+    },
+    {
+      "id": "active-paths",
+      "title": "Active paths · Repo ↗",
+      "section": "project",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "now",
+      "prerequisites": ["contributor-quickstart"],
+      "status": { "kind": "not-applicable", "reason": "repository-state" },
+      "target": { "kind": "repository-link", "path": "paths", "view": "tree" },
+      "navigation": { "order": 60 }
+    }
+  ]
+}

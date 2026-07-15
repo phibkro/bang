@@ -275,6 +275,8 @@ fitness:
     python3 tools/gen-reference.py --check
     python3 tools/docfacts_logger.py --check
     bash tools/test-docfacts-architecture-proof.sh
+    BANG_SITE_SCHEMA_ADAPTER=python node web/docs/test-site-model.mjs
+    BANG_SITE_SCHEMA_ADAPTER=python node web/docs/site-model.mjs --check
     python3 tools/gen-tmgrammar.py --check
 
 # Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
@@ -364,11 +366,13 @@ docfacts-architecture-proof-check:
     python3 tools/check-architecture-assertions.py --check
     python3 tools/gen-import-graph.py --check
 
-# Cheap docfact drift + known-bad schema/semantic poles. Part of `just fitness`.
+# Cheap documentation-fact + page-manifest schema/semantic poles. Part of `just fitness`.
 docs-check:
     python3 tools/docfacts_language.py --check
     python3 tools/docfacts_logger.py --check
     just docfacts-architecture-proof-check
+    BANG_SITE_SCHEMA_ADAPTER=python node web/docs/test-site-model.mjs
+    BANG_SITE_SCHEMA_ADAPTER=python node web/docs/site-model.mjs --check
 
 # Focused executable agreement for the serialized language docfact seam.
 test-docfacts-language:
@@ -495,8 +499,13 @@ pole:
     bash tools/tool-log.sh pole
     lake exe graph --to Bang.Audit import-graph.dot
 
+# Focused page-manifest gate with the lockfile-installed Ajv adapter.
+site-manifest-check:
+    nix develop .#site --command bash -lc 'cd web/docs && bun install --frozen-lockfile && bun run manifest:check'
+
 # Production-equivalent Vocs build: enter the opt-in flake-pinned Bun/Chromium shell,
-# install the locked JS graph, require every Mermaid SVG, then build the static site.
+# install the locked JS graph, require every Mermaid SVG, build, repair Vocs's
+# generated skip-link base path, and smoke every maintained navigation route.
 site-build:
     nix develop .#site --command bash tools/site-build.sh
 
