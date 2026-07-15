@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "manifest:check": "node test-site-model.mjs && node site-model.mjs --check",
-    "sync": "node sync-docs.mjs && node gen-tour.mjs && node check-generated-site.mjs",
+    "sync": "node sync-docs.mjs && node gen-tour.mjs && node gen-onboarding.mjs && node check-generated-site.mjs",
     "dev": "bun run manifest:check && bun run sync && vocs dev",
-    "build": "bun run manifest:check && node sync-docs.mjs --strict-mermaid && node gen-tour.mjs && node check-generated-site.mjs && vocs build && node fix-vocs-basepath.mjs && node site-smoke.mjs",
+    "build": "bun run manifest:check && node sync-docs.mjs --strict-mermaid && node gen-tour.mjs && node gen-onboarding.mjs && node check-generated-site.mjs && vocs build && node fix-vocs-basepath.mjs && node site-smoke.mjs",
     "preview": "vocs preview"
   },
   "dependencies": {

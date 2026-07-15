@@ -64,7 +64,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh`, `autoquality.sh`, `.claude/settings.json` | Claude Code PostToolUse feedback for Edit/Write |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 | [`onboarding-preflight.sh`](onboarding-preflight.sh) | `fitness` | `setup.sh` | Read-only readiness probe for the 15-minute contributor journey |
-| [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
+| [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/gen-onboarding.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
 ## test (32)

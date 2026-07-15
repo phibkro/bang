@@ -361,6 +361,29 @@ export function compileSite({ manifestPath, repoRoot }) {
     ...page,
     status: resolveStatus(page.status, repoRoot),
   }))
+  rejectDuplicate(pages.map((page) => [page.id, page.id]), 'page id')
+  rejectDuplicate(manifest.routeChoices.map((choice) => [choice.id, choice.id]), 'route choice id')
+  rejectDuplicate(
+    manifest.routeChoices.map((choice) => [String(choice.order), choice.id]),
+    'route choice order',
+  )
+  const pagesById = new Map(pages.map((page) => [page.id, page]))
+  const routeChoices = [...manifest.routeChoices]
+    .sort((left, right) => left.order - right.order)
+    .map((choice) => {
+      const targetPage = pagesById.get(choice.targetPage)
+      if (!targetPage) {
+        throw new Error(`page manifest route choice ${choice.id} targets missing page ${choice.targetPage}`)
+      }
+      if (targetPage.lifecycle === 'now') {
+        throw new Error(`page manifest route choice ${choice.id} targets volatile page ${choice.targetPage}`)
+      }
+      for (const seam of choice.seams) requireTrackedSource(repoRoot, seam)
+      return {
+        ...choice,
+        target: localLink(targetPage, manifest.repository),
+      }
+    })
   const describedPublicationPages = publicationPages.map((emitted) => {
     const page = pages.find((candidate) =>
       candidate.target.kind === 'markdown' &&
@@ -376,7 +399,10 @@ export function compileSite({ manifestPath, repoRoot }) {
     }
   })
   const generatedPages = pages
-    .filter((page) => page.target.kind === 'tour-index' || page.target.kind === 'tour-lesson')
+    .filter((page) =>
+      page.target.kind === 'tour-index' ||
+      page.target.kind === 'tour-lesson' ||
+      page.target.kind === 'onboarding-page')
     .map((page) => ({
       source: `@${page.target.kind}:${page.id}`,
       route: page.target.route,
@@ -394,7 +420,6 @@ export function compileSite({ manifestPath, repoRoot }) {
   rejectDuplicate(emittedPages.map((page) => [page.route, page.source]), 'emitted route')
   rejectDuplicate(emittedPages.map((page) => [page.outputPath, page.source]), 'emitted output path')
   rejectDuplicate(publicationPages.map((page) => [page.source, page.route]), 'publication source')
-  rejectDuplicate(pages.map((page) => [page.id, page.id]), 'page id')
   rejectDuplicate(
     pages
       .filter((page) => page.target.kind !== 'repository-link')
@@ -458,6 +483,7 @@ export function compileSite({ manifestPath, repoRoot }) {
     publications: manifest.publications,
     sections,
     pages,
+    routeChoices,
     emittedPages,
     sourceToRoute: new Map(
       publicationPages.map((page) => [page.source, page.route]),
@@ -551,6 +577,7 @@ export function renderSiteModel(site) {
     repository: site.repository,
     sections: site.sections,
     pages: site.pages,
+    routeChoices: site.routeChoices,
     emittedPages: site.emittedPages,
     sidebar: site.sidebar,
   }, null, 2)}\n`

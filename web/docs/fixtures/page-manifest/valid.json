@@ -21,6 +21,19 @@
       "route": "/"
     }
   ],
+  "routeChoices": [
+    {
+      "id": "language",
+      "title": "Frontend / language",
+      "summary": "Change parsing, surface syntax, or type checking.",
+      "order": 10,
+      "targetPage": "what-bang-is",
+      "seams": ["README.md"],
+      "firstChange": "Adjust one checked surface fixture.",
+      "narrowGate": "just check Bang/Frontend/TypeCheck.lean",
+      "fullGate": "just verify"
+    }
+  ],
   "pages": [
     {
       "id": "what-bang-is",
