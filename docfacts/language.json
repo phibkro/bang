@@ -1,0 +1,1088 @@
+{
+  "cli": {
+    "commands": [
+      {
+        "path": [
+          "run"
+        ],
+        "principalFlags": [
+          "--engine=oracle|compiled|env",
+          "--no-typecheck",
+          "--fuel"
+        ],
+        "synopsis": "bang run  [FLAGS] <file.bang>      run a bang program from a file"
+      },
+      {
+        "path": [
+          "eval"
+        ],
+        "principalFlags": [
+          "--engine=oracle|compiled|env",
+          "--no-typecheck",
+          "--fuel"
+        ],
+        "synopsis": "bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly"
+      },
+      {
+        "path": [
+          "repl"
+        ],
+        "principalFlags": [
+          "--engine=oracle|compiled|env",
+          "--no-typecheck",
+          "--fuel"
+        ],
+        "synopsis": "bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)"
+      },
+      {
+        "path": [
+          "fmt"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file"
+      },
+      {
+        "path": [
+          "check"
+        ],
+        "principalFlags": [
+          "--json"
+        ],
+        "synopsis": "bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file"
+      },
+      {
+        "path": [
+          "emit"
+        ],
+        "principalFlags": [
+          "-o",
+          "--out="
+        ],
+        "synopsis": "bang emit <file.bang> [-o out.wat] lower to a WasmGC .wat MODULE (issue #136) — prints to stdout,"
+      },
+      {
+        "path": [
+          "build"
+        ],
+        "principalFlags": [
+          "-o",
+          "--component",
+          "--adapter"
+        ],
+        "synopsis": "bang build <file.bang> [-o out.wasm]  emit → `wasm-tools parse`/`validate` → a runnable Wasm"
+      },
+      {
+        "path": [
+          "explain"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang explain <CODE>                print the teaching entry for a stable diagnostic code"
+      },
+      {
+        "path": [
+          "new"
+        ],
+        "principalFlags": [
+          "--module"
+        ],
+        "synopsis": "bang new <NAME> [--module]         scaffold examples/<NAME>/ — a runnable starter main.bang, a"
+      },
+      {
+        "path": [
+          "test"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang test [<file.bang>]            discover + sample-check every trait law (issue #60);"
+      },
+      {
+        "path": [
+          "query"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);"
+      },
+      {
+        "path": [
+          "query",
+          "dump"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/"
+      },
+      {
+        "path": [
+          "query",
+          "symbols"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row"
+      },
+      {
+        "path": [
+          "query",
+          "type"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query type <file.bang> <name>      the checked type ! row of one top-level binding"
+      },
+      {
+        "path": [
+          "query",
+          "effects"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding"
+      },
+      {
+        "path": [
+          "query",
+          "laws"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)"
+      },
+      {
+        "path": [
+          "query",
+          "def"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query def <name> <file.bang>       the decl that defines <name>"
+      },
+      {
+        "path": [
+          "query",
+          "refs"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query refs <name> <file.bang>      every decl whose body mentions <name>"
+      },
+      {
+        "path": [
+          "query",
+          "hover"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query hover [<file.bang>] <line> <col>"
+      },
+      {
+        "path": [
+          "rewrite"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang rewrite <verb> ...             the CQS COMMAND side over `query`'s read model (issue #81);"
+      },
+      {
+        "path": [
+          "rewrite",
+          "fmt"
+        ],
+        "principalFlags": [
+          "-w"
+        ],
+        "synopsis": "bang rewrite fmt [<file.bang>] [-w]       rewrite #0: the canonical formatter (issue #58),"
+      },
+      {
+        "path": [
+          "rewrite",
+          "rename"
+        ],
+        "principalFlags": [
+          "-w"
+        ],
+        "synopsis": "bang rewrite rename <old> <new> <file.bang> [-w]"
+      },
+      {
+        "path": [
+          "rewrite",
+          "annotate"
+        ],
+        "principalFlags": [
+          "-w"
+        ],
+        "synopsis": "bang rewrite annotate [<file.bang>] [-w]  infer types AND effect rows for every top-level"
+      },
+      {
+        "path": [
+          "lint"
+        ],
+        "principalFlags": [
+          "--json",
+          "--quiet-clean"
+        ],
+        "synopsis": "bang lint [<file.bang>] [--json] [--quiet-clean]"
+      },
+      {
+        "path": [
+          "lint",
+          "--fix"
+        ],
+        "principalFlags": [
+          "--fix",
+          "-w"
+        ],
+        "synopsis": "bang lint --fix <file.bang> [-w]   apply the dead-private findings' fixit (delete the"
+      },
+      {
+        "path": [
+          "holes"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang holes [<file.bang>]           list every decl carrying a residual/underdetermined"
+      },
+      {
+        "path": [
+          "impact"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang impact <file.bang> <decl>     the transitive DEPENDENTS of <decl> — the pre-edit blast"
+      },
+      {
+        "path": [
+          "semver-diff"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang semver-diff <old.bang> <new.bang>"
+      },
+      {
+        "path": [
+          "--help"
+        ],
+        "principalFlags": [
+          "-h"
+        ],
+        "synopsis": "bang --help, -h                    print this text and exit 0"
+      },
+      {
+        "path": [
+          "--version"
+        ],
+        "principalFlags": [
+          "-v"
+        ],
+        "synopsis": "bang --version, -v                 print the version and exit 0"
+      }
+    ],
+    "evidence": [
+      "cli-differential-tested"
+    ],
+    "exitContracts": [
+      {
+        "code": 0,
+        "meaning": "done — value printed to stdout",
+        "scope": "run"
+      },
+      {
+        "code": 1,
+        "meaning": "usage / parse / elaboration / TYPE error",
+        "scope": "run"
+      },
+      {
+        "code": 2,
+        "meaning": "out of fuel (oom)              [oracle engine]",
+        "scope": "run"
+      },
+      {
+        "code": 3,
+        "meaning": "capability escaped its handler [oracle engine]",
+        "scope": "run"
+      },
+      {
+        "code": 4,
+        "meaning": "stuck (ill-formed program)     [oracle engine, --no-typecheck]",
+        "scope": "run"
+      },
+      {
+        "code": 5,
+        "meaning": "compiled machine produced no value (oom / escaped cap / stuck) [--compiled]",
+        "scope": "run"
+      },
+      {
+        "code": 0,
+        "meaning": "ok:true  — the program type-checks",
+        "scope": "check --json"
+      },
+      {
+        "code": 1,
+        "meaning": "ok:false — diagnostics present (see the JSON on stdout)",
+        "scope": "check --json"
+      },
+      {
+        "code": 2,
+        "meaning": "tool error (e.g. unreadable file) — reported on stderr, never folded into the JSON",
+        "scope": "check --json"
+      },
+      {
+        "code": 0,
+        "meaning": "the op ran and produced a JSON answer on stdout — INCLUDING an op-level \"ok\":false",
+        "scope": "query"
+      },
+      {
+        "code": 1,
+        "meaning": "{\"ok\":false,\"error\":...} on stdout — a parse failure or (multi-file) an",
+        "scope": "query"
+      },
+      {
+        "code": 2,
+        "meaning": "tool error (e.g. unreadable file) — reported on STDERR, NOTHING on stdout (never folded",
+        "scope": "query"
+      }
+    ]
+  },
+  "diagnostics": {
+    "contract": {
+      "fields": [
+        "severity",
+        "code",
+        "explainCode",
+        "msg",
+        "span"
+      ],
+      "severities": [
+        "error"
+      ],
+      "stages": [
+        "parse",
+        "type"
+      ]
+    },
+    "evidence": [
+      "diagnostics-implemented"
+    ],
+    "registry": [
+      {
+        "anchors": [
+          "keyword '"
+        ],
+        "code": "B001",
+        "example": "let let = 3 in let",
+        "summary": "a reserved keyword used where an identifier/binder is required",
+        "teaching": "A reserved word (let, fun, handle, get, put, resume, param, with, …) cannot be used as a binder or bare identifier. `resume` and `param` are reserved as binder names so the explicit-resumption and carried-param forms slot in without colliding (ADR-0095 D5/#87). Rename the binding to a non-keyword identifier."
+      },
+      {
+        "anchors": [
+          "reserved by a built-in effect"
+        ],
+        "code": "B002",
+        "example": "effect E { get : Int -> Int }\nlet main = 3",
+        "summary": "a custom effect declares an op name that a built-in effect already owns",
+        "teaching": "A user `effect` cannot name an op that a built-in effect uses (get/put/raise/read/write/…) — v1 has no per-effect namespacing (ADR-0092), so the names must not clash. Rename the op. Real per-effect namespacing is the Q34/Q38 module-interface work, not v1."
+      },
+      {
+        "anchors": [
+          "effect row mismatch"
+        ],
+        "code": "B003",
+        "example": null,
+        "summary": "a computation's effect row does not match what the context expects",
+        "teaching": "Effect rows are SETS (union = join, idempotent, unordered; ADR-0001). This fires when a handler-installed or annotated row does not contain an effect a sub-computation performs, or vice versa. Widen the annotation, or install the missing handler with a `with` block."
+      },
+      {
+        "anchors": [
+          "not a thunk"
+        ],
+        "code": "B004",
+        "example": "let x = 3 in $x",
+        "summary": "forcing (`$`) a value that is not a thunk",
+        "teaching": "`$e` (force) evaluates a THUNK to a value; it is the only way to observe one (ADR-0007). Forcing a plain Int/pair/etc. is a type error — the thing being forced was never a deferred computation. Drop the `$`, or make the bound name a thunk."
+      },
+      {
+        "anchors": [
+          "ret",
+          "shape value"
+        ],
+        "code": "B005",
+        "example": null,
+        "summary": "a handler clause body is not a `ret`-shape value (the ADR-0095 D4 gate)",
+        "teaching": "In v1 a handler clause body must be a `ret`-shape value — no effects before resuming. A compute-then-return body needs binop typing (ADR-0065) + resumption-grade surfacing (Q27), tracked as the general-body entry gate (ADR-0095 D4). Restructure the clause so it resumes with a pure value."
+      },
+      {
+        "anchors": [
+          "unknown constructor"
+        ],
+        "code": "B007",
+        "example": null,
+        "summary": "a match arm names a constructor not in the scrutinee's data type",
+        "teaching": "A `match` arm's constructor must belong to the scrutinee's `data` type. A typo, or matching a constructor from a different type, fires this. Check the constructor name and that its `data` declaration is in scope (imported if it lives in another module)."
+      },
+      {
+        "anchors": [
+          "trailing tokens after expression"
+        ],
+        "code": "B008",
+        "example": "1, 2",
+        "summary": "the parser reached extra tokens after a complete expression",
+        "teaching": "A complete expression was parsed but tokens remained. Usually a missing operator, a stray literal, or an unclosed construct. The reported span points at the first leftover token. Check for a missing `in`, `;`, operator, or delimiter."
+      },
+      {
+        "anchors": [
+          "capability escaped its handler"
+        ],
+        "code": "B009",
+        "example": null,
+        "summary": "a capability was forced after its handler's block returned (runtime)",
+        "teaching": "A capability (`vcap`) was forced (`$`/`!`) after the `with`/`atomically`/`state` block that installed it had already returned. This is a defined fail-loud terminal (`escapedCap`, ADR-0063), not corruption. Move the force inside the handler's scope, or restructure so the capability does not outlive it. Triggers at RUNTIME (`bang run`), not `bang check`."
+      },
+      {
+        "anchors": [
+          "no impl of '"
+        ],
+        "code": "B010",
+        "example": null,
+        "summary": "a trait bound is unsatisfied — no impl of the trait for the carrier",
+        "teaching": "A bounded function or method needs an `impl Trait for Carrier`, and none is in scope for this carrier. Provide the `impl`, or annotate the use so the carrier constructor resolves (`… : Option Int`). Imports bring another module's impls into scope."
+      },
+      {
+        "anchors": [
+          "Bang.DiagCodes.retired.B011.matches-nothing"
+        ],
+        "code": "B011",
+        "example": null,
+        "summary": "RETIRED — the v1 payload-arity-≤2 cap this code named was LIFTED (#144)",
+        "teaching": "A `data` constructor's payload arity was capped at 2 in early v1 (nest tuples to carry more, e.g. `Node((a, b), c)`); the cap is now LIFTED — `Node(a, b, c)` and longer payloads construct, match, and derive directly (elaboration right-nests the payload internally, transparently to the surface). This code is retired and fires on nothing; kept only so `bang explain B011` still answers for anyone who saw it in an older error log."
+      },
+      {
+        "anchors": [
+          "ambiguous constructor"
+        ],
+        "code": "B012",
+        "example": "data List a = Nil | Cons(a, List a)\ndata IntList = Nil | Cons(Int, IntList)\nNil",
+        "summary": "a bare constructor name is owned by two or more co-present `data` types",
+        "teaching": "A constructor's true identity is `(dataName, ctorName)`, not the bare name alone (ADR-0099). A bare reference resolves when exactly ONE in-scope `data` type owns that ctor name; two or more sharing it is ambiguous. Write the type-qualified form `Type_Ctor` (e.g. `IntList_Nil`) to disambiguate — an ordinary identifier, the same `Mod_Type` convention module qualification already uses."
+      },
+      {
+        "anchors": [
+          "is a sibling `let rec` defined later"
+        ],
+        "code": "B013",
+        "example": "let rec outer : Int -> Int ! {Div} = fun n => let rec a : Int -> Int ! {Div} = fun m => ($b) m in let rec b : Int -> Int ! {Div} = fun m => ($a) m in ($a) n in ($outer) 3",
+        "summary": "a nested `let rec` forward-references a sibling `let rec` bound later in the same block",
+        "teaching": "A nested `let rec` (the pre-#97 mutual-recursion workaround) can only call EARLIER siblings — each inner `let rec` is bound SEQUENTIALLY, so a forward reference to one bound later in the same enclosing body is genuinely unbound at that point. Reorder so every sibling calls only earlier siblings (leaf-level rules first), restructure into ONE self-recursive function, or — the direct fix — use the mutual `let rec f : T1 = e1 and g : T2 = e2 in body` form (#97 item 2), which gives every sibling simultaneous visibility of every other."
+      },
+      {
+        "anchors": [
+          "constructor '"
+        ],
+        "code": "B006",
+        "example": null,
+        "summary": "a data constructor is applied to the wrong number of arguments",
+        "teaching": "A `data` constructor must be applied to EXACTLY its declared arity. `Cons(x)` when `Cons` takes 2, or `Nil(x)` when `Nil` takes none, both fire this. Supply the right number of arguments — any arity is fine (the v1 payload-arity-≤2 cap was lifted, #144)."
+      },
+      {
+        "anchors": [
+          "wildcard arm '_'"
+        ],
+        "code": "B014",
+        "example": "data Color = Red | Green | Blue\nmatch Red { _ -> 1, Green -> 2 }",
+        "summary": "a match's `_` wildcard arm is misplaced or covers nothing (issue #101)",
+        "teaching": "A `_ -> body` wildcard arm expands to one fresh arm per constructor NOT already covered by an earlier explicit arm (reusing `body`, ignoring the payload) — it must be the LAST arm (arms after it can never fire, since it always matches), needs at least one explicit constructor arm before it to name the match's data type, and must cover at least one constructor (a wildcard over an already-exhaustive match is dead code). Move it last, add an explicit arm to anchor the type, or drop it if every constructor is already named."
+      },
+      {
+        "anchors": [
+          "a bare function is a computation"
+        ],
+        "code": "B015",
+        "example": "let double = fun x => x + x\nlet main = double",
+        "summary": "a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121)",
+        "teaching": "`fun x => …` is a COMPUTATION (a \"returner\"), not a value, but a top-level `let` binds a VALUE — bang's CBPV core (ADR-0007) draws this line at every `let`, not only top-level ones. Suspend the function in a thunk: `let f = {fun x => …}`, then call it forced: `($f) arg`. This is the single most common trigger of the older generic \"not a returner\" message, which suggested `$f` — that doesn't parse here (`$` forces a THUNK to a value; a bare `fun` was never a thunk to begin with)."
+      },
+      {
+        "anchors": [
+          "looks like it was folded in as an application argument"
+        ],
+        "code": "B016",
+        "example": "let x = 3\nlet y = 4\nx + y",
+        "summary": "a top-level `let` with no `in` absorbed the next line as an application (issue #129)",
+        "teaching": "A top-level `let name = e` with no trailing `in` parses `e` with the SAME juxtaposition-application grammar an ordinary call site uses — a bare newline carries no meaning (ADR-0046). So `let x = 3` followed on the next line by `let y = 4` followed by `x + y` folds `4` against the following line's leading token before that line's own `let` boundary is found, producing `4 x` (`.app`) instead of two separate declarations. Add a trailing `in` to end the RHS on the SAME line (`let name = e in …`, script mode), or make sure the value after `=` is followed IMMEDIATELY by the next `let`/decl keyword with nothing else on that line (top-level-decl mode, ADR-0093)."
+      },
+      {
+        "anchors": [
+          "conflicting instantiations for type variable"
+        ],
+        "code": "B017",
+        "example": "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)",
+        "summary": "a bound-free generic's call site names two different types for the same type variable",
+        "teaching": "ADR-0103's monomorphization pass discovers a bound-free `let rec`'s (e.g. `mapOpt : (a -> b) -> Option a -> Option b`) concrete instantiation from EITHER an argument's own annotation or (Amendment ②) the call's own result annotation — but never guesses: if one call site names the SAME type variable at two different concrete types (an argument says `Int`, the result says `Char`, or two arguments disagree), that is a genuinely contradictory program, refused loud rather than silently picking one annotation over the other. Annotate consistently, or drop whichever annotation is redundant."
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "claim": "Surface and parser-table facts are extracted from the parser authority and consumed only after JSON reload.",
+      "commands": [
+        "python3 tools/docfacts_language.py --check"
+      ],
+      "id": "surface-generated",
+      "label": "generated",
+      "sources": [
+        "Bang/Frontend/Surface.lean",
+        "tools/docfacts_language.py",
+        "docfacts/schema/language.schema.json"
+      ]
+    },
+    {
+      "claim": "The diagnostic JSON contract and stable explain registry are implemented by the frontend authorities.",
+      "commands": [
+        "just test-check-json",
+        "just test-explain"
+      ],
+      "id": "diagnostics-implemented",
+      "label": "implemented",
+      "sources": [
+        "Bang/Frontend/Diagnostics.lean",
+        "Bang/Frontend/DiagCodes.lean"
+      ]
+    },
+    {
+      "claim": "Prelude declaration order and descriptive signatures are joined without duplicating an order field.",
+      "commands": [
+        "python3 tools/docfacts_language.py --check"
+      ],
+      "id": "prelude-generated",
+      "label": "generated",
+      "sources": [
+        "Prelude.bang",
+        "Bang/Frontend/TypeCheck.lean",
+        "tools/docfacts_language.py"
+      ]
+    },
+    {
+      "claim": "Documented CLI paths and representative exit contracts agree with the real binary.",
+      "commands": [
+        "just test-docfacts-language",
+        "just test-cli",
+        "just test-check-json",
+        "just test-explain"
+      ],
+      "id": "cli-differential-tested",
+      "label": "differential-tested",
+      "sources": [
+        "Main.lean",
+        "tools/test-docfacts-language.sh",
+        "tools/test-cli.sh",
+        "tools/test-check-json.sh",
+        "tools/test-explain.sh"
+      ]
+    }
+  ],
+  "grammar": {
+    "effectLabels": [
+      {
+        "name": "throws",
+        "summary": "The single concrete label the tracer bullet uses for `raise`/`handle`.",
+        "value": 0
+      },
+      {
+        "name": "state",
+        "summary": "The state channel (rung 1, ADR-0025) — a DISTINCT label from `exnLabel`, so a state cell and an exception channel coexist without colliding.",
+        "value": 1
+      },
+      {
+        "name": "stm",
+        "summary": "The STM channel (rung 3, ADR-0030) — a DISTINCT label from `exnLabel`/`stateLabel`, so a transactional heap, a state cell, and an exception channel coexist.",
+        "value": 2
+      },
+      {
+        "name": "Div",
+        "summary": "The divergence channel (ADR-0073 §2, #46) — a DISTINCT label marking may-not-terminate.",
+        "value": 3
+      }
+    ],
+    "evidence": [
+      "surface-generated"
+    ],
+    "keywordRules": [
+      {
+        "form": "if <expr> then <expr> else <expr>",
+        "keyword": "if"
+      },
+      {
+        "form": "handle [as <ident>] <expr>",
+        "keyword": "handle"
+      },
+      {
+        "form": "atomically [as <ident>] <expr>",
+        "keyword": "atomically"
+      },
+      {
+        "form": "state <atom> [as <ident>] in <expr>",
+        "keyword": "state"
+      },
+      {
+        "form": "fun <ident> => <expr>",
+        "keyword": "fun"
+      }
+    ],
+    "operators": [
+      {
+        "leftBindingPower": 2,
+        "rightBindingPower": 1,
+        "symbol": "=>"
+      },
+      {
+        "leftBindingPower": 3,
+        "rightBindingPower": 4,
+        "symbol": "<"
+      },
+      {
+        "leftBindingPower": 3,
+        "rightBindingPower": 4,
+        "symbol": "=="
+      },
+      {
+        "leftBindingPower": 5,
+        "rightBindingPower": 6,
+        "symbol": "+"
+      },
+      {
+        "leftBindingPower": 5,
+        "rightBindingPower": 6,
+        "symbol": "-"
+      },
+      {
+        "leftBindingPower": 7,
+        "rightBindingPower": 8,
+        "symbol": "*"
+      },
+      {
+        "leftBindingPower": 7,
+        "rightBindingPower": 8,
+        "symbol": "/"
+      }
+    ],
+    "reservedIdentifiers": [
+      "let",
+      "fun",
+      "handle",
+      "raise",
+      "state",
+      "get",
+      "put",
+      "atomically",
+      "new",
+      "read",
+      "write",
+      "match",
+      "Left",
+      "Right",
+      "if",
+      "then",
+      "else",
+      "do",
+      "trait",
+      "impl",
+      "for",
+      "fn",
+      "law",
+      "data",
+      "effect",
+      "import",
+      "use",
+      "pub",
+      "as",
+      "where",
+      "in",
+      "with",
+      "resume",
+      "param",
+      "and"
+    ]
+  },
+  "kind": "language",
+  "prelude": {
+    "declarations": [
+      {
+        "name": "concat",
+        "signature": "Str -> Str -> Str"
+      },
+      {
+        "name": "strLength",
+        "signature": "Str -> Int"
+      },
+      {
+        "name": "intToStr",
+        "signature": "Int -> Str"
+      },
+      {
+        "name": "reverse",
+        "signature": null
+      },
+      {
+        "name": "eq",
+        "signature": "Str -> Str -> Unit + Unit"
+      },
+      {
+        "name": "mapOption",
+        "signature": "(a -> b) -> Option a -> Option b"
+      },
+      {
+        "name": "mapResult",
+        "signature": "(a -> b) -> Result e a -> Result e b"
+      },
+      {
+        "name": "bimap",
+        "signature": "(e -> f) -> (a -> b) -> (e + a) -> (f + b)"
+      },
+      {
+        "name": "resultToEither",
+        "signature": "Result e a -> (e + a)"
+      },
+      {
+        "name": "eitherToResult",
+        "signature": "(e + a) -> Result e a"
+      },
+      {
+        "name": "optionToEither",
+        "signature": "Option a -> (Unit + a)"
+      },
+      {
+        "name": "eitherToOption",
+        "signature": "(Unit + a) -> Option a"
+      },
+      {
+        "name": "withDefault",
+        "signature": "a -> Option a -> a"
+      },
+      {
+        "name": "fst",
+        "signature": "(a, b) -> a"
+      },
+      {
+        "name": "snd",
+        "signature": "(a, b) -> b"
+      },
+      {
+        "name": "abs",
+        "signature": "Int -> Int"
+      },
+      {
+        "name": "min",
+        "signature": "Int -> Int -> Int"
+      },
+      {
+        "name": "max",
+        "signature": "Int -> Int -> Int"
+      },
+      {
+        "name": "const",
+        "signature": "a -> b -> a"
+      },
+      {
+        "name": "id",
+        "signature": "a -> a"
+      },
+      {
+        "name": "isDigit",
+        "signature": "Char -> Unit + Unit"
+      },
+      {
+        "name": "isAlpha",
+        "signature": "Char -> Unit + Unit"
+      },
+      {
+        "name": "toUpper",
+        "signature": "Char -> Char"
+      },
+      {
+        "name": "toLower",
+        "signature": "Char -> Char"
+      },
+      {
+        "name": "take",
+        "signature": "Int -> List a -> List a"
+      },
+      {
+        "name": "drop",
+        "signature": "Int -> List a -> List a"
+      },
+      {
+        "name": "length",
+        "signature": "List a -> Int"
+      },
+      {
+        "name": "append",
+        "signature": "List a -> List a -> List a"
+      },
+      {
+        "name": "head",
+        "signature": "List a -> Option a"
+      },
+      {
+        "name": "tail",
+        "signature": "List a -> Option (List a)"
+      },
+      {
+        "name": "zip",
+        "signature": "List a -> List b -> List (a * b)"
+      },
+      {
+        "name": "range",
+        "signature": "Int -> Int -> List Int"
+      },
+      {
+        "name": "replicate",
+        "signature": "Int -> a -> List a"
+      }
+    ],
+    "evidence": [
+      "prelude-generated"
+    ],
+    "standardNames": [
+      "concat",
+      "reverse",
+      "eq",
+      "strLength",
+      "intToStr"
+    ]
+  },
+  "schemaVersion": 1,
+  "surface": {
+    "evidence": [
+      "surface-generated"
+    ],
+    "forms": [
+      {
+        "form": "3",
+        "name": "lit",
+        "notes": ""
+      },
+      {
+        "form": "x",
+        "name": "var",
+        "notes": ""
+      },
+      {
+        "form": "{ e }",
+        "name": "thunk",
+        "notes": "(suspend)"
+      },
+      {
+        "form": "$e / !e",
+        "name": "force",
+        "notes": "(observe)"
+      },
+      {
+        "form": "let x = e1 in e2",
+        "name": "lett",
+        "notes": ""
+      },
+      {
+        "form": "fun x => e",
+        "name": "lam",
+        "notes": ""
+      },
+      {
+        "form": "e1 e2",
+        "name": "app",
+        "notes": ""
+      },
+      {
+        "form": "raise e",
+        "name": "raise",
+        "notes": ""
+      },
+      {
+        "form": "handle e",
+        "name": "handle",
+        "notes": ""
+      },
+      {
+        "form": "get",
+        "name": "getS",
+        "notes": "(read the state cell)"
+      },
+      {
+        "form": "put e",
+        "name": "putS",
+        "notes": "(write the state cell)"
+      },
+      {
+        "form": "state e0 in e",
+        "name": "stateS",
+        "notes": "(install the state handler)"
+      },
+      {
+        "form": "atomically e",
+        "name": "atomS",
+        "notes": "(install the STM transaction handler)"
+      },
+      {
+        "form": "new e",
+        "name": "newS",
+        "notes": "(allocate a TVar)"
+      },
+      {
+        "form": "read e",
+        "name": "readS",
+        "notes": "(read a TVar)"
+      },
+      {
+        "form": "write r w",
+        "name": "writeS",
+        "notes": "(write a TVar)"
+      },
+      {
+        "form": "Left(e)",
+        "name": "inlS",
+        "notes": "(sum intro, left)"
+      },
+      {
+        "form": "Right(e)",
+        "name": "inrS",
+        "notes": "(sum intro, right)"
+      },
+      {
+        "form": "(a, b)",
+        "name": "pairS",
+        "notes": "(product intro)"
+      },
+      {
+        "form": "match s { Left(x) -> e₁ , Right(y) -> e₂ }",
+        "name": "matchS",
+        "notes": "→ case  (x, y each bind at idx 0)"
+      },
+      {
+        "form": "let (a, b) = p in body",
+        "name": "splitS",
+        "notes": "→ split  (a = fst at idx 1, b = snd at idx 0)"
+      },
+      {
+        "form": "a + b",
+        "name": "binopS",
+        "notes": "(arithmetic + - * /, comparison < ==)"
+      },
+      {
+        "form": "if c then t else e",
+        "name": "ifS",
+        "notes": "(sugar over case on Bool = 1+1)"
+      },
+      {
+        "form": "(e : T)",
+        "name": "annotS",
+        "notes": "type ascription (ADR-0066 ②); erased at lowering"
+      },
+      {
+        "form": "()",
+        "name": "unitS",
+        "notes": "the unit value literal"
+      },
+      {
+        "form": "μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)",
+        "name": "foldS",
+        "notes": ""
+      },
+      {
+        "form": "μ elim",
+        "name": "unfoldS",
+        "notes": "(INTERNAL: emitted by named-match elaboration)"
+      },
+      {
+        "form": "named-ctor match (parse-only; ELIMINATED by the elaborator —",
+        "name": "matchD",
+        "notes": ""
+      },
+      {
+        "form": "state <init> as <name> in <body>",
+        "name": "withCapS",
+        "notes": "(named cap; also `handle as h e` / `atomically as h e`, ADR-0072)"
+      },
+      {
+        "form": "h.op(args)",
+        "name": "dotPerform",
+        "notes": "perform op on the named cap"
+      },
+      {
+        "form": "let rec f : T = <fun> in <body>",
+        "name": "letRecS",
+        "notes": "(μ-knot; DESUGARED in elabS, typed-path only)"
+      },
+      {
+        "form": "INTERNAL (#46): adds {divLabel} to the wrapped computation's row; RUNTIME no-op (lowers to its child)",
+        "name": "divMark",
+        "notes": ""
+      },
+      {
+        "form": "let rec f : T1 = e1 and g : T2 = e2 and … in body",
+        "name": "letRecMultiS",
+        "notes": "(≥ 2 siblings; a single-binding `let rec` STAYS `letRecS`, unchanged — this is strictly the `and`-chained mutual-group form). DESUGARED in `elabS` (typed-path only, mirroring `letRecS` itself) to the H2 tuple-of-thunks μ-knot: a SHARED self-knot `Rec = μX. Thunk(X → T1 * T2 * … )` (right-nested product, `buildLetRecMulti`'s own doc comment has the full encoding), each sibling forcing the SAME knot and projecting its own slot — giving every sibling visibility of every OTHER sibling by construction, not by ordering (the H1 Bekić-dispatcher alternative was REFUTED, two independent walls — ctor/generic arity ≤ 2, `Div`-row all-or-nothing certification — see the design note + the ADR)."
+      },
+      {
+        "form": "let x = e1; y = e2; … in body",
+        "name": "lettMulti",
+        "notes": "— a SUGAR MARKER (like `divMark`): semantically transparent everywhere except the PRINTER, which uses it to distinguish \"the author wrote `;`-sugar\" from \"the author wrote out a nested `let..in` chain by hand\" (the operator's #68 ruling: fmt prints the sugar for sugar-parsed input, but does NOT auto-collapse a hand-written chain — and once desugared to plain nested `.lett`, that distinction has NO surviving signal, so the marker IS the signal). `desugarLettMulti` (below) turns it into the identical nested `.lett` chain a hand-written pyramid produces; every OTHER consumer (lowering, the typed elaborator, qualification/renaming passes) calls that FIRST and never pattern-matches `.lettMulti` itself — the parser produces it, the printer consumes it directly, everything in between erases it."
+      },
+      {
+        "form": "handle e with Name as h { op1(x) => body1, op2(y) => body2, … }",
+        "name": "handleCustomS",
+        "notes": "(param-less), or `handle e with (Name init) as h { … }` (param-carrying, `param` names it in clause bodies). Field order (NOT the textual order — `e` prints FIRST in source, `label?`/`Name`/`init`/`h`/ `cls` are the `with …` clause; `body` below IS `e`, kept last to match `withCapS`'s own field convention of \"binder info, then the scope it binds\"): `label?`  : the RESOLVED-LABEL slot (WALL 1 fix, manager-ruled Option A) — `none` at parse time (no `env.effects` in scope yet); `elabS`'s new arm REWRITES it to `some ℓ` once `Name` resolves against the program's declared effects. `lowerC` stays a PURE function of the tree (no `ElabEnv` threading) — it reads this slot directly and fails loud on `none` (unresolved ⟹ elaboration never ran, or the effect name never resolved — a genuine pipeline gap, never guessed through). PLAIN `Option Label` (not a mutual mirror of `SurfArgs`'s shape) is fine here — `Label := Nat` is NOT self-referential, so `deriving DecidableEq` sees through it without the `Option Surf` wall below. `effName` : a bare effect-name reference (`.var \"Net\"`), resolved against `env.effects` at elaboration (same D1/D2 lookup `.dotPerform`'s D2 arm already uses). `paramInit` : `SurfArgs.none` for the param-less bare-`Name` form, `.one e0` for the param-carrying `(Name init)` form — REUSES `SurfArgs` (rather than inventing a fresh `Option Surf`-shaped mutual type) precisely because `Option Surf` does NOT derive `DecidableEq` across this mutual group (confirmed: Lean's structural-deriving handler cannot see through `Option <mutual-self-type>`, the SAME reason `SurfArgs`/`DArms`/`LetBindings` are bespoke mutual types instead of `List`/`Option` of `Surf` in the first place — this is that precedent's rationale generalizing to a NEW field, not a new problem). `.two` is unused here (never constructed by the parser) but costs nothing structurally. `.none` desugars to the CLOSED unit value at elaboration (the kernel's `Handler.custom` always carries a `p : Val`, ADR-0092's premise; a param-less `effect` still needs SOME closed `p`, and `Unit` is the honest empty choice, mirroring `state`'s `s : S` — no such gap exists there since `state` ALWAYS has an explicit `init`). `h`       : the MANDATORY cap binder (ADR-0095 D1-binding-gap ruling, reading (b) — v1 has NO implicit/ambient binder; a future additive sugar MAY relax this, but the ruling is explicit-only for v1, precisely to avoid a same-effect nested `handle` silently shadowing an outer binding under an implicit lowercase-of-Name name). `cls`     : the clause list (curried per D3 — see `HClauses`'s own doc comment for the curry-desugar). Ret-shape UNCHECKED at parse (ADR-0092 D3's gate is elaboration-time, D4's teaching diagnostic fires there). `body`    : `e`, the handled expression — elaborated under `h`'s EXTENDED Γ (the D1-binding- gap ruling's reading (c) mechanics: install the clause-map/binder FIRST, then elaborate `e` under it — even though `e` prints textually BEFORE `with Name as h { … }` in source, per D1's own worked example)."
+      },
+      {
+        "form": "Io.print(x)",
+        "name": "hostPerformS",
+        "notes": "— a bare-qualified access whose `op` names an OP of a `pub effect` the qualified module declares (NOT one of the module's `pub` DECL names, so `qualifyDotAccess`'s ordinary `Mod.name → Mod_name` var-alias rewrite is the wrong target — an effect op has no `letD`/`fnD` to alias). Mirrors `handleCustomS`'s TWO-STAGE resolution exactly: `label?`  : `none` at MERGE time (`qualifyDotAccess`, no `env.effects` yet) — `elabS`'s WALL-1-style arm (below) resolves it against `env.effects`, same as `handleCustomS`'s own `label?` slot. `effRef`  : a bare effect-name reference (`.var \"Io_Console\"`, ALREADY module-qualified — `qualifyDotAccess` emits the qualified effect name directly, since it already knows which module owns the op) — resolved against `env.effects` the SAME `EffectInfo.label` lookup `handleCustomS`'s `n : .var effN` arm uses. `op`      : the effect op name (`\"print\"`), UNQUALIFIED — looked up in `EffectInfo.ops`. `args`    : the call arguments, reusing `SurfArgs` (the `dotPerform` precedent). Lowers (once `label?` resolves to `some ℓ`) to `perform (vcap hostCapId ℓ) op args` — a LITERAL capability value, not a `handle`-bound `vvar` (the one narrow, ADR-0104-priced exception to \"the elaborator emits vvar, never vcap\": `T_Cap` types a `vcap` STRUCTURALLY, with no side-condition that `n` came from a `handle` install, and the runtime seam is already #guard-proven for exactly this shape — `Bang/Backend/EnvMachine.lean`'s `hostCapId` doc comment has the collision-safety argument). An unresolved `label?` reaching `lowerC` fails loud (elaboration never ran, or `effRef` never resolved to a declared effect) — never guessed."
+      }
+    ],
+    "types": [
+      {
+        "form": "Int",
+        "name": "tInt",
+        "notes": ""
+      },
+      {
+        "form": "Unit",
+        "name": "tUnit",
+        "notes": ""
+      },
+      {
+        "form": "A -> B",
+        "name": "tArr",
+        "notes": "(function; right-assoc)"
+      },
+      {
+        "form": "A + B",
+        "name": "tSum",
+        "notes": ""
+      },
+      {
+        "form": "A * B",
+        "name": "tProd",
+        "notes": ""
+      },
+      {
+        "form": "Thunk T",
+        "name": "tThunk",
+        "notes": "(a suspended computation value, the `U` former)"
+      },
+      {
+        "form": "Self — the impl target, in trait op signatures (#24, ADR-0068)",
+        "name": "tSelf",
+        "notes": ""
+      },
+      {
+        "form": "a declared data name (resolved against the decl env at elaboration, ADR-0069)",
+        "name": "tName",
+        "notes": ""
+      },
+      {
+        "form": "a generic data name applied to type args: `List Int` (ADR-0069 generic, bite-1; arity ≤ 2)",
+        "name": "tApp",
+        "notes": ""
+      },
+      {
+        "form": "μ former (INTERNAL — built by data-decl encoding, never parsed in v1)",
+        "name": "tMu",
+        "notes": ""
+      },
+      {
+        "form": "μ-bound de Bruijn type var (INTERNAL, ditto)",
+        "name": "tVar",
+        "notes": ""
+      },
+      {
+        "form": "T ! {throws, …}",
+        "name": "tEff",
+        "notes": "effect-row annotation (names; checker maps to labels)"
+      }
+    ]
+  }
+}

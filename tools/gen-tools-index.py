@@ -84,7 +84,7 @@ def first_purpose(text):
         if not s:
             continue
         s = SEP_RE.sub("", s, count=1)      # drop `<name> — ` prefix, keep the desc
-        return s.rstrip(".")
+        return s.rstrip('."')
     return "(no purpose comment)"
 
 

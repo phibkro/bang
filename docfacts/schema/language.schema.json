@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bang-lang.org/docfacts/schema/language.schema.json",
+  "title": "BANG maintained language reference facts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "surface", "grammar", "diagnostics", "prelude", "cli", "evidence"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "language" },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forms", "types", "evidence"],
+      "properties": {
+        "forms": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/surfaceRow" } },
+        "types": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/surfaceRow" } },
+        "evidence": { "$ref": "#/$defs/evidenceRefs" }
+      }
+    },
+    "grammar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operators", "keywordRules", "reservedIdentifiers", "effectLabels", "evidence"],
+      "properties": {
+        "operators": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/operator" } },
+        "keywordRules": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/keywordRule" } },
+        "reservedIdentifiers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "effectLabels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/effectLabel" } },
+        "evidence": { "$ref": "#/$defs/evidenceRefs" }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "registry", "evidence"],
+      "properties": {
+        "contract": { "$ref": "#/$defs/diagnosticContract" },
+        "registry": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/diagnosticEntry" } },
+        "evidence": { "$ref": "#/$defs/evidenceRefs" }
+      }
+    },
+    "prelude": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["standardNames", "declarations", "evidence"],
+      "properties": {
+        "standardNames": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "declarations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/preludeDecl" } },
+        "evidence": { "$ref": "#/$defs/evidenceRefs" }
+      }
+    },
+    "cli": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "exitContracts", "evidence"],
+      "properties": {
+        "commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/cliCommand" } },
+        "exitContracts": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/exitContract" } },
+        "evidence": { "$ref": "#/$defs/evidenceRefs" }
+      }
+    },
+    "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } }
+  },
+  "$defs": {
+    "nonempty": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+    "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+    "repoPath": { "$ref": "common.schema.json#/$defs/repoPath" },
+    "evidenceRefs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "surfaceRow": {
+      "type": "object", "additionalProperties": false, "required": ["name", "form", "notes"],
+      "properties": { "name": { "$ref": "#/$defs/nonempty" }, "form": { "$ref": "#/$defs/nonempty" }, "notes": { "type": "string" } }
+    },
+    "operator": {
+      "type": "object", "additionalProperties": false, "required": ["symbol", "leftBindingPower", "rightBindingPower"],
+      "properties": { "symbol": { "$ref": "#/$defs/nonempty" }, "leftBindingPower": { "type": "integer", "minimum": 0 }, "rightBindingPower": { "type": "integer", "minimum": 0 } }
+    },
+    "keywordRule": {
+      "type": "object", "additionalProperties": false, "required": ["keyword", "form"],
+      "properties": { "keyword": { "$ref": "#/$defs/nonempty" }, "form": { "$ref": "#/$defs/nonempty" } }
+    },
+    "effectLabel": {
+      "type": "object", "additionalProperties": false, "required": ["name", "value", "summary"],
+      "properties": { "name": { "$ref": "#/$defs/nonempty" }, "value": { "type": "integer", "minimum": 0 }, "summary": { "$ref": "#/$defs/nonempty" } }
+    },
+    "diagnosticContract": {
+      "type": "object", "additionalProperties": false, "required": ["severities", "stages", "fields"],
+      "properties": {
+        "severities": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "stages": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "fields": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
+      }
+    },
+    "diagnosticEntry": {
+      "type": "object", "additionalProperties": false, "required": ["code", "anchors", "summary", "teaching", "example"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^B[0-9]{3}$" },
+        "anchors": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "summary": { "$ref": "#/$defs/nonempty" },
+        "teaching": { "$ref": "#/$defs/nonempty" },
+        "example": { "type": ["string", "null"] }
+      }
+    },
+    "preludeDecl": {
+      "type": "object", "additionalProperties": false, "required": ["name", "signature"],
+      "properties": { "name": { "$ref": "#/$defs/nonempty" }, "signature": { "type": ["string", "null"] } }
+    },
+    "cliCommand": {
+      "type": "object", "additionalProperties": false, "required": ["path", "synopsis", "principalFlags"],
+      "properties": {
+        "path": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonempty" } },
+        "synopsis": { "$ref": "#/$defs/nonempty" },
+        "principalFlags": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
+      }
+    },
+    "exitContract": {
+      "type": "object", "additionalProperties": false, "required": ["scope", "code", "meaning"],
+      "properties": { "scope": { "$ref": "#/$defs/nonempty" }, "code": { "type": "integer", "minimum": 0 }, "meaning": { "$ref": "#/$defs/nonempty" } }
+    },
+    "evidence": { "$ref": "common.schema.json#/$defs/identifiedEvidence" }
+  }
+}
