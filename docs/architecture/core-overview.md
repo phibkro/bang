@@ -12,339 +12,178 @@ Architecture decisions remain authoritative: [ADR-0016](../decisions/0016-two-ho
 
 ## 1. One meaning, several representations
 
+<!-- BEGIN GENERATED architecture-pipeline (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
-  S[Source text] -->|tested frontend| C[Graded-CBPV Comp]
-  C -->|kernel semantics| O[Source.eval oracle]
-  C -->|state reification| D[evalD]
-  D -->|calculation| VM[CalcVM compile + exec]
-  D -->|environments + readback proof| E[evalE default engine]
-  VM -->|annotated forward simulation| W[Formal Wasm 3.0 machine]
-  C -->|text emission| G[WasmGC / WAT]
-  G -->|differential test| R[Wasmtime]
+  n_calcvm["CalcVM compile + exec"]
+  n_comp["Graded-CBPV Comp"]
+  n_emitted_wat["WasmGC / WAT"]
+  n_env_engine["evalE default engine"]
+  n_evald["evalD"]
+  n_source_eval["Source.eval oracle"]
+  n_source_execution["Source execution"]
+  n_source_text["Source text"]
+  n_target_execution["Formal target execution"]
+  n_wasmtime["Wasmtime"]
+  n_comp -->|implemented · WasmGC text emission| n_emitted_wat
+  n_comp -->|implemented · kernel interpretation| n_source_eval
+  n_emitted_wat -->|differential-tested · real-engine execution| n_wasmtime
+  n_evald -->|proven · calculation| n_calcvm
+  n_evald -->|differential-tested · environment evaluation and readback| n_env_engine
+  n_source_eval -->|proven · state reification| n_evald
+  n_source_execution -->|proven · annotated forward simulation| n_target_execution
+  n_source_text -->|differential-tested · frontend lowering| n_comp
 ```
 
-**Reading the diagram:** solid arrows are transformations or execution paths. The label names the evidence expected at that boundary; it does not imply that every arrow has the same verification status.
+**Reading the diagram:** each edge label is the serialized evidence label followed by the serialized method; labels do not imply a stronger status.
 
-| Representation | Role | Evidence boundary |
-|---|---|---|
-| Surface parser, modules, inference, elaboration | Human/agent-facing language → monomorphic `Comp` | Tested superset: corpus, structured diagnostics, and differential engine tests |
-| `Source.eval` | Substitution-based CK kernel semantics; the behavioral oracle | Verified core in `Bang/Core/Semantics*` and public theorem façade `Bang/Spec.lean` |
-| `evalD` | Same semantics with handler state reified into explicit stores | `Bang.CalcVM.evalD_agrees_source` |
-| `compile` + `exec` | Calculated instruction machine; executable compiler specification | `Bang.CalcVM.compile_correct` composed with `evalD_agrees_source` |
-| `evalE` | Environment/closure representation used by the default CLI engine | Readback agreement with `evalD`; differential example battery |
-| formal Wasm target (`Bang/Backend/Wasm.lean`) | Lean model used for compiler simulation | `compile_forward_sim`, an annotated one-way simulation |
-| concrete WasmGC emitter (`Bang/Backend/WasmEmit.lean`) | Emits real WAT/WasmGC executed by Wasmtime | Tested stratum: real-engine differential harnesses against the source result |
-| host IO driver (`Main.lean`) | Grants, records, and replays ambient effects outside the pure evaluators | Tested boundary; least-authority grants and replay traces, not a kernel primitive |
+| Representation | Kind | Sources | Outgoing boundaries |
+|---|---|---|---|
+| `CalcVM compile + exec` | machine | `Bang/Backend/AbstractMachine.lean` | — |
+| `Graded-CBPV Comp` | core-ir | `Bang/Core/IR.lean` | WasmGC text emission → `WasmGC / WAT` (implemented); kernel interpretation → `Source.eval oracle` (implemented) |
+| `WasmGC / WAT` | emitted-wat | `Bang/Backend/WasmEmit.lean` | real-engine execution → `Wasmtime` (differential-tested) |
+| `evalE default engine` | environment-machine | `Bang/Backend/EnvMachine.lean`, `Main.lean` | — |
+| `evalD` | state-semantics | `Bang/Backend/AbstractMachine.lean` | calculation → `CalcVM compile + exec` (proven); environment evaluation and readback → `evalE default engine` (differential-tested) |
+| `Source.eval oracle` | source-semantics | `Bang/Core/Semantics/Eval.lean` | state reification → `evalD` (proven) |
+| `Source execution` | source-execution | `Bang/Spec.lean` | annotated forward simulation → `Formal target execution` (proven) |
+| `Source text` | text | `Bang/Frontend/Surface.lean` | frontend lowering → `Graded-CBPV Comp` (differential-tested) |
+| `Formal target execution` | target-execution | `Bang/Backend/Wasm.lean` | — |
+| `Wasmtime` | runtime | `tools/emit-rung4-diff.sh` | — |
+<!-- END GENERATED architecture-pipeline -->
 
 The namespace `Wasmfx` survives in parts of the formal Lean model for historical reasons. It does **not** make WasmFX the current product target. ADR-0059 makes stock Wasm 3.0 primary; WasmFX is a future fast path for the post-v1 general-resumption slot only.
 
 <!-- BEGIN GENERATED architecture-assertions (just architecture-assertions) — do not hand-edit -->
 ### Architecture assertions
 
-_Generated from Lean source, module paths, and accepted ADRs. This is a reviewable projection, not a second architecture authority._
+_Generated from validated committed architecture and proof facts. The JSON is the consumer seam; source checks remain in the fact producers._
 
-| Fact | Current value | Authority |
+| Fact | Current value | Source/evidence |
 |---|---|---|
-| Compiler target | **Wasm 3.0**, grade-directed; WasmFX is only a future general-case fast path | [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) |
-| Source equivalence | binary biorthogonal LR: `lr_sound`, `lr_fundamental` | [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md), `Bang/Spec.lean`, `Bang/Audit.lean` |
-| Compilation correctness | annotated forward simulation: `compile_forward_sim` | [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md), `Bang/Spec.lean`, `Bang/Audit.lean` |
-| CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases compiled | `Main.lean:Engine`, `Main.lean:parseEngine` |
-| Module graph | 58 modules · 116 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | `tools/import_facts.py` over `Bang/**/*.lean` |
-| Architecture lineage | ADR-0016 two-hop shape, target revised by ADR-0059 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) |
+| Compiler target | **Wasm 3.0**, grade-directed pluggable backend; WasmFX: future general-case fast path | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md` |
+| Source equivalence | binary biorthogonal LR: `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; `Bang/Spec.lean`, `Bang/Meta/LR.lean`, `Bang/Meta/BinaryLR.lean`, `Bang/Audit.lean`; validate: `lake env lean Bang/Audit.lean` |
+| Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`; validate: `lake env lean Bang/Audit.lean` |
+| CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases `compiled` | `Bang/Backend/EnvMachine.lean`, `Main.lean`, `docs/decisions/0094-env-semantics-in-the-machine-layer.md` |
+| Module graph | 58 modules · 116 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 58 serialized module records in `docfacts/architecture.json` |
+| Architecture lineage | ADR-0016 two-hop shape; target refined by ADR-0059 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented) |
 <!-- END GENERATED architecture-assertions -->
 
 ## 2. Proof arrows are different claims
 
+<!-- BEGIN GENERATED proof-arrows (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
-  P1[Source program P] <-->|binary LR / contextual equivalence| P2[Source program Q]
-  S[Source execution] -->|annotated forward simulation| T[Compiled target execution]
+  n_source_execution["Source execution"]
+  n_source_program_left["Source program P"]
+  n_source_program_right["Source program Q"]
+  n_target_execution["Formal target execution"]
+  n_source_program_left <-->|binary biorthogonal LR · implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`| n_source_program_right
+  n_source_execution -->|annotated forward simulation · proven| n_target_execution
 ```
 
-**Reading the diagram:** the upper arrow compares two source programs in arbitrary contexts; the lower arrow preserves one source execution into one target execution.
-
-| Question | Method | Headline theorems |
-|---|---|---|
-| Are two source programs contextually indistinguishable? | Binary, step-indexed, biorthogonal logical relation | `lr_fundamental`, `lr_sound`, `zero_usage_erasable` |
-| Does compiling a source success preserve its value? | One-way annotated forward simulation | `compile_forward_sim` |
+| Question / endpoint type | Direction | Method and theorem refs | Evidence status |
+|---|---|---|---|
+| source-programs: `Source program P` → `Source program Q` | bidirectional-contextual | binary biorthogonal LR; `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; validate: `lake env lean Bang/Audit.lean` |
+| source-to-target-executions: `Source execution` → `Formal target execution` | forward | annotated forward simulation; `Bang.compile_forward_sim` | proven; validate: `lake env lean Bang/Audit.lean` |
+<!-- END GENERATED proof-arrows -->
 
 Do not describe compiler correctness as “the Benton–Hur LR.” The LR and simulation are complementary, not interchangeable; ADR-0035 is the decision record.
 
-## 3. The dependency V
+### Audited theorem census
 
-Dependencies point inward at Core even though program data flows Frontend → Core → Backend.
+<!-- BEGIN GENERATED audited-axioms (just architecture-assertions) — do not hand-edit -->
+**Census:** 27 enrolled theorems · 22 trusted · 5 flagged · 2 with no axioms.
 
-| Tier | Owns | Dependency rule |
-|---|---|---|
-| Core | IR, rows/grades, typing, kernel semantics, syntactic soundness | Imports no outer tier |
-| Frontend | Surface syntax, modules, inference/elaboration, formatter, diagnostics, query/rewrite/lint | May import Core; never Backend |
-| Backend | `evalD`, calculated machines, environment machine, formal Wasm, concrete emitter | May import Core; never Frontend |
-| Meta | Binary logical relations and contextual-equivalence proofs | Consumes the lower V |
-| Witness | Executable regressions, countermodels, fuzzers, law/proof-export evidence | Consumes lower tiers; is not imported by them |
-| Reify | Standalone calculated-machine proof laboratory | Consumer tier, not the production CalcVM pipeline |
-| Apex | `Spec`, `Audit`, `Distribution`, `Examples` | Public façade and gates; may import all tiers |
+_Live validator: `python3 tools/docfacts_proof.py --live-check`._
 
-`tools/import_facts.py` is the single parser/classifier for the graph and the dependency fitness check. `tools/arch-check.py` enforces the V. Unknown tiers and missing internal imports fail rather than silently falling into a default layer.
+| Theorem | Source | Axiom set | Status/evidence |
+|---|---|---|---|
+| `Bang.lr_sound` | `Bang/Spec.lean:249` | `Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | flagged |
+| `Bang.lr_fundamental` | `Bang/Spec.lean:280` | `Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | flagged |
+| `Bang.lr_fundamental_closed` | `Bang/Spec.lean:290` | `Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | flagged |
+| `Bang.seq_unit` | `Bang/Spec.lean:306` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.compile_forward_sim` | `Bang/Spec.lean:338` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.compile_forward_sim_pure` | `Bang/Backend/Wasm.lean:2771` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.source_eval_to_exec` | `Bang/Backend/Wasm.lean:2759` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.Rung5ProofGrade.s5_effectful_forward_sim` | `Bang/Backend/Rung5ProofGrade.lean:101` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.Rung5ProofGrade.s5_exec_wexec_lockstep` | `Bang/Backend/Rung5ProofGrade.lean:110` | `Quot.sound`, `propext` | trusted · proven |
+| `Bang.compile_well_typed` | `Bang/Spec.lean:320` | `propext` | trusted · proven |
+| `Bang.handler_compiles` | `Bang/Spec.lean:345` | `sorryAx` | flagged |
+| `Bang.zero_grade_no_code` | `Bang/Spec.lean:349` | `propext` | trusted · proven |
+| `Bang.subst_value` | `Bang/Spec.lean:104` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.preservation` | `Bang/Spec.lean:119` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.progress` | `Bang/Spec.lean:134` | `Quot.sound`, `propext` | trusted · proven |
+| `Bang.type_safety` | `Bang/Spec.lean:156` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.no_accidental_handling` | `Bang/Spec.lean:60` | — | trusted · proven |
+| `Bang.no_accidental_handling_custom` | `Bang/Spec.lean:71` | `propext` | trusted · proven |
+| `Bang.custom_program_safe` | `Bang/Spec.lean:84` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.rowinst_requires_disjoint` | `Bang/Spec.lean:49` | — | trusted · proven |
+| `Bang.effect_sound` | `Bang/Spec.lean:200` | `Quot.sound`, `propext` | trusted · proven |
+| `Bang.zero_usage_erasable` | `Bang/Spec.lean:165` | `propext`, `sorryAx` | flagged |
+| `Bang.Surface.cell_reflects_latest` | `Bang/Frontend/Surface.lean:2828` | `propext` | trusted · proven |
+| `Bang.CalcVM.compile_correct` | `Bang/Backend/AbstractMachine.lean:3456` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.CalcVM.evalD_agrees_source` | `Bang/Backend/AbstractMachine.lean:6843` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.CalcVM.sim` | `Bang/Backend/AbstractMachine.lean:2296` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+| `Bang.CalcVM.run_evalD` | `Bang/Backend/AbstractMachine.lean:5494` | `Classical.choice`, `Quot.sound`, `propext` | trusted · proven |
+<!-- END GENERATED audited-axioms -->
+
+## 3. C4 component dependencies
+
+The useful architecture zoom is the **component** level: repository tiers such as `Frontend`, `Core`, and `Backend`. Individual Lean modules are code-level detail—kept exact in the serialized fact, but intentionally omitted from the visual.
+
+The dependency V still points inward at Core even though program data flows Frontend → Core → Backend. `tools/import_facts.py` is the single parser/classifier; `tools/arch-check.py` enforces the V. Unknown tiers and missing internal imports fail rather than silently falling into a default component.
 
 <!-- BEGIN GENERATED import-graph (just import-graph) — do not hand-edit -->
-_Generated by `tools/gen-import-graph.py` through `tools/import_facts.py` from current `import Bang.*` and `public import Bang.*` edges. Node label = `module (LOC · fan-in)`; an arrow `A → B` means A imports B._
+BANG uses the [C4 abstraction hierarchy](https://c4model.com/abstractions) to choose a useful zoom level for this page:
+
+| C4 abstraction | BANG mapping | This view |
+|---|---|---|
+| Software system | BANG implementation and toolchain | Shown as the outer boundary |
+| Container | Lean compiler/reference toolchain | Shown as the application boundary |
+| Component | 7 repository tiers (`Frontend`, `Core`, …) | Dependency nodes below |
+| Code | 58 Lean modules and 116 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
+
+A C4 [component](https://c4model.com/abstractions/component) is related functionality behind a defined interface and is not separately deployable. That matches these tiers better than C4's application/data-store [container](https://c4model.com/abstractions/container) term.
 
 ```mermaid
-graph TD
-  subgraph tier_Frontend["Frontend — text → typed core"]
-    Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 1"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>320L · fan-in 1"]
-    Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 1"]
-    Frontend_Format["Frontend.Format<br/>1139L · fan-in 4"]
-    Frontend_Lint["Frontend.Lint<br/>289L · fan-in 0"]
-    Frontend_NamedCore["Frontend.NamedCore<br/>386L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>899L · fan-in 3"]
-    Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3406L · fan-in 7"]
-    Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
-    Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>9490L · fan-in 5"]
+flowchart LR
+  subgraph system_BANG["Software system: BANG implementation"]
+    subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
+      component_Frontend["Frontend<br/>12 modules · 17266 LOC"]
+      component_Core["Core<br/>12 modules · 8166 LOC"]
+      component_Backend["Backend<br/>6 modules · 16975 LOC"]
+      component_Meta["Meta<br/>2 modules · 3852 LOC"]
+      component_Witness["Witness<br/>19 modules · 3683 LOC"]
+      component_Reify["Reify<br/>3 modules · 1883 LOC"]
+      component_Apex["Apex<br/>4 modules · 1004 LOC"]
+    end
   end
-  subgraph tier_Core["Core — IR · typing · semantics · soundness"]
-    Core_CapCoh["Core.CapCoh<br/>566L · fan-in 1"]
-    Core_EffectRow["Core.EffectRow<br/>203L · fan-in 1"]
-    Core_Freshness["Core.Freshness<br/>833L · fan-in 5"]
-    Core_Grade["Core.Grade<br/>84L · fan-in 11"]
-    Core_IR["Core.IR<br/>440L · fan-in 7"]
-    Core_Semantics["Core.Semantics<br/>25L · fan-in 16"]
-    Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 2"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>621L · fan-in 3"]
-    Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 1"]
-    Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 2"]
-    Core_Soundness["Core.Soundness<br/>3400L · fan-in 10"]
-    Core_Typing["Core.Typing<br/>510L · fan-in 7"]
-  end
-  subgraph tier_Backend["Backend — calculated machines → Wasm 3.0"]
-    Backend_AbstractMachine["Backend.AbstractMachine<br/>6871L · fan-in 8"]
-    Backend_EnvMachine["Backend.EnvMachine<br/>3624L · fan-in 0"]
-    Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>143L · fan-in 1"]
-    Backend_U5bComplete["Backend.U5bComplete<br/>1649L · fan-in 1"]
-    Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 4"]
-    Backend_WasmEmit["Backend.WasmEmit<br/>1757L · fan-in 1"]
-  end
-  subgraph tier_Meta["Meta — contextual equivalence"]
-    Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 1"]
-    Meta_LR["Meta.LR<br/>1998L · fan-in 2"]
-  end
-  subgraph tier_Witness["Witness — executable evidence and counterexamples"]
-    Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 1"]
-    Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
-    Witness_BoccRegress["Witness.BoccRegress<br/>261L · fan-in 0"]
-    Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
-    Witness_CtrGradeRefute["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
-    Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
-    Witness_D5ParamHandlerWitness["Witness.D5ParamHandlerWitness<br/>161L · fan-in 0"]
-    Witness_EffectTraceWitness["Witness.EffectTraceWitness<br/>127L · fan-in 0"]
-    Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
-    Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 2"]
-    Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
-    Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 1"]
-    Witness_LawTest["Witness.LawTest<br/>693L · fan-in 1"]
-    Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
-    Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
-    Witness_ScopedCapWitness["Witness.ScopedCapWitness<br/>141L · fan-in 0"]
-    Witness_SendableFragment["Witness.SendableFragment<br/>148L · fan-in 0"]
-    Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
-    Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
-  end
-  subgraph tier_Reify["Reify — calculated-machine proof laboratory"]
-    Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 2"]
-    Reify_CalcReifyRef["Reify.CalcReifyRef<br/>164L · fan-in 1"]
-    Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
-  end
-  subgraph tier_Apex["Apex — public theorem façade · audit · distribution"]
-    Audit["Audit<br/>69L · fan-in 0"]
-    Distribution["Distribution<br/>67L · fan-in 0"]
-    Examples["Examples<br/>510L · fan-in 0"]
-    Spec["Spec<br/>358L · fan-in 2"]
-  end
-  Audit --> Backend_AbstractMachine
-  Audit --> Backend_Rung5ProofGrade
-  Audit --> Frontend_Surface
-  Audit --> Spec
-  Backend_AbstractMachine --> Core_CapCoh
-  Backend_AbstractMachine --> Core_Semantics
-  Backend_EnvMachine --> Backend_AbstractMachine
-  Backend_EnvMachine --> Core_Semantics
-  Backend_Rung5ProofGrade --> Backend_Wasm
-  Backend_Rung5ProofGrade --> Backend_WasmEmit
-  Backend_U5bComplete --> Backend_AbstractMachine
-  Backend_U5bComplete --> Core_Freshness
-  Backend_Wasm --> Backend_AbstractMachine
-  Backend_Wasm --> Backend_U5bComplete
-  Backend_Wasm --> Core_Freshness
-  Backend_Wasm --> Core_IR
-  Backend_Wasm --> Core_Semantics
-  Backend_Wasm --> Core_Typing
-  Backend_WasmEmit --> Backend_AbstractMachine
-  Core_CapCoh --> Core_Freshness
-  Core_Freshness --> Core_Soundness
-  Core_IR --> Core_EffectRow
-  Core_Semantics --> Core_Semantics_Dispatch
-  Core_Semantics --> Core_Semantics_Eval
-  Core_Semantics --> Core_Semantics_Invariants
-  Core_Semantics --> Core_Semantics_Subst
-  Core_Semantics_Dispatch --> Core_Semantics_Subst
-  Core_Semantics_Eval --> Core_Semantics_Dispatch
-  Core_Semantics_Invariants --> Core_Semantics_Eval
-  Core_Semantics_Subst --> Core_IR
-  Core_Semantics_Subst --> Core_Typing
-  Core_Soundness --> Core_IR
-  Core_Soundness --> Core_Semantics
-  Core_Soundness --> Core_Typing
-  Core_Typing --> Core_IR
-  Distribution --> Spec
-  Examples --> Backend_AbstractMachine
-  Examples --> Frontend_Surface
-  Examples --> Frontend_TypeCheck
-  Frontend_Annotate --> Frontend_Query
-  Frontend_Diagnostics --> Frontend_DiagCodes
-  Frontend_Diagnostics --> Frontend_TypeCheck
-  Frontend_Format --> Frontend_Surface
-  Frontend_Lint --> Frontend_Format
-  Frontend_Lint --> Frontend_Query
-  Frontend_NamedCore --> Core_Semantics
-  Frontend_Query --> Frontend_Diagnostics
-  Frontend_Rewrite --> Frontend_Annotate
-  Frontend_Rewrite --> Frontend_Format
-  Frontend_Rewrite --> Frontend_Query
-  Frontend_Surface --> Core_Semantics
-  Frontend_Surface_PropTest --> Frontend_Surface
-  Frontend_Surface_Trait --> Frontend_Surface
-  Frontend_TypeCheck --> Core_Grade
-  Frontend_TypeCheck --> Core_Typing
-  Frontend_TypeCheck --> Frontend_Format
-  Frontend_TypeCheck --> Frontend_Surface
-  Meta_BinaryLR --> Core_IR
-  Meta_BinaryLR --> Core_Semantics
-  Meta_BinaryLR --> Core_Soundness
-  Meta_BinaryLR --> Core_Typing
-  Meta_BinaryLR --> Meta_LR
-  Meta_LR --> Core_IR
-  Meta_LR --> Core_Semantics
-  Meta_LR --> Core_Typing
-  Reify_CalcReifyRef --> Reify_CalcReify
-  Reify_CalcReifySim --> Reify_CalcReify
-  Reify_CalcReifySim --> Reify_CalcReifyRef
-  Spec --> Backend_Wasm
-  Spec --> Core_IR
-  Spec --> Core_Semantics
-  Spec --> Core_Soundness
-  Spec --> Core_Typing
-  Spec --> Meta_BinaryLR
-  Spec --> Meta_LR
-  Witness_AgreeOutcome --> Backend_AbstractMachine
-  Witness_BinopTyping --> Core_Grade
-  Witness_BinopTyping --> Core_Soundness
-  Witness_BoccRegress --> Core_Grade
-  Witness_BoccRegress --> Core_Soundness
-  Witness_CapEscapeWitness --> Core_Grade
-  Witness_CapEscapeWitness --> Core_Semantics
-  Witness_CapEscapeWitness --> Witness_LWRegress
-  Witness_CtrGradeRefute --> Core_Grade
-  Witness_CtrGradeRefute --> Core_Soundness
-  Witness_CustomStage1Refute --> Backend_Wasm
-  Witness_D5ParamHandlerWitness --> Core_Grade
-  Witness_D5ParamHandlerWitness --> Core_Semantics
-  Witness_EffectTraceWitness --> Core_Semantics_Eval
-  Witness_ElabFuzz --> Frontend_Format
-  Witness_ElabFuzz --> Frontend_Surface
-  Witness_ElabFuzz --> Frontend_TypeCheck
-  Witness_ElabFuzz --> Witness_Fuzz
-  Witness_Fuzz --> Backend_AbstractMachine
-  Witness_Fuzz --> Witness_AgreeOutcome
-  Witness_GradePolyReturner --> Core_Grade
-  Witness_GradePolyReturner --> Core_Soundness
-  Witness_LWRegress --> Core_Grade
-  Witness_LWRegress --> Core_Semantics
-  Witness_LawTest --> Core_Semantics
-  Witness_LawTest --> Frontend_TypeCheck
-  Witness_LawTest --> Witness_Fuzz
-  Witness_ProofExport --> Core_Semantics
-  Witness_ProofExport --> Frontend_TypeCheck
-  Witness_ProofExport --> Witness_LawTest
-  Witness_ReturnEscapeReach --> Core_Grade
-  Witness_ReturnEscapeReach --> Core_Soundness
-  Witness_ScopedCapWitness --> Core_Grade
-  Witness_ScopedCapWitness --> Core_Soundness
-  Witness_SendableFragment --> Core_Freshness
-  Witness_SendableFragment --> Core_Semantics
-  Witness_StateEscapeWitness --> Core_Grade
-  Witness_StateEscapeWitness --> Core_Semantics
-  Witness_StateEscapeWitness --> Core_Soundness
-  Witness_VcapFreeRefute --> Backend_Wasm
-  Witness_VcapFreeRefute --> Core_Freshness
+  component_Frontend -->|4 code imports| component_Core
+  component_Backend -->|8 code imports| component_Core
+  component_Meta -->|7 code imports| component_Core
+  component_Witness -->|5 code imports| component_Frontend
+  component_Witness -->|27 code imports| component_Core
+  component_Witness -->|4 code imports| component_Backend
+  component_Apex -->|3 code imports| component_Frontend
+  component_Apex -->|4 code imports| component_Core
+  component_Apex -->|4 code imports| component_Backend
+  component_Apex -->|2 code imports| component_Meta
 ```
 
-| module | tier | LOC | fan-in |
-|---|---|---|---|
-| `Core.Semantics` | Core | 25 | 16 |
-| `Core.Grade` | Core | 84 | 11 |
-| `Core.Soundness` | Core | 3400 | 10 |
-| `Backend.AbstractMachine` | Backend | 6871 | 8 |
-| `Core.IR` | Core | 440 | 7 |
-| `Core.Typing` | Core | 510 | 7 |
-| `Frontend.Surface` | Frontend | 3406 | 7 |
-| `Core.Freshness` | Core | 833 | 5 |
-| `Frontend.TypeCheck` | Frontend | 9490 | 5 |
-| `Backend.Wasm` | Backend | 2931 | 4 |
-| `Frontend.Format` | Frontend | 1139 | 4 |
-| `Core.Semantics.Eval` | Core | 621 | 3 |
-| `Frontend.Query` | Frontend | 899 | 3 |
-| `Core.Semantics.Dispatch` | Core | 273 | 2 |
-| `Core.Semantics.Subst` | Core | 947 | 2 |
-| `Meta.LR` | Meta | 1998 | 2 |
-| `Reify.CalcReify` | Reify | 283 | 2 |
-| `Spec` | Apex | 358 | 2 |
-| `Witness.Fuzz` | Witness | 281 | 2 |
-| `Backend.Rung5ProofGrade` | Backend | 143 | 1 |
-| `Backend.U5bComplete` | Backend | 1649 | 1 |
-| `Backend.WasmEmit` | Backend | 1757 | 1 |
-| `Core.CapCoh` | Core | 566 | 1 |
-| `Core.EffectRow` | Core | 203 | 1 |
-| `Core.Semantics.Invariants` | Core | 264 | 1 |
-| `Frontend.Annotate` | Frontend | 252 | 1 |
-| `Frontend.DiagCodes` | Frontend | 320 | 1 |
-| `Frontend.Diagnostics` | Frontend | 227 | 1 |
-| `Meta.BinaryLR` | Meta | 1854 | 1 |
-| `Reify.CalcReifyRef` | Reify | 164 | 1 |
-| `Witness.AgreeOutcome` | Witness | 236 | 1 |
-| `Witness.LWRegress` | Witness | 100 | 1 |
-| `Witness.LawTest` | Witness | 693 | 1 |
-| `Audit` | Apex | 69 | 0 |
-| `Backend.EnvMachine` | Backend | 3624 | 0 |
-| `Distribution` | Apex | 67 | 0 |
-| `Examples` | Apex | 510 | 0 |
-| `Frontend.Lint` | Frontend | 289 | 0 |
-| `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Rewrite` | Frontend | 313 | 0 |
-| `Frontend.Surface.PropTest` | Frontend | 127 | 0 |
-| `Frontend.Surface.Trait` | Frontend | 418 | 0 |
-| `Reify.CalcReifySim` | Reify | 1436 | 0 |
-| `Witness.BinopTyping` | Witness | 70 | 0 |
-| `Witness.BoccRegress` | Witness | 261 | 0 |
-| `Witness.CapEscapeWitness` | Witness | 72 | 0 |
-| `Witness.CtrGradeRefute` | Witness | 138 | 0 |
-| `Witness.CustomStage1Refute` | Witness | 39 | 0 |
-| `Witness.D5ParamHandlerWitness` | Witness | 161 | 0 |
-| `Witness.EffectTraceWitness` | Witness | 127 | 0 |
-| `Witness.ElabFuzz` | Witness | 430 | 0 |
-| `Witness.GradePolyReturner` | Witness | 165 | 0 |
-| `Witness.ProofExport` | Witness | 372 | 0 |
-| `Witness.ReturnEscapeReach` | Witness | 121 | 0 |
-| `Witness.ScopedCapWitness` | Witness | 141 | 0 |
-| `Witness.SendableFragment` | Witness | 148 | 0 |
-| `Witness.StateEscapeWitness` | Witness | 73 | 0 |
-| `Witness.VcapFreeRefute` | Witness | 55 | 0 |
+**Reading the diagram:** arrows are dependencies between C4 components; edge labels aggregate the 68 code-level imports that cross a component boundary. Internal module-to-module imports are deliberately omitted from the visual.
+
+| Component (repository tier) | Responsibility | Modules | LOC | Depends on |
+|---|---|---:|---:|---|
+| `Frontend` | text → typed core | 12 | 17266 | `Core` (4) |
+| `Core` | IR · typing · semantics · soundness | 12 | 8166 | — |
+| `Backend` | calculated machines → Wasm 3.0 | 6 | 16975 | `Core` (8) |
+| `Meta` | contextual-equivalence metatheory | 2 | 3852 | `Core` (7) |
+| `Witness` | executable evidence and counterexamples | 19 | 3683 | `Frontend` (5), `Core` (27), `Backend` (4) |
+| `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |
+| `Apex` | public theorem façade · audit · distribution | 4 | 1004 | `Frontend` (3), `Core` (4), `Backend` (4), `Meta` (2) |
 <!-- END GENERATED import-graph -->
 
-The generated graph reports direct imports and direct fan-in. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving a module.
+The generated graph reports aggregate direct imports that cross component boundaries. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving code.
 
 ## 4. Contributor routing
 

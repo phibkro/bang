@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/Audit.lean,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
+# tool: role=gen couples=Bang/Audit.lean,audit_facts.py,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
 """gen-proof-state.py — generate CONTEXT.md's proof-state line from the gate (the root).
 
 CONTEXT.md hand-maintains a "proof-state" summary (which headline theorems are
@@ -31,95 +31,20 @@ Usage:
     gen-proof-state.py --build               # force `lake build Bang.Audit` first
     gen-proof-state.py --check               # SKIP if not buildable; else gate drift
 """
+
 from __future__ import annotations
 
 import argparse
 import os
 import re
-import subprocess
 import sys
+
+from audit_facts import axiom_report, classify, headlines, parse_axioms, run
+from genblock import splice as _splice
 
 BEGIN = "<!-- BEGIN GENERATED proof-state (just proof-state) — do not hand-edit -->"
 END = "<!-- END GENERATED proof-state -->"
-
-# The trusted-3: an axiom set ⊆ this is "clean". Anything else (incl. sorryAx) flags.
-TRUSTED = {"propext", "Classical.choice", "Quot.sound"}
-
-HEADLINE_RE = re.compile(r"^\s*#print axioms\s+(\S+)\s*$")
-# `'Bang.foo' depends on axioms: [propext, Classical.choice]` — list may span lines.
-DEPENDS_RE = re.compile(r"'([^']+)' depends on axioms:\s*\[([^\]]*)\]", re.DOTALL)
-# `'Bang.foo' does not depend on any axioms`
-NODEPS_RE = re.compile(r"'([^']+)' does not depend on any axioms")
 TOTAL_RE = re.compile(r"^TOTAL\s+(\d+)\s+(\d+)\s+(\d+)")
-
-
-def headlines(lean_root: str) -> list[str]:
-    """The headline theorem names from the active `#print axioms` lines in Audit.lean."""
-    path = os.path.join(lean_root, "Bang", "Audit.lean")
-    out = []
-    for line in open(path, encoding="utf-8").read().splitlines():
-        m = HEADLINE_RE.match(line)
-        if m:
-            out.append(m.group(1))
-    return out
-
-
-def run(cmd: list[str], cwd: str):
-    """Run a command; return (rc, combined-output) or None if the binary is missing."""
-    try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=900)
-        return p.returncode, (p.stdout or "") + (p.stderr or "")
-    except FileNotFoundError:
-        return None
-    except subprocess.TimeoutExpired:
-        return 1, ""
-
-
-def axiom_report(lean_root: str, build: bool):
-    """Force a fresh read of the axiom gate. Returns the report text, or None if
-    `lake` is unavailable (→ caller SKIPs). `touch` always; `--build` rebuilds the
-    import oleans first (authoritative, for the generate path)."""
-    audit = os.path.join(lean_root, "Bang", "Audit.lean")
-    if build:
-        if run(["lake", "build", "Bang.Audit"], lean_root) is None:
-            return None
-    if os.path.exists(audit):
-        os.utime(audit, None)  # touch: re-elaborate Audit against current oleans
-    res = run(["lake", "env", "lean", "Bang/Audit.lean"], lean_root)
-    return None if res is None else res[1]
-
-
-def parse_axioms(text: str) -> dict[str, list[str]]:
-    """fullname -> axiom list, from a `lake env lean Bang/Audit.lean` report."""
-    found: dict[str, list[str]] = {}
-    for name in NODEPS_RE.findall(text):
-        found[name] = []
-    for name, axs in DEPENDS_RE.findall(text):
-        found[name] = [a.strip() for a in axs.split(",") if a.strip()]
-    return found
-
-
-def match(headline: str, report: dict[str, list[str]]):
-    """An Audit headline (`lr_sound`, resolved to `Bang.lr_sound`) vs a fully-qualified
-    report name. Dot-anchored so `compile_forward_sim` ≠ `compile_forward_sim_pure`."""
-    for name, axs in report.items():
-        if name == headline or name.endswith("." + headline) or headline.endswith("." + name):
-            return axs
-    return None
-
-
-def classify(lean_root: str, report: dict[str, list[str]]):
-    """(clean, pending, flagged) — flagged is [(headline, [bad+axioms])]."""
-    clean, pending, flagged = [], [], []
-    for h in headlines(lean_root):
-        axs = match(h, report)
-        if axs is None:
-            pending.append(h)
-        elif set(axs) <= TRUSTED:
-            clean.append(h)
-        else:
-            flagged.append((h, axs))
-    return clean, pending, flagged
 
 
 def sorry_total(lean_root: str):
@@ -140,7 +65,9 @@ def sha(lean_root: str) -> str:
     # block self-invalidating: every docs/tooling commit moved HEAD, so `--check` went
     # stale on a change that couldn't affect the proof-state. Anchoring to the last
     # `Bang/` commit keeps the block green across non-proof commits (derivation-ladder fix).
-    res = run(["git", "-C", lean_root, "log", "-1", "--format=%h", "--", "Bang"], lean_root)
+    res = run(
+        ["git", "-C", lean_root, "log", "-1", "--format=%h", "--", "Bang"], lean_root
+    )
     return res[1].strip() if res and res[0] == 0 and res[1].strip() else "unknown"
 
 
@@ -156,12 +83,13 @@ def render(lean_root: str, report: dict[str, list[str]]) -> str:
     ]
     for name, axs in flagged:
         lines.append(f"- **flagged:** `{name}` → [{', '.join(axs)}]")
-    lines.append(f"- **sorries:** {s if s is not None else 'unknown'} (per `burndown.sh`)")
+    lines.append(
+        f"- **sorries:** {s if s is not None else 'unknown'} (per `burndown.sh`)"
+    )
     lines.append(END)
     return "\n".join(lines)
 
 
-from genblock import splice as _splice  # the shared GEN-block primitive (#113)
 def splice(md: str, block: str) -> str:
     return _splice(md, BEGIN, END, block)
 
@@ -173,13 +101,32 @@ def buildable(report, lean_root) -> bool:
 
 
 def main() -> int:
-    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
-    except Exception: pass
+    try:
+        __import__("subprocess").run(
+            [
+                "bash",
+                __import__("os").path.join(
+                    __import__("os").path.dirname(__file__), "tool-log.sh"
+                ),
+                __import__("os").path.basename(__file__),
+            ],
+            check=False,
+        )  # tool-log (plan 012)
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--lean-root", default=".", help="where to run lake/git (default: cwd)")
-    ap.add_argument("--context", default=None, help="doc to write (default: <lean-root>/CONTEXT.md)")
-    ap.add_argument("--build", action="store_true", help="force `lake build Bang.Audit` first")
-    ap.add_argument("--check", action="store_true", help="SKIP if not buildable; else gate drift")
+    ap.add_argument(
+        "--lean-root", default=".", help="where to run lake/git (default: cwd)"
+    )
+    ap.add_argument(
+        "--context", default=None, help="doc to write (default: <lean-root>/CONTEXT.md)"
+    )
+    ap.add_argument(
+        "--build", action="store_true", help="force `lake build Bang.Audit` first"
+    )
+    ap.add_argument(
+        "--check", action="store_true", help="SKIP if not buildable; else gate drift"
+    )
     args = ap.parse_args()
 
     lean_root = os.path.abspath(args.lean_root)
@@ -194,8 +141,10 @@ def main() -> int:
         md0 = open(context, encoding="utf-8").read()
         m = re.search(r"Proof-state at `([0-9a-f]+)`", md0)
         if BEGIN in md0 and END in md0 and m and m.group(1) == sha(lean_root):
-            print("── proof-state ──\nPASS: block provenance sha ≡ last `Bang/` commit "
-                  "(unchanged) — lake skipped.")
+            print(
+                "── proof-state ──\nPASS: block provenance sha ≡ last `Bang/` commit "
+                "(unchanged) — lake skipped."
+            )
             return 0
         # else fall through to the full lake-based check below.
 
@@ -205,26 +154,37 @@ def main() -> int:
     if args.check:
         # Degrade gracefully: lake missing, or Audit not buildable → SKIP (don't fail).
         if report_text is None:
-            print("── proof-state ──\nSKIP: `lake` unavailable in "
-                  f"{lean_root} (proof-state check inactive).")
+            print(
+                "── proof-state ──\nSKIP: `lake` unavailable in "
+                f"{lean_root} (proof-state check inactive)."
+            )
             return 0
         if not buildable(report, lean_root):
-            print("── proof-state ──\nSKIP: Audit.lean not buildable in "
-                  f"{lean_root} (proof-state check inactive until the tree greens).")
+            print(
+                "── proof-state ──\nSKIP: Audit.lean not buildable in "
+                f"{lean_root} (proof-state check inactive until the tree greens)."
+            )
             return 0
         block = render(lean_root, report)
         md = open(context, encoding="utf-8").read()
         if BEGIN not in md or END not in md:
-            print(f"── proof-state ──\nFAIL: {context} has no GEN markers — run `just proof-state`.")
+            print(
+                f"── proof-state ──\nFAIL: {context} has no GEN markers — run `just proof-state`."
+            )
             return 1
+
         # Compare CONTENT only — strip the volatile "Proof-state at `<sha>`" provenance
         # line from both sides. The headlines + sorry count are the gated fact; the sha
         # is informational and lags by one on a Bang-touching commit (the block can't
         # embed its own not-yet-existing commit). Don't fail the gate on that lag.
-        strip = lambda s: re.sub(r"Proof-state at `[0-9a-f]+`", "Proof-state at `_`", s)
-        if strip(splice(md, block)) != strip(md):
-            print("── proof-state ──\nFAIL: CONTEXT.md proof-state block is stale "
-                  "— run `just proof-state`.")
+        def strip_provenance(value: str) -> str:
+            return re.sub(r"Proof-state at `[0-9a-f]+`", "Proof-state at `_`", value)
+
+        if strip_provenance(splice(md, block)) != strip_provenance(md):
+            print(
+                "── proof-state ──\nFAIL: CONTEXT.md proof-state block is stale "
+                "— run `just proof-state`."
+            )
             return 1
         print("── proof-state ──\nPASS: proof-state content ≡ the live axiom gate.")
         return 0
@@ -232,11 +192,15 @@ def main() -> int:
     block = render(lean_root, report)
     md = open(context, encoding="utf-8").read()
     if BEGIN not in md or END not in md:
-        print(f"proof-state: {context} has no GEN markers — add them to enable generation.",
-              file=sys.stderr)
+        print(
+            f"proof-state: {context} has no GEN markers — add them to enable generation.",
+            file=sys.stderr,
+        )
         return 1
     open(context, "w", encoding="utf-8").write(splice(md, block))
-    print(f"proof-state: regenerated the block in {os.path.relpath(context, lean_root)}.")
+    print(
+        f"proof-state: regenerated the block in {os.path.relpath(context, lean_root)}."
+    )
     return 0
 
 

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bang-lang.org/docfacts/schema/proof.schema.json",
+  "title": "BANG proof documentation fact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "kind", "id", "title", "summary", "trustedAxioms",
+    "sourceFingerprint", "specHeadlines", "enrollments", "proofArrows", "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "proof" },
+    "id": { "const": "proof" },
+    "title": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+    "summary": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+    "trustedAxioms": {
+      "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+      "items": { "enum": ["Classical.choice", "Quot.sound", "propext"] }
+    },
+    "sourceFingerprint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "digest", "paths"],
+      "properties": {
+        "algorithm": { "const": "sha256-sorted-path-content" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "paths": {
+          "type": "array", "minItems": 5, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/repoPath" }
+        }
+      }
+    },
+    "specHeadlines": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/specHeadline" }
+    },
+    "enrollments": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/enrollment" }
+    },
+    "proofArrows": {
+      "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/proofArrow" }
+    },
+    "evidence": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/identifiedEvidence" }
+    }
+  },
+  "$defs": {
+    "sourceLocation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "line"],
+      "properties": {
+        "path": { "$ref": "common.schema.json#/$defs/repoPath" },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "specHeadline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "kind", "source"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "kind": { "const": "theorem" },
+        "source": { "$ref": "#/$defs/sourceLocation" }
+      }
+    },
+    "enrollment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "writtenRef", "reportName", "auditLine", "definitionSource", "specHeadline", "axioms", "classification"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "writtenRef": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "reportName": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "auditLine": { "type": "integer", "minimum": 1 },
+        "definitionSource": {
+          "anyOf": [
+            { "$ref": "#/$defs/sourceLocation" },
+            { "type": "null" }
+          ]
+        },
+        "specHeadline": { "type": "boolean" },
+        "axioms": {
+          "type": "array", "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+        },
+        "classification": { "enum": ["trusted", "flagged"] },
+        "evidenceLabel": { "const": "proven" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "classification": { "const": "trusted" } } },
+          "then": { "required": ["evidenceLabel"] },
+          "else": { "not": { "required": ["evidenceLabel"] } }
+        }
+      ]
+    },
+    "proofArrow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "from", "to", "endpointType", "direction", "method", "theoremRefs", "evidenceId"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "from": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "to": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "endpointType": { "enum": ["source-programs", "source-to-target-executions"] },
+        "direction": { "enum": ["bidirectional-contextual", "forward"] },
+        "method": { "enum": ["binary biorthogonal LR", "annotated forward simulation"] },
+        "theoremRefs": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+        },
+        "evidenceId": { "$ref": "common.schema.json#/$defs/kebabId" }
+      }
+    }
+  }
+}

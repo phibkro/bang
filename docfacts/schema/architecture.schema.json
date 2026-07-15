@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bang-lang.org/docfacts/schema/architecture.schema.json",
+  "title": "BANG architecture documentation fact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "kind", "id", "title", "summary", "target", "proofMethods",
+    "engines", "tiers", "modules", "nodes", "arrows", "proofArrows", "adrs",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "architecture" },
+    "id": { "const": "architecture" },
+    "title": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+    "summary": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+    "target": { "$ref": "#/$defs/target" },
+    "proofMethods": { "$ref": "#/$defs/proofMethods" },
+    "engines": { "$ref": "#/$defs/engines" },
+    "tiers": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/tier" }
+    },
+    "modules": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "nodes": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "arrows": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/arrow" }
+    },
+    "proofArrows": {
+      "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/proofArrow" }
+    },
+    "adrs": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/adr" }
+    },
+    "evidence": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/identifiedEvidence" }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "backend", "wasmfxRole", "sources"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "backend": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "wasmfxRole": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "sources": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/repoPath" }
+        }
+      }
+    },
+    "proofMethods": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceEquivalence", "compilation"],
+      "properties": {
+        "sourceEquivalence": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "compilation": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+      }
+    },
+    "engines": {
+      "type": "object", "additionalProperties": false,
+      "required": ["variants", "default", "aliases", "selectorPrecedence", "runCompTargets", "fuel", "decisionRefs"],
+      "properties": {
+        "variants": {
+          "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+          "items": { "enum": ["oracle", "compiled", "env"] }
+        },
+        "default": { "enum": ["oracle", "compiled", "env"] },
+        "aliases": {
+          "type": "object", "additionalProperties": false,
+          "required": ["--compiled"],
+          "properties": { "--compiled": { "enum": ["oracle", "compiled", "env"] } }
+        },
+        "selectorPrecedence": {
+          "type": "array", "minItems": 2, "uniqueItems": true,
+          "items": { "$ref": "#/$defs/selector" }
+        },
+        "runCompTargets": {
+          "type": "object", "additionalProperties": false,
+          "required": ["oracle", "compiled", "env"],
+          "properties": {
+            "oracle": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+            "compiled": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+            "env": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+          }
+        },
+        "fuel": {
+          "type": "object", "additionalProperties": false,
+          "required": ["default", "compiledDefault", "compiledScale"],
+          "properties": {
+            "default": { "type": "integer", "minimum": 1 },
+            "compiledDefault": { "type": "integer", "minimum": 1 },
+            "compiledScale": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "decisionRefs": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9]{4}$" }
+        }
+      }
+    },
+    "selector": {
+      "type": "object", "additionalProperties": false,
+      "required": ["engine", "flags", "precedence"],
+      "properties": {
+        "engine": { "enum": ["oracle", "compiled"] },
+        "flags": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+        },
+        "precedence": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "tier": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "moduleCount", "loc"],
+      "properties": {
+        "name": { "enum": ["Apex", "Backend", "Core", "Frontend", "Meta", "Reify", "Witness"] },
+        "moduleCount": { "type": "integer", "minimum": 1 },
+        "loc": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "publicSymbol": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "kind", "line", "visibilityBasis"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "kind": { "enum": ["def", "theorem", "lemma", "inductive", "structure", "class", "instance", "abbrev", "axiom", "opaque"] },
+        "line": { "type": "integer", "minimum": 1 },
+        "visibilityBasis": { "enum": ["public-modifier", "public-section"] }
+      }
+    },
+    "module": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "path", "tier", "loc", "directImports", "publicSymbols"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^Bang(?:\\.[A-Za-z_][A-Za-z0-9_']*)+$" },
+        "path": { "$ref": "common.schema.json#/$defs/repoPath" },
+        "tier": { "enum": ["Apex", "Backend", "Core", "Frontend", "Meta", "Reify", "Witness"] },
+        "loc": { "type": "integer", "minimum": 1 },
+        "directImports": {
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^Bang(?:\\.[A-Za-z_][A-Za-z0-9_']*)+$" }
+        },
+        "publicSymbols": {
+          "type": "array", "uniqueItems": true,
+          "items": { "$ref": "#/$defs/publicSymbol" }
+        }
+      }
+    },
+    "node": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "kind", "sources"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "name": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "kind": { "enum": ["text", "core-ir", "source-semantics", "state-semantics", "machine", "environment-machine", "formal-target", "emitted-wat", "runtime", "source-program", "source-execution", "target-execution"] },
+        "sources": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/repoPath" }
+        }
+      }
+    },
+    "arrow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "from", "to", "direction", "method", "theoremRefs", "adrRefs", "evidenceId"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "from": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "to": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "direction": { "const": "forward" },
+        "method": { "enum": ["frontend lowering", "kernel interpretation", "state reification", "calculation", "environment evaluation and readback", "annotated forward simulation", "WasmGC text emission", "real-engine execution"] },
+        "theoremRefs": {
+          "type": "array", "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+        },
+        "adrRefs": {
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9]{4}$" }
+        },
+        "evidenceId": { "$ref": "common.schema.json#/$defs/kebabId" }
+      }
+    },
+    "proofArrow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "from", "to", "endpointType", "direction", "method", "theoremRefs", "adrRefs", "evidenceId"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "from": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "to": { "$ref": "common.schema.json#/$defs/kebabId" },
+        "endpointType": { "enum": ["source-programs", "source-to-target-executions"] },
+        "direction": { "enum": ["bidirectional-contextual", "forward"] },
+        "method": { "enum": ["binary biorthogonal LR", "annotated forward simulation"] },
+        "theoremRefs": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+        },
+        "adrRefs": {
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9]{4}$" }
+        },
+        "evidenceId": { "$ref": "common.schema.json#/$defs/kebabId" }
+      }
+    },
+    "adr": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "status", "title", "summary", "path", "relationships", "derived", "lifecycle"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9]{4}$" },
+        "status": { "enum": ["Proposed", "Accepted", "Superseded", "Deprecated"] },
+        "title": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "summary": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "path": { "$ref": "common.schema.json#/$defs/repoPath" },
+        "relationships": { "$ref": "#/$defs/relationships" },
+        "derived": { "$ref": "#/$defs/derivedRelationships" },
+        "lifecycle": {
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": ["proposed", "implemented", "superseded"] }
+        }
+      }
+    },
+    "relationships": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "supersedes": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "amends": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "refines": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "seeAlso": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "dependsOn": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "resolves": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+      }
+    },
+    "derivedRelationships": {
+      "type": "object", "additionalProperties": false,
+      "required": ["supersededBy", "amendedBy"],
+      "properties": {
+        "supersededBy": {
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9]{4}$" }
+        },
+        "amendedBy": {
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9]{4}$" }
+        }
+      }
+    }
+  }
+}

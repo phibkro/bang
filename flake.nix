@@ -41,7 +41,7 @@
             {
               src = self;
               nativeBuildInputs = [
-                pkgs.python3
+                (pkgs.python3.withPackages (ps: [ ps.jsonschema ]))
                 pkgs.nodejs_22
               ];
             }
@@ -87,6 +87,8 @@
             pkgs.gmp # Lean runtime dep
             pkgs.nodejs_22 # for tools/selfcheck.mjs
             (pkgs.python3.withPackages (ps: [ ps.jsonschema ])) # docfact generators + JSON Schema validation
+            pkgs.ruff # Python formatting + linting (`just autoquality`)
+            pkgs.shellcheck # shell linting (`just autoquality`)
             pkgs.poppler-utils # pdftotext for paper-reading scripts
             pkgs.mermaid-cli # mmdc — validate the generated module-graph mermaid (gen-import-graph.py --validate)
           ];

@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# tool: role=check couples=justfile,gen-changelog.py runs-in=hook
+# tool: role=check couples=justfile,autoquality.sh,gen-changelog.py runs-in=hook
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # pre-commit hook — invariants checked before each commit.
 # Installation: bash tools/install-hooks.sh
 #
-# Fast static checks ALWAYS run.
-# `just verify` runs IFF .lean files are in the staged set.
-#
-# To skip verify (e.g., docs-only commit where build is known-stale, or
-# mid-WIP commit), set:
-#   BANGLANG_SKIP_VERIFY_REASON="..." git commit -m "..."
-# This logs the reason so future spelunking knows why.
+# Fast static checks ALWAYS run. Builds, tests, live Audit, and site rendering
+# belong to explicit full gates (`just verify`, `just axioms`, `just site-build`),
+# not the latency-sensitive pre-commit path.
 #
 # Hard escape: `git commit --no-verify` bypasses ALL hooks.
 
@@ -32,6 +28,35 @@ if [ -n "$staged_lean" ]; then
     echo '   (replace with sorry or close the proof)'
     exit 1
   fi
+fi
+
+# ── 1b. Quality-check the exact staged Python/shell bytes ───────────────
+# The formatter/linter reads files, not the Git index. Refuse partial staging for
+# these paths so the checked worktree bytes are exactly the bytes being committed.
+mapfile -d '' -t staged_files < <(
+  git diff --cached --name-only -z --diff-filter=ACM
+)
+quality_files=()
+partial_quality=()
+for path in "${staged_files[@]}"; do
+  case "$path" in
+    *.py|*.sh|tools/git-hooks/*) quality_files+=("$path") ;;
+    *) continue ;;
+  esac
+  if ! git diff --quiet -- "$path"; then
+    partial_quality+=("$path")
+  fi
+done
+if (( ${#partial_quality[@]} )); then
+  echo "❌ pre-commit: Python/shell files must be staged as whole files:"
+  printf '    %s\n' "${partial_quality[@]}"
+  echo "   (stage the working-tree version, or restore it to the staged version)"
+  exit 1
+fi
+if (( ${#quality_files[@]} )); then
+  echo "→ pre-commit: checking staged Python/shell files"
+  env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE \
+    nix develop --command bash tools/autoquality.sh "${quality_files[@]}"
 fi
 
 # ── 2. No hand-rolled `axiom` outside Bang/Spec.lean family ────────────
@@ -98,8 +123,7 @@ fi
 # · check-refs (stale *.md path/link references). These are cheap and need no build,
 # so they gate EVERY commit — including docs-only and build-skipped — which is exactly
 # when check-refs matters most (a renamed/deleted file leaving dangling doc refs).
-# NOT covered by BANGLANG_SKIP_VERIFY_REASON (that is only for the slow/possibly-red
-# build); only `git commit --no-verify` bypasses them.
+# Only `git commit --no-verify` bypasses them.
 # NOTE: don't enumerate the fitness legs here — the hand-list drifted once already;
 # the composition's SSoT is generated (`just gate-index` → .claude/codebase-maintenance.md).
 echo "→ pre-commit: running just fitness (full composition: just gate-index)"
@@ -111,26 +135,4 @@ if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command jus
 fi
 echo "✓ pre-commit: fitness passed"
 
-# ── 5. `just verify` (full build) IF .lean files are staged ────────────
-if [ -z "$staged_lean" ]; then
-  echo "✓ pre-commit: passed (no .lean changes; skipping the verify build)"
-  exit 0
-fi
-
-if [ -n "${BANGLANG_SKIP_VERIFY_REASON:-}" ]; then
-  echo "⚠ pre-commit: SKIPPING the just verify build — reason: $BANGLANG_SKIP_VERIFY_REASON"
-  echo "   (fitness still ran above — only the Lean build was skipped)"
-  exit 0
-fi
-
-echo "→ pre-commit: running just verify (set BANGLANG_SKIP_VERIFY_REASON to skip the build)"
-# Run via nix develop so lake/just are on PATH
-if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command just verify > /tmp/bang-precommit.log 2>&1; then
-  echo "❌ pre-commit: just verify failed. Last 20 lines:"
-  tail -20 /tmp/bang-precommit.log | sed 's/^/    /'
-  echo "   (full log: /tmp/bang-precommit.log)"
-  echo "   To commit anyway: BANGLANG_SKIP_VERIFY_REASON=\"...\" git commit --no-verify"
-  exit 1
-fi
-
-echo "✓ pre-commit: just verify passed"
+echo "✓ pre-commit: passed (static gates only)"

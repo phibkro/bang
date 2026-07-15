@@ -1,0 +1,21 @@
+# Ruff/ShellCheck baseline adopted by `tools/autoquality.sh`.
+# New or edited Python/shell files are added dynamically; list durable files here
+# once they are clean so CI still checks them on a clean checkout.
+tools/adr_facts.py
+tools/architecture_facts.py
+tools/audit_facts.py
+tools/check-architecture-assertions.py
+tools/docfacts_architecture.py
+tools/docfacts_common.py
+tools/docfacts_logger.py
+tools/docfacts_proof.py
+tools/gen-adr-index.py
+tools/gen-gate-index.py
+tools/gen-import-graph.py
+tools/gen-proof-state.py
+tools/genblock.py
+tools/symbols.py
+tools/autoquality.sh
+tools/hooks/post-edit-check.sh
+tools/git-hooks/pre-commit
+tools/test-docfacts-architecture-proof.sh
