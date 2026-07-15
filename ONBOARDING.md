@@ -2,74 +2,96 @@
 
 > **Summary:** Get one executable win, learn BANG’s five load-bearing distinctions, then choose a bounded contributor route. This guide is stable; repository-local `CONTEXT.md` and active `paths/` hold volatile work state.
 
-## 1. Bootstrap the repository
+## 1. Reach a truthful ready state
 
-Cold bootstrap time is variable and **not part of the 15-minute language route**. A fresh machine downloads the pinned Lean toolchain and a multi-gigabyte Mathlib olean cache before building BANG.
+Cold bootstrap time is variable and **not part of the 15-minute language route**. The preflight only observes; it never installs hooks, changes Git configuration, fetches caches, or builds.
 
 ```bash
 git clone https://github.com/phibkro/bang.git
 cd bang
 nix develop
-just setup       # hooks + cache + full verification; run serially on first setup
+just onboarding-preflight
 ```
 
-Do not run concurrent first-time Lake commands in one checkout: they can race while populating `.lake/packages`.
+| Result | Meaning | Next action |
+|---|---|---|
+| `READY` | Dev shell, Mathlib cache, runner, and Git hygiene are present | Start the common route |
+| `COLD / NOT READY` | This is a valid checkout, but first-time setup is incomplete | Run `just setup` **serially**, then rerun preflight |
+| exit `2` / `state: error` | The path or probe itself is invalid | Fix the reported environment problem |
 
-When setup is already complete:
+For an agent-readable report:
 
 ```bash
-nix develop
-just orient      # repository position, active path, proof state, recent commits
+just onboarding-preflight --json
 ```
+
+Do not run concurrent first-time Lake commands in one checkout: they can race while populating `.lake/packages`. Issue #89 remains explicit: raw `just verify` is not the fresh-clone bootstrap contract; `just setup` establishes its Git-hygiene precondition first.
 
 ### Bootstrap troubleshooting
 
 | Symptom | Action |
 |---|---|
 | `nix develop` is slow once | Let the pinned toolchain download; later entries reuse it |
-| Mathlib oleans are absent | On the main checkout, run `lake exe cache get` inside the dev shell |
-| A linked worktree lacks oleans | Do **not** cache-get there; use `tools/new-worktree.sh` or the dev-shell `LEAN_PATH` setup |
-| A dependency update broke the cache | Restore `lake-manifest.json` and `.lake/packages/mathlib` to the pinned revision; see `docs/notes/dev-env.md` |
+| Preflight reports a missing cache or runner | Run `just setup` serially in the main clone |
+| A linked worktree lacks oleans | Do **not** cache-get there; create it with `tools/new-worktree.sh` |
+| A dependency update broke the cache | Restore the pinned dependency state; see `docs/notes/dev-env.md` |
 | You only need the CLI | Use the prebuilt install path in `README.md` |
 
 ## 2. The 15-minute common route
 
-**Precondition:** `./.lake/build/bin/bang` exists. Set one short name:
+**Start the clock only after preflight reports `READY`.** Set one short name:
 
 ```bash
 BANG=./.lake/build/bin/bang
 ```
 
-### Step 1 — observe a value
+### Step 1 — one expression, three representations
 
 ```bash
-$BANG eval '1 + 2'
-# 3
+$BANG eval --engine=env      '1 + 2'
+$BANG eval --engine=oracle   '1 + 2'
+$BANG eval --engine=compiled '1 + 2'
 ```
 
-The frontend parses, type-checks, and lowers the expression before the selected engine runs it.
+The frontend parses, type-checks, and lowers once; the three engines must agree on the observed value.
 
 ### Step 2 — predict before forcing
 
-Before running this, predict which part is only a description and which token observes it:
+Read the canonical fixture and predict its output before running it:
 
 ```bash
-$BANG eval 'let c = {7} in $c'
-# 7
+cat examples/thunk-force/main.bang
+$BANG run --engine=env      examples/thunk-force/main.bang
+$BANG run --engine=oracle   examples/thunk-force/main.bang
+$BANG run --engine=compiled examples/thunk-force/main.bang
+cat examples/thunk-force/expected.txt
 ```
 
-`{7}` creates the deferred computation; `$c` forces it. Parentheses group but do not force.
+`{7}` creates a deferred computation; `$c` forces it. Parentheses group but do not force.
 
-### Step 3 — swap representations, preserve meaning
+### Step 3 — effects still agree across engines
+
+```bash
+$BANG run --engine=env      examples/effect-op-arith/main.bang
+$BANG run --engine=oracle   examples/effect-op-arith/main.bang
+$BANG run --engine=compiled examples/effect-op-arith/main.bang
+```
+
+This fixture makes effect operations feed ordinary arithmetic while retaining one committed output oracle.
+
+### Step 4 — swap only the handler
 
 ```bash
 $BANG run --engine=env      examples/logger-counting/main.bang
 $BANG run --engine=oracle   examples/logger-counting/main.bang
 $BANG run --engine=compiled examples/logger-counting/main.bang
-# each prints 3
+
+$BANG run --engine=env      examples/logger-silent/main.bang
+$BANG run --engine=oracle   examples/logger-silent/main.bang
+$BANG run --engine=compiled examples/logger-silent/main.bang
 ```
 
-The program declares `Log`, performs three requests, and installs a counting handler. The engines are different representations of the same source meaning:
+The client program is identical; only `log(msg) => 1` versus `log(msg) => 0` changes. The handler, not a built-in logging feature, decides the effect’s meaning.
 
 | Engine | Meaning |
 |---|---|
@@ -77,40 +99,43 @@ The program declares `Log`, performs three requests, and installs a counting han
 | `oracle` | Kernel `Source.eval`; the arbiter when another engine produces no value |
 | `compiled` | Calculated `exec ∘ compile` machine |
 
-### Step 4 — inspect the compiler service
+### Step 5 — inspect validation and compiler facts
 
 ```bash
 $BANG check --json examples/logger-counting/main.bang
-$BANG query symbols examples/logger-counting/main.bang
+$BANG query dump examples/logger-counting/main.bang
 ```
 
-Both commands return JSON. `check` answers whether the whole program elaborates; `query symbols` projects declarations from the same checked fact base.
+`check --json` answers whether the complete source elaborates. `query dump` exports the checked fact base; find the `Log` effect and its `log : Int -> Int` operation.
 
-### Step 5 — check the mental model
+### Step 6 — inspect the evidence, then run its gate
 
-You are ready to choose a route when you can answer:
+Open the [generated common-journey evidence view](/learn/common-journey-evidence). It derives displayed example outputs from canonical `expected.txt` files and the logger status from its validated serialized docfact.
 
-1. What is the difference between a description and forcing with `$`?
-2. Why does an effect row track a **label**, while runtime dispatch uses a capability **identity**?
-3. Which engine is the oracle, and which is the default?
-4. Which proof method establishes source equivalence, and which establishes compilation correctness?
-5. Why do dependencies point Frontend → Core ← Backend even though program data flows through all three?
+```bash
+just test-onboarding-journey
+just test-onboarding-journey --json > /tmp/bang-onboarding-journey.json
+```
 
-Use [`docs/architecture/core-overview.md`](docs/architecture/core-overview.md) to check answers 3–5. The current architecture is ADR-0016 **as revised by ADR-0059**: Wasm 3.0 is the target. ADR-0035 assigns the binary logical relation to source equivalence and forward simulation to compilation; ADR-0094 fixes the default engine.
+The JSON artifact records the source SHA, binary hash, all 18 steps, and explicit pass/fail/skip counts.
+
+### Step 7 — check the mental model
+
+You are ready to choose a route when you can explain:
+
+1. Description/thunk versus forcing with `$`.
+2. Why changing only the handler changes the logger result.
+3. The roles of `env`, `oracle`, and `compiled`.
+4. What `check --json` answers versus what `query dump` exposes.
+5. Which source and command support an evidence label.
+
+Use [`docs/architecture/core-overview.md`](docs/architecture/core-overview.md) to check the engine and proof boundaries. ADR-0035 separates source equivalence (binary logical relation) from compilation correctness (forward simulation); ADR-0094 fixes the default engine.
 
 ## 3. Choose a contributor route
 
-Each route ends in a bounded pull-request-shaped change, not a reading marathon.
+Open the [generated route selector](/contribute/routes). Route identity, first edit seams, bounded change shape, and narrow/full gates come from `web/docs/page-manifest.json`; this guide does not maintain a second copy.
 
-| Route | Start here | First bounded change | Narrow gate |
-|---|---|---|---|
-| Frontend / language | `Bang/Frontend/Surface.lean`, `Bang/Frontend/TypeCheck.lean`, generated language reference | Add or adjust one syntax/checker fixture and every affected traversal | `just check Bang/Frontend/TypeCheck.lean` plus the relevant CLI/corpus script |
-| Kernel / proof | `Bang/Spec.lean`, `Bang/Core/`, `docs/notes/spec-proof-discipline.md` | Close or adapt one small lemma without changing a frozen headline statement | `just check <file>` then `just axioms` |
-| Machine / backend | `Bang/Backend/AbstractMachine.lean`, `Wasm.lean`, `WasmEmit.lean` | Trace one constructor through source, `evalD`, compile/exec, and its differential fixture | `just check <file>` plus the relevant real-engine differential harness |
-| Tooling / docs / examples | `tools/`, `docs/architecture/`, `examples/` | Add one generated fact, checked example, or diagnostic projection without copying its source fact | generator `--check`, `tools/check-refs.py`, `just site-build` for public pages, then `just fitness` |
-| Coding agent | `CLAUDE.md`, repository-local `CONTEXT.md`, `docs/decisions/README.md`, active `paths/` | Identify the authority, isolate a worktree, make one bounded edit, and report the observed gate | smallest relevant gate, then `just verify` |
-
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a change. It defines the issue → branch/worktree → PR workflow and one-writer-per-file discipline.
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a change. It defines the issue → isolated clone/worktree → PR workflow and one-writer-per-file discipline.
 
 ## 4. Reference map — read on demand
 
