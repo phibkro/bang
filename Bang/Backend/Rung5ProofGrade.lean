@@ -2,7 +2,6 @@ module
 
 public import Bang.Backend.Wasm
 public import Bang.Backend.WasmEmit
-public import Bang.Spec
 
 /-!
   Rung5ProofGrade.lean — the ◊5.5 rung-5 S5 "proof-grade" obligation, STATED (Phase 1).
@@ -103,7 +102,7 @@ theorem s5_effectful_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
     Bang.Model.VcapFree c →
     Source.eval fuel c = Result.done v →
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
-  compile_forward_sim
+  compile_forward_sim_proof
 
 /-- The effectful lockstep the S5 obligation rests on, re-exported for the record: the WASM
 abstract machine `wexec` matches the calculated `exec` over the FULL handler set (its OP arm is

@@ -151,7 +151,7 @@ Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 ## Quick orient (fresh session)
 
 1. `CLAUDE.md` (invariants · glossary · verify-command) → **this file** (the current edge) → `ROADMAP.md` (the map).
-2. Architecture in force: `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md`. Proof discipline: `docs/notes/spec-proof-discipline.md`.
+2. Architecture in force: ADR-0016 as revised by ADR-0059; proof-method split: ADR-0035. Proof discipline: `docs/notes/spec-proof-discipline.md`.
 3. Verify: `nix develop` then `just verify` (selfcheck + build + check-examples + audit).
 4. If a path is in flight, read its `paths/PATH-*.md`.
 

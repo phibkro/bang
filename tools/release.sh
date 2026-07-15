@@ -3,7 +3,8 @@
 # release.sh — the release battery (plan 011).
 #
 # `just release vX.Y.Z` does everything EXCEPT publish:
-#   1. asserts a clean tree, on `main`, and `just verify` green (or --skip-verify, loudly)
+#   1. asserts clean main + verification, then ALWAYS rebuilds and checks tag↔binary identity,
+#      the strict production site, and strict doc pins (`--skip-verify` skips only the broad suite)
 #   2. extracts this version's notes = the conventional-commit entries since the PREVIOUS
 #      tag (`git describe --tags --abbrev=0`), reusing gen-changelog.py's own render() so
 #      the notes are the SAME derivation as CHANGELOG.md, not a second copy of the regex
@@ -33,8 +34,8 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
-  echo "release: '$VERSION' doesn't look like vX.Y.Z (got: $VERSION)" >&2
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "release: '$VERSION' must be a stable vX.Y.Z tag (got: $VERSION)" >&2
   exit 1
 fi
 
@@ -61,10 +62,11 @@ if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
   exit 1
 fi
 
-# --- gate 4: just verify green (or explicit skip) ---
+# --- gate 4: broad verification (the ONLY gate --skip-verify waives) ---
 if [[ "$SKIP_VERIFY" -eq 1 ]]; then
-  echo "release: WARNING — --skip-verify given, NOT running 'just verify'. The tag will" >&2
-  echo "         carry no fresh green guarantee. Only use this for a throwaway/test tag." >&2
+  echo "release: WARNING — --skip-verify skips ONLY 'just verify'." >&2
+  echo "         Fresh build, tag↔binary identity, strict site, and doc-pin gates remain mandatory." >&2
+  echo "         Use only for a throwaway/test tag; it carries no broad green guarantee." >&2
 else
   echo "release: running 'just verify' (this can take a while — cold build is minutes)…"
   if ! just verify; then
@@ -74,7 +76,18 @@ else
   fi
 fi
 
-# --- gate 5: doc pins STRICT — a release may not ship prose known-stale against its
+# --- gate 5: fresh runner + exact compiler provenance ---
+echo "release: rebuilding the runner before checking $VERSION identity…"
+lake build bang
+bash tools/check-release-version.sh "$VERSION" .lake/build/bin/bang
+
+# --- gate 6: production docs must render every diagram ---
+if ! just site-build; then
+  echo "release: strict site build failed — no tag created." >&2
+  exit 1
+fi
+
+# --- gate 7: doc pins STRICT — a release may not ship prose known-stale against its
 # own sources (warn-tier in fitness becomes fail-tier here; restamp or amend first).
 if ! python3 tools/check-doc-pins.py --strict; then
   echo "release: stale doc pins — re-verify + restamp the flagged notes before tagging." >&2
@@ -103,20 +116,9 @@ sys.path.insert(0, os.path.join(root, "tools"))  # gen-changelog imports genbloc
 spec.loader.exec_module(gen_changelog)
 
 if range_start:
-    # Reuse commits()/entries() but scoped to <prev-tag>..HEAD instead of BASELINE..HEAD —
-    # the same ENTRY_RE/SECTIONS derivation, just re-windowed to this release.
-    import subprocess
-    res = subprocess.run(
-        ["git", "-C", root, "log", f"{range_start}..HEAD", "--reverse", "--format=%h\x1f%s"],
-        capture_output=True, text=True)
-    lines = res.stdout.splitlines() if res.returncode == 0 else []
-    buckets = {t: [] for t, _ in gen_changelog.SECTIONS}
-    for line in lines:
-        m = gen_changelog.ENTRY_RE.match(line)
-        if not m or m.group("type") not in buckets:
-            continue
-        buckets[m.group("type")].append(
-            (m.group("scope"), m.group("subject"), m.group("sha"), bool(m.group("bang"))))
+    # Same parser, fixed-width commit IDs, and fail-loud history handling as CHANGELOG.md;
+    # only the release window differs.
+    buckets = gen_changelog.entries(root, start=range_start)
 else:
     buckets = gen_changelog.entries(root)
 

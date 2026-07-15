@@ -109,6 +109,11 @@ test-82-verbs:
 test-cli:
     bash tools/test-cli.sh
 
+# Exact release tag ↔ binary provenance poles: accepts only byte-exact `bang X.Y.Z`,
+# rejects stale/suffixed/noisy/nonzero binaries and malformed tags. Part of verify.
+test-release-version:
+    bash tools/test-release-version.sh
+
 # Gate for `bang test` (#60's CLI wiring over the landed LawTest/lawInstancesOf
 # seam): a real true trait law (PASS), a deliberately false one (FAIL +
 # counterexample), no-laws-found (vacuous success), and the decls-only-input
@@ -145,6 +150,7 @@ regen-all:
     python3 tools/refs.py build
     python3 tools/gen-gate-index.py
     python3 tools/gen-import-graph.py
+    python3 tools/check-architecture-assertions.py
     python3 tools/gen-proof-assets.py
     python3 tools/gen-changelog.py
     python3 tools/gen-reference.py
@@ -232,7 +238,8 @@ fitness:
     bash tools/check-loop-audit.sh
     bash tools/check-adr-links.sh
     python3 tools/gen-adr-index.py --check
-    bash tools/arch-check.sh
+    python3 tools/import_facts.py --self-test
+    python3 tools/arch-check.py
     bash tools/check-audit-sync.sh
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
@@ -249,6 +256,7 @@ fitness:
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
+    python3 tools/check-architecture-assertions.py --check
     python3 tools/gen-proof-assets.py --check
     python3 tools/check-doc-pins.py
     python3 tools/gen-changelog.py --check
@@ -282,6 +290,10 @@ gate-index:
 # Regenerate the module dependency graph (mermaid + fan-in) in docs/architecture/core-overview.md §2 from the import edges.
 import-graph:
     python3 tools/gen-import-graph.py
+
+# Regenerate the current architecture assertion snapshot from code and accepted ADRs.
+architecture-assertions:
+    python3 tools/check-architecture-assertions.py
 
 # Regenerate docs/notes/README.md (the design-notes map) from each note's `note-status` frontmatter.
 notes-index:
@@ -427,12 +439,17 @@ pole:
     bash tools/tool-log.sh pole
     lake exe graph --to Bang.Audit import-graph.dot
 
+# Production-equivalent Vocs build: enter the opt-in flake-pinned Bun/Chromium shell,
+# install the locked JS graph, require every Mermaid SVG, then build the static site.
+site-build:
+    nix develop .#site --command bash tools/site-build.sh
+
 # The release battery (plan 011) — clean+main+verify gates, extracts notes since the
 # previous tag (reuses gen-changelog.py's own derivation, re-windowed — CHANGELOG.md has
 # no per-version sections to slice), creates a LOCAL annotated tag, and PRINTS the publish
 # commands without running them. The operator's finger stays on the publish button:
-#   just release v0.2.0              # normal
-#   just release v0.2.0 --skip-verify  # loud-warns, skips the `just verify` gate
+#   just release v0.2.0                # normal
+#   just release v0.2.0 --skip-verify  # skips only the broad suite; release gates remain
 release VERSION *ARGS:
     bash tools/release.sh {{VERSION}} {{ARGS}}
 

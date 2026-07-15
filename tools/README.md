@@ -4,19 +4,20 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (18)
+## gen (19)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
+| [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/0016-*.md`, `docs/decisions/0035-*.md`, `docs/decisions/0059-*.md`, `docs/architecture/core-overview.md`, `import_facts.py` | Generate/check the current architecture snapshot from code and accepted ADRs.""" |
 | [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
 | [`gen-agent-pack.py`](gen-agent-pack.py) | `fitness` | `.claude/lane-discipline.md`, `.claude/agents/*.md`, `genblock.py` | splice the lane-discipline pack into each subagent role file |
 | [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md` | generate CHANGELOG.md from conventional commits (the GENERATE rung) |
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
 | [`gen-deadcode-imports.py`](gen-deadcode-imports.py) | `manual` | `tools/DeadCode.lean`, `Bang/**/*.lean`, `Main.lean` | keep tools/DeadCode.lean's import block ≡ the module set |
 | [`gen-gate-index.py`](gen-gate-index.py) | `fitness` | `justfile`, `.claude/codebase-maintenance.md`, `genblock.py` | the gate composition, generated from the justfile (the root) |
-| [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `Bang/**/*.lean`, `docs/architecture/core-overview.md`, `genblock.py` | the module dependency graph, generated from the `import` edges |
+| [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `Bang/**/*.lean`, `docs/architecture/core-overview.md`, `genblock.py`, `import_facts.py` | current BANG module graph from shared internal-import facts |
 | [`gen-llms-txt.py`](gen-llms-txt.py) | `fitness` | `CLAUDE.md`, `llms.txt` | generate llms.txt (the LLM-doc-index standard, llmstxt.org) |
 | [`gen-notes-index.py`](gen-notes-index.py) | `fitness` | `docs/notes/*.md`, `docs/notes/README.md` | generate docs/notes/README.md, the notes map |
 | [`gen-proof-assets.py`](gen-proof-assets.py) | `fitness` | `Bang/**/*.lean`, `docs/notes/proof-assets.md`, `tools/leanlex.py` | generate the reusable-proof-assets inventory |
@@ -29,13 +30,13 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
 
-## check (22)
+## check (24)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
-| [`arch-check.sh`](arch-check.sh) | `fitness` | `Bang/**/*.lean` | the import-direction fitness function (ADR-0046/0047 ②) |
+| [`arch-check.py`](arch-check.py) | `fitness` | `Bang/**/*.lean`, `import_facts.py` | Enforce BANG's path-derived inward dependency V over shared import facts.""" |
 | [`audit.sh`](audit.sh) | `verify` | `Bang/**/*.lean`, `Bang/Audit.lean` | belt-and-suspenders CI guard. The real guarantee is Audit.lean |
 | [`burndown.sh`](burndown.sh) | `manual` | `Bang/**/*.lean` | Phase B burndown chart |
 | [`check-adr-links.sh`](check-adr-links.sh) | `fitness` | `docs/decisions/*.md` | ADR integrity lint for docs/decisions/ |
@@ -50,15 +51,17 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-paths.sh`](check-paths.sh) | `fitness` | `paths/PATH-*.md`, `CONTEXT.md`, `ROADMAP.md` | PATH lifecycle fitness function |
 | [`check-primitives.sh`](check-primitives.sh) | `fitness` | `Bang/Core/IR.lean` | kernel fitness function for CLAUDE.md Invariants #3 & #5 |
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |
+| [`check-release-version.sh`](check-release-version.sh) | `ci` | `Main.lean`, `tools/release.sh`, `tools/release-artifact.sh` | Exact release-tag ↔ compiler-provenance gate. One comparison seam for local |
 | [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
 | [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt` | orientation-doc SHA reachability fitness function |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
+| [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/sync-docs.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (26)
+## test (27)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -87,6 +90,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
 | [`test-query.sh`](test-query.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
 | [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
+| [`test-release-version.sh`](test-release-version.sh) | `verify` | `check-release-version.sh` | Known-good/known-bad poles for the exact release identity gate |
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
@@ -114,6 +118,14 @@ _Lane scripts — one-off orchestration helpers._
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
 
+## wrapper (1)
+
+__
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`arch-check.sh`](arch-check.sh) | `manual` | `arch-check.py` | (no purpose comment) |
+
 ## bench (2)
 
 __
@@ -131,12 +143,13 @@ __
 |---|---|---|---|
 | [`clone-report.py`](clone-report.py) | `manual` | `Bang/**/*.lean`, `tools/leanlex.py` | rank duplicated code windows in Lean sources |
 
-## lib (1)
+## lib (2)
 
 __
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
+| [`import_facts.py`](import_facts.py) | `fitness` | `Bang/**/*.lean`, `gen-import-graph.py`, `arch-check.py` | Shared, fail-loud facts for BANG's internal Lean module graph.""" |
 | [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
 
 ## release (1)

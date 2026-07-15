@@ -421,7 +421,7 @@ def useJson (u : Bang.Surface.UseDecl) : String :=
 an already-resolved-and-merged `Prog` here, optionally with a `declModule` provenance map from ITS
 OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the single-file/stdin
 route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this module never
-hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.0",
+hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1",
 "decls":[DeclFact,...],"refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
 schema documented in `docs/reference/language.md`. -/
 public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := []) :

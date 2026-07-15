@@ -32,6 +32,20 @@ bash tools/install-hooks.sh   # one-time: link git pre-commit hook
 Direnv (`.envrc` uses `use flake`) auto-enters the dev shell on `cd` once
 `direnv allow` is run.
 
+### Production docs shell
+
+The Vocs site deliberately uses a separate, opt-in shell so every Lean session does not
+carry Bun + Chromium. One command enters the flake-pinned site shell, installs the locked
+JavaScript graph, requires every Mermaid render, and builds the static site:
+
+```bash
+just site-build
+```
+
+This is the local equivalent of Site CI, Pages deployment, and the release-site gate.
+`bun run dev` remains an authoring loop with per-diagram fallback; `just site-build` is
+strict and fails if Chromium, `mmdc`, or any diagram fails.
+
 ## Editor
 
 | Editor | What works |
@@ -51,6 +65,7 @@ Direnv (`.envrc` uses `use flake`) auto-enters the dev shell on `cd` once
 | `just build` | `lake exe cache get && lake build` (incremental after first run). |
 | `just audit` | `tools/audit.sh` — static guards + axiom-set report per theorem. |
 | `just selfcheck` | Zero-dep Node smoke test of the row-unifier algorithm. |
+| `just site-build` | Enter the opt-in Bun/Chromium shell and run the strict production Vocs build. |
 | `just clean` | Remove `.lake/` build artifacts. |
 
 ## Scripts (`tools/`)

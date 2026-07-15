@@ -262,5 +262,10 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — #130 — handler-clause op names accept reserved keywords, reach B002 (`563badd4`)
 - **frontend** — #139 — knot binder-nesting so trait-op bodies see top-level bindings (ADR-0106 §5) (`2c532583`)
 - **frontend** — #135 — match on an application-spine scrutinee now parses (`a6e9eb9f`)
+- **hooks** — pre-push WIP guard — marker-anchored, not substring (its own prose title was the first false positive) (`5312ec04`)
+- **tooling** — close release and docs false-greens (`265c3e67`)
+- **tooling** — make reference gate checkout-faithful (`47e1096f`)
+- **tooling** — make changelog hashes deterministic (`15be6a42`)
+- **ci** — bind changelog gate to PR head (`0ca4de14`)
 
 <!-- END GENERATED changelog -->

@@ -27,15 +27,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build vocs docs site (→ web/docs/dist/public, basePath /bang)
-        run: |
-          cd web/docs
-          bun install --frozen-lockfile
-          # mmdc (mermaid-cli) pre-renders diagrams to static SVG — needs a headless
-          # browser. bun blocks postinstall, so install it explicitly (site's puppeteer,
-          # matching mermaid-cli's version). Falls back to pointer-notes if this fails.
-          bunx puppeteer browsers install chrome-headless-shell
-          bun run build
+      - name: Build strict Vocs docs site (→ web/docs/dist/public, basePath /bang)
+        run: bash tools/site-build.sh
 
       - name: Generate progress dashboard → /bang/dashboard/
         env:

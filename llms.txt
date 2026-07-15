@@ -19,7 +19,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/notes/increment-lifecycle.md](docs/notes/increment-lifecycle.md) — What an incN is (the increment unit: scoped→de-risked→ground→done→merged)
 - [.claude/codebase-maintenance.md](.claude/codebase-maintenance.md) — Codebase maintenance (objects · rungs · cadence · debt-prevention)
 - `paths/PATH-*.md` — Active in-flight work
-- [docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md](docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) — Architecture in force
+- [docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md](docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) — Architecture in force (ADR-0016 as revised by ADR-0059; proof-method split ADR-0035)
 - [docs/decisions/README.md](docs/decisions/README.md) — All ADRs (why-we-chose-X log)
 - [docs/notes/OPEN_QUESTIONS.md](docs/notes/OPEN_QUESTIONS.md) — Deferred design questions
 - [docs/notes/design-space-map.md](docs/notes/design-space-map.md) — Design-space survey (open language-design questions + neighbour languages)

@@ -29,7 +29,17 @@ permissions:
   contents: write # create the Release + upload the asset
 
 jobs:
+  site-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Build strict Vocs docs site once before release artifacts
+        run: bash tools/site-build.sh
+
   release:
+    needs: site-build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
 
@@ -94,11 +104,16 @@ jobs:
             echo "version=untagged-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Prepare artifact (strip + smoke the stripped binary)
+      - name: Prepare artifact (identity gate + strip + smoke)
         id: artifact
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: nix develop --command bash tools/release-artifact.sh "$VERSION" "$TRIPLE"
+        run: |
+          args=("$VERSION" "$TRIPLE")
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            args+=("${GITHUB_REF#refs/tags/}")
+          fi
+          nix develop --command bash tools/release-artifact.sh "${args[@]}"
 
       # A dispatch run stops here with the artifact as a downloadable CI artifact — no
       # Release is published (that is tag-only, below).
