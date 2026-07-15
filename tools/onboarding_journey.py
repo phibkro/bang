@@ -133,7 +133,8 @@ def query_dump_check(stdout: str) -> None:
     payload = json.loads(stdout)
     assert payload["ok"] is True, "query dump returned ok:false"
     assert payload["schemaVersion"] == 1, "query schema version drifted"
-    log_decl = next(item for item in payload["decls"] if item["name"] == "Log")
+    log_decl = next((item for item in payload["decls"] if item["name"] == "Log"), None)
+    assert log_decl is not None, "Log declaration missing"
     assert log_decl["kind"] == "effect", "Log is not an effect declaration"
     operations = log_decl["shape"]["ops"]
     assert {"name": "log", "type": "Int -> Int"} in operations, (
@@ -232,10 +233,24 @@ def render_human(value: dict[str, Any]) -> None:
     )
 
 
+def self_test() -> None:
+    try:
+        query_dump_check('{"ok":true,"schemaVersion":1,"decls":[]}')
+    except AssertionError as error:
+        assert str(error) == "Log declaration missing"
+    else:
+        raise AssertionError("missing Log declaration was accepted")
+    print("onboarding-journey self-test: missing Log is a recorded semantic failure")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    if args.self_test:
+        self_test()
+        return
     value = report()
     if args.json:
         print(json.dumps(value, sort_keys=True, separators=(",", ":")))

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=examples/logger-counting,docfacts/schema/*.schema.json,docs/reference/examples/logger-counting.md runs-in=fitness
+# tool: role=gen couples=examples/logger-counting,examples/logger-silent,docfacts/schema/*.schema.json,docs/reference/examples/logger-counting.md runs-in=fitness
 """docfacts_logger.py — generate and validate the logger-counting documentation fact.
 
 The committed JSON fact is the consumer boundary: Markdown is rendered only after
@@ -37,6 +37,8 @@ FACT_PATH = ROOT / "docfacts/examples/logger-counting.json"
 MARKDOWN_PATH = ROOT / "docs/reference/examples/logger-counting.md"
 PROGRAM_PATH = "examples/logger-counting/main.bang"
 EXPECTED_PATH = "examples/logger-counting/expected.txt"
+SILENT_PROGRAM_PATH = "examples/logger-silent/main.bang"
+SILENT_EXPECTED_PATH = "examples/logger-silent/expected.txt"
 PUBLIC_SOURCE_BASE = "https://github.com/phibkro/bang/blob/main"
 
 
@@ -75,13 +77,16 @@ def build_fact() -> dict:
             {
                 "label": "differential-tested",
                 "claim": (
-                    f"The {prose_list(supported_engines)} engines each produce the "
-                    "committed expected output byte-for-byte; check --json and query "
-                    "dump also succeed."
+                    "The counting and silent programs differ only in the handler clause; "
+                    f"the {prose_list(supported_engines)} engines produce each committed "
+                    "expected output byte-for-byte, and check --json plus query dump "
+                    "succeed for both."
                 ),
                 "sources": [
                     PROGRAM_PATH,
                     EXPECTED_PATH,
+                    SILENT_PROGRAM_PATH,
+                    SILENT_EXPECTED_PATH,
                     "tools/test-docfacts-logger.sh",
                 ],
                 "commands": ["just test-docfacts-logger"],
