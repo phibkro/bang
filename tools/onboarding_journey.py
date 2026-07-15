@@ -10,12 +10,34 @@ import json
 import os
 import subprocess
 import sys
+from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 BANG = ROOT / ".lake/build/bin/bang"
 ENGINES = ("env", "oracle", "compiled")
+EXPECTED_STEP_IDS = (
+    "arithmetic-env",
+    "arithmetic-oracle",
+    "arithmetic-compiled",
+    "thunk-force-env",
+    "thunk-force-oracle",
+    "thunk-force-compiled",
+    "effect-op-arith-env",
+    "effect-op-arith-oracle",
+    "effect-op-arith-compiled",
+    "logger-counting-env",
+    "logger-counting-oracle",
+    "logger-counting-compiled",
+    "logger-silent-env",
+    "logger-silent-oracle",
+    "logger-silent-compiled",
+    "logger-handler-only-swap",
+    "logger-check-json",
+    "logger-query-dump",
+)
 
 
 def run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -65,7 +87,7 @@ def command_step(
 def semantic_step(
     step_id: str,
     args: list[str],
-    check,
+    check: Callable[[str], None],
     expected_summary: str,
     *,
     category: str,
@@ -142,6 +164,34 @@ def query_dump_check(stdout: str) -> None:
     )
 
 
+def step_contract(steps: list[dict[str, Any]]) -> dict[str, Any]:
+    expected = set(EXPECTED_STEP_IDS)
+    counts = Counter(step["id"] for step in steps)
+    missing = sorted(expected - counts.keys())
+    extra = sorted(counts.keys() - expected)
+    duplicates = sorted(step_id for step_id, count in counts.items() if count > 1)
+    failed_required = sorted(
+        step["id"]
+        for step in steps
+        if step["id"] in expected and step["status"] != "pass"
+    )
+    failure_count = (
+        len(missing)
+        + len(extra)
+        + sum(counts[step_id] - 1 for step_id in duplicates)
+        + len(set(failed_required))
+    )
+    passed = len(expected) - len(missing) - len(set(failed_required))
+    return {
+        "expectedIds": list(EXPECTED_STEP_IDS),
+        "missing": missing,
+        "extra": extra,
+        "duplicates": duplicates,
+        "passed": passed,
+        "failed": failure_count,
+    }
+
+
 def report() -> dict[str, Any]:
     build_runner()
     steps: list[dict[str, Any]] = []
@@ -198,9 +248,7 @@ def report() -> dict[str, Any]:
         )
     )
 
-    expected_count = 18
-    passed = sum(step["status"] == "pass" for step in steps)
-    failed = len(steps) - passed + abs(len(steps) - expected_count)
+    contract = step_contract(steps)
     return {
         "schemaVersion": 1,
         "kind": "onboarding-journey-run",
@@ -208,10 +256,16 @@ def report() -> dict[str, Any]:
         "worktreeClean": git("status", "--porcelain=v1") == "",
         "binarySha256": hashlib.sha256(BANG.read_bytes()).hexdigest(),
         "steps": steps,
+        "contract": {
+            "expectedIds": contract["expectedIds"],
+            "missing": contract["missing"],
+            "extra": contract["extra"],
+            "duplicates": contract["duplicates"],
+        },
         "summary": {
-            "expected": expected_count,
-            "passed": passed,
-            "failed": failed,
+            "expected": len(EXPECTED_STEP_IDS),
+            "passed": contract["passed"],
+            "failed": contract["failed"],
             "skipped": 0,
         },
     }
@@ -240,7 +294,15 @@ def self_test() -> None:
         assert str(error) == "Log declaration missing"
     else:
         raise AssertionError("missing Log declaration was accepted")
-    print("onboarding-journey self-test: missing Log is a recorded semantic failure")
+    fake_steps = [
+        {"id": step_id, "status": "pass"} for step_id in EXPECTED_STEP_IDS[:-1]
+    ]
+    fake_steps.append({"id": EXPECTED_STEP_IDS[0], "status": "pass"})
+    contract = step_contract(fake_steps)
+    assert contract["missing"] == [EXPECTED_STEP_IDS[-1]]
+    assert contract["duplicates"] == [EXPECTED_STEP_IDS[0]]
+    assert contract["failed"] == 2
+    print("onboarding-journey self-test: semantic and step-contract poles hold")
 
 
 def main() -> None:

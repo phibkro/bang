@@ -117,7 +117,7 @@ just test-onboarding-journey
 just test-onboarding-journey --json > /tmp/bang-onboarding-journey.json
 ```
 
-The JSON artifact records the source SHA, binary hash, all 18 steps, and explicit pass/fail/skip counts.
+The JSON artifact records the source SHA, binary hash, every required step, and explicit pass/fail/skip counts.
 
 ### Step 7 — check the mental model
 

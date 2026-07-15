@@ -116,7 +116,7 @@ function renderEvidence() {
     '```',
     '',
     'Add `--json` to produce the provenance-bound machine artifact: source SHA, binary hash, ' +
-      'all 18 step results, and explicit pass/fail/skip counts.',
+      'every required step result, and explicit pass/fail/skip counts.',
     '',
   )
   return lines.join('\n')
