@@ -67,7 +67,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (31)
+## test (32)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -97,6 +97,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-law.sh`](test-law.sh) | `verify` | — | the non-interactive gate for `bang test` (issue #60's CLI wiring) |
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
+| [`test-onboarding-journey.sh`](test-onboarding-journey.sh) | `verify` | `onboarding_journey.py` | Public verify battery for the common contributor journey |
 | [`test-onboarding-preflight.sh`](test-onboarding-preflight.sh) | `fitness` | `onboarding-preflight.sh` | Known-good/known-bad poles for the read-only newcomer preflight |
 | [`test-query.sh`](test-query.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
 | [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
@@ -128,7 +129,7 @@ _Lane scripts — one-off orchestration helpers._
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
 
-## lib (6)
+## lib (7)
 
 __
 
@@ -140,6 +141,7 @@ __
 | [`docfacts_common.py`](docfacts_common.py) | `fitness` | `docfacts/schema/*.schema.json`, `docfacts/**/*.json` | Shared schema, repository-path, and serialization checks for documentation facts |
 | [`import_facts.py`](import_facts.py) | `fitness` | `Bang/**/*.lean`, `gen-import-graph.py`, `arch-check.py` | Shared, fail-loud facts for BANG's internal Lean module graph |
 | [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
+| [`onboarding_journey.py`](onboarding_journey.py) | `manual` | `examples/thunk-force/main.bang`, `examples/effect-op-arith/main.bang`, `examples/logger-counting/main.bang`, `examples/logger-silent/main.bang` | Execute the machine-checkable substrate of the common newcomer journey |
 
 ## wrapper (1)
 

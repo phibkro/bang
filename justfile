@@ -26,6 +26,10 @@ onboarding-preflight *ARGS:
 test-onboarding-preflight:
     bash tools/test-onboarding-preflight.sh
 
+# Executable env/oracle/compiled agreement for the common newcomer route.
+test-onboarding-journey *ARGS:
+    bash tools/test-onboarding-journey.sh {{ARGS}}
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:

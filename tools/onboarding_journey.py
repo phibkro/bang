@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+# tool: role=lib couples=examples/thunk-force/main.bang,examples/effect-op-arith/main.bang,examples/logger-counting/main.bang,examples/logger-silent/main.bang runs-in=manual
+"""Execute the machine-checkable substrate of the common newcomer journey."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parent.parent
+BANG = ROOT / ".lake/build/bin/bang"
+ENGINES = ("env", "oracle", "compiled")
+
+
+def run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, cwd=ROOT, text=True, capture_output=True)
+
+
+def git(*args: str) -> str:
+    result = run(["git", *args])
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "git command failed")
+    return result.stdout.strip()
+
+
+def expected(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def command_step(
+    step_id: str,
+    args: list[str],
+    expected_stdout: str,
+    *,
+    category: str,
+    engine: str | None = None,
+    fixture: str | None = None,
+) -> dict[str, Any]:
+    result = run(args)
+    passed = (
+        result.returncode == 0
+        and result.stdout == expected_stdout
+        and result.stderr == ""
+    )
+    return {
+        "id": step_id,
+        "category": category,
+        "engine": engine,
+        "fixture": fixture,
+        "argv": args,
+        "exit": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "expectedStdout": expected_stdout,
+        "status": "pass" if passed else "fail",
+    }
+
+
+def semantic_step(
+    step_id: str,
+    args: list[str],
+    check,
+    expected_summary: str,
+    *,
+    category: str,
+    fixture: str,
+) -> dict[str, Any]:
+    result = run(args)
+    error = ""
+    passed = result.returncode == 0 and result.stderr == ""
+    if passed:
+        try:
+            check(result.stdout)
+        except (
+            AssertionError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            error = str(exc)
+            passed = False
+    return {
+        "id": step_id,
+        "category": category,
+        "engine": None,
+        "fixture": fixture,
+        "argv": args,
+        "exit": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr or error,
+        "expected": expected_summary,
+        "status": "pass" if passed else "fail",
+    }
+
+
+def build_runner() -> None:
+    if os.environ.get("BANG_BIN_FRESH"):
+        return
+    result = run(["lake", "build", "bang"])
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        raise SystemExit(result.returncode)
+
+
+def handler_swap_step() -> dict[str, Any]:
+    counting = expected("examples/logger-counting/main.bang")
+    silent = expected("examples/logger-silent/main.bang")
+    transformed = counting.replace("log(msg) => 1", "log(msg) => 0")
+    passed = transformed == silent and counting.count("log(msg) => 1") == 1
+    return {
+        "id": "logger-handler-only-swap",
+        "category": "source-invariant",
+        "engine": None,
+        "fixture": "examples/logger-counting/main.bang + examples/logger-silent/main.bang",
+        "argv": [],
+        "exit": 0 if passed else 1,
+        "stdout": "handler clause only\n" if passed else "",
+        "stderr": "" if passed else "logger variants differ outside the handler clause",
+        "expectedStdout": "handler clause only\n",
+        "status": "pass" if passed else "fail",
+    }
+
+
+def query_dump_check(stdout: str) -> None:
+    payload = json.loads(stdout)
+    assert payload["ok"] is True, "query dump returned ok:false"
+    assert payload["schemaVersion"] == 1, "query schema version drifted"
+    log_decl = next(item for item in payload["decls"] if item["name"] == "Log")
+    assert log_decl["kind"] == "effect", "Log is not an effect declaration"
+    operations = log_decl["shape"]["ops"]
+    assert {"name": "log", "type": "Int -> Int"} in operations, (
+        "Log.log signature missing"
+    )
+
+
+def report() -> dict[str, Any]:
+    build_runner()
+    steps: list[dict[str, Any]] = []
+
+    for engine in ENGINES:
+        steps.append(
+            command_step(
+                f"arithmetic-{engine}",
+                [str(BANG), "eval", f"--engine={engine}", "1 + 2"],
+                "3\n",
+                category="eval",
+                engine=engine,
+            )
+        )
+
+    fixtures = (
+        ("thunk-force", "examples/thunk-force/main.bang"),
+        ("effect-op-arith", "examples/effect-op-arith/main.bang"),
+        ("logger-counting", "examples/logger-counting/main.bang"),
+        ("logger-silent", "examples/logger-silent/main.bang"),
+    )
+    for fixture_id, path in fixtures:
+        expected_path = str(Path(path).with_name("expected.txt"))
+        for engine in ENGINES:
+            steps.append(
+                command_step(
+                    f"{fixture_id}-{engine}",
+                    [str(BANG), "run", f"--engine={engine}", path],
+                    expected(expected_path),
+                    category="run",
+                    engine=engine,
+                    fixture=path,
+                )
+            )
+
+    steps.append(handler_swap_step())
+    steps.append(
+        command_step(
+            "logger-check-json",
+            [str(BANG), "check", "--json", "examples/logger-counting/main.bang"],
+            '{"ok":true,"diagnostics":[]}\n',
+            category="check",
+            fixture="examples/logger-counting/main.bang",
+        )
+    )
+    steps.append(
+        semantic_step(
+            "logger-query-dump",
+            [str(BANG), "query", "dump", "examples/logger-counting/main.bang"],
+            query_dump_check,
+            "schemaVersion 1 with Log.log : Int -> Int",
+            category="query",
+            fixture="examples/logger-counting/main.bang",
+        )
+    )
+
+    expected_count = 18
+    passed = sum(step["status"] == "pass" for step in steps)
+    failed = len(steps) - passed + abs(len(steps) - expected_count)
+    return {
+        "schemaVersion": 1,
+        "kind": "onboarding-journey-run",
+        "sourceSha": git("rev-parse", "HEAD"),
+        "worktreeClean": git("status", "--porcelain=v1") == "",
+        "binarySha256": hashlib.sha256(BANG.read_bytes()).hexdigest(),
+        "steps": steps,
+        "summary": {
+            "expected": expected_count,
+            "passed": passed,
+            "failed": failed,
+            "skipped": 0,
+        },
+    }
+
+
+def render_human(value: dict[str, Any]) -> None:
+    print("── onboarding journey ──")
+    for step in value["steps"]:
+        marker = "✓" if step["status"] == "pass" else "✗"
+        print(f"{marker} {step['id']}")
+        if step["status"] != "pass":
+            print(f"    expected: {step.get('expectedStdout', step.get('expected'))!r}")
+            print(f"    stdout:   {step['stdout']!r}")
+            print(f"    stderr:   {step['stderr']!r}")
+    summary = value["summary"]
+    print(
+        f"onboarding-journey: {summary['passed']}/{summary['expected']} passed, "
+        f"{summary['failed']} failed, {summary['skipped']} skipped"
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    value = report()
+    if args.json:
+        print(json.dumps(value, sort_keys=True, separators=(",", ":")))
+    else:
+        render_human(value)
+    raise SystemExit(1 if value["summary"]["failed"] else 0)
+
+
+if __name__ == "__main__":
+    main()
