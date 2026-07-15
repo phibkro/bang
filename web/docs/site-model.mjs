@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, posix } from 'node:path'
+import { basename, dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
@@ -20,47 +20,74 @@ function loadJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-function validateJsonSchema(data, schema, label) {
-  if (process.env.BANG_SITE_SCHEMA_ADAPTER !== 'python') {
+function loadSchemaRegistry(selectedPath) {
+  const schemaDir = dirname(selectedPath)
+  const schemas = readdirSync(schemaDir)
+    .filter((name) => name.endsWith('.schema.json'))
+    .sort()
+    .map((name) => {
+      const path = join(schemaDir, name)
+      return { path, schema: loadJson(path) }
+    })
+  const ids = new Map()
+  for (const { path, schema } of schemas) {
+    if (typeof schema.$id !== 'string' || schema.$id.length === 0) {
+      throw new Error(`schema ${basename(path)} has no $id`)
+    }
     try {
+      new URL(schema.$id)
+    } catch {
+      throw new Error(`schema ${basename(path)} has an incompatible $id: ${schema.$id}`)
+    }
+    if (ids.has(schema.$id)) {
+      throw new Error(`duplicate schema $id ${schema.$id}: ${ids.get(schema.$id)} and ${basename(path)}`)
+    }
+    ids.set(schema.$id, basename(path))
+  }
+  const selected = schemas.find(({ path }) => path === selectedPath)
+  if (!selected) throw new Error(`selected schema is not registered: ${basename(selectedPath)}`)
+  return { schemas, selected }
+}
+
+export function validateJsonSchema({ data, schemaPath: selectedPath, label }) {
+  try {
+    const { schemas, selected } = loadSchemaRegistry(selectedPath)
+    if (process.env.BANG_SITE_SCHEMA_ADAPTER !== 'python') {
       const Ajv2020Module = require('ajv/dist/2020.js')
       const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module
       const ajv = new Ajv2020({ allErrors: true, strict: true })
-      const validate = ajv.compile(schema)
+      for (const { schema } of schemas) ajv.addSchema(schema)
+      const validate = ajv.getSchema(selected.schema.$id)
       if (validate(data)) return
       const detail = ajv.errorsText(validate.errors, { separator: '\n' })
-      throw new Error(`${label} schema validation failed:\n${detail}`)
-    } catch (error) {
-      if (error?.code !== 'MODULE_NOT_FOUND') throw error
+      throw new Error(detail)
     }
-  }
 
-  // The main dev shell already carries Python jsonschema for docfacts. This
-  // adapter keeps `just fitness` dependency-free; the site build uses locked Ajv.
-  const script = [
-    'import json, sys',
-    'from jsonschema import Draft202012Validator',
-    'payload = json.load(sys.stdin)',
-    'errors = sorted(Draft202012Validator(payload["schema"]).iter_errors(payload["data"]), key=lambda e: list(e.path))',
-    'print("\\n".join(("/" + "/".join(map(str, e.path)) + ": " + e.message) for e in errors))',
-    'sys.exit(1 if errors else 0)',
-  ].join('; ')
-  const result = spawnSync('python3', ['-c', script], {
-    input: JSON.stringify({ data, schema }),
-    encoding: 'utf8',
-  })
-  if (result.error) {
-    throw new Error(`${label} schema validation requires locked Ajv or Python jsonschema`, {
-      cause: result.error,
+    // Fitness explicitly selects the Python adapter. Production never silently
+    // falls back: a missing locked Ajv dependency must fail the site build.
+    const script = [
+      'import json, sys',
+      'from pathlib import Path',
+      'from tools.docfacts_common import schema_validator',
+      'data = json.load(sys.stdin)',
+      'errors = sorted(schema_validator(Path(sys.argv[1])).iter_errors(data), key=lambda e: list(e.path))',
+      'print("\\n".join(("/" + "/".join(map(str, e.path)) + ": " + e.message) for e in errors))',
+      'sys.exit(1 if errors else 0)',
+    ].join('; ')
+    const result = spawnSync('python3', ['-c', script, selectedPath], {
+      cwd: join(siteDir, '..', '..'),
+      input: JSON.stringify(data),
+      encoding: 'utf8',
     })
-  }
-  if (result.status !== 0) {
-    throw new Error(`${label} schema validation failed:\n${result.stdout.trim()}`)
+    if (result.error) throw result.error
+    if (result.status !== 0) throw new Error((result.stdout || result.stderr).trim())
+  } catch (error) {
+    throw new Error(`${label} schema validation failed:\n${error.message}`, { cause: error })
   }
 }
 
 function validateSchema(manifest) {
-  validateJsonSchema(manifest, loadJson(schemaPath), 'page manifest')
+  validateJsonSchema({ data: manifest, schemaPath, label: 'page manifest' })
 }
 
 function localLink(page, repository) {
@@ -145,7 +172,11 @@ function resolveStatus(status, repoRoot) {
   requireTrackedSource(repoRoot, status.fact)
   requireTrackedSource(repoRoot, status.schema)
   const fact = loadJson(join(repoRoot, status.fact))
-  validateJsonSchema(fact, loadJson(join(repoRoot, status.schema)), `evidence fact ${status.fact}`)
+  validateJsonSchema({
+    data: fact,
+    schemaPath: join(repoRoot, status.schema),
+    label: `evidence fact ${status.fact}`,
+  })
   const evidence = resolveJsonPointer(fact, status.pointer)
   const labels = new Set([
     'proven',

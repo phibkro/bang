@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import {
   renderSiteModel,
   resolveTourContent,
   rewriteMarkdownLinks,
+  validateJsonSchema,
 } from './site-model.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
@@ -17,6 +18,7 @@ const fixture = join(siteDir, 'fixtures', 'page-manifest', 'valid.json')
 const validManifest = JSON.parse(readFileSync(fixture, 'utf8'))
 const temp = mkdtempSync(join(tmpdir(), 'bang-site-model-'))
 let caseCount = 0
+let schemaCaseCount = 0
 
 function compileMutation(name, mutate) {
   const manifest = structuredClone(validManifest)
@@ -29,6 +31,15 @@ function compileMutation(name, mutate) {
 function expectReject(name, mutate, pattern) {
   assert.throws(() => compileMutation(name, mutate), pattern)
   caseCount += 1
+}
+
+function writeSchemaRegistry(name, schemas) {
+  const schemaDir = join(temp, name)
+  mkdirSync(schemaDir)
+  for (const [filename, schema] of Object.entries(schemas)) {
+    writeFileSync(join(schemaDir, filename), `${JSON.stringify(schema, null, 2)}\n`)
+  }
+  return join(schemaDir, 'example.schema.json')
 }
 
 const site = compileSite({ manifestPath: fixture, repoRoot })
@@ -70,6 +81,95 @@ assert.equal(
 )
 
 try {
+  const commonSchema = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://example.test/schema/common.schema.json',
+    $defs: { sharedText: { type: 'string', minLength: 1 } },
+  }
+  const exampleSchema = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://example.test/schema/example.schema.json',
+    type: 'object',
+    required: ['name'],
+    properties: { name: { $ref: 'common.schema.json#/$defs/sharedText' } },
+  }
+  const schemaCases = [
+    {
+      name: 'valid-external-reference',
+      schemas: {
+        'common.schema.json': commonSchema,
+        'example.schema.json': exampleSchema,
+      },
+      data: { name: 'valid' },
+    },
+    {
+      name: 'missing-external-schema',
+      schemas: { 'example.schema.json': exampleSchema },
+      data: { name: 'valid' },
+      reject: /schema validation failed/,
+    },
+    {
+      name: 'incompatible-schema-id',
+      schemas: {
+        'common.schema.json': {
+          ...commonSchema,
+          $id: 'https://other.test/schema/common.schema.json',
+        },
+        'example.schema.json': exampleSchema,
+      },
+      data: { name: 'valid' },
+      reject: /schema validation failed/,
+    },
+    {
+      name: 'missing-schema-id',
+      schemas: {
+        'common.schema.json': { ...commonSchema, $id: undefined },
+        'example.schema.json': exampleSchema,
+      },
+      data: { name: 'valid' },
+      reject: /schema validation failed/,
+    },
+    {
+      name: 'duplicate-schema-id',
+      schemas: {
+        'common.schema.json': { ...commonSchema, $id: exampleSchema.$id },
+        'example.schema.json': exampleSchema,
+      },
+      data: { name: 'valid' },
+      reject: /schema validation failed/,
+    },
+    {
+      name: 'invalid-sibling-schema',
+      schemas: {
+        'common.schema.json': { ...commonSchema, type: 7 },
+        'example.schema.json': exampleSchema,
+      },
+      data: { name: 'valid' },
+      reject: /schema validation failed/,
+    },
+    {
+      name: 'shared-definition-rejects-data',
+      schemas: {
+        'common.schema.json': commonSchema,
+        'example.schema.json': exampleSchema,
+      },
+      data: { name: '' },
+      reject: /schema validation failed/,
+    },
+  ]
+  const adapter = process.env.BANG_SITE_SCHEMA_ADAPTER === 'python' ? 'python' : 'ajv'
+  for (const schemaCase of schemaCases) {
+    const selectedPath = writeSchemaRegistry(`${adapter}-${schemaCase.name}`, schemaCase.schemas)
+    const validate = () => validateJsonSchema({
+      data: schemaCase.data,
+      schemaPath: selectedPath,
+      label: `schema registry ${schemaCase.name}`,
+    })
+    if (schemaCase.reject) assert.throws(validate, schemaCase.reject)
+    else assert.doesNotThrow(validate)
+    schemaCaseCount += 1
+  }
+
   const evidenced = compileMutation('evidence-status', (manifest) => {
     manifest.pages[0].status = {
       kind: 'evidence',
@@ -80,6 +180,20 @@ try {
   })
   assert.equal(evidenced.pages[0].status.label, 'differential-tested')
   assert.match(evidenced.sidebar[0].items[0].text, /Differential-tested/)
+
+  const invalidProductionFact = JSON.parse(
+    readFileSync(join(repoRoot, 'docfacts', 'examples', 'logger-counting.json'), 'utf8'),
+  )
+  invalidProductionFact.summary = ''
+  assert.throws(
+    () => validateJsonSchema({
+      data: invalidProductionFact,
+      schemaPath: join(repoRoot, 'docfacts', 'schema', 'example.schema.json'),
+      label: 'production example fact using common schema',
+    }),
+    /schema validation failed/,
+  )
+  schemaCaseCount += 1
 
   expectReject('invalid-evidence-pointer', (broken) => {
     broken.pages[0].status = {
@@ -342,4 +456,7 @@ try {
   rmSync(temp, { recursive: true, force: true })
 }
 
-console.log(`site-model: PASS — valid navigation + ${caseCount}/${caseCount} rejection poles`)
+console.log(
+  `site-model: PASS — valid navigation + ${caseCount}/${caseCount} rejection poles + ` +
+  `${schemaCaseCount}/${schemaCaseCount} schema registry adapter cases`,
+)
