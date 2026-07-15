@@ -113,10 +113,11 @@ function renderEvidence() {
     '',
     '```bash',
     journeyChoice.narrowGate,
+    `${journeyChoice.narrowGate} --json --require-clean > /tmp/bang-onboarding-journey.json`,
     '```',
     '',
-    'Add `--json` to produce the provenance-bound machine artifact: source SHA, binary hash, ' +
-      'every required step result, and explicit pass/fail/skip counts.',
+    'The machine artifact records the source SHA, binary hash, every required step result, ' +
+      'and explicit pass/fail/skip counts. `--require-clean` refuses dirty provenance.',
     '',
   )
   return lines.join('\n')

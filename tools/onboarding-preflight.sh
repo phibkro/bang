@@ -28,7 +28,7 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     *)
-      fail_error "unknown argument: $1"
+      fail_error 'unknown argument'
       ;;
   esac
 done
@@ -47,7 +47,14 @@ if ! command -v "$git_bin" >/dev/null 2>&1 || ! "$git_bin" -C "$repo" rev-parse 
 fi
 
 checkout_identity=true
-identity_anchors=(lakefile.toml lean-toolchain justfile Bang/Spec.lean tools/setup.sh)
+identity_anchors=(
+  lakefile.toml lean-toolchain justfile Bang/Spec.lean tools/setup.sh
+  ONBOARDING.md tools/onboarding-preflight.sh tools/onboarding_journey.py
+  examples/thunk-force/main.bang examples/thunk-force/expected.txt
+  examples/effect-op-arith/main.bang examples/effect-op-arith/expected.txt
+  examples/logger-counting/main.bang examples/logger-counting/expected.txt
+  examples/logger-silent/main.bang examples/logger-silent/expected.txt
+)
 for anchor in "${identity_anchors[@]}"; do
   if [ ! -f "$repo/$anchor" ] ||
     ! "$git_bin" -C "$repo" ls-files --error-unmatch -- "$anchor" >/dev/null 2>&1; then
@@ -55,7 +62,14 @@ for anchor in "${identity_anchors[@]}"; do
     break
   fi
 done
-[ "$checkout_identity" = true ] || missing+=("BANG checkout identity")
+if [ "$checkout_identity" = true ]; then
+  if [[ "$(<"$repo/lakefile.toml")" != *'name = "bang-lang"'* ]] ||
+    [[ "$(<"$repo/Bang/Spec.lean")" != *'Bang/Spec.lean — THE PRD.'* ]] ||
+    [[ "$(<"$repo/tools/setup.sh")" != *'bang-lang first-time setup'* ]]; then
+    checkout_identity=false
+  fi
+fi
+[ "$checkout_identity" = true ] || missing+=("BANG journey checkout identity")
 
 git_dir="$("$git_bin" -C "$repo" rev-parse --absolute-git-dir)"
 common_dir="$("$git_bin" -C "$repo" rev-parse --path-format=absolute --git-common-dir)"

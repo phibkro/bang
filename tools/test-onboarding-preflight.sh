@@ -10,11 +10,19 @@ trap 'rm -rf "$TMP"' EXIT
 
 seed_identity() {
   local repo="$1" anchor
-  for anchor in lakefile.toml lean-toolchain justfile Bang/Spec.lean tools/setup.sh; do
+  local anchors=(
+    lakefile.toml lean-toolchain justfile Bang/Spec.lean tools/setup.sh
+    ONBOARDING.md tools/onboarding-preflight.sh tools/onboarding_journey.py
+    examples/thunk-force/main.bang examples/thunk-force/expected.txt
+    examples/effect-op-arith/main.bang examples/effect-op-arith/expected.txt
+    examples/logger-counting/main.bang examples/logger-counting/expected.txt
+    examples/logger-silent/main.bang examples/logger-silent/expected.txt
+  )
+  for anchor in "${anchors[@]}"; do
     mkdir -p "$repo/$(dirname "$anchor")"
-    printf 'fixture\n' >"$repo/$anchor"
+    cp "$ROOT/$anchor" "$repo/$anchor"
   done
-  git -C "$repo" add lakefile.toml lean-toolchain justfile Bang/Spec.lean tools/setup.sh
+  git -C "$repo" add -- "${anchors[@]}"
 }
 
 seed_artifacts() {
@@ -77,7 +85,7 @@ import sys
 report = json.loads(sys.argv[1])
 assert report["state"] == "cold-not-ready"
 assert report["checkoutIdentity"] is False
-assert "BANG checkout identity" in report["missing"]
+assert "BANG journey checkout identity" in report["missing"]
 PY
 
 cold="$TMP/cold"
@@ -159,6 +167,24 @@ assert report["state"] == "error"
 assert report["ready"] is False
 PY
 done
+
+quoted_argument='bad"arg\path'
+set +e
+quoted_json="$(bash "$PREFLIGHT" --json "$quoted_argument" 2>&1)"
+quoted_code=$?
+set -e
+[[ "$quoted_code" -eq 2 ]] || {
+  printf 'FAIL: quoted argument exited %s, expected 2\n%s\n' "$quoted_code" "$quoted_json" >&2
+  exit 1
+}
+python3 - "$quoted_json" <<'PY'
+import json
+import sys
+
+report = json.loads(sys.argv[1])
+assert report["state"] == "error"
+assert report["message"] == "unknown argument"
+PY
 
 worktree_source="$TMP/worktree-source"
 linked="$TMP/linked"

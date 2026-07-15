@@ -38,13 +38,21 @@ check_file() {
 run_engine() {
   local variant="$1" engine="$2" source_path="$3" expected_path="$4"
   local out="$workdir/$variant-$engine.out"
+  local err="$workdir/$variant-$engine.err"
   engine_count=$((engine_count + 1))
-  if "$bang" run "--engine=$engine" "$source_path" >"$out" 2>"$workdir/$variant-$engine.err"; then
-    check_file "$variant-$engine-vs-expected" "$out" "$expected_path"
+  if "$bang" run "--engine=$engine" "$source_path" >"$out" 2>"$err"; then
+    if [ -s "$err" ]; then
+      echo "✗ $variant-$engine — unexpected stderr"
+      cat "$err"
+      check_count=$((check_count + 1))
+      fail=$((fail + 1))
+    else
+      check_file "$variant-$engine-vs-expected" "$out" "$expected_path"
+    fi
   else
     local status=$?
     echo "✗ $variant-$engine — exited $status"
-    cat "$workdir/$variant-$engine.err"
+    cat "$err"
     check_count=$((check_count + 1))
     fail=$((fail + 1))
   fi
@@ -54,6 +62,7 @@ check_services() {
   local variant="$1" source_path="$2"
   local check_json="$workdir/$variant-check.json"
   if "$bang" check --json "$source_path" >"$check_json" 2>"$workdir/$variant-check.err" \
+      && [ ! -s "$workdir/$variant-check.err" ] \
       && [ "$(jq -r '.ok' "$check_json")" = true ]; then
     echo "✓ $variant-check-json-ok"
     pass=$((pass + 1))
@@ -66,6 +75,7 @@ check_services() {
 
   local query_json="$workdir/$variant-query.json"
   if "$bang" query dump "$source_path" >"$query_json" 2>"$workdir/$variant-query.err" \
+      && [ ! -s "$workdir/$variant-query.err" ] \
       && [ "$(jq -r '.ok' "$query_json")" = true ] \
       && [ "$(jq '[.decls[] | select(.name == "Log" and .kind == "effect" and any(.shape.ops[]; .name == "log" and .type == "Int -> Int"))] | length' "$query_json")" -eq 1 ]; then
     echo "✓ $variant-query-dump-log-op"

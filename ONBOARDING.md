@@ -110,14 +110,14 @@ $BANG query dump examples/logger-counting/main.bang
 
 ### Step 6 — inspect the evidence, then run its gate
 
-Open the [generated common-journey evidence view](/learn/common-journey-evidence). It derives displayed example outputs from canonical `expected.txt` files and the logger status from its validated serialized docfact.
+Open the [generated common-journey evidence view](https://phibkro.github.io/bang/learn/common-journey-evidence). It derives displayed example outputs from canonical `expected.txt` files and the logger status from its validated serialized docfact.
 
 ```bash
 just test-onboarding-journey
-just test-onboarding-journey --json > /tmp/bang-onboarding-journey.json
+just test-onboarding-journey --json --require-clean > /tmp/bang-onboarding-journey.json
 ```
 
-The JSON artifact records the source SHA, binary hash, every required step, and explicit pass/fail/skip counts.
+The JSON artifact records the source SHA, binary hash, every required step, and explicit pass/fail/skip counts. `--require-clean` refuses to certify inputs that do not match the committed tree.
 
 ### Step 7 — check the mental model
 
@@ -133,7 +133,7 @@ Use [`docs/architecture/core-overview.md`](docs/architecture/core-overview.md) t
 
 ## 3. Choose a contributor route
 
-Open the [generated route selector](/contribute/routes). Route identity, first edit seams, bounded change shape, and narrow/full gates come from `web/docs/page-manifest.json`; this guide does not maintain a second copy.
+Open the [generated route selector](https://phibkro.github.io/bang/contribute/routes). Route identity, first edit seams, bounded change shape, and narrow/full gates come from `web/docs/page-manifest.json`; this guide does not maintain a second copy.
 
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a change. It defines the issue → isolated clone/worktree → PR workflow and one-writer-per-file discipline.
 

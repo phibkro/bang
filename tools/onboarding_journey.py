@@ -192,6 +192,13 @@ def step_contract(steps: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def provenance(worktree_clean: bool, require_clean: bool) -> dict[str, bool]:
+    return {
+        "requireClean": require_clean,
+        "valid": not require_clean or worktree_clean,
+    }
+
+
 def report() -> dict[str, Any]:
     build_runner()
     steps: list[dict[str, Any]] = []
@@ -285,6 +292,8 @@ def render_human(value: dict[str, Any]) -> None:
         f"onboarding-journey: {summary['passed']}/{summary['expected']} passed, "
         f"{summary['failed']} failed, {summary['skipped']} skipped"
     )
+    if not value["provenance"]["valid"]:
+        print("✗ provenance: --require-clean rejects the dirty worktree")
 
 
 def self_test() -> None:
@@ -302,23 +311,28 @@ def self_test() -> None:
     assert contract["missing"] == [EXPECTED_STEP_IDS[-1]]
     assert contract["duplicates"] == [EXPECTED_STEP_IDS[0]]
     assert contract["failed"] == 2
-    print("onboarding-journey self-test: semantic and step-contract poles hold")
+    assert provenance(worktree_clean=False, require_clean=True)["valid"] is False
+    assert provenance(worktree_clean=False, require_clean=False)["valid"] is True
+    print("onboarding-journey self-test: semantic, step, and provenance poles hold")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--require-clean", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
         self_test()
         return
     value = report()
+    value["provenance"] = provenance(value["worktreeClean"], args.require_clean)
     if args.json:
         print(json.dumps(value, sort_keys=True, separators=(",", ":")))
     else:
         render_human(value)
-    raise SystemExit(1 if value["summary"]["failed"] else 0)
+    failed = value["summary"]["failed"] or not value["provenance"]["valid"]
+    raise SystemExit(1 if failed else 0)
 
 
 if __name__ == "__main__":
