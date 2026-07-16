@@ -160,14 +160,14 @@ err="$(cd "$fs_jail" && "$bang_abs" run "$fs_ambient" 2>&1 >/dev/null)" && code=
 check "fs-no-env-nonzero-exit" "$code" "5"
 check_contains "fs-no-env-names-the-collapse" "$err" "escaped-capability"
 
-# 7b · an ungranted label refusal: --env=real WITHOUT Fs in --allow ⟹ the Fs perform still escapes
-#      (exit 5). Proves --allow is deny-by-default per label (row-attenuation), not all-or-nothing.
+# 7b · an ungranted label refusal surfaces a precise authority diagnostic before Fs IO.
 err="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Console "$fs_ambient" 2>&1 >/dev/null)" && code=0 || code=$?
-check "fs-ungranted-label-refused-exit" "$code" "5"
+check "fs-ungranted-label-refused-exit" "$code" "7"
 
 # 7c · --allow=Fs bad-name resolution still errors loud (an unqualified Fs resolves to Io_Fs; a
 #      typo does not). Confirms the name→label map sees the new effect.
-got="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs "$fs_ambient" 2>/dev/null)" && code=0 || code=$?
+got="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs \
+  --allow-fs-read "$fs_jail" --allow-fs-write "$fs_jail" "$fs_ambient" 2>/dev/null)" && code=0 || code=$?
 check "fs-real-write-read-stdout" "$got" "hi"
 check "fs-real-write-read-exit"   "$code" "0"
 # the file was ACTUALLY written to the jail (not a sim) — the real IO boundary, observed on disk.
@@ -177,7 +177,9 @@ check "fs-real-file-on-disk" "$(cat "$fs_jail/g.t" 2>/dev/null)" "hi"
 #      Record a real run, DELETE the file, then replay: byte-identical output WITHOUT the file on
 #      disk ⇒ the tested-stratum host handler conforms to the pure oracle (invariant #1). Replay
 #      does NO real IO, so the deleted file stays absent — the recorded readFile result is fed back.
-(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs --record "$fs_jail/fs.ndjson" "$fs_ambient" >/dev/null 2>&1) && rcode=0 || rcode=$?
+(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs \
+  --allow-fs-read "$fs_jail" --allow-fs-write "$fs_jail" \
+  --record "$fs_jail/fs.ndjson" "$fs_ambient" >/dev/null 2>&1) && rcode=0 || rcode=$?
 check "fs-record-succeeds" "$rcode" "0"
 rm -f "$fs_jail/g.t"
 replayed="$(cd "$fs_jail" && "$bang_abs" run --replay "$fs_jail/fs.ndjson" "$fs_ambient" 2>/dev/null)" && pcode=0 || pcode=$?
@@ -204,7 +206,9 @@ let main =
   let back = Io.readFile(path) in
   back
 BANG
-real_out="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs --record "$fs_jail/q.ndjson" "$fs_jail/quote.bang" 2>/dev/null)" && code=0 || code=$?
+real_out="$(cd "$fs_jail" && "$bang_abs" run --env=real --allow=Fs \
+  --allow-fs-read "$fs_jail" --allow-fs-write "$fs_jail" \
+  --record "$fs_jail/q.ndjson" "$fs_jail/quote.bang" 2>/dev/null)" && code=0 || code=$?
 rm -f "$fs_jail/f"
 replay_out="$(cd "$fs_jail" && "$bang_abs" run --replay "$fs_jail/q.ndjson" "$fs_jail/quote.bang" 2>/dev/null)" && code=0 || code=$?
 check "fs-escaped-body-round-trips" "$replay_out" "$real_out"

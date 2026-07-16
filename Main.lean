@@ -90,14 +90,14 @@ def defaultMaxHostRequests : Nat := 1024
 
 This scanner is the sole option parser. No fallback can turn a present-but-invalid value into a
 default. In particular, `ParsedCli.allow = none` means the option was genuinely absent; malformed
-`--allow` input is an `Except.error`, never ADR-0104's grant-all default.
+input is an `Except.error`, and real mode rejects absence instead of widening it to grant-all.
 -/
 
 /-- Every option family understood by the CLI.  A subcommand passes the exact subset it accepts;
 recognised options outside that subset are errors rather than discarded tokens. -/
 inductive CliFlagKind where
   | engine | noTypecheck | fuel
-  | hostEnv | allow | record | replay | maxHostRequests
+  | hostEnv | allow | allowFsRead | allowFsWrite | record | replay | maxHostRequests
   | json | out | component | adapter | moduleFlag | write | fix | quietClean
   deriving DecidableEq
 
@@ -111,6 +111,10 @@ structure ParsedCli where
   fuel : Option Nat := none
   hostReal : Option Bool := none
   allow : Option (List String) := none
+  /-- Repeatable physical filesystem roots. Read roots cover `readFile` and `exists`; write roots
+  cover `writeFile`. They never imply the separate `Fs` effect-label grant. -/
+  allowFsRead : List String := []
+  allowFsWrite : List String := []
   recordPath : Option String := none
   replayPath : Option String := none
   maxHostRequests : Option Nat := none
@@ -148,6 +152,8 @@ def parseCliAllow (command value : String) : Except String (List String) :=
   let labels := (value.splitOn ",").map (fun s => s.trimAscii.toString)
   if labels.isEmpty || labels.any (fun s => s.isEmpty) then
     .error s!"bang {command}: invalid value '{value}' for option '--allow' (expected a nonempty comma-separated label list)"
+  else if labels.contains "all" && labels != ["all"] then
+    .error s!"bang {command}: invalid value '{value}' for option '--allow' ('all' must be the only grant)"
   else if labels.eraseDups.length != labels.length then
     .error s!"bang {command}: invalid value '{value}' for option '--allow' (duplicate labels are not allowed)"
   else
@@ -174,8 +180,16 @@ def parseCliArgs (command : String) (allowed : List CliFlagKind) (raw : List Str
         .error s!"bang {command}: option '--record' requires '--env=real'"
       else if acc.replayPath.isSome && acc.hostReal == some true then
         .error s!"bang {command}: option '--replay' cannot be used with '--env=real'"
+      else if acc.replayPath.isSome && acc.allow.isSome then
+        .error s!"bang {command}: option '--allow' is not valid with '--replay' (replay consumes a trace purely and grants no live host authority)"
       else if acc.replayPath.isNone && acc.hostReal.getD false == false && acc.allow.isSome then
-        .error s!"bang {command}: option '--allow' requires '--env=real' or '--replay'"
+        .error s!"bang {command}: option '--allow' requires '--env=real' (replay accepts no live authority flags)"
+      else if acc.hostReal != some true &&
+          (!acc.allowFsRead.isEmpty || !acc.allowFsWrite.isEmpty) then
+        .error s!"bang {command}: filesystem root grants require '--env=real' (replay is pure and does not use live filesystem authority)"
+      else if acc.allow == some ["all"] &&
+          (!acc.allowFsRead.isEmpty || !acc.allowFsWrite.isEmpty) then
+        .error s!"bang {command}: '--allow=all' already grants unrestricted filesystem access; do not combine it with filesystem root grants"
       else if acc.replayPath.isNone && acc.hostReal.getD false == false &&
           acc.maxHostRequests.isSome then
         .error s!"bang {command}: option '--max-host-requests' requires '--env=real' or '--replay'"
@@ -185,6 +199,8 @@ def parseCliArgs (command : String) (allowed : List CliFlagKind) (raw : List Str
       else if (acc.hostReal == some true || acc.recordPath.isSome || acc.replayPath.isSome) &&
           acc.noTypecheck then
         .error s!"bang {command}: option '--no-typecheck' is not valid with real, record, or replay host mode"
+      else if acc.hostReal == some true && acc.allow.isNone then
+        .error s!"bang {command}: --env=real requires explicit host authority; add '--allow=Console', '--allow=Fs', or '--allow=all' (omitting --allow no longer grants every host effect)"
       else if acc.adapterPath.isSome && !acc.component then
         .error s!"bang {command}: option '--adapter' requires '--component'"
       else
@@ -242,6 +258,36 @@ def parseCliArgs (command : String) (allowed : List CliFlagKind) (raw : List Str
         if acc.allow.isSome then duplicate token
         let labels ← parseCliAllow command (token.drop "--allow=".length).toString
         go { acc with allow := some labels } rest
+      else if token == "--allow-fs-read" then
+        rejectNotAllowed .allowFsRead token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else if value.isEmpty then missing token
+          else if acc.allowFsRead.contains value then duplicate token
+          else go { acc with allowFsRead := acc.allowFsRead ++ [value] } tail
+        | [] => missing token
+      else if "--allow-fs-read=".isPrefixOf token then
+        rejectNotAllowed .allowFsRead token
+        let value := (token.drop "--allow-fs-read=".length).toString
+        if value.isEmpty then missing "--allow-fs-read"
+        else if acc.allowFsRead.contains value then duplicate token
+        else go { acc with allowFsRead := acc.allowFsRead ++ [value] } rest
+      else if token == "--allow-fs-write" then
+        rejectNotAllowed .allowFsWrite token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else if value.isEmpty then missing token
+          else if acc.allowFsWrite.contains value then duplicate token
+          else go { acc with allowFsWrite := acc.allowFsWrite ++ [value] } tail
+        | [] => missing token
+      else if "--allow-fs-write=".isPrefixOf token then
+        rejectNotAllowed .allowFsWrite token
+        let value := (token.drop "--allow-fs-write=".length).toString
+        if value.isEmpty then missing "--allow-fs-write"
+        else if acc.allowFsWrite.contains value then duplicate token
+        else go { acc with allowFsWrite := acc.allowFsWrite ++ [value] } rest
       else if token == "--record" then
         rejectNotAllowed .record token
         if acc.recordPath.isSome then duplicate token
@@ -620,7 +666,7 @@ def applyEntryRule (p : Prog) : Except String Prog :=
   | true,  false => .error "both a `main` decl and a trailing expression are present — ADR-0093 D5 forbids silent precedence (remove one)"
   | false, true  => .error "this file is a library (no `main` decl, no trailing expression) — nothing to run; import it from an entry file instead"
 
-/-- The D1 resolution + D2/D3/D4 merge, from an entry FILE, WITHOUT the D5 entry rule
+/- The D1 resolution + D2/D3/D4 merge, from an entry FILE, WITHOUT the D5 entry rule
 (`applyEntryRule`) applied — parse it, resolve every `import`/`use` it names (transitively,
 same-dir-then-root, cycle-checked), then `mergeModules` the result into ONE flat, UN-entry-ruled
 `Prog`. Factored out of `resolveEntryFile` (#117's gap-2 fix) so a caller that does NOT want the
@@ -633,7 +679,15 @@ naive `dir/name.bang` `resolveModule` builds directly) ONLY at the top level, ma
 documented search order; nested imports resolve relative to THEIR OWN file's directory (the
 natural reading of "same directory as the importing file" — a transitively-imported module's
 imports are relative to IT, not the original entry file). -/
-def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
+/-- A merged program plus provenance for host effects that actually originated in resolver-owned,
+bundled `Io`. Strings are the declaration names AFTER `mergeModules`: `use Io (Clock)` deliberately
+keeps bare `Clock`, while an ordinary `import Io` produces `Io_Clock`. No user-chosen flattened name
+can enter this list. -/
+structure ResolvedFile where
+  prog : Prog
+  trustedHostNames : List String := []
+
+def resolveEntryFileRawWithProvenance (path : String) : IO (Except String ResolvedFile) := do
   let entryPath : System.FilePath := ⟨path⟩
   let root ← IO.currentDir
   let some entrySrc ← (do let s ← IO.FS.readFile entryPath; pure (some s)) <|> pure none
@@ -641,7 +695,8 @@ def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
   match Bang.Surface.parseProg entrySrc with
   | .error m => return .error s!"parse error: {m}"
   | .ok entryProg =>
-      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return .ok entryProg
+      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then
+        return .ok { prog := entryProg }
       let dir := entryPath.parent.getD root
       -- both containment trees realPath-resolved ONCE here (never per module). The entry dir
       -- exists (the entry file was just read from it); the `<|>` fallback to the root tree only
@@ -682,7 +737,22 @@ def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
             match ← resolveModule root allowed u.modName found st with
             | .error e  => return .error e
             | .ok stNew => st := stNew
-      return Bang.TypeCheck.mergeModules st.resolved entryProg
+      match Bang.TypeCheck.mergeModules st.resolved entryProg with
+      | .error e => return .error e
+      | .ok merged =>
+        let hasBundledIo := st.resolved.any (fun (name, _) => name == "Io")
+        let usedNames := entryProg.uses.flatMap (·.names)
+        let trustedHostNames := if hasBundledIo then
+          ["Console", "Clock", "Fs"].map (fun name =>
+            if usedNames.contains name then name else "Io_" ++ name)
+        else []
+        return .ok { prog := merged, trustedHostNames }
+
+/-- Compatibility projection for non-host commands: provenance is retained only by the host route. -/
+def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
+  match ← resolveEntryFileRawWithProvenance path with
+  | .error e => pure (.error e)
+  | .ok resolved => pure (.ok resolved.prog)
 
 /-- The full D1-D5 resolution + merge, from an entry FILE — `resolveEntryFileRaw` (the resolve+merge
 half) followed by the D5 entry rule (`applyEntryRule`), applied LAST to the fully-merged result.
@@ -692,6 +762,14 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
   match ← resolveEntryFileRaw path with
   | .error e   => pure (.error e)
   | .ok merged => pure (applyEntryRule merged)
+
+def resolveEntryFileWithProvenance (path : String) : IO (Except String ResolvedFile) := do
+  match ← resolveEntryFileRawWithProvenance path with
+  | .error e => pure (.error e)
+  | .ok resolved =>
+    match applyEntryRule resolved.prog with
+    | .error e => pure (.error e)
+    | .ok prog => pure (.ok { resolved with prog })
 
 /-- Run one source string through the whole pipeline, printing the outcome and returning the process
 exit code. `typecheck` selects the pipeline (ADR-0076 #51):
@@ -882,36 +960,219 @@ partial def strToVal (s : String) : Val :=
   | []      => .fold (.inl .vunit)
   | c :: cs => .fold (.inr (.pair (.fold (.vint (Int.ofNat c.toNat))) (strToVal (String.mk cs))))
 
-/-- A host request's op → the effect it belongs to, for the wedge (Console/Clock op names are
-disjoint, ADR-0104 §2 — so op-name dispatch is unambiguous). Unknown op ⇒ `none` (fail-loud). -/
-def hostServiceReal (op : Bang.OpId) (payload : Val) : IO (Option Val) := do
-  match op with
-  | "print"     => match asString payload with
-                   | some s => IO.println s; pure (some .vunit)
-                   | none   => pure none                       -- print of a non-Str ⇒ fail-loud
-  | "readLine"  => let line ← (← IO.getStdin).getLine
-                   pure (some (strToVal (line.dropRightWhile (· == '\n'))))
-  | "now"       => let ms ← IO.monoMsNow; pure (some (.vint (Int.ofNat ms)))
-  -- ── Fs (ADR-0104 §Scope "next" tier, hostio-widen lane) — whole-file read/write + exists. All
-  -- Sendable in/out (Str/Unit/Int); NO FD crosses the boundary (the path IS the token). ──
-  | "readFile"  => match asString payload with
-                   | some p => match ← (IO.FS.readFile ⟨p⟩ |>.toBaseIO) with
-                               | .ok contents => pure (some (strToVal contents))
-                               | .error _     => pure none     -- missing/unreadable ⇒ fail-loud (v1 has no sum-typed error carrier; Io.exists is the pre-check idiom)
-                   | none   => pure none                       -- readFile of a non-Str path ⇒ fail-loud
-  | "writeFile" => match payload with                          -- the (Str,Str) pair the `.two` lowering built (ADR-0104 §4)
-                   | .pair pathV bodyV =>
-                       match asString pathV, asString bodyV with
-                       | some p, some body => match ← (IO.FS.writeFile ⟨p⟩ body |>.toBaseIO) with
-                                              | .ok _    => pure (some .vunit)
-                                              | .error _ => pure none   -- unwritable (bad dir, perms) ⇒ fail-loud
-                       | _, _              => pure none         -- either half non-Str ⇒ fail-loud
-                   | _ => pure none                             -- writeFile payload not a pair ⇒ fail-loud
-  | "exists"    => match asString payload with
-                   | some p => let ex ← (System.FilePath.pathExists ⟨p⟩ : IO Bool)
-                               pure (some (.vint (if ex then 1 else 0)))
-                   | none   => pure none                       -- exists of a non-Str path ⇒ fail-loud
-  | _           => pure none
+/-- Built-in services are identified by their resolver-trusted declaration, never by an operation
+name. A custom effect may reuse `print` or `writeFile` without becoming a real host service. -/
+inductive KnownHostEffect where
+  | console | clock | fs
+  deriving DecidableEq, Repr
+
+/-- One effect-level grant after the program's declaration map has been resolved. -/
+structure ResolvedHostGrant where
+  name : String
+  label : Bang.EffectRow.Label
+  kind : KnownHostEffect
+  deriving Repr
+
+/-- Filesystem path authority is a second axis, independent of the `Fs` effect label. `unrestricted`
+is reachable only through the exact spelling `--allow=all`; named grants use canonical directory
+roots split by operation class. -/
+structure FsAuthority where
+  unrestricted : Bool := false
+  readRoots : List System.FilePath := []
+  writeRoots : List System.FilePath := []
+
+/-- The one resolved authority value consumed by both the pure seam (labels) and real service.
+No service reconstructs authority from operation-name heuristics. -/
+structure HostAuthority where
+  /-- Every trusted service the program declared. These labels surface a request so denial can be
+  precise; non-host effects remain outside the seam. -/
+  recognized : List ResolvedHostGrant
+  /-- The subset selected by explicit real-mode `--allow`. -/
+  grantedLabels : List Bang.EffectRow.Label
+  fs : FsAuthority
+
+def HostAuthority.labels (a : HostAuthority) : List Bang.EffectRow.Label :=
+  a.recognized.map (·.label)
+
+def HostAuthority.kindForLabel? (a : HostAuthority) (label : Bang.EffectRow.Label) :
+    Option KnownHostEffect :=
+  (a.recognized.find? (fun grant => grant.label == label)).map (·.kind)
+
+def HostAuthority.isGranted (a : HostAuthority) (label : Bang.EffectRow.Label) : Bool :=
+  a.grantedLabels.contains label
+
+/-- Join a merged declaration name to resolver-owned bundled-Io provenance. List positions are the
+fixed bundled declaration inventory emitted by `resolveEntryFileRawWithProvenance`; comparison is
+exact, so an untrusted matching tail or op name never becomes authority. -/
+def trustedHostEffect? (trustedNames : List String) (canonical : String) : Option KnownHostEffect :=
+  match trustedNames with
+  | console :: clock :: fs :: _ =>
+    if console == canonical then some .console
+    else if clock == canonical then some .clock
+    else if fs == canonical then some .fs
+    else none
+  | _ => none
+
+/-- Defense-in-depth for trusted bundled declarations after module flattening. Resolver provenance
+pins origin; this pins the exact public operation surface too, so stdlib drift fails closed. -/
+def expectedHostSignature : KnownHostEffect → List (String × String)
+  | .console => [("print", "Str -> Unit"), ("readLine", "Unit -> Str")]
+  | .clock   => [("now", "Unit -> Int")]
+  | .fs      => [("readFile", "Str -> Str"), ("writeFile", "Str * Str -> Unit"),
+                  ("exists", "Str -> Int")]
+
+def validateHostServiceDeclarations (prog : Prog) (trustedNames : List String) : Except String Unit := do
+  for (name, kind) in trustedNames.zip [.console, .clock, .fs] do
+    let declMatches := prog.decls.filterMap (fun
+      | .effectD declName ops => if declName == name then some ops else none
+      | _ => none)
+    match declMatches with
+    | [ops] =>
+      let actual := ops.map (fun (op, ty) => (op, Bang.Format.showTy ty))
+      let expected := expectedHostSignature kind
+      if actual != expected then
+        throw s!"trusted bundled host effect '{name}' has unexpected operations/signatures: {repr actual}; expected {repr expected}"
+    | _ => throw s!"trusted bundled host effect provenance for '{name}' did not resolve to exactly one declaration"
+
+/-- Linux-path containment after `realPath`: the separator guard keeps `/grant/root2` outside
+`/grant/root`. The release target is Linux; the limitation is recorded in ADR-0104 rather than
+claiming a platform-independent component API Lean does not expose here. -/
+def fsPathInRoot (path root : System.FilePath) : Bool :=
+  if root.toString == "/" then path.toString.startsWith "/"
+  else path == root || path.toString.startsWith (root.toString ++ "/")
+
+def fsPathInRoots (path : System.FilePath) (roots : List System.FilePath) : Bool :=
+  roots.any (fsPathInRoot path)
+
+/-- Canonicalize a repeatable directory-root grant. Relative roots bind to the process CWD at startup;
+symlink roots deliberately grant their resolved physical directory. -/
+def canonicalFsRoot (option raw : String) : IO (Except String System.FilePath) := do
+  try
+    let real ← IO.FS.realPath ⟨raw⟩
+    let metadata ← real.symlinkMetadata
+    if metadata.type != .dir then
+      return .error s!"{option} root '{raw}' resolves to '{real}', which is not a directory"
+    return .ok real
+  catch e =>
+    return .error s!"could not resolve {option} root '{raw}' as an existing directory: {e}"
+
+def canonicalFsRoots (option : String) (raws : List String) : IO (Except String (List System.FilePath)) := do
+  let rec go (acc : List System.FilePath) : List String → IO (Except String (List System.FilePath))
+    | [] => pure (.ok acc)
+    | raw :: rest => do
+      match ← canonicalFsRoot option raw with
+      | .error e => pure (.error e)
+      | .ok real =>
+        if acc.contains real then
+          pure (.error s!"{option} roots contain duplicate physical directory '{real}'")
+        else go (acc ++ [real]) rest
+  go [] raws
+
+/-- Validate one Fs target before its operation. Existing final symlinks (including dangling ones)
+are rejected using no-follow metadata. Both the immediate parent and an existing target are resolved
+physically and must stay under a granted directory. A missing final target is allowed for `exists`
+and `writeFile`, but its immediate parent must already exist; `writeFile` never creates parents.
+
+This is accident/symlink containment, not descriptor-enforced isolation: Lean exposes pathname IO,
+not `openat`/dirfd handles, so a concurrent same-UID mutation can change an intermediate component between
+validation and the later read/write. -/
+def authorizeFsPath (option op raw : String) (roots : List System.FilePath) :
+    IO (Except String System.FilePath) := do
+  if roots.isEmpty then
+    return .error s!"Fs.{op} has no path authority; add '{option} ROOT' alongside '--allow=Fs'"
+  let path : System.FilePath := ⟨raw⟩
+  let parent := path.parent.getD ⟨"."⟩
+  let parentReal? : Except String System.FilePath ← try
+    let real ← IO.FS.realPath parent
+    pure (Except.ok real)
+  catch e =>
+    pure (Except.error s!"Fs.{op} path '{raw}' has no resolvable existing parent '{parent}': {e}")
+  let parentReal ← match parentReal? with
+    | Except.ok p => pure p
+    | Except.error e => return Except.error e
+  if !fsPathInRoots parentReal roots then
+    return Except.error s!"Fs.{op} path '{raw}' resolves through parent '{parentReal}', outside its granted roots"
+  let metadata? : Option IO.FS.Metadata ← try
+    pure (some (← path.symlinkMetadata))
+  catch _ => pure none
+  match metadata? with
+  | some metadata =>
+    if metadata.type == .symlink then
+      return Except.error s!"Fs.{op} refuses final symlink path '{raw}' (live and dangling symlinks are not followed)"
+    let pathReal? : Except String System.FilePath ← try
+      let real ← IO.FS.realPath path
+      pure (Except.ok real)
+    catch e => pure (Except.error s!"Fs.{op} could not resolve existing path '{raw}': {e}")
+    match pathReal? with
+    | Except.error e => return Except.error e
+    | Except.ok pathReal =>
+      if fsPathInRoots pathReal roots then return Except.ok pathReal
+      return Except.error s!"Fs.{op} path '{raw}' resolves to '{pathReal}', outside its granted roots"
+  | none =>
+    -- The parent is already canonical and contained; spelling the missing child under it avoids
+    -- preserving unchecked `..` components in the pathname passed to the operation.
+    match path.fileName with
+    | none => return Except.error s!"Fs.{op} path '{raw}' has no final filename"
+    | some name => return Except.ok (parentReal / name)
+
+/-- Service one real request only after BOTH axes agree: exact built-in label identity and, for Fs,
+the operation's path grant. `.error` is guaranteed to occur before the corresponding real effect. -/
+def hostServiceReal (authority : HostAuthority) (req : Bang.EnvMachine.HostReq) :
+    IO (Except String Val) := do
+  let kind ← match authority.kindForLabel? req.label with
+    | some kind => pure kind
+    | none => return .error s!"host request on ungranted or unrecognized label {req.label}"
+  if !authority.isGranted req.label then
+    return .error s!"host effect {repr kind} is not granted; add its name to '--allow' before using real mode"
+  match kind, req.op with
+  | .console, "print" =>
+      match asString req.payload with
+      | some s => IO.println s; pure (.ok .vunit)
+      | none => pure (.error "Console.print expected a Str payload")
+  | .console, "readLine" =>
+      let line ← (← IO.getStdin).getLine
+      pure (.ok (strToVal (line.dropRightWhile (· == '\n'))))
+  | .clock, "now" =>
+      let ms ← IO.monoMsNow
+      pure (.ok (.vint (Int.ofNat ms)))
+  | .fs, "readFile" =>
+      match asString req.payload with
+      | none => pure (.error "Fs.readFile expected a Str path")
+      | some raw =>
+        let path? ← if authority.fs.unrestricted then pure (.ok ⟨raw⟩)
+          else authorizeFsPath "--allow-fs-read" "readFile" raw authority.fs.readRoots
+        match path? with
+        | .error e => pure (.error e)
+        | .ok path =>
+          try pure (.ok (strToVal (← IO.FS.readFile path)))
+          catch e => pure (.error s!"Fs.readFile failed for '{raw}': {e}")
+  | .fs, "writeFile" =>
+      match req.payload with
+      | .pair pathV bodyV =>
+        match asString pathV, asString bodyV with
+        | some raw, some body =>
+          let path? ← if authority.fs.unrestricted then pure (.ok ⟨raw⟩)
+            else authorizeFsPath "--allow-fs-write" "writeFile" raw authority.fs.writeRoots
+          match path? with
+          | .error e => pure (.error e)
+          | .ok path =>
+            try IO.FS.writeFile path body; pure (.ok .vunit)
+            catch e => pure (.error s!"Fs.writeFile failed for '{raw}': {e}")
+        | _, _ => pure (.error "Fs.writeFile expected a (Str, Str) payload")
+      | _ => pure (.error "Fs.writeFile expected a (Str, Str) payload")
+  | .fs, "exists" =>
+      match asString req.payload with
+      | none => pure (.error "Fs.exists expected a Str path")
+      | some raw =>
+        let path? ← if authority.fs.unrestricted then pure (.ok ⟨raw⟩)
+          else authorizeFsPath "--allow-fs-read" "exists" raw authority.fs.readRoots
+        match path? with
+        | .error e => pure (.error e)
+        | .ok path =>
+          let present ← (System.FilePath.pathExists path : IO Bool)
+          pure (.ok (.vint (if present then 1 else 0)))
+  | expected, op =>
+      pure (.error s!"operation '{op}' is not part of the resolved built-in {repr expected} service")
 
 /-- One recorded trace row (ADR-0104 §3): a satisfied host perform, ndJSON. All fields Sendable
 (`op`/`payload`/`result` — `label`/`id` are `Nat`), so it serializes faithfully. Payload/result are
@@ -963,36 +1224,66 @@ partial def runHostLoop (hostLabels : List Bang.EffectRow.Label) (fuel maxReq : 
             loop (Bang.EnvMachine.readbackIn result :: rsRev) (nReq + 1)
   loop [] 0
 
-/-- Resolve `--allow=A,B` (or `--allow A,B`) NAMES to the labels the elaborator allocated, via the
-program's effect map. An allow-name not in the map (not a declared effect) ⇒ a LOUD error naming it
-(ADR-0104 §2 — an under/mis-granting flag is caught before the run). Empty/absent `--allow` under
-`--env=real` grants ALL declared effect labels (the "grant everything" shorthand, ADR-0104 §2). -/
-def resolveAllow (effMap : List (String × Bang.EffectRow.Label)) (allow : Option (List String)) :
-    Except String (List Bang.EffectRow.Label) :=
+/-- Resolve effect-level authority once. The exact reserved `all` spelling grants every recognized
+built-in service declared by the program; it never captures a user effect named `all`. Named grants
+retain the ergonomic unqualified-tail lookup, but search only the resolver-trusted registry before
+their label can reach the host seam. -/
+def resolveEffectGrants (effMap : List (String × Bang.EffectRow.Label)) (trustedNames : List String)
+    (allow : Option (List String)) : Except String (List ResolvedHostGrant) :=
+  let recognized : List ResolvedHostGrant := effMap.filterMap (fun (canonical, label) =>
+    (trustedHostEffect? trustedNames canonical).map (fun kind => { name := canonical, label, kind }))
   match allow with
-  | none       => .ok (effMap.map (·.2))                 -- no --allow ⇒ all declared labels granted
+  | none => .ok recognized -- replay only; real mode rejects omission in the typed parser
+  | some ["all"] => .ok recognized
   | some names =>
-      -- A grant name matches an effect by its EXACT name OR its unqualified tail: a program that
-      -- `import Io`s sees the effect as `Io_Console` (ADR-0093 module-qualification), but a user
-      -- writes `--allow=Console` naturally — accept both (`Io_Console` ends in `_Console`).
-      let nameMatches (nm en : String) : Bool := en == nm || en.endsWith ("_" ++ nm)
-      let rec resolveNames (acc : List (String × Bang.EffectRow.Label)) :
-          List String → Except String (List Bang.EffectRow.Label)
-        | [] => .ok (acc.map (·.2))
-        | nm :: rest =>
-          let candidates := effMap.filter (fun p => nameMatches nm p.1)
-          match candidates with
-          | [] => .error s!"--allow names '{nm}', which is not a declared effect in this program \
-                            (declared: {String.intercalate ", " (effMap.map (·.1))})"
-          | [(canonical, ℓ)] =>
-            if acc.any (fun p => p.2 == ℓ) then
-              .error s!"--allow names '{nm}', but that resolves to '{canonical}', whose authority label \
-                was already granted by another name (duplicate resolved labels are not allowed)"
-            else
-              resolveNames (acc ++ [(canonical, ℓ)]) rest
-          | _ => .error s!"--allow name '{nm}' is ambiguous; it matches declared effects \
-                            {String.intercalate ", " (candidates.map (·.1))}; use one exact declared name"
-      resolveNames [] names
+    let nameMatches (nm en : String) : Bool := en == nm || en.endsWith ("_" ++ nm)
+    let rec resolveNames (acc : List ResolvedHostGrant) :
+        List String → Except String (List ResolvedHostGrant)
+      | [] => .ok acc
+      | nm :: rest =>
+        let candidates := recognized.filter (fun grant => nameMatches nm grant.name)
+        match candidates with
+        | [] =>
+          let declaredMatches := effMap.filter (fun p => nameMatches nm p.1)
+          if declaredMatches.isEmpty then
+            .error s!"--allow names '{nm}', which is not a declared effect in this program \
+              (declared: {String.intercalate ", " (effMap.map (·.1))})"
+          else
+            .error s!"--allow names '{nm}', but its declared match did not originate in the \
+              resolver-owned bundled `Io` module and is not a real host service"
+        | [grant] =>
+          if acc.any (fun prior => prior.label == grant.label) then
+            .error s!"--allow names '{nm}', but that resolves to '{grant.name}', whose authority label \
+              was already granted by another name (duplicate resolved labels are not allowed)"
+          else resolveNames (acc ++ [grant]) rest
+        | _ => .error s!"--allow name '{nm}' is ambiguous; it matches declared effects \
+                          {String.intercalate ", " (candidates.map (·.name))}; use one exact declared name"
+    resolveNames [] names
+
+/-- Resolve both authority axes before evaluation. Named Fs grants canonicalize directory roots;
+`--allow=all` is the one explicit unrestricted-filesystem policy and rejects roots in the parser. -/
+def resolveHostAuthority (effMap : List (String × Bang.EffectRow.Label))
+    (trustedNames : List String) (allow : Option (List String)) (readRoots writeRoots : List String) :
+    IO (Except String HostAuthority) := do
+  let recognized ← match resolveEffectGrants effMap trustedNames none with
+    | .ok grants => pure grants
+    | .error e => return .error e
+  let grants ← match resolveEffectGrants effMap trustedNames allow with
+    | .ok grants => pure grants
+    | .error e => return .error e
+  let grantedLabels := grants.map (·.label)
+  if allow == some ["all"] then
+    return .ok { recognized, grantedLabels, fs := { unrestricted := true } }
+  let read ← match ← canonicalFsRoots "--allow-fs-read" readRoots with
+    | .ok roots => pure roots
+    | .error e => return .error e
+  let write ← match ← canonicalFsRoots "--allow-fs-write" writeRoots with
+    | .ok roots => pure roots
+    | .error e => return .error e
+  let fsGranted := grants.any (fun grant => grant.kind == .fs)
+  if (!read.isEmpty || !write.isEmpty) && !fsGranted then
+    return .error "filesystem roots were granted without '--allow=Fs'; path authority never implies the Fs effect label"
+  return .ok { recognized, grantedLabels, fs := { readRoots := read, writeRoots := write } }
 
 /-- Parse a `--replay` trace's `result` field back to a `Val`, DISPATCHED BY OP (ADR-0104 §3,
 hostio-widen lane). The op name pins the result TYPE, so the parse can't guess wrong: `readLine`/
@@ -1065,20 +1356,55 @@ def replayTraceRow (row : HostTraceRow) (req : Bang.EnvMachine.HostReq) : Except
   | some result => pure result
   | none => throw s!"invalid replay trace result for op '{row.op}': '{row.result}'"
 
+/-- Publish a completed record in the target directory. `writeNew` gives this invocation ownership
+of a unique temporary file; flush then same-directory rename makes the visible trace an all-at-once
+success artifact. Cleanup is limited to the temp file this call created. -/
+partial def publishHostRecord (target : System.FilePath) (contents : String) : IO (Except String Unit) := do
+  let parent := target.parent.getD ⟨"."⟩
+  let stem := target.fileName.getD "trace.ndjson"
+  let nonce ← (IO.monoNanosNow : IO Nat)
+  let rec openTemp (attempt : Nat) : IO (Except String (System.FilePath × IO.FS.Handle)) := do
+    if attempt > 32 then
+      return .error s!"could not reserve a temporary record beside '{target}' after 33 attempts"
+    let temp := parent / s!".{stem}.bang-record-{nonce}-{attempt}"
+    try
+      let handle ← IO.FS.Handle.mk temp .writeNew
+      return .ok (temp, handle)
+    catch _ => openTemp (attempt + 1)
+  match ← openTemp 0 with
+  | .error e => return .error e
+  | .ok (temp, handle) =>
+    try
+      handle.putStr contents
+      handle.flush
+      IO.FS.rename temp target
+      return .ok ()
+    catch e =>
+      try IO.FS.removeFile temp catch _ => pure ()
+      return .error s!"could not publish completed host record '{target}': {e}"
+
 /-- The host-IO entry (ADR-0104): run a resolved `Prog` under the replay-prefix driver. Resolves
 `--allow` names→labels via the program's effect map, then drives `evalEHost`. Record and REPLAY share
 ONE loop (`runHostLoop`) — only the `answer` supply differs (real IO+record vs trace-read), condition
 4. `--replay` runs on the PURE engine (no real IO), the invariant-#1 leg. -/
 def runHostProg (fuel maxReq : Nat) (allow : Option (List String))
-    (record : Option String) (replay : Option String) (prog : Prog) : IO UInt32 := do
+    (allowFsRead allowFsWrite : List String)
+    (record : Option String) (replay : Option String) (prog : Prog)
+    (trustedHostNames : List String) : IO UInt32 := do
+  match validateHostServiceDeclarations prog trustedHostNames with
+  | .error e => IO.eprintln s!"error: bang run: {e}"; return 1
+  | .ok () => pure ()
   match Bang.TypeCheck.checkAndLowerProgWithEffects prog with
   | .error e => IO.eprintln s!"error: {e}"; pure 1
   | .ok (c, effMap) =>
-    match resolveAllow effMap allow with
-    | .error e => IO.eprintln s!"error: bang run: {e}"; pure 1
-    | .ok hostLabels =>
-      match replay with
-      | some tracePath =>
+    match replay with
+    | some tracePath =>
+      -- REPLAY grants no live authority. It surfaces only recognized built-in labels so the strict
+      -- trace can answer them, and never constructs/calls the real service.
+      match resolveEffectGrants effMap trustedHostNames none with
+      | .error e => IO.eprintln s!"error: bang run: {e}"; pure 1
+      | .ok replayGrants =>
+        let hostLabels := replayGrants.map (·.label)
         -- REPLAY: strictly decode and validate each request before consuming its result. Pure:
         -- after the trace file is loaded, neither the answer supply nor completion performs host IO.
         let contents ← IO.FS.readFile ⟨tracePath⟩
@@ -1100,24 +1426,29 @@ def runHostProg (fuel maxReq : Nat) (allow : Option (List String))
               else pure (.error s!"replay trace has {remaining.length} unconsumed extra row(s)"))
             (onRow := fun _ _ => pure ())
             c
-      | none =>
+    | none =>
+      match ← resolveHostAuthority effMap trustedHostNames allow allowFsRead allowFsWrite with
+      | .error e => IO.eprintln s!"error: bang run: {e}"; pure 1
+      | .ok authority =>
         -- REAL (+ optional record): the answer supply is real IO; a row is appended per satisfied op.
         let recRef ← IO.mkRef (#[] : Array String)
-        let code ← runHostLoop hostLabels fuel maxReq
+        let code ← runHostLoop authority.labels fuel maxReq
           (answer := fun req => do
-            match ← hostServiceReal req.op req.payload with
-            | some result => pure (.ok result)
-            | none => pure (.error s!"no host handler for op '{req.op}' on label {req.label} — the v1 \
-                wedge services Console (print/readLine), Clock (now), and Fs \
-                (readFile/writeFile/exists) only (ADR-0104)."))
+            hostServiceReal authority req)
           (finish := pure (.ok ()))
           (onRow := fun req result => do
             if record.isSome then recRef.modify (·.push (traceRow req result)))
           c
-        match record with
-        | some path => IO.FS.writeFile ⟨path⟩ (String.intercalate "\n" (← recRef.get).toList ++ "\n")
-        | none      => pure ()
-        pure code
+        if code != 0 then
+          -- A denied/failed service never leaves a new partial trace that looks replayable.
+          pure code
+        else match record with
+          | none => pure code
+          | some path =>
+            let contents := String.intercalate "\n" (← recRef.get).toList ++ "\n"
+            match ← publishHostRecord ⟨path⟩ contents with
+            | .ok () => pure code
+            | .error e => IO.eprintln s!"error: {e}"; pure 7
 
 /-- Run `bang fmt`: format a whole program (decls + body, `Bang.Format.fmtProg`) and print the
 canonical form to stdout. `.error` → stderr + exit 1, the SAME convention `runSource`'s parse-error
@@ -2126,9 +2457,11 @@ def usage : String :=
   "USAGE:\n" ++
   "  bang run  [FLAGS] <file.bang>      run a bang program from a file\n" ++
   "             --env=sim|real                 select host mode; sim/default is pure, real enables host IO\n" ++
-  "             --allow LABELS                effect grants for real or replay mode only\n" ++
+  "             --allow LABELS|all            required effect grants for real mode; exact 'all' grants every built-in host service\n" ++
+  "             --allow-fs-read ROOT          repeatable readFile/exists directory root; also requires --allow=Fs\n" ++
+  "             --allow-fs-write ROOT         repeatable writeFile directory root; also requires --allow=Fs\n" ++
   "             --record PATH                 record real host requests as ndJSON; requires --env=real\n" ++
-  "             --replay PATH                 pure replay in sim/default mode; conflicts with --env=real\n" ++
+  "             --replay PATH                 pure replay; conflicts with --env=real and all authority flags\n" ++
   "             --max-host-requests N         bound real/replay host requests (invalid in pure sim; default " ++
   s!"{defaultMaxHostRequests})\n" ++
   "             host mode rejects --engine/--compiled and --no-typecheck (those control the pure runner)\n" ++
@@ -2455,21 +2788,26 @@ def main (args : List String) : IO UInt32 := do
       -- relative to, so it stays on the single-string `runSource` path unconditionally (below) —
       -- an `import` in an `eval`-string program is out of v1 scope (no directory to search).
       match parseCliArgs "run"
-          [.engine, .noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]
+          [.engine, .noTypecheck, .fuel, .hostEnv, .allow, .allowFsRead, .allowFsWrite,
+            .record, .replay, .maxHostRequests]
           rest with
       | .error e => cliError e
       | .ok opts =>
         match opts.positionals with
         | [arg] =>
-          match ← resolveEntryFile arg with
-          | .error e   => IO.eprintln s!"error: {e}"; pure 1
-          | .ok merged =>
-            -- ADR-0104: `--env=real` / `--record` / `--replay` route through the host-IO driver;
-            -- otherwise the ordinary pure run (sim = the default engine).
-            if opts.hostReal.getD false || opts.recordPath.isSome || opts.replayPath.isSome then
+          -- ADR-0104: the host route retains bundled-Io provenance through module flattening;
+          -- ordinary pure execution keeps the established Prog-only resolver projection.
+          if opts.hostReal.getD false || opts.recordPath.isSome || opts.replayPath.isSome then
+            match ← resolveEntryFileWithProvenance arg with
+            | .error e => IO.eprintln s!"error: {e}"; pure 1
+            | .ok resolved =>
               runHostProg opts.selectedFuel opts.selectedMaxHostRequests opts.allow
-                opts.recordPath opts.replayPath merged
-            else runResolvedProg (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel merged
+                opts.allowFsRead opts.allowFsWrite
+                opts.recordPath opts.replayPath resolved.prog resolved.trustedHostNames
+          else
+            match ← resolveEntryFile arg with
+            | .error e => IO.eprintln s!"error: {e}"; pure 1
+            | .ok merged => runResolvedProg (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel merged
         | _ => cliError s!"bang run: expected exactly one <file.bang> positional argument; got {opts.positionals.length}"
     else if cmd == "eval" then
       match parseCliArgs "eval" [.engine, .noTypecheck, .fuel] rest with

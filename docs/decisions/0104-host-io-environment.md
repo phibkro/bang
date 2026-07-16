@@ -84,18 +84,35 @@ the handler.
 ```
 bang run prog.bang                                 -- no host env: a host perform ⇒ escapedCap (today)
 bang run --env=sim  prog.bang                       -- the SIM environment: pure, deterministic (the DEFAULT for tests)
-bang run --env=real prog.bang                       -- grant ALL host labels the real handler
-bang run --env=real --allow=Console,Clock prog.bang -- grant a SUBSET (the pledge surface)
+bang run --env=real prog.bang                       -- REFUSED: real mode requires explicit authority
+bang run --env=real --allow=Console,Clock prog.bang -- grant these trusted bundled effects
+bang run --env=real --allow=Fs --allow-fs-read ./input --allow-fs-write ./output prog.bang
+bang run --env=real --allow=all prog.bang           -- explicit all built-ins + unrestricted Fs
 ```
 
-`--allow` is row-attenuation as a CLI flag: a label not in `--allow` gets no host handler, so a perform
-on it hits `escapedCap` (fail-loud, ADR-0063). The DRIVER resolves the `--allow` NAMES to their
-allocated labels via the merged program's effect table (labels are `4 + effect-decl-index`, decl-order,
-NOT fixed — so the resolution is by name, not a hardcoded `Nat`). Because the checker knows `main`'s row,
-an under-granting `--allow` can be a STATIC refusal, not a runtime escape. The structural contrast with
-Deno (which enforces at runtime by intercepting syscalls, discovering requirements by running): bang's
-row makes the requirement STATIC — the type declares what a program may perform, checked before it runs,
-and the grant is the handler installation. "Deno's permissions, but in the type system."
+**Authority correction (#169, 2026-07-16).** `--env=real` and `--record` are default-deny:
+omitting `--allow` is a migration-quality CLI error before source resolution. Exact lowercase
+`--allow=all`, alone, is the only grant-all form; it grants every recognized bundled-Io service
+declared by the program and unrestricted Fs paths. Replay is pure trace consumption and rejects all
+authority flags.
+
+Named `--allow` remains row attenuation, but recognition and authorization are separate. The module
+resolver carries the declaration names that actually originated in bundled `Io` through flattening
+(`import Io` gives `Io_Clock`; `use Io (Clock)` gives `Clock`), then joins only that trusted registry
+to allocated labels. A user effect with the same tail or operation name is not a host service. Every
+recognized label reaches the driver so an omitted grant gets a precise diagnostic; only an explicitly
+granted label reaches real IO.
+
+Fs has a second, independent axis: repeatable existing-directory roots. `--allow-fs-read ROOT`
+authorizes `readFile` and `exists`; `--allow-fs-write ROOT` authorizes `writeFile`. Roots never imply
+`--allow=Fs`, and `--allow=Fs` never implies a path. Relative roots bind to the process CWD and are
+resolved physically once. Existing final symlinks are refused; existing targets and immediate parents
+of missing targets are `realPath`-checked under a separator-bounded root. Missing parents are not
+created. Absolute paths are accepted only inside a named root, except under explicit `all`.
+
+This is accident and symlink containment, not descriptor-enforced same-UID isolation. Lean exposes pathname
+IO rather than descriptor-relative `openat`; a trusted concurrent actor can mutate a checked component
+between validation and the later operation. The implementation states this TOCTOU boundary directly.
 
 ### 3. The conformance gate — record/replay is the tested-stratum host handler's oracle
 
@@ -386,17 +403,14 @@ pub effect Fs { readFile : Str -> Str, writeFile : Str * Str -> Unit, exists : S
   wants); a typed `readFile` error (`Result Str Err`) — v1 a missing/unreadable path FAILS LOUD
   (the driver's `none` → the fail-loud terminal), and `Io.exists` is the v1 pre-check idiom.
 
-### The grant surface — per-LABEL, `fs:read`/`fs:write` deferred (and why it's not cheap)
+### The grant surface — effect label intersected with typed filesystem roots
 
-`--allow=Fs` grants all three Fs ops. **Deno's per-op `fs:read`/`fs:write` granularity was
-considered and REJECTED for v1 — it is not the cheap item the task hoped.** The seam grants by
-LABEL (`evalEHost`'s `hostLabels : List Nat`, checked `hostLabels.contains ℓ`); a per-OP grant
-would make the seam check op names too — a change to the PROVEN `evalEHost` (the B2 sibling whose
-whole point is byte-identical-to-`evalE`, drift-gated). Per-op scoping stays GRANT-SIDE policy in
-v1, matching the design note §2a's ruling for per-resource scoping ("the ROW tracks the effect,
-the grant scopes the resource; pushing paths/hosts into the type is deliberately out of scope").
-If wanted later, it rides the same future suspendable-engine door as the rest of the seam, or a
-grant-side op-filter that never touches the proof spine — its own slice, not this one.
+`--allow=Fs` grants the effect label containing all three Fs ops. #169 adds a separate host-resource
+dimension without changing the pure seam: the real service intersects that label with read roots
+(`readFile`/`exists`) or write roots (`writeFile`) before the corresponding operation. The effect row
+still describes which service a program may request; filesystem roots describe which host resources
+this invocation makes available. Keeping both axes explicit avoids either one silently implying the
+other.
 
 ### The sim-mode ruling for Fs — the TRACE is the determinism source, not a sim map
 

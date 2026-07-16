@@ -139,14 +139,19 @@ re-enters it), matching `dispatchOn`'s existing one-shot tail-resume for custom 
 ```
 bang run prog.bang                    -- NO host env: any host perform ⇒ escapedCap (today's behavior)
 bang run --env=sim[:seed] prog.bang   -- the SIM environment: pure, no real IO, deterministic (the DEFAULT for tests)
-bang run --env=real prog.bang         -- grant ALL host labels the real handler
-bang run --env=real --allow=Console,Clock prog.bang   -- grant a SUBSET (the pledge surface)
+bang run --env=real prog.bang         -- refused: real mode needs explicit --allow
+bang run --env=real --allow=Console,Clock prog.bang   -- named trusted effect grants
+bang run --env=real --allow=Fs --allow-fs-read ./in --allow-fs-write ./out prog.bang
+bang run --env=real --allow=all prog.bang             -- explicit built-in + unrestricted-Fs grant
 ```
 
-`--allow` is row-attenuation as a CLI flag (os-inspiration §1: "pledge-as-a-type"): a label not in
-`--allow` gets no host handler, so a `perform` on it hits `escapedCap` — the "fault on an invalid
-capability." The checker knows `main`'s row (ADR-0093 D5), so an under-granting `--allow` can be a
-*static* refusal, not a runtime escape.
+`--allow` is row attenuation as a CLI flag (os-inspiration §1: "pledge-as-a-type"). #169 makes
+real/record default-deny, reserves exact `all` as the only grant-all spelling, and separates trusted
+service recognition from authorization so an omitted label gets a precise pre-IO diagnostic. Fs
+adds an independent host-resource intersection: repeatable read roots cover `readFile`/`exists` and
+write roots cover `writeFile`. Replay consumes its trace purely and rejects authority flags. The
+resolver, not an effect-name heuristic in the service, identifies declarations originating in the
+bundled `Io` module before module flattening erases provenance.
 
 **escapedCap interaction.** `escapedCap` stays the terminal for a genuinely-unhandled label. The
 seam is *narrow*: only a perform on a CLI-designated host label that also escapes σ→τ→κ suspends;
@@ -173,6 +178,7 @@ validated: developers WANT deny-by-default with explicit, fine-grained allows. T
 |---|---|---|
 | deny-by-default | the default `--env=sim` (real IO never ambient) | stronger: sim is a WORKING runtime, not a refusal |
 | `--allow-net=host:port` | `--allow=Net` (+ per-resource scoping in the GRANT, host-side) | per-resource stays grant-side policy in v1 — the ROW tracks the effect, the grant scopes the resource; pushing paths/hosts into the type is deliberately out of scope |
+| `--allow-read` / `--allow-write` | `--allow=Fs` ∩ `--allow-fs-read ROOT` / `--allow-fs-write ROOT` | effect authority and physical directory-root authority are explicit independent axes |
 | prompt-on-first-use | NOT adopted for v1 | the CLI is agent-driven/non-interactive-first; a prompt mode can arrive with a TTY check later |
 | `Deno.permissions` (runtime query) | `bang query effects <fn>` | EXISTS TODAY — and it's static: the answer comes from the type, not from probing the runtime |
 

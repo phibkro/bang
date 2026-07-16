@@ -424,6 +424,8 @@ def _extract_cli_commands(text, allowed_by_command):
             "--fuel",
             "--env=sim|real",
             "--allow",
+            "--allow-fs-read",
+            "--allow-fs-write",
             "--record",
             "--replay",
             "--max-host-requests",
@@ -552,6 +554,8 @@ def _validate_cli_agreement(commands, main_text, allowed_by_command):
         "--fuel": "fuel",
         "--env=sim|real": "hostEnv",
         "--allow": "allow",
+        "--allow-fs-read": "allowFsRead",
+        "--allow-fs-write": "allowFsWrite",
         "--record": "record",
         "--replay": "replay",
         "--max-host-requests": "maxHostRequests",
@@ -571,6 +575,8 @@ def _validate_cli_agreement(commands, main_text, allowed_by_command):
         "fuel": "opts.selectedFuel",
         "hostEnv": "opts.hostReal",
         "allow": "opts.allow",
+        "allowFsRead": "opts.allowFsRead",
+        "allowFsWrite": "opts.allowFsWrite",
         "record": "opts.recordPath",
         "replay": "opts.replayPath",
         "maxHostRequests": "opts.selectedMaxHostRequests",
@@ -927,8 +933,8 @@ def self_test(base=None, sources=None, base_validated=False):
     )
     build_cases.append(("per-command-flag-drift", {AUTHORITY_PATHS["main"]: bad_flag}))
     run_without_engine = sources["main"].replace(
-        "[.engine, .noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
-        "[.noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
+        "[.engine, .noTypecheck, .fuel, .hostEnv, .allow, .allowFsRead, .allowFsWrite,\n            .record, .replay, .maxHostRequests]",
+        "[.noTypecheck, .fuel, .hostEnv, .allow, .allowFsRead, .allowFsWrite,\n            .record, .replay, .maxHostRequests]",
         1,
     )
     build_cases.append(
