@@ -260,9 +260,9 @@ wasmfx-probe:
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
 # STM-only) + ADR link integrity + ADR decided-ledger currency (gen-adr-index
 # --check: README ≡ frontmatter, Status copies agree, Q⟺ADR) + the
-# import-direction V (ADR-0046/0047: Core imports neither edge). Fast: no Lean
-# build on docs/tooling commits — the proof-state leg elaborates Audit.lean ONLY
-# when `Bang/` actually moved (sha short-circuit). Also run by `just audit`.
+# import-direction V (ADR-0046/0047: Core imports neither edge). The proof-state
+# leg always elaborates Audit.lean and full-compares the projection; typed input
+# identities do not substitute for checking the derived counts. Also run by `just audit`.
 # adr-check is HERE (not just in `just verify`)
 # so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
@@ -270,6 +270,7 @@ fitness:
     bash tools/check-primitives.sh
     bash tools/check-git-hygiene.sh
     bash tools/check-sha-reachable.sh
+    python3 tools/test-squash-provenance.py
     bash tools/check-paths.sh
     bash tools/check-loop-audit.sh
     bash tools/check-adr-links.sh
@@ -310,6 +311,11 @@ fitness:
 # silently false). Foreign hex (other repos, package revs) → tools/sha-allow.txt.
 check-sha:
     bash tools/check-sha-reachable.sh
+
+# End-to-end proof that source + generated follow-up survives configured squash
+# landing with byte-identical changelog/proof provenance; includes tamper falsifiers.
+test-squash-provenance:
+    python3 tools/test-squash-provenance.py
 
 # PATH lifecycle: every active paths/PATH-*.md is reachable from CONTEXT/ROADMAP (done → archive). Also run by fitness.
 check-paths:

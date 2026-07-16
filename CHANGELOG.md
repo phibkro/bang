@@ -1,10 +1,11 @@
 # Changelog
 
 Notable **product** changes — the MVP increments that surface the verified kernel. This file is
-**generated** from conventional commits (`just changelog`); the commit subject *is* the entry, so
-there is no hand-written copy to gate or drift (history lives in git — this is a derivation, the
-same as the ADR index / import graph). The pre-MVP verification grind is git + `ROADMAP.md` history,
-out of scope here. Squash-merge each increment to `main` → one clean entry per shipped unit.
+**generated** from conventional commits (`just changelog`); the normalized subject *is* the entry,
+and each `change:` identity binds its canonical parent plus the complete before/after delta with
+raw-content SHA-256 records. The generated block alone is normalized to break self-reference.
+The pre-MVP verification grind is git + `ROADMAP.md` history, out of scope here. Squash-merge each
+increment to `main` → one clean entry per shipped unit with the same identity before and after.
 
 <!-- BEGIN GENERATED changelog (just changelog) — do not hand-edit -->
 
@@ -278,5 +279,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **test** — assert success-path CLI exit status (#182) (`8234fd40`)
 - **release** — verify installer artifacts end to end (#188) (`8f9bc10c`)
 - **tooling** — make developer gates fail closed (#177) (`f0b8e0a2`)
+- **tooling** — make generated provenance squash-safe (`change:c63f243f27950fd9c9d7c2ad7707f677b0ca209ecdd68449e2e85ff0eba6c80a`)
 
 <!-- END GENERATED changelog -->

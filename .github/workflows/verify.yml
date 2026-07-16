@@ -14,6 +14,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    # The PR title is the configured multi-commit squash title and an identity input.
+    # Re-run if it changes so reviewed provenance cannot go stale before landing.
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -28,9 +31,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      # pull_request checks run on a synthetic merge commit; changelog history belongs
-      # to the PR head, which is the stable source commit the generated file can name.
+      # Verify the exact virtual squash GitHub is about to create. PR checkout HEAD is
+      # synthetic, so provenance derives from immutable event base/head identities.
+      PROVENANCE_STABLE_REF: ${{ github.event.pull_request.base.sha || github.sha }}
+      PROVENANCE_END: ${{ github.event.pull_request.head.sha || github.sha }}
+      CHANGELOG_STABLE_REF: ${{ github.event.pull_request.base.sha || github.sha }}
+      CHANGELOG_BASE: ${{ github.event.pull_request.base.sha || '' }}
       CHANGELOG_END: ${{ github.event.pull_request.head.sha || github.sha }}
+      CHANGELOG_TITLE: ${{ github.event.pull_request.title || '' }}
     steps:
       - uses: actions/checkout@v4
         with:

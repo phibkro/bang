@@ -87,6 +87,11 @@ issue (GitHub)  →  branch  →  make the change  →  the VERIFY GATE  →  PR
 
 - **Branch** off `main` (never commit to `main` directly). Conventional-commit subjects (`feat(scope): …`,
   `docs(scope): …`, `fix(scope): …`) — the CHANGELOG is generated from them.
+- **Land through GitHub squash merge only.** Repository settings enforce `allow_squash_merge=true`,
+  `allow_merge_commit=false`, `allow_rebase_merge=false`, with `COMMIT_OR_PR_TITLE` /
+  `COMMIT_MESSAGES`. A product PR has one `feat`/`fix`/`perf` source commit plus its generated follow-up;
+  its PR title must match that source subject (GitHub may append ` (#N)` when landing). Do not edit the
+  squash title in the merge dialog: the reviewed title is an input to the stable `change:` identity.
 - **The verify gate** — before you claim done, run it and read the **real exit code**:
   ```
   just verify         # selfcheck + lake build + audit

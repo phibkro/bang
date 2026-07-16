@@ -116,7 +116,7 @@ sys.path.insert(0, os.path.join(root, "tools"))  # gen-changelog imports genbloc
 spec.loader.exec_module(gen_changelog)
 
 if range_start:
-    # Same parser, fixed-width commit IDs, and fail-loud history handling as CHANGELOG.md;
+    # Same parser, squash-stable change IDs, and fail-loud history handling as CHANGELOG.md;
     # only the release window differs.
     buckets = gen_changelog.entries(root, start=range_start)
 else:
@@ -129,10 +129,10 @@ for t, heading in gen_changelog.SECTIONS:
         continue
     populated = True
     out.append(f"{heading}:")
-    for scope, subject, sha, bang in buckets[t]:
+    for scope, subject, identity, bang in buckets[t]:
         mark = "[BREAKING] " if bang else ""
         pre = f"{scope}: " if scope else ""
-        out.append(f"- {mark}{pre}{subject} ({sha})")
+        out.append(f"- {mark}{pre}{subject} ({identity})")
     out.append("")
 if not populated:
     out.append("No conventional feat/fix/perf commits since the previous tag.")

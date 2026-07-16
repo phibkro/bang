@@ -14,6 +14,7 @@ expected shape is missing, `sys.exit` rather than emit a half-empty dashboard.
 
 Usage:  gen-dashboard.py            write _site/index.html
 """
+
 import html
 import json
 import re
@@ -33,14 +34,18 @@ PWA_ASSETS = ROOT / "tools/pwa"  # committed icon rasters, copied verbatim into 
 # Served at a project-Pages SUBPATH (https://phibkro.github.io/bang/), NOT a root domain.
 # So every PWA path — manifest start_url/scope/icons, SW registration scope, cached URLs —
 # is RELATIVE ("." / "icon-192.png"), never root-absolute ("/…" would hit the domain root, 404).
-THEME_COLOR = "#0d1117"       # matches --bg; tints the installed-app status bar / address bar
+THEME_COLOR = (
+    "#0d1117"  # matches --bg; tints the installed-app status bar / address bar
+)
 BACKGROUND_COLOR = "#0d1117"  # splash-screen background
 ICONS = [  # (filename in tools/pwa AND _site, sizes, extra manifest keys)
     ("icon-192.png", "192x192", {}),
     ("icon-512.png", "512x512", {}),
     ("icon-512-maskable.png", "512x512", {"purpose": "maskable"}),
 ]
-CACHE_VERSION = "bang-progress-v1"  # bump to invalidate the precached shell on the next install
+CACHE_VERSION = (
+    "bang-progress-v1"  # bump to invalidate the precached shell on the next install
+)
 
 
 def fetch_milestones():
@@ -49,10 +54,14 @@ def fetch_milestones():
     try:
         raw = subprocess.run(
             ["gh", "api", "repos/{owner}/{repo}/milestones?state=all&per_page=100"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
     except FileNotFoundError:
-        sys.exit("gen-dashboard: `gh` not found — needed to fetch milestones (the project map).")
+        sys.exit(
+            "gen-dashboard: `gh` not found — needed to fetch milestones (the project map)."
+        )
     except subprocess.CalledProcessError as e:
         sys.exit(f"gen-dashboard: `gh api milestones` failed — {e.stderr.strip()}")
     try:
@@ -60,7 +69,9 @@ def fetch_milestones():
     except json.JSONDecodeError:
         sys.exit("gen-dashboard: milestones response was not JSON.")
     if not isinstance(ms, list) or not ms:
-        sys.exit("gen-dashboard: zero milestones — the project map is the spine of the dashboard.")
+        sys.exit(
+            "gen-dashboard: zero milestones — the project map is the spine of the dashboard."
+        )
     # GitHub returns milestones newest-first; a milestone NUMBER is its creation order = the DAG order.
     ms.sort(key=lambda m: m["number"])
     return ms
@@ -81,7 +92,9 @@ def parse_checkpoints(text):
         name = nm.group(1) if nm else cells[1]
         rows.append((cid, name, "✓" in s))
     if not rows:
-        sys.exit("gen-dashboard: no ◊ checkpoint rows in ROADMAP.md — the proof map is keyed off them.")
+        sys.exit(
+            "gen-dashboard: no ◊ checkpoint rows in ROADMAP.md — the proof map is keyed off them."
+        )
     return rows
 
 
@@ -92,32 +105,45 @@ def parse_health(text):
         text,
     )
     if not m:
-        sys.exit("gen-dashboard: could not parse the proof-state 'headlines:' line in CONTEXT.md.")
+        sys.exit(
+            "gen-dashboard: could not parse the proof-state 'headlines:' line in CONTEXT.md."
+        )
     sm = re.search(r"\*\*sorries:\*\*\s*(\d+)", text)
     if not sm:
-        sys.exit("gen-dashboard: could not parse the proof-state 'sorries:' line in CONTEXT.md.")
+        sys.exit(
+            "gen-dashboard: could not parse the proof-state 'sorries:' line in CONTEXT.md."
+        )
     return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(sm.group(1))
 
 
 def parse_pulse(text, n=8):
-    """(scope, summary, sha) for the most-recent n `### Features` entries (newest first).
+    """(scope, summary, change-id) for recent `### Features` entries (newest first).
 
     The changelog is append-ordered (generated from conventional commits), so the LAST entries
     are the newest shipped increments — the Linear-pulse analog."""
     feats = re.search(r"### Features\n(.*?)(?:\n### |\n<!--|\Z)", text, re.S)
     if not feats:
-        sys.exit("gen-dashboard: no '### Features' section in CHANGELOG.md — the pulse feed is keyed off it.")
+        sys.exit(
+            "gen-dashboard: no '### Features' section in CHANGELOG.md — the pulse feed is keyed off it."
+        )
     rows = []
     for line in feats.group(1).splitlines():
-        cm = re.match(r"-\s*\*\*(.+?)\*\*\s*—\s*(.+?)\s*\(`([0-9a-f]{6,})`\)\s*$", line.strip())
+        cm = re.match(
+            r"-\s*\*\*(.+?)\*\*\s*—\s*(.+?)\s*"
+            r"\(`((?:change:[0-9a-f]{64})|(?:[0-9a-f]{8}))`\)\s*$",
+            line.strip(),
+        )
         if cm:
             rows.append((cm.group(1), cm.group(2), cm.group(3)))
     if not rows:
-        sys.exit("gen-dashboard: '### Features' parsed to zero entries — the entry shape changed.")
+        sys.exit(
+            "gen-dashboard: '### Features' parsed to zero entries — the entry shape changed."
+        )
     return list(reversed(rows))[:n]
 
 
 # ── rendering ──
+
 
 def e(s):
     return html.escape(str(s))
@@ -139,8 +165,11 @@ def milestone_cards(ms):
         else:
             cls, badge = "locked", "○"
         oi = m["open_issues"]
-        issues = f'{oi} open issue{"s" if oi != 1 else ""}' if oi else (
-            "complete" if m["state"] == "closed" else "no issues yet")
+        issues = (
+            f"{oi} open issue{'s' if oi != 1 else ''}"
+            if oi
+            else ("complete" if m["state"] == "closed" else "no issues yet")
+        )
         cards.append(
             f'<div class="card {cls}">'
             f'<div class="badge">{badge}</div>'
@@ -169,11 +198,13 @@ def checkpoint_pips(cps):
 
 def pulse_rows(pulse):
     out = []
-    for scope, summary, sha in pulse:
+    for scope, summary, identity in pulse:
+        shown = identity.removeprefix("change:")
+        shown = shown[:12] if identity.startswith("change:") else shown
         out.append(
             f'<li><span class="scope">{e(scope)}</span>'
             f'<span class="summary">{e(summary)}</span>'
-            f'<span class="sha">{e(sha)}</span></li>'
+            f'<span class="sha">{e(shown)}</span></li>'
         )
     return "\n".join(out)
 
@@ -358,6 +389,7 @@ def pct(part, whole):
 
 # ── PWA files (make the dashboard installable + instant-open offline) ──
 
+
 def render_manifest():
     """The web app manifest. All paths RELATIVE to the manifest URL (/bang/…), never root."""
     return json.dumps(
@@ -383,8 +415,9 @@ def render_manifest():
 def render_sw():
     """Service worker: stale-while-revalidate. Serve the cached shell instantly, refresh in the
     background so the next open converges to the latest CI build. All URLs relative to /bang/."""
-    shell = json.dumps(["./"] + [fn for fn, _, _ in ICONS]
-                       + ["index.html", "manifest.webmanifest"])
+    shell = json.dumps(
+        ["./"] + [fn for fn, _, _ in ICONS] + ["index.html", "manifest.webmanifest"]
+    )
     return f"""// generated by tools/gen-dashboard.py — do not hand-edit.
 const CACHE_VERSION = {json.dumps(CACHE_VERSION)};
 const SHELL = {shell};
@@ -437,14 +470,27 @@ def write_pwa_files():
     for fn, _, _ in ICONS:
         src = PWA_ASSETS / fn
         if not src.exists():
-            sys.exit(f"gen-dashboard: missing icon {src.relative_to(ROOT)} — "
-                     "re-rasterize tools/pwa/*.svg (resvg) before generating.")
+            sys.exit(
+                f"gen-dashboard: missing icon {src.relative_to(ROOT)} — "
+                "re-rasterize tools/pwa/*.svg (resvg) before generating."
+            )
         shutil.copyfile(src, SITE / fn)
 
 
 def main():
-    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
-    except Exception: pass
+    try:
+        __import__("subprocess").run(
+            [
+                "bash",
+                __import__("os").path.join(
+                    __import__("os").path.dirname(__file__), "tool-log.sh"
+                ),
+                __import__("os").path.basename(__file__),
+            ],
+            check=False,
+        )  # tool-log (plan 012)
+    except Exception:
+        pass
     ms = fetch_milestones()
     cps = parse_checkpoints(ROADMAP.read_text())
     health = parse_health(CONTEXT.read_text())
