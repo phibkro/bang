@@ -62,7 +62,9 @@ strict and fails if Chromium, `mmdc`, or any diagram fails.
 | Command | What it does |
 |---|---|
 | `just verify` | Default. selfcheck + build + audit. |
-| `just build` | `lake exe cache get && lake build` (incremental after first run). |
+| `just build` | One `lake build`, then the module/category warning ratchet (incremental after first run). |
+| `just warnings` | Run the same one-build warning ratchet without first-checkout cache bootstrap. |
+| `just warnings-update` | Atomically regenerate the canonical warning ceiling after a successful build. |
 | `just audit` | `tools/audit.sh` — static guards + axiom-set report per theorem. |
 | `just selfcheck` | Zero-dep Node smoke test of the row-unifier algorithm. |
 | `just site-build` | Enter the opt-in Bun/Chromium shell and run the strict production Vocs build. |
@@ -78,6 +80,39 @@ strict and fails if Chromium, `mmdc`, or any diagram fails.
 | `selfcheck.mjs` | Zero-dep Node smoke test for the row-unifier algorithm. Pre-Lean sanity. |
 | `install-hooks.sh` | Symlink `tools/git-hooks/*` into `.git/hooks/`. One-time setup. |
 | `git-hooks/pre-commit` | Fast static check on each commit: no `admit`, no axioms outside `Bang/Spec.lean`. Skip with `git commit --no-verify`. |
+
+## Lean warning budget
+
+Historical Lean warnings are tracked in `docfacts/lean-warning-budget.json` by
+module and stable category. `just build` runs the compiler once, streams its
+output unchanged, and then enforces the budget. Lake replays stored diagnostics,
+so cached and cold builds take the same path. A reduction passes immediately;
+an increased count, a new module, a new category, or an unrecognized warning
+shape fails. The budget is also bound to `lean-toolchain` plus the
+platform-independent Lean version, commit, and build flavor parsed from `lean
+--version`, so a toolchain change requires an explicit review and regeneration
+without making one host's target triple part of the baseline.
+
+Located dependency diagnostics are deliberately excluded. Any `warning:` line
+without a source location is ambiguous—it cannot be attributed to the project
+or a dependency—so the gate conservatively rejects it on both check and update
+paths. There is no broad locationless exception: a real non-diagnostic notice
+that must coexist with the compiler stream needs a narrow reviewed classifier
+rule instead of silently bypassing the budget.
+
+The target is **zero warnings**. After fixing warnings, shrink the committed
+ceiling with:
+
+```bash
+just warnings-update
+git diff -- docfacts/lean-warning-budget.json
+just warnings
+```
+
+`warnings-update` requires a successful build, refuses unknown warning shapes,
+writes sorted unique buckets deterministically, and replaces the file atomically.
+Do not use it merely to accept an increase: inspect and fix the regression unless
+the increase is an intentional, reviewed exception.
 
 ## Iteration loop (recommended)
 

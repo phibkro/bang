@@ -34,7 +34,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean`, `leanlex.py` | Generate source-syntax symbol indexes for the Lean source tree |
 
-## check (27)
+## check (28)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -63,12 +63,13 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `autoquality.sh`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh`, `autoquality.sh`, `.claude/settings.json` | Claude Code PostToolUse feedback for Edit/Write |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
+| [`lean-warnings.py`](lean-warnings.py) | `verify` | `lean-toolchain`, `docfacts/lean-warning-budget.json`, `justfile` | Keep Lean warnings on a ratchet without making historical warnings fatal |
 | [`onboarding-preflight.sh`](onboarding-preflight.sh) | `fitness` | `setup.sh` | Read-only readiness probe for the 15-minute contributor journey |
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/gen-onboarding.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (39)
+## test (40)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -100,6 +101,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-host-authority.sh`](test-host-authority.sh) | `verify` | `Main.lean`, `std/Io.bang` | #169: explicit real-host authority, trusted bundled-service identity, and Fs root containment |
 | [`test-hostio-seam.sh`](test-hostio-seam.sh) | `verify` | `Main.lean`, `Bang/Backend/EnvMachine.lean`, `std/Io.bang` | the SEAM + CLI-surface gate for the host-IO wedge (ADR-0104) |
 | [`test-law.sh`](test-law.sh) | `verify` | — | the non-interactive gate for `bang test` (issue #60's CLI wiring) |
+| [`test-lean-warnings.sh`](test-lean-warnings.sh) | `verify` | `tools/lean-warnings.py`, `docfacts/lean-warning-budget.json`, `justfile` | Falsification poles for the deterministic, reduction-friendly Lean warning budget |
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
 | [`test-onboarding-journey.sh`](test-onboarding-journey.sh) | `verify` | `onboarding_journey.py` | Public verify battery for the common contributor journey |

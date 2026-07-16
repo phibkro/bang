@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "classifierVersion": 2,
+  "toolchain": {
+    "leanToolchain": "leanprover/lean4:v4.30.0",
+    "leanVersion": "4.30.0",
+    "leanCommit": "d024af099ca4bf2c86f649261ebf59565dc8c622",
+    "leanBuild": "Release"
+  },
+  "zeroWarningTarget": true,
+  "totalWarnings": 536,
+  "buckets": [
+    {
+      "module": "Bang.Backend.AbstractMachine",
+      "category": "deprecated",
+      "count": 1
+    },
+    {
+      "module": "Bang.Backend.AbstractMachine",
+      "category": "unusedSimpArgs",
+      "count": 107
+    },
+    {
+      "module": "Bang.Backend.EnvMachine",
+      "category": "unusedSimpArgs",
+      "count": 35
+    },
+    {
+      "module": "Bang.Backend.U5bComplete",
+      "category": "unnecessarySeqFocus",
+      "count": 1
+    },
+    {
+      "module": "Bang.Backend.U5bComplete",
+      "category": "unnecessarySimpa",
+      "count": 48
+    },
+    {
+      "module": "Bang.Backend.U5bComplete",
+      "category": "unreachableTactic",
+      "count": 5
+    },
+    {
+      "module": "Bang.Backend.U5bComplete",
+      "category": "unusedSimpArgs",
+      "count": 9
+    },
+    {
+      "module": "Bang.Backend.U5bComplete",
+      "category": "unusedTactic",
+      "count": 5
+    },
+    {
+      "module": "Bang.Backend.U5bComplete",
+      "category": "unusedVariables",
+      "count": 1
+    },
+    {
+      "module": "Bang.Backend.Wasm",
+      "category": "unnecessarySeqFocus",
+      "count": 1
+    },
+    {
+      "module": "Bang.Backend.Wasm",
+      "category": "unnecessarySimpa",
+      "count": 80
+    },
+    {
+      "module": "Bang.Backend.Wasm",
+      "category": "unusedSimpArgs",
+      "count": 91
+    },
+    {
+      "module": "Bang.Core.CapCoh",
+      "category": "unusedSimpArgs",
+      "count": 4
+    },
+    {
+      "module": "Bang.Core.CapCoh",
+      "category": "unusedVariables",
+      "count": 1
+    },
+    {
+      "module": "Bang.Core.Semantics.Dispatch",
+      "category": "unreachableTactic",
+      "count": 1
+    },
+    {
+      "module": "Bang.Core.Semantics.Dispatch",
+      "category": "unusedTactic",
+      "count": 1
+    },
+    {
+      "module": "Bang.Core.Semantics.Eval",
+      "category": "deprecated",
+      "count": 1
+    },
+    {
+      "module": "Bang.Core.Semantics.Eval",
+      "category": "unusedSimpArgs",
+      "count": 1
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "deprecated",
+      "count": 1
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unnecessarySeqFocus",
+      "count": 4
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unreachableTactic",
+      "count": 4
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unusedNames",
+      "count": 3
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unusedSectionVars",
+      "count": 12
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unusedSimpArgs",
+      "count": 63
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unusedTactic",
+      "count": 4
+    },
+    {
+      "module": "Bang.Core.Soundness",
+      "category": "unusedVariables",
+      "count": 1
+    },
+    {
+      "module": "Bang.Distribution",
+      "category": "declarationUsesSorry",
+      "count": 2
+    },
+    {
+      "module": "Bang.Frontend.Lint",
+      "category": "deprecated",
+      "count": 1
+    },
+    {
+      "module": "Bang.Frontend.Query",
+      "category": "deprecated",
+      "count": 2
+    },
+    {
+      "module": "Bang.Frontend.Surface",
+      "category": "unusedVariables",
+      "count": 1
+    },
+    {
+      "module": "Bang.Meta.BinaryLR",
+      "category": "declarationUsesSorry",
+      "count": 3
+    },
+    {
+      "module": "Bang.Meta.BinaryLR",
+      "category": "unreachableTactic",
+      "count": 1
+    },
+    {
+      "module": "Bang.Meta.BinaryLR",
+      "category": "unusedSimpArgs",
+      "count": 9
+    },
+    {
+      "module": "Bang.Meta.BinaryLR",
+      "category": "unusedTactic",
+      "count": 1
+    },
+    {
+      "module": "Bang.Meta.LR",
+      "category": "unusedSectionVars",
+      "count": 13
+    },
+    {
+      "module": "Bang.Reify.CalcReifySim",
+      "category": "unusedSimpArgs",
+      "count": 5
+    },
+    {
+      "module": "Bang.Spec",
+      "category": "declarationUsesSorry",
+      "count": 3
+    },
+    {
+      "module": "Bang.Witness.BoccRegress",
+      "category": "unusedSimpArgs",
+      "count": 5
+    },
+    {
+      "module": "Bang.Witness.CapEscapeWitness",
+      "category": "unusedSimpArgs",
+      "count": 1
+    },
+    {
+      "module": "Bang.Witness.GradePolyReturner",
+      "category": "unusedSectionVars",
+      "count": 2
+    },
+    {
+      "module": "Bang.Witness.ReturnEscapeReach",
+      "category": "deprecated",
+      "count": 1
+    },
+    {
+      "module": "Bang.Witness.ReturnEscapeReach",
+      "category": "unusedSimpArgs",
+      "count": 1
+    }
+  ]
+}
