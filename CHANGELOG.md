@@ -275,6 +275,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — validate host replay traces strictly (#174) (`38a38d5e`)
 - **cli** — contain new scaffolds within examples (#181) (`312f14b9`)
 - **test** — reject failed example runners (#175) (`7870e029`)
-- **test** — assert success-path CLI exit status (`25555bab`)
+- **test** — assert success-path CLI exit status (#182) (`8234fd40`)
+- **release** — verify installer artifacts end to end (`f06d9dba`)
 
 <!-- END GENERATED changelog -->
