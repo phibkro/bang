@@ -93,6 +93,109 @@ compiled_stderr="$("$bang" eval --no-typecheck --compiled 'let c = (state 0 in {
 check "compiled-collapse-exit" "$compiled_exit" "5"
 contains "compiled-collapse-message-says-which" "$compiled_stderr" "does not sub-classify"
 
+# ── `bang new` write boundary (#179): NAME is one safe segment and the PHYSICAL examples/
+# parent stays under the current working root. Every fixture lives outside the repository; the
+# runner must neither escape nor overwrite a directory entry (including dangling symlinks).
+new_tmp="$(mktemp -d --tmpdir bang-cli-new-XXXXXX)"
+trap 'rm -rf "$new_tmp"' EXIT
+new_root="$new_tmp/project"
+mkdir -p "$new_root/examples"
+absbang="$(realpath "$bang")"
+
+reject_new_name() {
+  local case_name="$1" project_name="$2"
+  local stderr exit_code=0
+  stderr="$(cd "$new_root" && "$absbang" new "$project_name" 2>&1 >/dev/null)" || exit_code=$?
+  check "new-reject-$case_name-exit" "$exit_code" "1"
+  contains "new-reject-$case_name-diagnostic" "$stderr" "invalid project name '$project_name'"
+}
+
+reject_new_name "parent" "../escape"
+check "new-reject-parent-no-escape" "$(test ! -e "$new_root/escape" && echo yes)" "yes"
+
+absolute_escape="$new_tmp/absolute-escape"
+reject_new_name "absolute" "$absolute_escape"
+check "new-reject-absolute-no-escape" "$(test ! -e "$absolute_escape" && echo yes)" "yes"
+
+reject_new_name "slash" "nested/name"
+check "new-reject-slash-no-components" "$(test ! -e "$new_root/examples/nested" && echo yes)" "yes"
+reject_new_name "backslash" 'nested\name'
+reject_new_name "dot" "."
+reject_new_name "dotdot" ".."
+reject_new_name "hidden" ".hidden"
+reject_new_name "whitespace" "two words"
+empty_stderr="$(cd "$new_root" && "$absbang" new 2>&1 >/dev/null)" && empty_exit=0 || empty_exit=$?
+check "new-reject-empty-exit" "$empty_exit" "1"
+contains "new-reject-empty-diagnostic" "$empty_stderr" "invalid project name ''"
+unknown_stderr="$(cd "$new_root" && "$absbang" new unknown-flag-name --bogus 2>&1 >/dev/null)" && unknown_exit=0 || unknown_exit=$?
+check "new-unknown-flag-exit" "$unknown_exit" "1"
+contains "new-unknown-flag-usage" "$unknown_stderr" "USAGE:"
+check "new-unknown-flag-no-write" "$(test ! -e "$new_root/examples/unknown-flag-name" && echo yes)" "yes"
+
+# Existing directories are rejected and their contents prove the failure path never authorizes
+# rollback of a path this invocation did not create.
+mkdir "$new_root/examples/existing"
+printf 'keep-existing\n' > "$new_root/examples/existing/sentinel"
+existing_stderr="$(cd "$new_root" && "$absbang" new existing 2>&1 >/dev/null)" && existing_exit=0 || existing_exit=$?
+check "new-existing-exit" "$existing_exit" "1"
+contains "new-existing-diagnostic" "$existing_stderr" "already exists"
+check "new-existing-preserved" "$(cat "$new_root/examples/existing/sentinel")" "keep-existing"
+
+# A failure of the atomic create itself returns directly: because ownership starts only after a
+# successful createDir, this branch has no rollback authority.
+no_create_root="$new_tmp/no-create-project"
+mkdir -p "$no_create_root/examples"
+chmod 0555 "$no_create_root/examples"
+create_stderr="$(cd "$no_create_root" && "$absbang" new cannot-create 2>&1 >/dev/null)" && create_exit=0 || create_exit=$?
+chmod 0755 "$no_create_root/examples"
+check "new-create-failure-exit" "$create_exit" "1"
+contains "new-create-failure-diagnostic" "$create_stderr" "could not create scaffold directory"
+check "new-create-failure-no-target" "$(test ! -e "$no_create_root/examples/cannot-create" && echo yes)" "yes"
+
+# readDir sees directory entries without following them, so both live and dangling target symlinks
+# are no-overwrite failures. The outside sentinel also proves no traversal/cleanup occurred.
+mkdir "$new_tmp/outside-target"
+printf 'keep-symlink-target\n' > "$new_tmp/outside-target/sentinel"
+ln -s "$new_tmp/outside-target" "$new_root/examples/linked"
+linked_stderr="$(cd "$new_root" && "$absbang" new linked 2>&1 >/dev/null)" && linked_exit=0 || linked_exit=$?
+check "new-symlink-target-exit" "$linked_exit" "1"
+contains "new-symlink-target-diagnostic" "$linked_stderr" "already exists"
+check "new-symlink-target-preserved" "$(cat "$new_tmp/outside-target/sentinel")" "keep-symlink-target"
+ln -s "$new_tmp/missing-target" "$new_root/examples/dangling"
+dangling_stderr="$(cd "$new_root" && "$absbang" new dangling 2>&1 >/dev/null)" && dangling_exit=0 || dangling_exit=$?
+check "new-dangling-target-exit" "$dangling_exit" "1"
+contains "new-dangling-target-diagnostic" "$dangling_stderr" "already exists"
+check "new-dangling-target-preserved" "$(test -L "$new_root/examples/dangling" && echo yes)" "yes"
+
+# A safe NAME is still refused when the examples/ PARENT resolves outside the working root.
+symlink_root="$new_tmp/symlink-project"
+outside_examples="$new_tmp/outside-examples"
+mkdir "$symlink_root" "$outside_examples"
+ln -s "$outside_examples" "$symlink_root/examples"
+parent_stderr="$(cd "$symlink_root" && "$absbang" new safe-name 2>&1 >/dev/null)" && parent_exit=0 || parent_exit=$?
+check "new-symlink-parent-exit" "$parent_exit" "1"
+contains "new-symlink-parent-diagnostic" "$parent_stderr" "symlinked examples/ parent is not allowed"
+check "new-symlink-parent-no-escape" "$(test ! -e "$outside_examples/safe-name" && echo yes)" "yes"
+
+# Happy path: all generated files exist and the oracle is exactly what the runner prints.
+valid_out="$(cd "$new_root" && "$absbang" new safe-name 2>/dev/null)" && valid_exit=0 || valid_exit=$?
+check "new-valid-exit" "$valid_exit" "0"
+contains "new-valid-created" "$valid_out" "created examples/safe-name/"
+check "new-valid-files" \
+  "$(test -f "$new_root/examples/safe-name/main.bang" && \
+     test -f "$new_root/examples/safe-name/README.md" && \
+     test -f "$new_root/examples/safe-name/expected.txt" && echo yes)" "yes"
+valid_actual="$(cd "$new_root" && "$absbang" run examples/safe-name/main.bang)"
+check "new-valid-oracle" "$valid_actual" "$(cat "$new_root/examples/safe-name/expected.txt")"
+
+# Induce a post-create write failure without a product-only test seam: umask 0222 makes the newly
+# created directory read/execute-only, so its first file creation fails. Rollback can still enumerate
+# the empty directory and remove it through the writable parent.
+cleanup_stderr="$(cd "$new_root" && umask 0222 && "$absbang" new cleanup-case 2>&1 >/dev/null)" && cleanup_exit=0 || cleanup_exit=$?
+check "new-failure-exit" "$cleanup_exit" "1"
+contains "new-failure-diagnostic" "$cleanup_stderr" "removed the incomplete scaffold"
+check "new-failure-cleaned" "$(test ! -e "$new_root/examples/cleanup-case" && echo yes)" "yes"
+
 echo "──────────────────────────────"
 echo "cli: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
