@@ -10,6 +10,7 @@
     "basePath",
     "sections",
     "publications",
+    "routeChoices",
     "pages"
   ],
   "properties": {
@@ -39,6 +40,11 @@
           { "$ref": "#/$defs/treePublication" }
         ]
       }
+    },
+    "routeChoices": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/routeChoice" }
     },
     "pages": {
       "type": "array",
@@ -168,6 +174,16 @@
             "route": { "$ref": "#/$defs/route" },
             "contentKey": { "$ref": "#/$defs/kebabCase" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "route", "contentKey"],
+          "properties": {
+            "kind": { "const": "onboarding-page" },
+            "route": { "$ref": "#/$defs/route" },
+            "contentKey": { "$ref": "#/$defs/kebabCase" }
+          }
         }
       ]
     },
@@ -193,6 +209,37 @@
           }
         }
       ]
+    },
+    "routeChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "order",
+        "targetPage",
+        "seams",
+        "firstChange",
+        "narrowGate",
+        "fullGate"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/kebabCase" },
+        "title": { "$ref": "#/$defs/nonempty" },
+        "summary": { "$ref": "#/$defs/nonempty" },
+        "order": { "type": "integer", "minimum": 0 },
+        "targetPage": { "$ref": "#/$defs/kebabCase" },
+        "seams": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repoPath" }
+        },
+        "firstChange": { "$ref": "#/$defs/nonempty" },
+        "narrowGate": { "$ref": "#/$defs/nonempty" },
+        "fullGate": { "$ref": "#/$defs/nonempty" }
+      }
     },
     "page": {
       "type": "object",

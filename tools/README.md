@@ -13,7 +13,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `docfacts/architecture.json`, `docfacts/proof.json`, `docfacts/schema/architecture.schema.json`, `docfacts/schema/proof.schema.json`, `docs/architecture/core-overview.md`, `docfacts_architecture.py`, `docfacts_proof.py`, `genblock.py` | Render/check architecture and proof projections from committed documentation facts |
 | [`docfacts_architecture.py`](docfacts_architecture.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/*.md`, `docfacts/schema/architecture.schema.json`, `docfacts/architecture.json` | Generate and validate the source-derived BANG architecture documentation fact |
 | [`docfacts_language.py`](docfacts_language.py) | `fitness` | `Bang/Frontend/Surface.lean`, `Bang/Frontend/DiagCodes.lean`, `Bang/Frontend/Diagnostics.lean`, `Prelude.bang`, `Bang/Frontend/TypeCheck.lean`, `Main.lean`, `docfacts/schema/language.schema.json`, `docfacts/schema/common.schema.json`, `docfacts/language.json` | Generate and validate the serialized language-reference fact bundle |
-| [`docfacts_logger.py`](docfacts_logger.py) | `fitness` | `examples/logger-counting`, `docfacts/schema/*.schema.json`, `docs/reference/examples/logger-counting.md` | generate and validate the logger-counting documentation fact |
+| [`docfacts_logger.py`](docfacts_logger.py) | `fitness` | `examples/logger-counting`, `examples/logger-silent`, `docfacts/schema/*.schema.json`, `docs/reference/examples/logger-counting.md` | generate and validate the logger-counting documentation fact |
 | [`docfacts_proof.py`](docfacts_proof.py) | `fitness` | `Bang/**/*.lean`, `Bang/Audit.lean`, `Bang/Spec.lean`, `lean-toolchain`, `lakefile.toml`, `lake-manifest.json`, `docfacts/schema/proof.schema.json`, `docfacts/proof.json` | Generate, statically check, and live-check BANG proof documentation facts |
 | [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `adr_facts.py`, `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
 | [`gen-agent-pack.py`](gen-agent-pack.py) | `fitness` | `.claude/lane-discipline.md`, `.claude/agents/*.md`, `genblock.py` | splice the lane-discipline pack into each subagent role file |
@@ -34,7 +34,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean`, `leanlex.py` | Generate source-syntax symbol indexes for the Lean source tree |
 
-## check (25)
+## check (26)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -63,10 +63,11 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `autoquality.sh`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh`, `autoquality.sh`, `.claude/settings.json` | Claude Code PostToolUse feedback for Edit/Write |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
-| [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
+| [`onboarding-preflight.sh`](onboarding-preflight.sh) | `fitness` | `setup.sh` | Read-only readiness probe for the 15-minute contributor journey |
+| [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/gen-onboarding.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (30)
+## test (32)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -89,13 +90,15 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-compiled-dogfood.sh`](test-compiled-dogfood.sh) | `verify` | `examples/calc`, `examples/json` | the --compiled DIFFERENTIAL gate for the dogfood programs (#135) |
 | [`test-docfacts-architecture-proof.sh`](test-docfacts-architecture-proof.sh) | `fitness` | `docfacts/architecture.json`, `docfacts/proof.json`, `tools/docfacts_architecture.py`, `tools/docfacts_proof.py` | (no purpose comment) |
 | [`test-docfacts-language.sh`](test-docfacts-language.sh) | `verify` | `docfacts/language.json`, `docs/reference/language.md`, `web/docs/bang.tmLanguage.json` | focused executable agreement for the language docfact seam |
-| [`test-docfacts-logger.sh`](test-docfacts-logger.sh) | `verify` | `examples/logger-counting`, `docfacts/examples/logger-counting.json` | executable evidence for the logger-counting docfact |
+| [`test-docfacts-logger.sh`](test-docfacts-logger.sh) | `verify` | `examples/logger-counting`, `examples/logger-silent`, `docfacts/examples/logger-counting.json` | executable evidence for the logger handler-swap docfact |
 | [`test-explain.sh`](test-explain.sh) | `verify` | `Bang/Frontend/DiagCodes.lean` | the CLI gate for stable diagnostic codes + `bang explain` (plan 013 slice 5) |
 | [`test-fmt.sh`](test-fmt.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang fmt` (issue #58's CLI half) |
 | [`test-hostio-seam.sh`](test-hostio-seam.sh) | `verify` | `Main.lean`, `Bang/Backend/EnvMachine.lean`, `std/Io.bang` | the SEAM + CLI-surface gate for the host-IO wedge (ADR-0104) |
 | [`test-law.sh`](test-law.sh) | `verify` | — | the non-interactive gate for `bang test` (issue #60's CLI wiring) |
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
+| [`test-onboarding-journey.sh`](test-onboarding-journey.sh) | `verify` | `onboarding_journey.py` | Public verify battery for the common contributor journey |
+| [`test-onboarding-preflight.sh`](test-onboarding-preflight.sh) | `fitness` | `onboarding-preflight.sh` | Known-good/known-bad poles for the read-only newcomer preflight |
 | [`test-query.sh`](test-query.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
 | [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
 | [`test-release-version.sh`](test-release-version.sh) | `verify` | `check-release-version.sh` | Known-good/known-bad poles for the exact release identity gate |
@@ -126,7 +129,7 @@ _Lane scripts — one-off orchestration helpers._
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
 
-## lib (6)
+## lib (7)
 
 __
 
@@ -138,6 +141,7 @@ __
 | [`docfacts_common.py`](docfacts_common.py) | `fitness` | `docfacts/schema/*.schema.json`, `docfacts/**/*.json` | Shared schema, repository-path, and serialization checks for documentation facts |
 | [`import_facts.py`](import_facts.py) | `fitness` | `Bang/**/*.lean`, `gen-import-graph.py`, `arch-check.py` | Shared, fail-loud facts for BANG's internal Lean module graph |
 | [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
+| [`onboarding_journey.py`](onboarding_journey.py) | `manual` | `examples/thunk-force/main.bang`, `examples/effect-op-arith/main.bang`, `examples/logger-counting/main.bang`, `examples/logger-silent/main.bang` | Execute the machine-checkable substrate of the common newcomer journey |
 
 ## wrapper (1)
 

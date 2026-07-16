@@ -6,7 +6,7 @@
   ],
   "evidence": [
     {
-      "claim": "The env, oracle, and compiled engines each produce the committed expected output byte-for-byte; check --json and query dump also succeed.",
+      "claim": "The counting and silent programs differ only in the handler clause; the env, oracle, and compiled engines produce each committed expected output byte-for-byte, and check --json plus query dump succeed for both.",
       "commands": [
         "just test-docfacts-logger"
       ],
@@ -14,6 +14,8 @@
       "sources": [
         "examples/logger-counting/main.bang",
         "examples/logger-counting/expected.txt",
+        "examples/logger-silent/main.bang",
+        "examples/logger-silent/expected.txt",
         "tools/test-docfacts-logger.sh"
       ]
     },

@@ -18,6 +18,18 @@ default:
 setup:
     bash tools/setup.sh
 
+# Read-only readiness report for the bounded newcomer journey.
+onboarding-preflight *ARGS:
+    bash tools/onboarding-preflight.sh {{ARGS}}
+
+# Known-good/known-bad poles for preflight states and non-mutation.
+test-onboarding-preflight:
+    bash tools/test-onboarding-preflight.sh
+
+# Executable env/oracle/compiled agreement for the common newcomer route.
+test-onboarding-journey *ARGS:
+    bash tools/test-onboarding-journey.sh {{ARGS}}
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:
@@ -255,6 +267,7 @@ fitness:
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
     python3 tools/check-onboarding-refs.py
+    bash tools/test-onboarding-preflight.sh
     python3 tools/check-runs-in.py
     python3 tools/check-doc-hygiene.py --check
     python3 tools/check-context-claims.py

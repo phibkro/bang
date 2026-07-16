@@ -56,6 +56,41 @@ assert.deepEqual(site.sidebar[0], {
   items: [{ text: 'What BANG is', link: '/' }],
 })
 assert.equal(site.pages.length, 1)
+assert.deepEqual(site.routeChoices, [
+  {
+    id: 'language',
+    title: 'Frontend / language',
+    summary: 'Change parsing, surface syntax, or type checking.',
+    order: 10,
+    targetPage: 'what-bang-is',
+    target: '/',
+    seams: ['README.md'],
+    firstChange: 'Adjust one checked surface fixture.',
+    narrowGate: 'just check Bang/Frontend/TypeCheck.lean',
+    fullGate: 'just verify',
+  },
+])
+const onboardingGenerated = compileMutation('onboarding-generated-page', (manifest) => {
+  manifest.pages.push({
+    id: 'contributor-routes',
+    title: 'Choose a contributor route',
+    section: 'contribute',
+    audience: ['contributor', 'agent'],
+    lifecycle: 'snapshot',
+    prerequisites: ['what-bang-is'],
+    status: { kind: 'not-applicable', reason: 'generated-onboarding' },
+    target: {
+      kind: 'onboarding-page',
+      route: '/contribute/routes',
+      contentKey: 'contributor-routes',
+    },
+    navigation: { order: 10 },
+  })
+})
+assert.equal(
+  onboardingGenerated.routeToPage.get('/contribute/routes').source,
+  '@onboarding-page:contributor-routes',
+)
 assert.equal(
   rewriteMarkdownLinks({
     line: '[ftp](ftp://example.com/spec.md)', site, repoRoot, sourcePath: 'README.md',
@@ -73,6 +108,10 @@ assert.match(vocsConfig, /sidebar:\s*site\.sidebar/)
 assert.doesNotMatch(vocsConfig, /sidebar:\s*\[/)
 const synchronizer = readFileSync(join(siteDir, 'sync-docs.mjs'), 'utf8')
 assert.doesNotMatch(synchronizer, /const\s+(?:rootFiles|dirs)\s*=/)
+const onboardingSource = readFileSync(join(repoRoot, 'ONBOARDING.md'), 'utf8')
+assert.match(onboardingSource, /https:\/\/phibkro\.github\.io\/bang\/learn\/common-journey-evidence/)
+assert.match(onboardingSource, /https:\/\/phibkro\.github\.io\/bang\/contribute\/routes/)
+assert.doesNotMatch(onboardingSource, /\]\(\/(?:learn\/common-journey-evidence|contribute\/routes)\)/)
 const tourContent = readFileSync(join(siteDir, 'tour-content.mjs'), 'utf8')
 assert.doesNotMatch(tourContent, /^\s*(?:n|slug|title):/m)
 assert.equal(
@@ -281,6 +320,49 @@ try {
   assert.deepEqual(catalogPage.audience, ['consumer', 'contributor', 'agent'])
   assert.equal(catalogPage.lifecycle, 'snapshot')
   assert.equal(catalogPage.status.kind, 'not-applicable')
+
+  expectReject('missing-route-choices', (broken) => {
+    delete broken.routeChoices
+  }, /routeChoices.*required|required.*routeChoices/)
+
+  expectReject('duplicate-route-choice-id', (broken) => {
+    broken.routeChoices.push({ ...structuredClone(broken.routeChoices[0]), order: 20 })
+  }, /duplicate route choice id.*language/)
+
+  expectReject('duplicate-route-choice-order', (broken) => {
+    broken.routeChoices.push({
+      ...structuredClone(broken.routeChoices[0]),
+      id: 'proof',
+      title: 'Kernel / proof',
+    })
+  }, /duplicate route choice order.*10/)
+
+  expectReject('missing-route-choice-target', (broken) => {
+    broken.routeChoices[0].targetPage = 'missing-page'
+  }, /route choice language targets missing page missing-page/)
+
+  expectReject('untracked-route-choice-seam', (broken) => {
+    broken.routeChoices[0].seams = ['missing/seam.lean']
+  }, /tracked source does not exist.*missing\/seam\.lean/)
+
+  expectReject('volatile-route-choice-target', (broken) => {
+    broken.pages.push({
+      id: 'current-context',
+      title: 'Current context',
+      section: 'project',
+      audience: ['contributor', 'agent'],
+      lifecycle: 'now',
+      prerequisites: [],
+      status: { kind: 'not-applicable', reason: 'repository-state' },
+      target: { kind: 'repository-link', path: 'CONTEXT.md', view: 'blob' },
+      navigation: false,
+    })
+    broken.routeChoices[0].targetPage = 'current-context'
+  }, /route choice language targets volatile page current-context/)
+
+  expectReject('missing-route-choice-gate', (broken) => {
+    broken.routeChoices[0].narrowGate = ''
+  }, /schema validation failed/)
 
   expectReject('missing-audience', (broken) => {
     delete broken.pages[0].audience

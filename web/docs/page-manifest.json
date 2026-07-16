@@ -88,6 +88,63 @@
       }
     }
   ],
+  "routeChoices": [
+    {
+      "id": "frontend-language",
+      "title": "Frontend / language",
+      "summary": "Change parsing, surface syntax, diagnostics, or type checking.",
+      "order": 10,
+      "targetPage": "language-and-cli",
+      "seams": ["Bang/Frontend/Surface.lean", "Bang/Frontend/TypeCheck.lean"],
+      "firstChange": "Add or adjust one checked syntax or elaboration fixture.",
+      "narrowGate": "just check Bang/Frontend/TypeCheck.lean",
+      "fullGate": "just verify"
+    },
+    {
+      "id": "kernel-proof",
+      "title": "Kernel / proof",
+      "summary": "Work on graded-CBPV semantics, typing, soundness, or a bounded proof obligation.",
+      "order": 20,
+      "targetPage": "current-architecture",
+      "seams": ["Bang/Spec.lean", "Bang/Core/Semantics.lean", "Bang/Core/Soundness.lean"],
+      "firstChange": "Close or adapt one small lemma without changing a frozen headline statement.",
+      "narrowGate": "just check Bang/Core/Soundness.lean && just axioms",
+      "fullGate": "just verify"
+    },
+    {
+      "id": "machine-backend",
+      "title": "Machine / backend",
+      "summary": "Trace source meaning through CalcVM, compilation, execution, or Wasm emission.",
+      "order": 30,
+      "targetPage": "current-architecture",
+      "seams": ["Bang/Backend/AbstractMachine.lean", "Bang/Backend/Wasm.lean", "Bang/Backend/WasmEmit.lean"],
+      "firstChange": "Trace one constructor through source, compile/exec, and its differential fixture.",
+      "narrowGate": "just check Bang/Backend/AbstractMachine.lean",
+      "fullGate": "just verify"
+    },
+    {
+      "id": "tooling-docs-examples",
+      "title": "Tooling / docs / examples",
+      "summary": "Improve generated facts, checked examples, diagnostics, or contributor tooling.",
+      "order": 40,
+      "targetPage": "contribution-workflow",
+      "seams": ["tools/check-examples.sh", "docs/architecture/core-overview.md", "examples/logger-counting/main.bang"],
+      "firstChange": "Add one generated fact, checked example, or diagnostic projection without copying its source fact.",
+      "narrowGate": "just test-onboarding-journey",
+      "fullGate": "just verify"
+    },
+    {
+      "id": "coding-agent",
+      "title": "Coding agent",
+      "summary": "Retrieve the authority, isolate the work, make one bounded edit, and report observed evidence.",
+      "order": 50,
+      "targetPage": "agent-guide",
+      "seams": ["CLAUDE.md", "docs/decisions/README.md", "CONTRIBUTING.md"],
+      "firstChange": "Identify the source of truth and complete one issue-sized edit in an isolated lane.",
+      "narrowGate": "just fitness",
+      "fullGate": "just verify"
+    }
+  ],
   "pages": [
     {
       "id": "what-bang-is",
@@ -121,6 +178,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-index" },
       "target": { "kind": "tour-index", "route": "/tour" },
       "navigation": { "order": 10 }
+    },
+    {
+      "id": "common-journey-evidence",
+      "title": "Common journey evidence",
+      "section": "learn",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["contributor-quickstart"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/learn/common-journey-evidence", "contentKey": "common-journey-evidence" },
+      "navigation": { "order": 15 }
     },
     {
       "id": "values-and-force",
@@ -291,6 +359,17 @@
       "status": { "kind": "not-applicable", "reason": "workflow-page" },
       "target": { "kind": "markdown", "path": "CLAUDE.md", "route": "/CLAUDE" },
       "navigation": { "order": 20 }
+    },
+    {
+      "id": "contributor-routes",
+      "title": "Choose a contributor route",
+      "section": "contribute",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["contributor-quickstart"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/contribute/routes", "contentKey": "contributor-routes" },
+      "navigation": { "order": 30 }
     },
     {
       "id": "current-architecture",
