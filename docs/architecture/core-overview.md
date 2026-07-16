@@ -155,7 +155,7 @@ flowchart LR
       component_Meta["Meta<br/>2 modules · 3852 LOC"]
       component_Witness["Witness<br/>19 modules · 3683 LOC"]
       component_Reify["Reify<br/>3 modules · 1883 LOC"]
-      component_Apex["Apex<br/>4 modules · 1004 LOC"]
+      component_Apex["Apex<br/>4 modules · 1010 LOC"]
     end
   end
   component_Frontend -->|4 code imports| component_Core
@@ -180,7 +180,7 @@ flowchart LR
 | `Meta` | contextual-equivalence metatheory | 2 | 3852 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3683 | `Frontend` (5), `Core` (27), `Backend` (4) |
 | `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |
-| `Apex` | public theorem façade · audit · distribution | 4 | 1004 | `Frontend` (3), `Core` (4), `Backend` (4), `Meta` (2) |
+| `Apex` | public theorem façade · audit · distribution | 4 | 1010 | `Frontend` (3), `Core` (4), `Backend` (4), `Meta` (2) |
 <!-- END GENERATED import-graph -->
 
 The generated graph reports aggregate direct imports that cross component boundaries. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving code.

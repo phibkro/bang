@@ -1,7 +1,7 @@
 {
   "enrollments": [
     {
-      "auditLine": 27,
+      "auditLine": 33,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -19,7 +19,7 @@
       "writtenRef": "lr_sound"
     },
     {
-      "auditLine": 28,
+      "auditLine": 34,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -37,7 +37,7 @@
       "writtenRef": "lr_fundamental"
     },
     {
-      "auditLine": 29,
+      "auditLine": 35,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -55,7 +55,7 @@
       "writtenRef": "lr_fundamental_closed"
     },
     {
-      "auditLine": 31,
+      "auditLine": 37,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -73,7 +73,7 @@
       "writtenRef": "seq_unit"
     },
     {
-      "auditLine": 32,
+      "auditLine": 38,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -91,7 +91,7 @@
       "writtenRef": "compile_forward_sim"
     },
     {
-      "auditLine": 35,
+      "auditLine": 41,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -109,7 +109,7 @@
       "writtenRef": "Bang.compile_forward_sim_pure"
     },
     {
-      "auditLine": 36,
+      "auditLine": 42,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -127,7 +127,7 @@
       "writtenRef": "Bang.source_eval_to_exec"
     },
     {
-      "auditLine": 43,
+      "auditLine": 49,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -145,7 +145,7 @@
       "writtenRef": "Bang.Rung5ProofGrade.s5_effectful_forward_sim"
     },
     {
-      "auditLine": 44,
+      "auditLine": 50,
       "axioms": [
         "Quot.sound",
         "propext"
@@ -162,7 +162,7 @@
       "writtenRef": "Bang.Rung5ProofGrade.s5_exec_wexec_lockstep"
     },
     {
-      "auditLine": 45,
+      "auditLine": 51,
       "axioms": [
         "propext"
       ],
@@ -178,7 +178,7 @@
       "writtenRef": "compile_well_typed"
     },
     {
-      "auditLine": 46,
+      "auditLine": 52,
       "axioms": [
         "sorryAx"
       ],
@@ -193,7 +193,7 @@
       "writtenRef": "handler_compiles"
     },
     {
-      "auditLine": 47,
+      "auditLine": 53,
       "axioms": [
         "propext"
       ],
@@ -209,7 +209,7 @@
       "writtenRef": "zero_grade_no_code"
     },
     {
-      "auditLine": 48,
+      "auditLine": 54,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -227,7 +227,7 @@
       "writtenRef": "subst_value"
     },
     {
-      "auditLine": 49,
+      "auditLine": 55,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -245,7 +245,7 @@
       "writtenRef": "preservation"
     },
     {
-      "auditLine": 50,
+      "auditLine": 56,
       "axioms": [
         "Quot.sound",
         "propext"
@@ -262,7 +262,7 @@
       "writtenRef": "progress"
     },
     {
-      "auditLine": 51,
+      "auditLine": 57,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -280,7 +280,7 @@
       "writtenRef": "type_safety"
     },
     {
-      "auditLine": 52,
+      "auditLine": 58,
       "axioms": [],
       "classification": "trusted",
       "definitionSource": {
@@ -294,7 +294,7 @@
       "writtenRef": "no_accidental_handling"
     },
     {
-      "auditLine": 55,
+      "auditLine": 61,
       "axioms": [
         "propext"
       ],
@@ -310,7 +310,7 @@
       "writtenRef": "no_accidental_handling_custom"
     },
     {
-      "auditLine": 56,
+      "auditLine": 62,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -328,7 +328,7 @@
       "writtenRef": "custom_program_safe"
     },
     {
-      "auditLine": 57,
+      "auditLine": 63,
       "axioms": [],
       "classification": "trusted",
       "definitionSource": {
@@ -342,7 +342,7 @@
       "writtenRef": "rowinst_requires_disjoint"
     },
     {
-      "auditLine": 61,
+      "auditLine": 67,
       "axioms": [
         "Quot.sound",
         "propext"
@@ -359,7 +359,7 @@
       "writtenRef": "effect_sound"
     },
     {
-      "auditLine": 62,
+      "auditLine": 68,
       "axioms": [
         "propext",
         "sorryAx"
@@ -375,7 +375,7 @@
       "writtenRef": "zero_usage_erasable"
     },
     {
-      "auditLine": 63,
+      "auditLine": 69,
       "axioms": [
         "propext"
       ],
@@ -391,7 +391,7 @@
       "writtenRef": "Bang.Surface.cell_reflects_latest"
     },
     {
-      "auditLine": 64,
+      "auditLine": 70,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -409,7 +409,7 @@
       "writtenRef": "Bang.CalcVM.compile_correct"
     },
     {
-      "auditLine": 65,
+      "auditLine": 71,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -427,7 +427,7 @@
       "writtenRef": "Bang.CalcVM.evalD_agrees_source"
     },
     {
-      "auditLine": 67,
+      "auditLine": 73,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -445,7 +445,7 @@
       "writtenRef": "Bang.CalcVM.sim"
     },
     {
-      "auditLine": 68,
+      "auditLine": 74,
       "axioms": [
         "Classical.choice",
         "Quot.sound",
@@ -537,7 +537,7 @@
   "schemaVersion": 1,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "9bc630df4d837aaaddf88e49ef3acce3441e6cccc5b1751800627fd0f54ff2f7",
+    "digest": "948103763babeb39c2326fa162acf2821005e9198494f2ee8e828f66ba782e86",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

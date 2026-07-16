@@ -1869,7 +1869,7 @@
         "Bang.Frontend.Surface",
         "Bang.Spec"
       ],
-      "loc": 69,
+      "loc": 75,
       "name": "Bang.Audit",
       "path": "Bang/Audit.lean",
       "publicSymbols": [],
@@ -12071,7 +12071,7 @@
   },
   "tiers": [
     {
-      "loc": 1004,
+      "loc": 1010,
       "moduleCount": 4,
       "name": "Apex"
     },

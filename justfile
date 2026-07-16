@@ -241,8 +241,11 @@ build:
     fi
     lake build
 
-# Static + dynamic audit gate (see tools/audit.sh).
+# Static + dynamic audit gate: the live proof fact comparison is the fail-closed
+# axiom policy; tools/audit.sh adds the static/fitness belt and suspenders.
 audit:
+    python3 tools/docfacts_proof.py --live-check
+    bash tools/test-gates.sh
     bash tools/audit.sh
 
 # ◊5 engine probe (OPEN_QUESTIONS Q9): run a stack-switching suspend/resume
