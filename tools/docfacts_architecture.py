@@ -38,7 +38,7 @@ from symbols import SymbolFactsError, collect_public_symbols
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "docfacts/schema/architecture.schema.json"
 FACT_PATH = ROOT / "docfacts/architecture.json"
-SELF_TEST_POLES = 21
+SELF_TEST_POLES = 29
 
 
 def evidence() -> list[dict]:
@@ -568,6 +568,20 @@ def self_test() -> int:
         "wrong-engine-alias",
         lambda fact: fact["engines"]["aliases"].update({"--compiled": "env"}),
     )
+    mutate(
+        "wrong-engine-selector",
+        lambda fact: fact["engines"]["selectors"].update(
+            {"--engine=oracle": "compiled"}
+        ),
+    )
+    mutate(
+        "engine-duplicates-accepted",
+        lambda fact: fact["engines"].update(duplicatePolicy="last-wins"),
+    )
+    mutate(
+        "wrong-engine-command-inventory",
+        lambda fact: fact["engines"].update(selectorCommands=["run", "eval", "build"]),
+    )
     proposed_index = next(
         index for index, adr in enumerate(base["adrs"]) if adr["status"] == "Proposed"
     )
@@ -645,6 +659,58 @@ def self_test() -> int:
 
     passed = sum(expect_invalid(name, fact) for name, fact in cases)
 
+    main_source = (ROOT / "Main.lean").read_text(encoding="utf-8")
+    source_cases = [
+        (
+            "engine-alias-duplicate-guard-removed",
+            main_source.replace(
+                "        if acc.engine.isSome then duplicate token\n"
+                "        go { acc with engine := some .compiled } rest",
+                "        go { acc with engine := some .compiled } rest",
+                1,
+            ),
+        ),
+        (
+            "engine-selector-duplicate-guard-removed",
+            main_source.replace(
+                "        if acc.engine.isSome then duplicate token\n"
+                '        let value := (token.drop "--engine=".length).toString',
+                '        let value := (token.drop "--engine=".length).toString',
+                1,
+            ),
+        ),
+        (
+            "engine-alias-spelling-drift",
+            main_source.replace('token == "--compiled"', 'token == "--compile"', 1),
+        ),
+        (
+            "engine-default-drift",
+            main_source.replace("p.engine.getD .env", "p.engine.getD .oracle", 1),
+        ),
+        (
+            "engine-command-allow-list-drift",
+            main_source.replace(
+                "[.engine, .noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
+                "[.noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
+                1,
+            ),
+        ),
+    ]
+    with tempfile.TemporaryDirectory() as directory:
+        for name, mutated_source in source_cases:
+            if mutated_source == main_source:
+                print(f"✗ known-bad {name} mutation did not apply", file=sys.stderr)
+                continue
+            main_path = Path(directory) / f"{name}.lean"
+            main_path.write_text(mutated_source, encoding="utf-8")
+            try:
+                derive_engine_details(main_path)
+            except ArchitectureFactsError:
+                print(f"✓ known-bad {name} rejected")
+                passed += 1
+            else:
+                print(f"✗ known-bad {name} was accepted", file=sys.stderr)
+
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "0110-frontmatter-boundary.md"
         path.write_text(
@@ -674,7 +740,7 @@ def self_test() -> int:
         file=sys.stdout if serialized else sys.stderr,
     )
     passed += serialized
-    total = len(cases) + 2
+    total = len(cases) + len(source_cases) + 2
     if total != SELF_TEST_POLES:
         print(
             f"docfacts-architecture: internal pole count mismatch: {total}",

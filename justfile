@@ -130,6 +130,12 @@ test-82-verbs:
 test-cli:
     bash tools/test-cli.sh
 
+# Fail-closed, command-scoped option grammar (#178): unknown/inappropriate flags, malformed or
+# duplicate values, host-authority parsing, mixed-order compatibility, and pre-effect validation.
+# Part of the default `verify` chain.
+test-cli-options:
+    bash tools/test-cli-options.sh
+
 # Exact release tag ↔ binary provenance poles: accepts only byte-exact `bang X.Y.Z`,
 # rejects stale/suffixed/noisy/nonzero binaries and malformed tags. Part of verify.
 test-release-version:
@@ -388,7 +394,7 @@ proof-docfacts:
     python3 tools/docfacts_proof.py
 
 # Static schema/source/fingerprint checks, cross-fact checks, consumer boundary,
-# and the 36 architecture/proof falsification poles. Part of `just fitness`.
+# and the 45 architecture/proof falsification poles. Part of `just fitness`.
 test-docfacts-architecture-proof:
     bash tools/test-docfacts-architecture-proof.sh
 

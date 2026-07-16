@@ -130,7 +130,7 @@ check "new-reject-empty-exit" "$empty_exit" "1"
 contains "new-reject-empty-diagnostic" "$empty_stderr" "invalid project name ''"
 unknown_stderr="$(cd "$new_root" && "$absbang" new unknown-flag-name --bogus 2>&1 >/dev/null)" && unknown_exit=0 || unknown_exit=$?
 check "new-unknown-flag-exit" "$unknown_exit" "1"
-contains "new-unknown-flag-usage" "$unknown_stderr" "USAGE:"
+contains "new-unknown-flag-diagnostic" "$unknown_stderr" "unknown option '--bogus'"
 check "new-unknown-flag-no-write" "$(test ! -e "$new_root/examples/unknown-flag-name" && echo yes)" "yes"
 
 # Existing directories are rejected and their contents prove the failure path never authorizes

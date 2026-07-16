@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/Frontend/Surface.lean,Bang/Frontend/DiagCodes.lean,Bang/Frontend/Diagnostics.lean,Prelude.bang,Bang/Frontend/TypeCheck.lean,Main.lean,docfacts/schema/language.schema.json,docfacts/schema/common.schema.json,docfacts/language.json runs-in=fitness
+# tool: role=gen couples=Bang/Frontend/Surface.lean,Bang/Frontend/DiagCodes.lean,Bang/Frontend/Diagnostics.lean,Prelude.bang,Bang/Frontend/TypeCheck.lean,Main.lean,tools/cli_facts.py,docfacts/schema/language.schema.json,docfacts/schema/common.schema.json,docfacts/language.json runs-in=fitness
 """Generate and validate the serialized language-reference fact bundle."""
 
 import argparse
@@ -12,8 +12,10 @@ from pathlib import Path
 from jsonschema.exceptions import ValidationError
 
 try:
+    from cli_facts import CliFactsError, derive_allowed_option_families
     from docfacts_common import schema_validator
 except ModuleNotFoundError:
+    from tools.cli_facts import CliFactsError, derive_allowed_option_families
     from tools.docfacts_common import schema_validator
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -413,10 +415,19 @@ def _usage_blocks(usage):
     return blocks
 
 
-def _extract_cli_commands(text):
+def _extract_cli_commands(text, allowed_by_command):
     usage = _decode_usage(text)
     principal_flags = {
-        ("run",): ["--engine=oracle|compiled|env", "--no-typecheck", "--fuel"],
+        ("run",): [
+            "--engine=oracle|compiled|env",
+            "--no-typecheck",
+            "--fuel",
+            "--env=sim|real",
+            "--allow",
+            "--record",
+            "--replay",
+            "--max-host-requests",
+        ],
         ("eval",): ["--engine=oracle|compiled|env", "--no-typecheck", "--fuel"],
         ("repl",): ["--engine=oracle|compiled|env", "--no-typecheck", "--fuel"],
         ("check",): ["--json"],
@@ -451,7 +462,12 @@ def _extract_cli_commands(text):
                         f"CLI principal flag `{flag}` for `{' '.join(path)}` is absent from its usage block"
                     )
             rows.append(
-                {"path": path, "synopsis": line.strip(), "principalFlags": flags}
+                {
+                    "path": path,
+                    "synopsis": line.strip(),
+                    "principalFlags": flags,
+                    "parserOptionFamilies": list(allowed_by_command.get(path[0], ())),
+                }
             )
     if not rows:
         _fail("CLI usage parsed to no documented commands")
@@ -498,7 +514,7 @@ def _extract_dispatch(text, command):
     return text[start : end if end >= 0 else len(text)]
 
 
-def _validate_cli_agreement(commands, main_text):
+def _validate_cli_agreement(commands, main_text, allowed_by_command):
     paths = {tuple(row["path"]) for row in commands}
     usage_top = {path[0] for path in paths if not path[0].startswith("-")}
     dispatcher_top = set(re.findall(r'else if cmd == "([^"]+)" then', main_text))
@@ -518,7 +534,7 @@ def _validate_cli_agreement(commands, main_text):
                 f"CLI {command} usage/dispatcher mismatch: usage={sorted(documented)} dispatcher={sorted(dispatched)}"
             )
     lint_fix = ("lint", "--fix") in paths
-    if lint_fix != ('rest.contains "--fix"' in _extract_dispatch(main_text, "lint")):
+    if lint_fix != ("opts.fix" in _extract_dispatch(main_text, "lint")):
         _fail("CLI lint --fix usage/dispatcher mismatch")
     for long, short in (("--help", "-h"), ("--version", "-v")):
         if (long,) not in paths:
@@ -530,51 +546,75 @@ def _validate_cli_agreement(commands, main_text):
         if not alias_dispatch:
             _fail(f"CLI alias dispatch missing `{long}`/`{short}`")
 
-    flag_anchors = {
-        ("run",): {
-            "--engine=oracle|compiled|env": "parseEngine rest",
-            "--no-typecheck": 'rest.contains "--no-typecheck"',
-            "--fuel": "parseFuel rest",
-        },
-        ("eval",): {
-            "--engine=oracle|compiled|env": "parseEngine rest",
-            "--no-typecheck": 'rest.contains "--no-typecheck"',
-            "--fuel": "parseFuel rest",
-        },
-        ("repl",): {
-            "--engine=oracle|compiled|env": "parseEngine rest",
-            "--no-typecheck": 'rest.contains "--no-typecheck"',
-            "--fuel": "parseFuel rest",
-        },
-        ("check",): {"--json": 'rest.contains "--json"'},
-        ("emit",): {"-o": '"-o" ::', "--out=": 'parseEqFlag "--out"'},
-        ("build",): {
-            "-o": '"-o" ::',
-            "--component": 'rest.contains "--component"',
-            "--adapter": 'parseEqFlag "--adapter"',
-        },
-        ("new",): {"--module": 'rest.contains "--module"'},
-        ("rewrite", "fmt"): {"-w": 'rest.contains "-w"'},
-        ("rewrite", "rename"): {"-w": 'rest.contains "-w"'},
-        ("rewrite", "annotate"): {"-w": 'rest.contains "-w"'},
-        ("lint",): {
-            "--json": 'rest.contains "--json"',
-            "--quiet-clean": 'rest.contains "--quiet-clean"',
-        },
-        ("lint", "--fix"): {
-            "--fix": 'rest.contains "--fix"',
-            "-w": 'rest.contains "-w"',
-        },
+    flag_families = {
+        "--engine=oracle|compiled|env": "engine",
+        "--no-typecheck": "noTypecheck",
+        "--fuel": "fuel",
+        "--env=sim|real": "hostEnv",
+        "--allow": "allow",
+        "--record": "record",
+        "--replay": "replay",
+        "--max-host-requests": "maxHostRequests",
+        "--json": "json",
+        "-o": "out",
+        "--out=": "out",
+        "--component": "component",
+        "--adapter": "adapter",
+        "--module": "moduleFlag",
+        "-w": "write",
+        "--fix": "fix",
+        "--quiet-clean": "quietClean",
+    }
+    family_anchors = {
+        "engine": "opts.selectedEngine",
+        "noTypecheck": "!opts.noTypecheck",
+        "fuel": "opts.selectedFuel",
+        "hostEnv": "opts.hostReal",
+        "allow": "opts.allow",
+        "record": "opts.recordPath",
+        "replay": "opts.replayPath",
+        "maxHostRequests": "opts.selectedMaxHostRequests",
+        "json": "opts.json",
+        "out": "opts.outPath",
+        "component": "opts.component",
+        "adapter": "opts.adapterPath",
+        "moduleFlag": "opts.moduleFlag",
+        "write": "opts.write",
+        "fix": "opts.fix",
+        "quietClean": "opts.quietClean",
     }
     aliases = {
         ("--help",): {"-h": 'cmd == "-h"'},
         ("--version",): {"-v": 'cmd == "-v"'},
     }
+    documented_families = {command: set() for command in allowed_by_command}
     for row in commands:
         path = tuple(row["path"])
-        anchors = flag_anchors.get(path, aliases.get(path, {}))
-        if set(row["principalFlags"]) != set(anchors):
-            _fail(f"CLI principal flag inventory unsupported for `{' '.join(path)}`")
+        if path in aliases:
+            anchors = aliases[path]
+            if set(row["principalFlags"]) != set(anchors):
+                _fail(
+                    f"CLI principal flag inventory unsupported for `{' '.join(path)}`"
+                )
+            if row["parserOptionFamilies"]:
+                _fail(f"CLI alias `{' '.join(path)}` unexpectedly has parser families")
+        else:
+            command = path[0]
+            if command not in allowed_by_command:
+                _fail(f"CLI command `{command}` has no typed parser inventory")
+            if tuple(row["parserOptionFamilies"]) != allowed_by_command[command]:
+                _fail(f"CLI parser option inventory drift for `{command}`")
+            try:
+                families = {flag_families[flag] for flag in row["principalFlags"]}
+            except KeyError as error:
+                _fail(
+                    f"CLI principal flag `{error.args[0]}` has no typed option family"
+                )
+            documented_families[command].update(families)
+            anchors = {
+                flag: family_anchors[flag_families[flag]]
+                for flag in row["principalFlags"]
+            }
         block = (
             main_text
             if path[0].startswith("-")
@@ -585,6 +625,13 @@ def _validate_cli_agreement(commands, main_text):
                 _fail(
                     f"CLI principal flag `{flag}` for `{' '.join(path)}` is absent from its dispatcher block"
                 )
+    for command, allowed in allowed_by_command.items():
+        documented = documented_families[command]
+        if documented != set(allowed):
+            _fail(
+                f"CLI typed allow-list/documentation mismatch for `{command}`: "
+                f"allowed={list(allowed)} documented={sorted(documented)}"
+            )
 
 
 def _evidence():
@@ -627,6 +674,8 @@ def _evidence():
             "claim": "Documented CLI paths and representative exit contracts agree with the real binary.",
             "sources": [
                 "Main.lean",
+                "tools/cli_facts.py",
+                "tools/docfacts_language.py",
                 "tools/test-docfacts-language.sh",
                 "tools/test-cli.sh",
                 "tools/test-check-json.sh",
@@ -654,8 +703,12 @@ def build_fact(overrides=None):
         or missing_signatures != {"reverse"}
     ):
         _fail("prelude inventory/signature mismatch")
-    commands, usage = _extract_cli_commands(sources["main"])
-    _validate_cli_agreement(commands, sources["main"])
+    try:
+        allowed_by_command = derive_allowed_option_families(sources["main"])
+    except CliFactsError as error:
+        _fail(str(error))
+    commands, usage = _extract_cli_commands(sources["main"], allowed_by_command)
+    _validate_cli_agreement(commands, sources["main"], allowed_by_command)
     return {
         "schemaVersion": 1,
         "kind": "language",
@@ -764,7 +817,7 @@ def _expect_invalid(name, fact):
 def _expect_build_failure(name, overrides):
     try:
         build_fact(overrides)
-    except FactError:
+    except (FactError, CliFactsError):
         print(f"✓ known-bad {name} rejected")
         return True
     print(f"✗ known-bad {name} was accepted", file=sys.stderr)
@@ -868,16 +921,47 @@ def self_test(base=None, sources=None, base_validated=False):
         ("cli-usage-dispatcher-mismatch", {AUTHORITY_PATHS["main"]: bad_usage})
     )
     bad_flag = sources["main"].replace(
-        'let typecheck  := !rest.contains "--no-typecheck"', "let typecheck  := true", 1
+        "else runResolvedProg (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel merged",
+        "else runResolvedProg (!opts.noTypecheck) .env opts.selectedFuel merged",
+        1,
     )
     build_cases.append(("per-command-flag-drift", {AUTHORITY_PATHS["main"]: bad_flag}))
+    run_without_engine = sources["main"].replace(
+        "[.engine, .noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
+        "[.noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
+        1,
+    )
+    build_cases.append(
+        (
+            "cli-run-allowed-family-removed",
+            {AUTHORITY_PATHS["main"]: run_without_engine},
+        )
+    )
+    eval_with_json = sources["main"].replace(
+        'parseCliArgs "eval" [.engine, .noTypecheck, .fuel]',
+        'parseCliArgs "eval" [.engine, .noTypecheck, .fuel, .json]',
+        1,
+    )
+    build_cases.append(
+        (
+            "cli-eval-allowed-family-added",
+            {AUTHORITY_PATHS["main"]: eval_with_json},
+        )
+    )
+    rewrite_without_write = sources["main"].replace(
+        'parseCliArgs "rewrite" [.write]', 'parseCliArgs "rewrite" []', 1
+    )
+    build_cases.append(
+        (
+            "cli-rewrite-allowed-family-removed",
+            {AUTHORITY_PATHS["main"]: rewrite_without_write},
+        )
+    )
     bad_alias = sources["main"].replace(
         'cmd == "--help" || cmd == "-h"', 'cmd == "--help"', 1
     )
     build_cases.append(("cli-alias-drift", {AUTHORITY_PATHS["main"]: bad_alias}))
-    bad_lint = sources["main"].replace(
-        'if rest.contains "--fix" then', "if false then", 1
-    )
+    bad_lint = sources["main"].replace("if opts.fix then", "if false then", 1)
     build_cases.append(("cli-lint-fix-drift", {AUTHORITY_PATHS["main"]: bad_lint}))
     additive_key = sources["diagnostics"].replace(
         '  ",\\"msg\\":" ++ jsonStr d.msg',

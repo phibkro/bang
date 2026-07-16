@@ -36,8 +36,15 @@ assert len(proof["specHeadlines"]) == 18, "Spec headline cardinality pole moved"
 assert len(proof["enrollments"]) == 27, "Audit enrollment cardinality pole moved"
 assert architecture["target"]["name"] == "Wasm 3.0"
 assert architecture["engines"]["default"] == "env"
+assert architecture["engines"]["selectors"] == {
+    "--engine=oracle": "oracle",
+    "--engine=compiled": "compiled",
+    "--engine=env": "env",
+}
 assert architecture["engines"]["aliases"] == {"--compiled": "compiled"}
-assert ARCHITECTURE_POLES == 21, "architecture pole total moved"
+assert architecture["engines"]["duplicatePolicy"] == "reject"
+assert architecture["engines"]["selectorCommands"] == ["run", "eval", "repl"]
+assert ARCHITECTURE_POLES == 29, "architecture pole total moved"
 assert PROOF_POLES == 16, "proof pole total moved"
 
 mismatched = copy.deepcopy(proof)

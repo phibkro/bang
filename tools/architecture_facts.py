@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# tool: role=lib couples=Main.lean,docs/decisions/0016-*.md,docs/decisions/0035-*.md,docs/decisions/0059-*.md runs-in=fitness
+# tool: role=lib couples=Main.lean,tools/cli_facts.py,docs/decisions/0016-*.md,docs/decisions/0035-*.md,docs/decisions/0059-*.md runs-in=fitness
 """Source-derived architecture facts shared by documentation projections."""
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from cli_facts import CliFactsError, derive_allowed_option_families
 
 
 class ArchitectureFactsError(ValueError):
@@ -55,44 +57,98 @@ def derive_engine_details(main_path: Path) -> dict:
 
     parser_block = require_source(
         text,
-        r"def parseEngine \(flags : List String\) : Engine :=\n(?P<body>.*?)(?=\n\n/-- Parse `--fuel)",
+        r"def parseCliArgs .*? :=\n(?P<body>.*?)(?=\n\n/-- Uniform option/usage failure)",
         main_path,
-        "parseEngine body",
+        "typed CLI parser body",
     ).group("body")
-    branches = []
-    for precedence, match in enumerate(
-        re.finditer(
-            r"(?:if|else if)\s+(?P<condition>.*?)\s+then\s+\.(?P<engine>\w+)",
-            parser_block,
-        ),
-        1,
-    ):
-        flags = re.findall(r'flags\.contains\s+"([^"]+)"', match.group("condition"))
-        engine = match.group("engine")
-        if not flags or engine not in variants:
-            raise ArchitectureFactsError(f"ambiguous parseEngine branch in {main_path}")
-        branches.append({"engine": engine, "flags": flags, "precedence": precedence})
-    default = require_source(
+    alias_branch = require_source(
         parser_block,
-        r"else\s+\.([A-Za-z_]\w*)\s*$",
+        r'if token == "(?P<spelling>--[^"]+)" then(?P<body>.*?)'
+        r'(?=\n\s*else if "--engine="\.isPrefixOf token then)',
         main_path,
-        "parseEngine default",
+        "engine compatibility alias branch",
+    )
+    alias_body = alias_branch.group("body")
+    require_source(
+        alias_body,
+        r"rejectNotAllowed \.engine token",
+        main_path,
+        "engine alias allow-list guard",
+    )
+    require_source(
+        alias_body,
+        r"if acc\.engine\.isSome then duplicate token",
+        main_path,
+        "engine alias duplicate guard",
+    )
+    alias_target = require_source(
+        alias_body,
+        r"engine := some \.([A-Za-z_]\w*)",
+        main_path,
+        "engine alias target",
     ).group(1)
-    if default not in variants or [branch["engine"] for branch in branches] != [
-        "oracle",
-        "compiled",
-    ]:
-        raise ArchitectureFactsError(f"unexpected selector precedence in {main_path}")
-
-    aliases = {
-        flag: branch["engine"]
-        for branch in branches
-        for flag in branch["flags"]
-        if not flag.startswith("--engine=")
-    }
+    aliases = {alias_branch.group("spelling"): alias_target}
     if aliases != {"--compiled": "compiled"}:
         raise ArchitectureFactsError(
             f"unexpected engine aliases in {main_path}: {aliases}"
+        )
+
+    selector_branch = require_source(
+        parser_block,
+        r'else if "--engine="\.isPrefixOf token then(?P<body>.*?)'
+        r'(?=\n\s*else if token == "--no-typecheck" then)',
+        main_path,
+        "engine selector branch",
+    ).group("body")
+    require_source(
+        selector_branch,
+        r"rejectNotAllowed \.engine token",
+        main_path,
+        "engine selector allow-list guard",
+    )
+    require_source(
+        selector_branch,
+        r"if acc\.engine\.isSome then duplicate token",
+        main_path,
+        "engine selector duplicate guard",
+    )
+    selector_rows = re.findall(
+        r'\| "([^"]+)"\s*=>\s*\.ok Engine\.([A-Za-z_]\w*)',
+        selector_branch,
+    )
+    selectors = {f"--engine={spelling}": engine for spelling, engine in selector_rows}
+    expected_selectors = {
+        "--engine=oracle": "oracle",
+        "--engine=compiled": "compiled",
+        "--engine=env": "env",
+    }
+    if selectors != expected_selectors or len(selector_rows) != len(selectors):
+        raise ArchitectureFactsError(
+            f"unexpected engine selectors in {main_path}: {selectors}"
+        )
+    default = require_source(
+        text,
+        r"def ParsedCli\.selectedEngine .*?: Engine := p\.engine\.getD \.([A-Za-z_]\w*)",
+        main_path,
+        "typed engine default",
+    ).group(1)
+    if default != "env":
+        raise ArchitectureFactsError(
+            f"unexpected engine default in {main_path}: {default}"
+        )
+
+    try:
+        allowed_by_command = derive_allowed_option_families(text)
+    except CliFactsError as error:
+        raise ArchitectureFactsError(str(error)) from error
+    selector_commands = [
+        command
+        for command, families in allowed_by_command.items()
+        if "engine" in families
+    ]
+    if selector_commands != ["run", "eval", "repl"]:
+        raise ArchitectureFactsError(
+            f"unexpected engine selector commands in {main_path}: {selector_commands}"
         )
 
     run_block = require_source(
@@ -143,8 +199,10 @@ def derive_engine_details(main_path: Path) -> dict:
     return {
         "variants": list(variants),
         "default": default,
+        "selectors": selectors,
         "aliases": aliases,
-        "selectorPrecedence": branches,
+        "duplicatePolicy": "reject",
+        "selectorCommands": selector_commands,
         "runCompTargets": {
             "oracle": "Bang.Source.eval",
             "compiled": "runCompiled",
