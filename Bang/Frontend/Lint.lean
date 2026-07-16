@@ -254,7 +254,7 @@ added, not a semantic part of the program, vs `Format.showProg`'s output, which 
 one) — duplicated here rather than imported since `Main.lean` is the unrestricted Apex-rank
 consumer of THIS leaf module, not the reverse (a leaf cannot import upward). -/
 def stripTrailingNewline (s : String) : String :=
-  if s.endsWith "\n" then s.dropRight 1 else s
+  if s.endsWith "\n" then (s.dropEnd 1).toString else s
 
 /-- **PUBLIC (rule 3):** does `src` already equal its own canonical formatting? `none` when yes (no
 finding), `some msg` when `fmtProg src` diverges OR fails to re-parse (a defensive case — `fmtProg`

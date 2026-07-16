@@ -5363,7 +5363,7 @@ theorem idDispatch_cons_noResume {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat}
     | some t =>
         obtain ⟨Kᵢ, h, Kₒ⟩ := t
         exact idDispatch_prepend_eq hsp (splitAtId_cons_lift hfr hsp) hnr
-  · push_neg at hfr
+  · push Not at hfr
     obtain ⟨h0, rfl⟩ := hfr
     obtain ⟨hhof, hKnone⟩ := hhead h0 rfl
     rw [show Bang.idDispatch K n ℓ op v = none from by simp [Bang.idDispatch, hKnone]]

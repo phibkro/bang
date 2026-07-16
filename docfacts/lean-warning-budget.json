@@ -8,13 +8,8 @@
     "leanBuild": "Release"
   },
   "zeroWarningTarget": true,
-  "totalWarnings": 536,
+  "totalWarnings": 529,
   "buckets": [
-    {
-      "module": "Bang.Backend.AbstractMachine",
-      "category": "deprecated",
-      "count": 1
-    },
     {
       "module": "Bang.Backend.AbstractMachine",
       "category": "unusedSimpArgs",
@@ -92,17 +87,7 @@
     },
     {
       "module": "Bang.Core.Semantics.Eval",
-      "category": "deprecated",
-      "count": 1
-    },
-    {
-      "module": "Bang.Core.Semantics.Eval",
       "category": "unusedSimpArgs",
-      "count": 1
-    },
-    {
-      "module": "Bang.Core.Soundness",
-      "category": "deprecated",
       "count": 1
     },
     {
@@ -143,16 +128,6 @@
     {
       "module": "Bang.Distribution",
       "category": "declarationUsesSorry",
-      "count": 2
-    },
-    {
-      "module": "Bang.Frontend.Lint",
-      "category": "deprecated",
-      "count": 1
-    },
-    {
-      "module": "Bang.Frontend.Query",
-      "category": "deprecated",
       "count": 2
     },
     {
@@ -209,11 +184,6 @@
       "module": "Bang.Witness.GradePolyReturner",
       "category": "unusedSectionVars",
       "count": 2
-    },
-    {
-      "module": "Bang.Witness.ReturnEscapeReach",
-      "category": "deprecated",
-      "count": 1
     },
     {
       "module": "Bang.Witness.ReturnEscapeReach",

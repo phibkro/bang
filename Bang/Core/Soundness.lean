@@ -625,7 +625,7 @@ theorem HasVTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
         rw [List.getElem?_append_left (by rw [List.length_take]; omega)]
         rw [List.getElem?_take_of_lt hik]; exact hget
       · rw [if_neg hik]
-        push_neg at hik
+        push Not at hik
         rw [List.getElem?_append_right (by rw [List.length_take]; omega)]
         rw [List.length_take, min_eq_left hk]
         rw [show i + 1 - k = (i - k) + 1 by omega, List.getElem?_cons_succ,

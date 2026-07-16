@@ -730,8 +730,8 @@ public def holeMarkersIn (s : String) : List String :=
   let commit (cur : List Char) (acc : List String) : List String :=
     if cur.isEmpty then acc
     else
-      let n := (String.mk cur.reverse).toNat!
-      let marker := "#" ++ String.mk cur.reverse
+      let n := (String.ofList cur.reverse).toNat!
+      let marker := "#" ++ String.ofList cur.reverse
       if n ≥ Bang.TypeCheck.holeBase && !acc.contains marker then marker :: acc else acc
   let rec go : List Char → Bool → List Char → List String → List String
     | [],        _,     cur, acc => (commit cur acc).reverse
