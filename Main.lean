@@ -1756,7 +1756,16 @@ starter (never hand-written — the oracle can't drift from a byte someone typed
 scaffolds the multi-file import shape: a sibling `Lib.bang` exporting one `pub` fn that
 `main.bang` consumes via `use Lib (greet)`. The scaffolded sources deliberately avoid every
 reserved binder word (`get put raise new read write resume param with`, Surface.lean `pIdent`)
-so a scaffold always parses. -/
+so a scaffold always parses.
+
+`NAME` is deliberately a path-safe, single filesystem segment: an ASCII letter or digit followed
+by zero or more ASCII letters, digits, `-`, or `_`. That grammar rejects absolute paths, both Unix
+and Windows separators, dot names, whitespace, and platform-specific path prefixes before any IO.
+The physical `examples/` parent is also resolved and required to be the current working root's literal
+direct child; neither a symlinked parent nor a symlink/existing target is ever followed or
+overwritten. Lean's filesystem API does not expose an `openat`-style directory-handle workflow, so
+this closes input-driven traversal and checked target races but does not claim protection from a
+concurrent privileged actor renaming already-checked ancestor directories. -/
 
 /-- The single-file starter's `main.bang`. -/
 def newStarterMain : String :=
@@ -1803,41 +1812,129 @@ def evalProgToString (prog : Prog) : Except String String :=
     | .done v => .ok (valPretty v)
     | _       => .error "the starter produced no first-order value on the env engine"
 
-/-- Run `bang new NAME [--module]`: scaffold `examples/NAME/` per the check-examples convention
-(§ the doc block above). Refuses loudly if the target directory already exists (ADR-0046: never
-silently overwrite). The `expected.txt` is COMPUTED by running the just-written `main.bang`, so
-it can never disagree with the sources; a starter that fails to run aborts BEFORE any expected.txt
-is written (a half-scaffolded dir with a stale/empty oracle is worse than a loud failure). -/
-def runNew (name : String) (isModule : Bool) : IO UInt32 := do
+/-- ASCII project-name characters accepted by `bang new`. Keeping the grammar smaller than the
+host filesystem's grammar avoids platform-dependent path parsing: in particular, `/`, `\\`, `.`,
+`:`, and whitespace are impossible rather than requiring host-specific interpretation. -/
+def isNewNameAlphaNum (c : Char) : Bool :=
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".contains c
+
+/-- A path-safe `bang new` name is `[A-Za-z0-9][A-Za-z0-9_-]*`: exactly one non-dot path segment. -/
+def validNewName (name : String) : Bool :=
+  match name.toList with
+  | [] => false
+  | first :: rest =>
+      isNewNameAlphaNum first &&
+      rest.all (fun c => isNewNameAlphaNum c || c == '-' || c == '_')
+
+/-- Resolve the physical working root and `examples/` parent, reject a symlinked/moved parent,
+and return a direct-child target only when no directory entry with `name` exists. `readDir` is used
+instead of `pathExists`: the latter follows symlinks and therefore misses a dangling target
+symlink. The later `createDir` is the atomic second no-overwrite check for races. -/
+def prepareNewTarget (name : String) : IO (Except String System.FilePath) := do
+  if !validNewName name then
+    return Except.error <|
+      s!"invalid project name '{name}' — expected [A-Za-z0-9][A-Za-z0-9_-]* " ++
+      "(one non-dot path segment; no separators, absolute paths, or whitespace)"
   let root ← IO.currentDir
-  let dir := root / "examples" / name
-  if ← dir.pathExists then
-    IO.eprintln s!"error: {dir} already exists — pick a new name or remove it first"
-    return 1
-  IO.FS.createDirAll dir
-  let mainSrc := if isModule then newStarterModuleMain else newStarterMain
-  IO.FS.writeFile (dir / "main.bang") mainSrc
-  if isModule then IO.FS.writeFile (dir / "Lib.bang") newStarterLib
-  IO.FS.writeFile (dir / "README.md") (newReadme name isModule)
-  -- expected.txt is the RUN oracle: resolve + run the just-written main.bang, capture its value.
-  match ← resolveEntryFile ((dir / "main.bang").toString) with
-  | .error e =>
-    IO.eprintln s!"error: scaffolded starter failed to resolve: {e}"
-    return 1
-  | .ok merged =>
-    match evalProgToString merged with
-    | .error e =>
-      IO.eprintln s!"error: scaffolded starter failed to run: {e} — no expected.txt written"
-      return 1
-    | .ok out =>
-      IO.FS.writeFile (dir / "expected.txt") (out ++ "\n")
+  let rootReal? : Except String System.FilePath ←
+    try
+      pure (Except.ok (← IO.FS.realPath root))
+    catch e =>
+      pure (Except.error s!"could not resolve working root '{root}': {e}")
+  match rootReal? with
+  | Except.error e => return Except.error e
+  | Except.ok rootReal =>
+    let expectedParent := rootReal / "examples"
+    let parentReal? : Except String System.FilePath ←
+      try
+        pure (Except.ok (← IO.FS.realPath expectedParent))
+      catch e =>
+        pure (Except.error s!"could not resolve examples directory '{expectedParent}': {e}")
+    match parentReal? with
+    | Except.error e => return Except.error e
+    | Except.ok parentReal =>
+      if parentReal.toString != expectedParent.toString then
+        return Except.error <|
+          s!"refusing to scaffold: examples directory resolves to '{parentReal}', not the " ++
+          s!"working-root child '{expectedParent}' (a symlinked examples/ parent is not allowed)"
+      let entries? : Except String (Array IO.FS.DirEntry) ←
+        try
+          pure (Except.ok (← parentReal.readDir))
+        catch e =>
+          pure (Except.error s!"could not inspect examples directory '{parentReal}': {e}")
+      match entries? with
+      | Except.error e => return Except.error e
+      | Except.ok entries =>
+        let dir := parentReal / name
+        if entries.any (fun entry => entry.fileName == name) then
+          return Except.error s!"{dir} already exists — pick a new name or remove it first"
+        return Except.ok dir
+
+/-- Best-effort rollback for a target directory that THIS `runNew` invocation successfully created.
+The no-follow metadata check prevents cleanup from traversing the path if it was replaced by a
+symlink. This helper is never called for a pre-existing target or a failed `createDir`. -/
+def cleanupCreatedNewDir (dir : System.FilePath) : IO (Option String) := do
+  try
+    let metadata ← dir.symlinkMetadata
+    if metadata.type != .dir then
+      return some s!"refused to clean '{dir}' because the created directory was replaced"
+    IO.FS.removeDirAll dir
+    return none
+  catch e =>
+    return some s!"could not clean created directory '{dir}': {e}"
+
+/-- Run `bang new NAME [--module]`: scaffold `examples/NAME/` per the check-examples convention
+(§ the doc block above). Refuses loudly if the target directory already exists, including as a
+symlink (ADR-0046: never silently overwrite). `createDir` is atomic and the parent already exists;
+unlike `createDirAll`, it can neither manufacture path components nor accept a raced-in target.
+The `expected.txt` is COMPUTED by running the just-written `main.bang`, so it can never disagree
+with the sources. Any IO, resolution, or evaluation failure rolls back only the directory this
+invocation successfully created. -/
+def runNew (name : String) (isModule : Bool) : IO UInt32 := do
+  match ← prepareNewTarget name with
+  | Except.error e => IO.eprintln s!"error: {e}"; return (1 : UInt32)
+  | Except.ok dir =>
+    -- Atomic no-overwrite boundary. Cleanup below is authorized only after THIS succeeds.
+    let createError? : Option String ←
+      try
+        IO.FS.createDir dir
+        pure none
+      catch e =>
+        pure (some s!"could not create scaffold directory '{dir}' without overwriting: {e}")
+    if let some e := createError? then
+      IO.eprintln s!"error: {e}"
+      return (1 : UInt32)
+    let mainSrc := if isModule then newStarterModuleMain else newStarterMain
+    let outcome : Except String String ←
+      try
+        IO.FS.writeFile (dir / "main.bang") mainSrc
+        if isModule then IO.FS.writeFile (dir / "Lib.bang") newStarterLib
+        IO.FS.writeFile (dir / "README.md") (newReadme name isModule)
+        -- expected.txt is the RUN oracle: resolve + run the just-written main.bang, capture its value.
+        match ← resolveEntryFile ((dir / "main.bang").toString) with
+        | Except.error e => pure (Except.error s!"scaffolded starter failed to resolve: {e}")
+        | Except.ok merged =>
+          match evalProgToString merged with
+          | Except.error e => pure (Except.error s!"scaffolded starter failed to run: {e}")
+          | Except.ok out =>
+            IO.FS.writeFile (dir / "expected.txt") (out ++ "\n")
+            pure (Except.ok out)
+      catch e =>
+        pure (Except.error s!"could not write scaffold: {e}")
+    match outcome with
+    | Except.error e =>
+      match ← cleanupCreatedNewDir dir with
+      | none => IO.eprintln s!"error: {e} — removed the incomplete scaffold"
+      | some cleanupError => IO.eprintln s!"error: {e}; rollback failed: {cleanupError}"
+      return (1 : UInt32)
+    | Except.ok out =>
       IO.println s!"created examples/{name}/"
       IO.println s!"  main.bang     ({mainSrc.length} bytes)"
       if isModule then IO.println s!"  Lib.bang      (pub greet, consumed by main)"
       IO.println s!"  README.md"
       IO.println s!"  expected.txt  → {out}"
       IO.println s!"run it:  bang run examples/{name}/main.bang"
-      return 0
+      return (0 : UInt32)
 
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
@@ -2260,9 +2357,14 @@ def main (args : List String) : IO UInt32 := do
       -- `bang new <NAME> [--module]` (plan 013 s7): scaffold examples/<NAME>/. `--module` picks the
       -- multi-file import shape; any OTHER `--`-prefixed arg falls to usage (mirrors run/check).
       let isModule := rest.contains "--module"
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | [name] => runNew name isModule
-      | _      => IO.eprintln usage; pure 1
+      let unknownFlags := rest.filter (fun a => "--".isPrefixOf a && a != "--module")
+      if !unknownFlags.isEmpty then
+        IO.eprintln usage; pure 1
+      else
+        match rest.filter (fun a => !("--".isPrefixOf a)) with
+        | [name] => runNew name isModule
+        | []     => runNew "" isModule -- grammar owns the clear empty-name diagnostic
+        | _      => IO.eprintln usage; pure 1
     else if cmd == "test" then
       -- `bang test [<file.bang>]` discovers + checks laws; `bang test --update <NAME>` (plan 013 s8)
       -- is handled at the HARNESS level (tools/check-examples.sh --update), NOT here — `test`'s CLI
