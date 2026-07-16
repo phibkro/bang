@@ -44,6 +44,7 @@ import Bang.Backend.AbstractMachine
 import Bang.Backend.EnvMachine
 import Bang.Backend.WasmEmit
 import Bang.Witness.LawTest
+import Lean.Data.Json
 
 open Bang
 open Bang.Surface
@@ -739,56 +740,28 @@ def hostServiceReal (op : Bang.OpId) (payload : Val) : IO (Option Val) := do
                    | none   => pure none                       -- exists of a non-Str path ⇒ fail-loud
   | _           => pure none
 
-/-- JSON-escape a string for a trace field (ADR-0104 §3): `"` → `\"`, `\` → `\\`, newline → `\n`,
-carriage-return → `\r`, tab → `\t`. Load-bearing for `Fs.readFile` (hostio-widen lane) — a file body
-routinely contains a `"` or a newline, and the OLD `takeWhile (· != '"')` loader would TRUNCATE such
-a result on replay (a silent record/replay divergence = the exact false-green invariant #1 forbids).
-`jsonUnescape` (below) is its inverse; the ndJSON row is now a well-formed JSON string, one row per
-line, so a value's own newline never splits the row. -/
-def jsonEscape (s : String) : String :=
-  s.foldl (init := "") (fun acc c =>
-    acc ++ match c with
-      | '"'  => "\\\""
-      | '\\' => "\\\\"
-      | '\n' => "\\n"
-      | '\r' => "\\r"
-      | '\t' => "\\t"
-      | c    => c.toString)
-
-/-- The inverse of `jsonEscape` (ADR-0104 §3): consume a `\`-escape as ONE char, everything else
-verbatim. A trailing lone `\` (malformed) is dropped. Used by `loadTraceResults` after it slices the
-`"…"`-delimited field respecting escapes. -/
-partial def jsonUnescape (s : String) : String :=
-  let rec go (cs : List Char) (acc : String) : String :=
-    match cs with
-    | '\\' :: 'n'  :: rest => go rest (acc.push '\n')
-    | '\\' :: 'r'  :: rest => go rest (acc.push '\r')
-    | '\\' :: 't'  :: rest => go rest (acc.push '\t')
-    | '\\' :: '"'  :: rest => go rest (acc.push '"')
-    | '\\' :: '\\' :: rest => go rest (acc.push '\\')
-    | '\\' :: []           => acc
-    | c :: rest            => go rest (acc.push c)
-    | []                   => acc
-  go s.toList ""
-
 /-- One recorded trace row (ADR-0104 §3): a satisfied host perform, ndJSON. All fields Sendable
 (`op`/`payload`/`result` — `label`/`id` are `Nat`), so it serializes faithfully. Payload/result are
-rendered via `valPretty` then JSON-ESCAPED (`jsonEscape`) — so a `Fs.readFile` result carrying a `"`
-or a newline stays ONE well-formed row, replayable by POSITION (the row order IS the replay prefix).
-`valPretty` on the wedge shapes (Str/Int/Unit + the `writeFile` (Str,Str) pair payload) is injective
-enough that positional replay reproduces the run (host-io-design §3). -/
+rendered via `valPretty`; Lean's JSON printer performs the escaping, so a `Fs.readFile` result
+carrying a `"` or a newline stays ONE well-formed row. Replay validates all request fields before
+using the result, so a trace belongs to the exact recorded request sequence (host-io-design §3). -/
 def traceRow (req : Bang.EnvMachine.HostReq) (result : Val) : String :=
-  "{\"label\":" ++ toString req.label ++ ",\"op\":\"" ++ req.op ++
-  "\",\"payload\":\"" ++ jsonEscape (valPretty req.payload) ++
-  "\",\"result\":\"" ++ jsonEscape (valPretty result) ++ "\"}"
+  (Lean.Json.mkObj [
+    ("label", Lean.toJson req.label),
+    ("op", Lean.toJson req.op),
+    ("payload", Lean.toJson (valPretty req.payload)),
+    ("result", Lean.toJson (valPretty result))
+  ]).compress
 
 /-- The replay-prefix DRIVER (ADR-0104 §4). Runs `M` under `evalEHost` at the granted `hostLabels`
 with the response prefix built SO FAR (`rsRev`, reversed for O(1) append); on a host request, calls
 `answer` (the shared response-supply — real IO under record, trace-read under replay), optionally
-records via `onRow`, appends the answer, and re-runs. `hdone` → print + 0; `hstuck` → fail-loud;
+records via `onRow`, appends the answer, and re-runs. `finish` validates that the response supply was
+consumed exactly before `hdone` prints; `hstuck` → fail-loud;
 the O(n²) re-eval is bounded by `maxReq` (a LOUD ceiling naming `--max-host-requests`, ADR-0104 §4). -/
 partial def runHostLoop (hostLabels : List Bang.EffectRow.Label) (fuel maxReq : Nat)
-    (answer : Bang.EnvMachine.HostReq → IO (Option Val))
+    (answer : Bang.EnvMachine.HostReq → IO (Except String Val))
+    (finish : IO (Except String Unit))
     (onRow : Bang.EnvMachine.HostReq → Val → IO Unit)
     (M : Comp) : IO UInt32 := do
   let rec loop (rsRev : List Bang.EnvMachine.MVal) (nReq : Nat) : IO UInt32 := do
@@ -800,7 +773,10 @@ partial def runHostLoop (hostLabels : List Bang.EffectRow.Label) (fuel maxReq : 
         re-eval and this ceiling.)"
       return 6
     match Bang.EnvMachine.stepHost hostLabels fuel rsRev.reverse M with
-    | .hdone v  => IO.println (valPretty v); return 0
+    | .hdone v  =>
+        match ← finish with
+        | .error e => IO.eprintln s!"error: {e}"; return 7
+        | .ok ()   => IO.println (valPretty v); return 0
     | .hstuck   =>
         IO.eprintln "error: the host run produced no first-order value — an escaped capability on an \
           UNGRANTED host label (add it to --allow), a non-host raise, out of fuel, or a function \
@@ -808,11 +784,8 @@ partial def runHostLoop (hostLabels : List Bang.EffectRow.Label) (fuel maxReq : 
         return 5
     | .hreq req =>
         match ← answer req with
-        | none   =>
-            IO.eprintln s!"error: no host handler for op '{req.op}' on label {req.label} — the v1 \
-              wedge services Console (print/readLine) and Clock (now) only (ADR-0104)."
-            return 7
-        | some result =>
+        | .error e => IO.eprintln s!"error: {e}"; return 7
+        | .ok result =>
             onRow req result
             loop (Bang.EnvMachine.readbackIn result :: rsRev) (nReq + 1)
   loop [] 0
@@ -841,7 +814,8 @@ hostio-widen lane). The op name pins the result TYPE, so the parse can't guess w
 `readFile` ALWAYS yield a `Str` (a file body of `"42"` replays as the Str "42", NOT the int 42 —
 the op-blind int-first parse was a latent Fs/readLine ambiguity); `now`/`exists` yield an `Int`;
 `print`/`writeFile` yield `Unit`. An unknown op falls back to the old shape-guess (unit → int → Str)
-so a hand-written trace still loads. The row ORDER is the replay prefix (positional). -/
+so a hand-written trace still loads. Row order is the replay prefix, but each row's request fields
+must also match before this result decoder is called. -/
 def parseTraceResult (op : Bang.OpId) (s : String) : Option Val :=
   match op with
   | "readLine" | "readFile" => some (strToVal s)                 -- ALWAYS a Str (never int-guessed)
@@ -853,37 +827,58 @@ def parseTraceResult (op : Bang.OpId) (s : String) : Option Val :=
       | some n => some (.vint n)
       | none   => some (strToVal s)
 
-/-- Take the chars of a JSON string body up to (not including) its closing `"`, treating a `\`-escape
-as TWO consumed chars so an escaped `\"` does NOT terminate the field (ADR-0104 §3). The raw
-(still-escaped) prefix is returned for `jsonUnescape` to decode. Because `traceRow` escapes newlines,
-the field can't contain a real `\n` either — one row stays one line. -/
-partial def takeJsonField (cs : List Char) : String :=
-  let rec go (cs : List Char) (acc : String) : String :=
-    match cs with
-    | '"'  :: _            => acc                       -- unescaped closing quote ⇒ field ends
-    | '\\' :: c :: rest    => go rest (acc.push '\\' |>.push c)  -- an escape: keep BOTH chars, don't terminate
-    | c :: rest            => go rest (acc.push c)
-    | []                   => acc                       -- malformed (no closing quote): take what we have
-  go cs ""
+/-- A decoded host trace row. The request triple remains intact until replay compares it with the
+live request; the result text is decoded only after that comparison. This prevents a stale trace
+from supplying a positionally compatible value to a different request. -/
+structure HostTraceRow where
+  label : Bang.EffectRow.Label
+  op : Bang.OpId
+  payload : String
+  result : String
+  deriving Repr
 
-/-- Slice a `"<key>":"<value>"` string field out of an ndJSON row, escape-aware
-(`takeJsonField`) + `jsonUnescape`d. `none` if the key is absent. Shared by `loadTraceResults`
-for both the `op` (dispatch key) and `result` (payload) fields. -/
-def jsonStrField (key line : String) : Option String :=
-  match line.splitOn ("\"" ++ key ++ "\":\"") with
-  | _ :: rest :: _ => some (jsonUnescape (takeJsonField rest.toList))
-  | _              => none
+/-- Decode one ndJSON row through Lean's JSON parser. Missing fields, wrong field types, invalid
+escapes, trailing garbage, and non-object rows are all errors instead of silently disappearing. -/
+def parseHostTraceRow (line : String) : Except String HostTraceRow := do
+  let json ← Lean.Json.parse line
+  let label ← Lean.fromJson? (← json.getObjVal? "label")
+  let op ← Lean.fromJson? (← json.getObjVal? "op")
+  let payload ← Lean.fromJson? (← json.getObjVal? "payload")
+  let result ← Lean.fromJson? (← json.getObjVal? "result")
+  pure { label, op, payload, result }
 
-/-- Extract the ordered `result` values from an ndJSON trace file's rows (one row per line). Each row
-supplies BOTH its `op` (the dispatch key that pins the result TYPE) and its `result` string; a row
-missing either is skipped (blank lines, trailing newline). The result is sliced escape-aware then
-`jsonUnescape`d before op-directed `parseTraceResult` — so a `Fs.readFile` result carrying
-`"`/newline/a bare integer round-trips faithfully (ADR-0104 §3, hostio-widen lane). -/
-def loadTraceResults (contents : String) : List Val :=
-  (contents.splitOn "\n").filterMap (fun line => do
-    let op     ← jsonStrField "op" line
-    let result ← jsonStrField "result" line
-    parseTraceResult op result)
+/-- Decode every row in an ndJSON trace. A single final newline is the file terminator written by
+`--record`; every other blank or malformed row fails with its one-based row number. -/
+def loadHostTrace (contents : String) : Except String (List HostTraceRow) :=
+  if contents.isEmpty || contents == "\n" then
+    .ok []  -- compatibility: `--record` historically wrote one terminator for a zero-row trace
+  else
+    let split := contents.splitOn "\n"
+    let lines := if contents.endsWith "\n" then split.dropLast else split
+    let rec go (rowNo : Nat) : List String → Except String (List HostTraceRow)
+      | [] => .ok []
+      | line :: rest => do
+          if line.isEmpty then
+            throw s!"invalid replay trace row {rowNo}: blank rows are not allowed"
+          let row ← parseHostTraceRow line |>.mapError
+            (fun e => s!"invalid replay trace row {rowNo}: {e}")
+          pure (row :: (← go (rowNo + 1) rest))
+    go 1 lines
+
+/-- Validate a recorded request against the live request before decoding its result. Rendering the
+payload with `valPretty` is the trace format's Sendable encoding; exact string equality therefore
+pins the request sequence that produced the trace. -/
+def replayTraceRow (row : HostTraceRow) (req : Bang.EnvMachine.HostReq) : Except String Val := do
+  if row.label != req.label then
+    throw s!"replay trace label mismatch: recorded {row.label}, program requested {req.label}"
+  if row.op != req.op then
+    throw s!"replay trace op mismatch: recorded '{row.op}', program requested '{req.op}'"
+  let payload := valPretty req.payload
+  if row.payload != payload then
+    throw s!"replay trace payload mismatch for '{req.op}': recorded '{row.payload}', program requested '{payload}'"
+  match parseTraceResult row.op row.result with
+  | some result => pure result
+  | none => throw s!"invalid replay trace result for op '{row.op}': '{row.result}'"
 
 /-- The host-IO entry (ADR-0104): run a resolved `Prog` under the replay-prefix driver. Resolves
 `--allow` names→labels via the program's effect map, then drives `evalEHost`. Record and REPLAY share
@@ -899,22 +894,38 @@ def runHostProg (fuel maxReq : Nat) (allow : Option (List String))
     | .ok hostLabels =>
       match replay with
       | some tracePath =>
-        -- REPLAY: the answer supply is the pre-loaded trace, consumed in order. Pure (no IO).
+        -- REPLAY: strictly decode and validate each request before consuming its result. Pure:
+        -- after the trace file is loaded, neither the answer supply nor completion performs host IO.
         let contents ← IO.FS.readFile ⟨tracePath⟩
-        let results := loadTraceResults contents
-        let queue ← IO.mkRef results
-        runHostLoop hostLabels fuel maxReq
-          (answer := fun _ => do
-            match ← queue.get with
-            | []      => pure none                                   -- trace exhausted ⇒ fail-loud (divergence)
-            | r :: rs => queue.set rs; pure (some r))
-          (onRow := fun _ _ => pure ())
-          c
+        match loadHostTrace contents with
+        | .error e => IO.eprintln s!"error: {e}"; pure 7
+        | .ok rows =>
+          let queue ← IO.mkRef rows
+          runHostLoop hostLabels fuel maxReq
+            (answer := fun req => do
+              match ← queue.get with
+              | [] => pure (.error s!"replay trace exhausted before op '{req.op}' on label {req.label}")
+              | row :: rest =>
+                  match replayTraceRow row req with
+                  | .error e => pure (.error e)
+                  | .ok result => queue.set rest; pure (.ok result))
+            (finish := do
+              let remaining ← queue.get
+              if remaining.isEmpty then pure (.ok ())
+              else pure (.error s!"replay trace has {remaining.length} unconsumed extra row(s)"))
+            (onRow := fun _ _ => pure ())
+            c
       | none =>
         -- REAL (+ optional record): the answer supply is real IO; a row is appended per satisfied op.
         let recRef ← IO.mkRef (#[] : Array String)
         let code ← runHostLoop hostLabels fuel maxReq
-          (answer := fun req => hostServiceReal req.op req.payload)
+          (answer := fun req => do
+            match ← hostServiceReal req.op req.payload with
+            | some result => pure (.ok result)
+            | none => pure (.error s!"no host handler for op '{req.op}' on label {req.label} — the v1 \
+                wedge services Console (print/readLine), Clock (now), and Fs \
+                (readFile/writeFile/exists) only (ADR-0104)."))
+          (finish := pure (.ok ()))
           (onRow := fun req result => do
             if record.isSome then recRef.modify (·.push (traceRow req result)))
           c
