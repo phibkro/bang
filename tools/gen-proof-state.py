@@ -128,11 +128,12 @@ def main() -> int:
     lean_root = os.path.abspath(args.lean_root)
     context = os.path.abspath(args.context or os.path.join(lean_root, "CONTEXT.md"))
 
-    # FAST PATH (--check only): the block derives ONLY from `Bang/` (Audit headlines +
-    # burndown sorries), and its embedded provenance sha is the last `Bang/` commit. If
-    # that still equals the current last-`Bang/` commit, the block provably cannot have
-    # drifted → PASS WITHOUT invoking `lake` — the gate's single most expensive leg
-    # (~1.5s, the only one that elaborates the spine). Docs/tooling commits skip it.
+    # FAST PATH (non-authoritative --check only): exact typed provenance binds both the
+    # complete `Bang/` tree and every repository input that can alter the projection
+    # (classifier/parser/generator/build manifests/toolchain). If both identities are
+    # unchanged, lake cannot reveal new derived content, so the local fitness path may
+    # skip elaboration. `--build` always bypasses this shortcut and compares a fresh
+    # authoritative render, including every headline/sorry count byte.
     if args.check and not args.build and os.path.exists(context):
         md0 = open(context, encoding="utf-8").read()
         m = re.search(
