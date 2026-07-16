@@ -288,5 +288,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **lean** — prevent warning regressions (`change:df39ce5f50346ae18410cf3e957d5dab015df3a3021868c831e9de48248f488d`)
 - **lean** — migrate deprecated API uses (`change:f38bf516fb3c62c486bf4db95ef3f8bd35d6d72ca66c358c54bbaa9386fd4d1c`)
 - **lean** — remove dead and unreachable tactics (`change:0d6b379349ea17916b155728d7fccb0338d2afbbe3954577dc0bad42207d7d09`)
+- **wasm-model** — decouple target runner from source Result (`change:023c57727162d0a8871f8617236c83250ad64279ec030ba895078b3e8c783a6c`)
 
 <!-- END GENERATED changelog -->

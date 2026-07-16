@@ -49,18 +49,21 @@ the machine and the theorem — and there the "bijection" degenerates to the IDE
 
 On the proof-carrying backend the S5 headline is a COMPLETED theorem, dated at the shas below:
 
-- `Bang.Wasmfx.exec_wexec_sim_ok` (`Wasm.lean:1953`) — the FULL effectful `exec ≡ wexec`
+- `Bang.Wasmfx.exec_wexec_sim_ok` (`Wasm.lean:1954`) — the FULL effectful `exec ≡ wexec`
   lockstep. Its OP arm is the 4-way `stateUpdate → txnUpdate → customUpdate → unwindFind` dispatch
   (state · transaction · custom · throws-abort); its HANDLE arm mints `id := g` exactly as `exec`.
   `#print axioms` = `[propext, Quot.sound]`.
-- `Bang.compile_forward_sim` (`Spec.lean:324`) — composes it with the reverse CalcVM bridge:
-  `Source.eval fuel c = done v ⇒ ∃ f', Wasmfx.run f' (compileC c) = done (compileV v)`, premised on
+- `Bang.compile_forward_sim` (`Spec.lean:365`) — composes it with the reverse CalcVM bridge:
+  `Source.eval fuel c = done v ⇒ ∃ f', Wasmfx.run f' (compileC c) = some (compileV v)`, premised on
   `VcapFree c` ONLY (the `CustomFree` scaffolding was dropped at #62 slice 3, ADR-0085 Stage 4).
   `#print axioms` = `[propext, Classical.choice, Quot.sound]`.
 
 Both cover the WHOLE v1 handler set. The `CustomFree` drop means user-defined/custom effects — the
 S4 fragment — are INSIDE this theorem already. `Bang/Backend/Rung5ProofGrade.lean` re-exports both
 under the S5 name (`s5_effectful_forward_sim`, `s5_exec_wexec_lockstep`), both re-checked axiom-clean.
+`Wasmfx.run` returns `Option Wasmfx.Val`: only a singleton successful final value is `some`; the
+abstract runner intentionally leaves fuel, stack-shape, handler-state, and unhandled-operation
+non-values unclassified as `none` rather than borrowing the source evaluator's `Result` cases.
 
 ### What `VcapFree` excludes — the host-IO boundary, named precisely
 

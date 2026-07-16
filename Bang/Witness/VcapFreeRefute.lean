@@ -45,9 +45,10 @@ example : ¬ Bang.Model.FreshCfg (0, ([] : Bang.EvalCtx), cWitness) := by
   simp at this
 
 /-- (4) THE HEADLINE-TRUTH CHECK: does the WASM side ALSO complete cWitness? YES —
-`Wasmfx.run 100 (compileC cWitness) = done unit` (compiled rfl). So `compile_forward_sim` is TRUE
-on cWitness (both sides reach done unit) — TRUE-BUT-UNPROVABLE-WITHOUT-THE-PREMISE, not false. -/
-example : Wasmfx.run 100 (compileC cWitness) = Result.done .unit := by rfl
+`Wasmfx.run 100 (compileC cWitness) = some unit` (compiled rfl). So `compile_forward_sim` is TRUE
+on cWitness (source reaches `done unit`; the abstract target reaches `some unit`) —
+TRUE-BUT-UNPROVABLE-WITHOUT-THE-PREMISE, not false. -/
+example : Wasmfx.run 100 (compileC cWitness) = some .unit := by rfl
 
 end Bang.VcapFreeRefute
 

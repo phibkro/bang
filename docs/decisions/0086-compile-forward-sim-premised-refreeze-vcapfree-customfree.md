@@ -24,7 +24,7 @@ any known proof can reach, in exactly two places:
    `Source.eval fuel c = done v` does NOT imply it: `scratch/VcapFreeRefute.lean` (all `rfl`) shows
    `letC (ret (vthunk (perform (vcap 99 0) "get" unit))) (ret unit)` completes while failing
    `VcapFree` and `FreshCfg`. The premise is statement-necessary for the architecture. The SAME
-   witness also shows `Wasmfx.run 100 (compileC cWitness) = done unit` — the headline HOLDS there
+   witness also shows `Wasmfx.run 100 (compileC cWitness) = some unit` — the headline HOLDS there
    (the dead thunk is discarded by both sides). Precedent: `evalD_agrees_source` already carries
    `VcapFree` for the same reason.
 2. **`CustomFree`** — ADR-0085 Stage-1 left `evalD (handle (.custom …) M) = none` (the machine arm
@@ -32,7 +32,7 @@ any known proof can reach, in exactly two places:
    "vacuous discharge" bet protects SOUNDNESS-direction proofs (hypothesis `evalD = some` is absurd)
    but INVERTS for completeness (hypothesis is the kernel run). `scratch/CustomStage1Refute.lean`
    (all `rfl`): on `handle (custom 0 unit (fun _ => none)) (ret 5)`, `Source.eval 50 = done 5` AND
-   `Wasmfx.run 100 (compileC c) = done (int 5)` — the headline HOLDS (the WASM HANDLE is also
+   `Wasmfx.run 100 (compileC c) = some (int 5)` — the headline HOLDS (the WASM HANDLE is also
    handler-agnostic); a custom-SERVICING body escapes in the kernel (dispatch inert) ⟹ vacuous.
    No custom counterexample exists; the gap is proof-route-only.
 
@@ -47,10 +47,15 @@ Re-freeze the ◊5 headline (Spec.lean:292) as:
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
     VcapFree c → CustomFree c →
     Source.eval fuel c = Result.done v →
-    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v)
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = some (compileV v)
 ```
 
-with the internal `evalD_complete_gen` (Bang/Backend/Wasm.lean) premised identically. `CustomFree`
+The conclusion above reflects the later #197 representation cleanup: the target
+runner reports singleton success with `Option.some` and leaves every non-value
+unclassified as `none`. That change does not alter this decision's source-success
+premise or one-way simulation meaning.
+
+The internal `evalD_complete_gen` (Bang/Backend/Wasm.lean) is premised identically. `CustomFree`
 (no `Handler.custom` node — the `CFComp`/`CFVal`/`CFHandler` family with shift/subst preservation,
 proven @ `3783d4d`) is PROMOTED from scratch into a Core module per arch-check placement.
 

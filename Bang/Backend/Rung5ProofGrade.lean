@@ -32,12 +32,12 @@ public import Bang.Backend.WasmEmit
 
   ### (1) The effectful `wexec ≡ Source.eval` obligation is ALREADY DISCHARGED — axiom-clean.
 
-  `Bang.Wasmfx.exec_wexec_sim_ok` (Wasm.lean:1953) proves the FULL effectful lockstep
+  `Bang.Wasmfx.exec_wexec_sim_ok` (Wasm.lean:1954) proves the FULL effectful lockstep
   `exec ≡ wexec` — its OP arm is the 4-way `stateUpdate → txnUpdate → customUpdate → unwindFind`
   dispatch, its HANDLE arm mints `id := g` exactly as `exec` does, over the WHOLE v1 handler set
-  (state · throws · transaction · custom). `Bang.compile_forward_sim` (Spec.lean:324) composes it
+  (state · throws · transaction · custom). `Bang.compile_forward_sim` (Spec.lean:365) composes it
   with the reverse CalcVM bridge to yield the end-to-end
-  `Source.eval fuel c = done v ⇒ ∃ f', Wasmfx.run f' (compileC c) = done (compileV v)`, premised on
+  `Source.eval fuel c = done v ⇒ ∃ f', Wasmfx.run f' (compileC c) = some (compileV v)`, premised on
   `VcapFree c` ONLY (the `CustomFree` scaffolding was DROPPED at #62 slice 3 — ADR-0085 Stage 4).
   `#print axioms` on BOTH ⊆ {propext, Classical.choice, Quot.sound}.
 
@@ -101,7 +101,7 @@ objects, related by the identity injection (`injHStack`), not a bijection. -/
 theorem s5_effectful_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
     Bang.Model.VcapFree c →
     Source.eval fuel c = Result.done v →
-    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = some (compileV v) :=
   compile_forward_sim_proof
 
 /-- The effectful lockstep the S5 obligation rests on, re-exported for the record: the WASM

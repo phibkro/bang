@@ -171,7 +171,7 @@
       "reportName": "Bang.compile_forward_sim",
       "scope": "Literal-capability-free programs and terminating-success executions.",
       "specHeadline": true,
-      "statementShape": "VcapFree c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)",
+      "statementShape": "VcapFree c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = some (compileV v)",
       "targetModelKind": "source-to-project-wasm-oriented-abstract-machine",
       "writtenRef": "compile_forward_sim"
     },
@@ -207,7 +207,7 @@
       "reportName": "Bang.compile_forward_sim_pure",
       "scope": "Pure source fragment and terminating-success executions.",
       "specHeadline": false,
-      "statementShape": "Pure c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)",
+      "statementShape": "Pure c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = some (compileV v)",
       "targetModelKind": "source-to-project-wasm-oriented-abstract-machine",
       "writtenRef": "Bang.compile_forward_sim_pure"
     },
@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "861d45f819849bc77f46218fc4c040048574b48282bcfe8baa659babd2ea9a6d",
+    "digest": "ef29460784a6d60ec5be847c0d5deed7f08ec91014cdc823f8890b8f47626e09",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

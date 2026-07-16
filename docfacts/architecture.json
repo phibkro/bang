@@ -4626,7 +4626,7 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 2923,
+      "loc": 2951,
       "name": "Bang.Backend.Wasm",
       "path": "Bang/Backend/Wasm.lean",
       "publicSymbols": [
@@ -4758,7 +4758,7 @@
         },
         {
           "kind": "def",
-          "line": 411,
+          "line": 412,
           "name": "run",
           "visibilityBasis": "public-section"
         },
@@ -11009,19 +11009,19 @@
       "directImports": [
         "Bang.Backend.Wasm"
       ],
-      "loc": 39,
+      "loc": 40,
       "name": "Bang.Witness.CustomStage1Refute",
       "path": "Bang/Witness/CustomStage1Refute.lean",
       "publicSymbols": [
         {
           "kind": "def",
-          "line": 23,
+          "line": 24,
           "name": "cTrivial",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 31,
+          "line": 32,
           "name": "cPerform",
           "visibilityBasis": "public-section"
         }
@@ -11950,7 +11950,7 @@
         "Bang.Backend.Wasm",
         "Bang.Core.Freshness"
       ],
-      "loc": 55,
+      "loc": 56,
       "name": "Bang.Witness.VcapFreeRefute",
       "path": "Bang/Witness/VcapFreeRefute.lean",
       "publicSymbols": [
@@ -12124,7 +12124,7 @@
       "name": "Apex"
     },
     {
-      "loc": 16967,
+      "loc": 16995,
       "moduleCount": 6,
       "name": "Backend"
     },
@@ -12149,7 +12149,7 @@
       "name": "Reify"
     },
     {
-      "loc": 3683,
+      "loc": 3685,
       "moduleCount": 19,
       "name": "Witness"
     }

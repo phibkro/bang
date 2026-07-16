@@ -159,27 +159,30 @@ sorries** at `62335411`, the CONTEXT.md generated proof-state block is the SoT).
   reserved for the *two-sided* contextual-equivalence theorems (Paper 2); using it here would
   be over-engineering (⊤⊤-closure buys compositionality the single-source statement does not
   need).
-- **5.2 The exact headline** (re-checked, `Bang/Spec.lean:326`, axiom set
+- **5.2 The exact headline** (re-checked, `Bang/Spec.lean:365`, axiom set
   `[propext, Classical.choice, Quot.sound]` — CLEAN). **`CustomFree` is gone** — the statement
   is now single-premise `VcapFree`, covering the FULL fragment (handlers AND custom effects):
   ```lean
   theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
       Bang.Model.VcapFree c →
       Source.eval fuel c = Result.done v →
-      ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v)
+      ∃ fuel', Wasmfx.run fuel' (compileC c) = some (compileV v)
   ```
   Re-exported under the S5 name as `Bang.Rung5ProofGrade.s5_effectful_forward_sim`
-  (`Rung5ProofGrade.lean:102`, axiom-clean).
+  (`Rung5ProofGrade.lean:101`, axiom-clean).
+  The target runner deliberately returns `Option Wasmfx.Val`, not the source
+  evaluator's `Result`: `some` records only a singleton successful final value,
+  while every existing non-value path remains an unclassified `none`.
 - **5.3 The proof structure.** PURE arm routes through the always-clean
-  `compile_forward_sim_pure` (`Bang/Backend/Wasm.lean:2771`, clean); the HANDLER arm through the
+  `compile_forward_sim_pure` (`Bang/Backend/Wasm.lean:2763`, clean); the HANDLER arm through the
   U5b completeness spine `evalD_complete_gen` (`Bang.Backend.U5bComplete`) — the converse-of-
   `run_evalD` bridge, now **κ-threaded over custom frames** so the OP arm resolves custom
   clause-services as a real lockstep (`wCustomUpdate_comm`); every arm closed for all FOUR
   handler kinds (state · throws · transaction · custom). `source_eval_to_exec`
-  (`Wasm.lean:2759`, clean) is the eval→exec leg. The underlying effectful lockstep
-  `Wasmfx.exec_wexec_sim_ok` (Wasm.lean:1953, its OP arm = the 4-way
+  (`Wasm.lean:2751`, clean) is the eval→exec leg. The underlying effectful lockstep
+  `Wasmfx.exec_wexec_sim_ok` (Wasm.lean:1954, its OP arm = the 4-way
   state/txn/custom/abort dispatch) is re-exported as `s5_exec_wexec_lockstep`
-  (`Rung5ProofGrade.lean:111`, axiom-clean).
+  (`Rung5ProofGrade.lean:110`, axiom-clean).
 - **5.4 The AsmFX epilogue/annotation technique.** Compiled-only fragments (suspend/resume
   scaffold, leave records) with no source counterpart get AsmFX's §7 annotation treatment.
   AsmFX (Lindley et al., "Effect Handlers All the Way Down", Oct'25 draft) is the nearest
@@ -226,11 +229,11 @@ paper's theorems (reproduced from the census, not the docs):
 
 | theorem | file:line | axiom set | status |
 |---|---|---|---|
-| `compile_forward_sim` | `Spec.lean:326` | `propext, Classical.choice, Quot.sound` | **clean** (`VcapFree`-only) |
-| `compile_forward_sim_pure` | `Wasm.lean:2771` | `propext, Classical.choice, Quot.sound` | **clean** |
-| `source_eval_to_exec` | `Wasm.lean:2759` | `propext, Classical.choice, Quot.sound` | **clean** |
-| `Rung5ProofGrade.s5_effectful_forward_sim` | `Rung5ProofGrade.lean:102` | `propext, Classical.choice, Quot.sound` | **clean** (S5 re-export) |
-| `Rung5ProofGrade.s5_exec_wexec_lockstep` | `Rung5ProofGrade.lean:111` | `propext, Quot.sound` | **clean** |
+| `compile_forward_sim` | `Spec.lean:365` | `propext, Classical.choice, Quot.sound` | **clean** (`VcapFree`-only) |
+| `compile_forward_sim_pure` | `Wasm.lean:2763` | `propext, Classical.choice, Quot.sound` | **clean** |
+| `source_eval_to_exec` | `Wasm.lean:2751` | `propext, Classical.choice, Quot.sound` | **clean** |
+| `Rung5ProofGrade.s5_effectful_forward_sim` | `Rung5ProofGrade.lean:101` | `propext, Classical.choice, Quot.sound` | **clean** (S5 re-export) |
+| `Rung5ProofGrade.s5_exec_wexec_lockstep` | `Rung5ProofGrade.lean:110` | `propext, Quot.sound` | **clean** |
 | `custom_program_safe` | `Spec.lean:84` | `propext, Classical.choice, Quot.sound` | **clean** (Stage-6 capstone) |
 | `compile_well_typed` | `Spec.lean:308` | `propext` | **clean** |
 | `zero_grade_no_code` | `Spec.lean:337` | `propext` | **clean** |

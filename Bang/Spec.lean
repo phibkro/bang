@@ -365,7 +365,7 @@ theorem compile_well_typed
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
     Bang.Model.VcapFree c →
     Source.eval fuel c = Result.done v →
-    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = some (compileV v) :=
   compile_forward_sim_proof
 
 -- [ROADMAP][PLACEHOLDER] The predicates are currently `True` and `compileHandler` returns an
