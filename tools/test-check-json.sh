@@ -56,8 +56,10 @@ check "type-error-code-field" "$(printf '%s' "$got_out" | grep -o '"code":"type"
 check "type-error-exit" "$got_exit" "1"
 
 # ── file-arg and stdin agree on the SAME input (the two entry points must be one code path) ──
-got_file="$("$bang" check --json examples/state/main.bang 2>/dev/null)" || true
-got_stdin="$(cat examples/state/main.bang | "$bang" check --json 2>/dev/null)" || true
+got_file="$("$bang" check --json examples/state/main.bang 2>/dev/null)" && got_file_exit=0 || got_file_exit=$?
+got_stdin="$("$bang" check --json 2>/dev/null < examples/state/main.bang)" && got_stdin_exit=0 || got_stdin_exit=$?
+check "file-arg-exit" "$got_file_exit" "0"
+check "stdin-exit" "$got_stdin_exit" "0"
 check "file-and-stdin-agree" "$got_stdin" "$got_file"
 check "file-arg-ok-true" "$got_file" '{"ok":true,"diagnostics":[]}'
 
@@ -100,8 +102,12 @@ for dir in examples/*/; do
   main="$dir/main.bang"
   name="$(basename "$dir")"
   [ -f "$main" ] || continue
-  out="$("$bang" check --json "$main" 2>/dev/null)" || true
-  if [ "$out" = '{"ok":true,"diagnostics":[]}' ]; then
+  if out="$("$bang" check --json "$main" 2>/dev/null)"; then
+    out_exit=0
+  else
+    out_exit=$?
+  fi
+  if [ "$out_exit" -eq 0 ] && [ "$out" = '{"ok":true,"diagnostics":[]}' ]; then
     examples_pass=$((examples_pass + 1))
   else
     echo "✗ examples-sweep-$name — expected ok:true, got [$out]"; examples_fail=$((examples_fail + 1))
@@ -172,7 +178,7 @@ echo "────────────────────────�
 echo "check-json: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run (the gotcha the mission
 # brief calls out) even if every individual `check` that DID run happened to pass.
-want_total=30
+want_total=32
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"
