@@ -218,7 +218,7 @@ nix develop          # ENTER THE DEV SHELL FIRST — bare `lake`/`just`/`node` a
 just verify          # selfcheck (Node) + lake build + tools/audit.sh
 # or piecemeal:
 just check FILE      # fast single-file Lean error check
-just build           # one lake build + Lean warning ratchet  (cold first time: minutes)
+just build           # one lake build Bang bang + full library/runner warning ratchet  (cold: minutes)
 just audit           # bash tools/audit.sh
 just burndown        # Phase B sorry/axiom counts per module
 just axioms          # lake env lean Bang/Audit.lean — #print axioms per theorem

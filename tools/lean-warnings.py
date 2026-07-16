@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# tool: role=check couples=lean-toolchain,docfacts/lean-warning-budget.json,justfile runs-in=verify
+# tool: role=check couples=Main.lean,lean-toolchain,lakefile.toml,docfacts/lean-warning-budget.json,justfile runs-in=verify
 """Keep Lean warnings on a ratchet without making historical warnings fatal.
 
-The normal ``build`` action runs ``lake build`` exactly once, copies its stdout
-and stderr bytes to their original streams, then compares the replayed Lean
-diagnostics with the committed budget.  Lake replays diagnostics on cached
-builds, so the same path works for both cold and warm verification.
+The normal ``build`` action runs ``lake build Bang bang`` exactly once, covering
+the complete project library and native runner while copying output bytes to
+their original streams. It then compares the replayed Lean diagnostics with the
+committed budget. Lake replays diagnostics on cached builds, so the same path
+works for both cold and warm verification.
 """
 
 from __future__ import annotations
@@ -395,8 +396,11 @@ def report_unknown(unknown: list[str]) -> None:
         print(f"    {item}", file=sys.stderr)
 
 
+DEFAULT_BUILD_COMMAND = ["lake", "build", "Bang", "bang"]
+
+
 def command_from(args: argparse.Namespace) -> list[str]:
-    return args.command if args.command else ["lake", "build"]
+    return args.command if args.command else DEFAULT_BUILD_COMMAND
 
 
 def main() -> int:
@@ -413,7 +417,7 @@ def main() -> int:
     parser.add_argument(
         "--command",
         nargs=argparse.REMAINDER,
-        help="build command (default: lake build)",
+        help=f"build command (default: {' '.join(DEFAULT_BUILD_COMMAND)})",
     )
     args = parser.parse_args()
 

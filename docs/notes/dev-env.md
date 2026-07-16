@@ -62,8 +62,8 @@ strict and fails if Chromium, `mmdc`, or any diagram fails.
 | Command | What it does |
 |---|---|
 | `just verify` | Default. selfcheck + build + audit. |
-| `just build` | One `lake build`, then the module/category warning ratchet (incremental after first run). |
-| `just warnings` | Run the same one-build warning ratchet without first-checkout cache bootstrap. |
+| `just build` | One `lake build Bang bang`, then the complete library + runner warning ratchet (incremental after first run). |
+| `just warnings` | Run the same single-invocation warning ratchet without first-checkout cache bootstrap. |
 | `just warnings-update` | Atomically regenerate the canonical warning ceiling after a successful build. |
 | `just audit` | `tools/audit.sh` — static guards + axiom-set report per theorem. |
 | `just selfcheck` | Zero-dep Node smoke test of the row-unifier algorithm. |
@@ -84,9 +84,10 @@ strict and fails if Chromium, `mmdc`, or any diagram fails.
 ## Lean warning budget
 
 Historical Lean warnings are tracked in `docfacts/lean-warning-budget.json` by
-module and stable category. `just build` runs the compiler once, streams its
-output unchanged, and then enforces the budget. Lake replays stored diagnostics,
-so cached and cold builds take the same path. A reduction passes immediately;
+module and stable category. `just build` runs `lake build Bang bang` once,
+covering the complete library and native runner while streaming compiler output
+unchanged, and then enforces the budget. Lake replays stored diagnostics, so
+cached and cold builds take the same path. A reduction passes immediately;
 an increased count, a new module, a new category, or an unrecognized warning
 shape fails. The budget is also bound to `lean-toolchain` plus the
 platform-independent Lean version, commit, and build flavor parsed from `lean

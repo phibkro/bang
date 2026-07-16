@@ -238,7 +238,7 @@ adr-index:
 adr-check:
     python3 tools/gen-adr-index.py --check
 
-# Build the Lean library. First time: pulls Mathlib oleans (multi-GB).
+# Build the Lean library and native runner. First time: pulls Mathlib oleans (multi-GB).
 build:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -249,14 +249,15 @@ build:
     # truly missing it fails loud on its own, and the PreToolUse guard independently blocks any
     # cache-get. The old `-e <local mathlib stub>` precondition FALSE-NEGATIVED in the nix setup
     # (oleans are on LEAN_PATH, not the local dir) → it aborted worktree builds spuriously and forced
-    # --no-verify on IC commits (#43).
+    # --no-verify on IC commits (#43). One Lake invocation requests both the full
+    # Bang library target and runner, so warning classification sees both closures.
     if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ] \
        && [ ! -e .lake/packages/mathlib/.lake/build ]; then
       lake exe cache get   # main checkout, first setup only
     fi
     python3 tools/lean-warnings.py build
 
-# Run the same single-build warning ratchet as `just build`, without the
+# Run the same single-invocation library + runner warning ratchet as `just build`, without the
 # first-checkout cache bootstrap. Lake replays stored diagnostics on warm builds.
 warnings:
     python3 tools/lean-warnings.py build

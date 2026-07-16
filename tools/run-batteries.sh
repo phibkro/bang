@@ -9,10 +9,10 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # before this driver's next battery could observe it). That independence is what lets
 # them run concurrently instead of serially.
 #
-# Build ONCE up front (each battery's own `lake build bang` is normally a ~1s
-# incremental no-op, but eleven of them serialize to real time) and tell every battery
-# via BANG_BIN_FRESH to skip its own rebuild (tools/test-*.sh honor this — see the
-# conditional rebuild each carries).
+# Ensure the runner is current up front, then tell every battery via BANG_BIN_FRESH
+# to skip its own rebuild (tools/test-*.sh honor this — see the conditional rebuild
+# each carries). Under `just verify`, the warning-wrapped `build` recipe has already
+# built this same target, so this is an incremental check rather than a second cold build.
 #
 # FALSE-GREEN DEFENSES (this script IS part of the gate, so it must not paper over a
 # hung/missing battery):

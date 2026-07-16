@@ -956,9 +956,9 @@ this invariant-#1-compliant is the replay leg reproducing the recorded run. -/
 `SCons(Char cp, rest) = fold (inr (pair (fold (vint cp)) rest))` (ADR-0074). Used by the host
 `readLine` handler to lift a real input line into the value the program resumes with. -/
 partial def strToVal (s : String) : Val :=
-  match s.data with
+  match s.toList with
   | []      => .fold (.inl .vunit)
-  | c :: cs => .fold (.inr (.pair (.fold (.vint (Int.ofNat c.toNat))) (strToVal (String.mk cs))))
+  | c :: cs => .fold (.inr (.pair (.fold (.vint (Int.ofNat c.toNat))) (strToVal (String.ofList cs))))
 
 /-- Built-in services are identified by their resolver-trusted declaration, never by an operation
 name. A custom effect may reuse `print` or `writeFile` without becoming a real host service. -/
@@ -1134,7 +1134,7 @@ def hostServiceReal (authority : HostAuthority) (req : Bang.EnvMachine.HostReq) 
       | none => pure (.error "Console.print expected a Str payload")
   | .console, "readLine" =>
       let line ← (← IO.getStdin).getLine
-      pure (.ok (strToVal (line.dropRightWhile (· == '\n'))))
+      pure (.ok (strToVal (line.dropEndWhile (· == '\n')).toString))
   | .clock, "now" =>
       let ms ← IO.monoMsNow
       pure (.ok (.vint (Int.ofNat ms)))
@@ -1904,7 +1904,7 @@ one). Without this, EVERY `rewrite fmt`/`rewrite rename` diff on an ordinary (ne
 file would show a spurious final `-` line even when the program itself is byte-for-byte
 unchanged — a presentation artifact of the file/printer convention mismatch, not a real edit. -/
 def stripTrailingNewline (s : String) : String :=
-  if s.endsWith "\n" then s.dropRight 1 else s
+  if s.endsWith "\n" then (s.dropEnd 1).toString else s
 
 #guard stripTrailingNewline "a\nb\n" == "a\nb"
 #guard stripTrailingNewline "a\nb" == "a\nb"
