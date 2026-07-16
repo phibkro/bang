@@ -229,9 +229,11 @@ def derive_decision_details(root: Path) -> dict:
         root / "docs/decisions/0035-lr-for-equivalence-simulation-for-compilation.md"
     )
     adr0059 = root / "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md"
+    adr0110 = root / "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md"
     base = read_source(adr0016)
     proof = read_source(adr0035)
     target = read_source(adr0059)
+    boundary = read_source(adr0110)
 
     require_source(
         base, r"The architecture is two-hop:", adr0016, "two-hop architecture"
@@ -254,6 +256,18 @@ def derive_decision_details(root: Path) -> dict:
         adr0035,
         "proof-method split",
     )
+    require_source(
+        boundary,
+        r"Choose \*\*Route B: preserve the honest boundary\*\*",
+        adr0110,
+        "abstract-model to concrete-emitter boundary",
+    )
+    require_source(
+        boundary,
+        r"no proof currently connects the two target layers",
+        adr0110,
+        "unproved correspondence boundary",
+    )
     return {
         "target": {
             "name": target_name,
@@ -262,6 +276,7 @@ def derive_decision_details(root: Path) -> dict:
             "sources": [
                 "docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md",
                 "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md",
+                "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md",
             ],
         },
         "proofMethods": {
@@ -296,7 +311,7 @@ def proof_arrow_semantics() -> list[dict]:
         {
             "id": "source-target-forward-simulation",
             "from": "source-execution",
-            "to": "target-execution",
+            "to": "abstract-target-execution",
             "endpointType": "source-to-target-executions",
             "direction": "forward",
             "method": "annotated forward simulation",

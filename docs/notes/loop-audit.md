@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: ◊5.25 gate met-as-amended (demos ✓ ×4 · census parked honestly on the hole-determinacy wall) · emission rungs 1–2b demonstrated (66-program engine-vs-oracle harness) · #95 ~115× fix · the first public-early tag imminent · 2026-07-10 (third refresh this date; the ◊5.25 checkpoint)._
+_Position: ◊5.5 concrete emission is productized through `bang build` and real-engine differential batteries; the project-abstract proof target and separate Wasm 3.0 emitter boundary is explicit in ADR-0110; Verify, Site, and Pages are green through the 2026-07-16 remediation wave._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
@@ -19,13 +19,13 @@ _Position: ◊5.25 gate met-as-amended (demos ✓ ×4 · census parked honestly 
 | refute-first witnesses (`Bang/Witness/`) | hours | ✔ institutionalized |
 | differential fuzz (`Bang/Witness/Fuzz.lean`, #14) | per-build | ✔ 200 seeded samples, handler-fragment-biased, `#guard`-gated |
 | commit integrity (pre-commit hook) | per-commit | ✔ REPAIRED 2026-07-10 — the 11-incident worktree-index ghost ROOT-CAUSED (hook leaked `GIT_INDEX_FILE` into lake's git-in-mathlib) and fixed (plan 008 `env -u` sanitization, exercised live) |
-| test batteries (`just verify` / `lake test`) | ~10 s warm | ✔ 3× faster 2026-07-10 (plan 004 concurrent driver; `test-modules` gate-wired; `lake test` standard entry) |
+| test batteries (`just verify` / `lake test`) | minutes | ✔ 28/28 batteries; concrete Wasm build/engine checks and explicit host-authority cases now run in the standing gate |
 | increment gate · banking discipline | days | ✔ caught #44 Stage-2 pre-land |
-| doc fitness (`just fitness` generated legs) | days | ✔ caught 4 staleness classes at the 2026-07-10 landings |
-| advisor audit → plan → executor → review (plans/) | days | ✔ NEW 2026-07-10 — 8 plans, 6 landed; the loop CAUGHT its own defects (exec007 barrel wall, exec005's wrong containment premise, plan-002's refuted corpus-dependency hypothesis) — review-with-STOP-conditions works |
+| doc fitness (`just fitness` generated legs) | days | ✔ caught stale proof-dashboard consumption, abstract/concrete target collapse, and this ROADMAP-coupled loop-audit refresh in the 2026-07-16 wave |
+| advisor audit → plan → executor → review (plans/) | days | ✔ 11 plans, 9 landed; exact-head independent review caught residual Route-B overclaims before publication |
 | **— the desk's edge —** | | |
-| CI on main (`.github/workflows/verify.yml`) | per-push | ✔ live; green through the 2026-07-10 merge wave |
-| a user running bang | per-◊ (stranger test) | ◑ OPEN — three rounds now (8.5 · 7 · 7/10; r3 fed #85–#94); the score PLATEAU at 7 says internal simulation has hit its ceiling — still no ORGANIC outside user |
+| CI on main (`.github/workflows/verify.yml`) | per-push | ✔ Verify, Site, and Pages green through the 2026-07-16 remediation wave |
+| a user running bang | per-◊ (stranger test) | ◑ OPEN — five internal roleplay-strict rounds have fed concrete fixes, but still no ORGANIC outside user; another internal round cannot satisfy the validation gate |
 | external review (paper, peers) | — | ◑ ◊6 paper skeletons drafted; no external peer read yet |
 | performance measurement | — | ✘ absent (invariant #7 defers it) — first instrument in flight: `lake exe pole` wiring + critical-path report (plan 007) |
 
@@ -37,8 +37,7 @@ _Position: ◊5.25 gate met-as-amended (demos ✓ ×4 · census parked honestly 
 4. The deliverable is the ONE sentence answer to: which loop is now the weakest, and does the
    next arc feed it? (If three ◊ in a row answer "the same outer loop", that's the escalation.)
 
-**2026-07-10 answer:** the weakest loop is still the organic-outside-user one — the stranger-test
-plateau at 7/10 across two rounds says internal simulation has extracted what it can — and the
-adopted arc feeds it DIRECTLY for the first time: the public-early policy makes outsider exposure
-a ◊5.5-DURING obligation rather than a ◊6 afterthought. (Second consecutive ◊ naming this loop;
-a third triggers the escalation rule above.)
+**2026-07-16 answer:** the weakest loop is still the organic-outside-user one. Five internal stranger
+rounds have extracted useful fixes but cannot provide external validation, so the three-refresh
+escalation is active: the next arc must publish, invite an unassisted run, and capture outsider-filed
+feedback rather than substituting another internal simulation.

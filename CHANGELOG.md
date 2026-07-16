@@ -284,5 +284,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **cli** — require explicit real-host authority (`change:462bc2b51dcd1026cb3e7fffcb1dd335008b41577d15167b4e55f9078303f130`)
 - **proof** — align public claims with semantic strength (`change:f9b062a481c262e3ee7abf8d40252c20dcf29d952756c1540ae989651be8cefa`)
 - **docs** — align proof dashboard with semantic claim state (`change:79d064ff00a84fb883e9f55dcb37f0ed53ad8b54cc493725579b6f931b41c08f`)
+- **wasm** — preserve abstract-model emitter boundary (`change:a5d83b2a863f6978514de3fd6625a52b2735adba655ab8d22f7190bad6638493`)
 
 <!-- END GENERATED changelog -->

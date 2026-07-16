@@ -21,17 +21,18 @@ public import Bang.Backend.U5bComplete
 
   ◊5 is the *verified compiler output* leg of the two-hop architecture
   (ADR-0016: source → CalcVM → WasmFX). The CalcVM (`Bang/CalcVM.lean`) is the
-  EXECUTABLE SPEC; this file lowers CalcVM `Code` to a concrete WasmFX
-  instruction stream and proves a one-directional FORWARD SIMULATION
+  EXECUTABLE SPEC; this file lowers CalcVM `Code` to a project-defined
+  Wasm-oriented abstract instruction stream and proves a one-directional FORWARD SIMULATION
   (AsmFX/Benton–Hur shape):
 
       Source.eval fuel c = done v  ⇒  ∃ f', Wasmfx.run f' (compileC c) = done (compileV v)
 
   The proof composes the PROVEN CalcVM bridge (`compile_correct`,
   `evalD_agrees_source`) with a lockstep `wexec ≈ exec` simulation: the WasmFX
-  machine is a re-presentation of the calculated `exec` over a WASM value
+  machine is a re-presentation of the calculated `exec` over a project-abstract value
   representation (`Wasmfx.Val`, int/unit/ref-tagged), with `compileV` the value
-  injection. Reusing the calculated machine is exactly the two-hop discipline
+  injection. It is not the separate concrete WAT emitter or official Wasm semantics
+  (ADR-0110). Reusing the calculated machine is exactly the two-hop discipline
   (invariant #4: the machine is the calculation's output, not hand-designed).
 
   ## Milestone A (this landing): the PURE CBPV spine

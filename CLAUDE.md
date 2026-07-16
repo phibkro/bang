@@ -113,16 +113,18 @@ its trigger arises.
 Two-hop verified compilation per **ADR-0016 as revised by ADR-0059**:
 
 ```
-  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → Wasm 3.0 (annotated simulation)
+  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → project Wasm-oriented abstract machine
+  graded-CBPV Comp → separate WasmGC/WAT emitter → Wasmtime differential tests
 ```
 
-The CalcVM is the executable spec; **Wasm 3.0 is the verified compiler target** (ADR-0059:
+The CalcVM is the executable spec; **Wasm 3.0 is the product target** (ADR-0059:
 grade-directed lowering — pure→native, abort→exceptions, tail→direct call, general→the
 GC-frame-chain runtime, the one pluggable slot where WasmFX `switch`/`resume` becomes a
 fast-path once standardized; stack switching did NOT land in Wasm 3.0). The CalcVM→Wasm hop
-is proven by **annotated forward simulation** (`compile_forward_sim`, ADR-0035) against the
-GC-frame abstract machine — NOT the biorthogonal/Benton–Hur LR, which proves ◊4 *contextual
-equivalence* (a separate theorem, the binary LR).
+is proven by **annotated forward simulation** (`compile_forward_sim`, ADR-0035) only against the
+project Wasm-oriented abstract machine — NOT the concrete WAT emitter, official Wasm semantics,
+or the biorthogonal/Benton–Hur LR, which proves ◊4 *contextual equivalence* (a separate theorem,
+the binary LR). Concrete emission is differentially tested; ADR-0110 preserves the open proof link.
 ADRs 0003 and 0004 were deleted, subsumed by 0016. See `CONTEXT.md` for
 where the implementation stands; `docs/notes/k3-historical-status.md` for
 what the K3 work taught (preserved as input to the graded-CBPV port at ◊3).
@@ -156,7 +158,7 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 5. **Kernel stays at five primitives:** thunk · force · effect rows · handlers · STM. Adding a sixth is a spec change requiring an ADR.
 6. **No implicit capture; reactivity is the operator, not a keyword.** (ADR-0005, ADR-0006)
 7. **Performance is second-class.** Optimize only where it touches the user; a slow correct path beats a fast unverified one.
-8. **Effect TS is not the target.** The calculated VM is canonical; Wasm 3.0 is the verified compiler target. WasmFX is a future fast path for the post-v1 general-resumption slot. (ADR-0016 as revised by ADR-0059; supersedes ADR-0003)
+8. **Effect TS is not the target.** The calculated VM is canonical; Wasm 3.0 is the product target. The checked simulation reaches the project abstract target, while the separate concrete emitter is differentially tested. WasmFX is a future fast path for the post-v1 general-resumption slot. (ADR-0016 as revised by ADR-0059 and amended by ADR-0110; supersedes ADR-0003)
 
 ## Do NOT
 

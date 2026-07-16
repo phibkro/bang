@@ -74,7 +74,7 @@ flowchart LR
   C -->|separate emitter; differentially tested| W[Wasm 3.0 WAT]
 ```
 
-**Reading the diagram:** CalcVM is calculated from the source semantics rather than designed independently. The machine-checked forward simulation targets the project-defined formal abstract machine, not the concrete WAT emitter or official Wasm semantics. Wasm 3.0 remains the product target through a separate, differentially tested emitter; closing that correspondence is tracked independently. WasmFX is only a future fast path for the post-v1 general-resumption slot.
+**Reading the diagram:** CalcVM is calculated from the source semantics rather than designed independently. The machine-checked forward simulation targets the project-defined Wasm-oriented abstract machine, not the concrete WAT emitter or official Wasm semantics. Wasm 3.0 remains the product target through a separate, differentially tested emitter; [ADR-0110](docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md) deliberately preserves that open correspondence boundary. WasmFX is only a future fast path for the post-v1 general-resumption slot.
 
 Two proof methods answer different questions:
 
@@ -83,7 +83,7 @@ Two proof methods answer different questions:
 | Two source programs are contextually equivalent | Binary, step-indexed, biorthogonal logical relation |
 | A source success is preserved by compilation | Annotated one-way forward simulation |
 
-See [`docs/architecture/core-overview.md`](docs/architecture/core-overview.md) for the current pipeline, dependency tiers, engine distinctions, and evidence boundaries. The decisions are [ADR-0016](docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md), revised by [ADR-0059](docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md), with the proof split fixed by [ADR-0035](docs/decisions/0035-lr-for-equivalence-simulation-for-compilation.md).
+See [`docs/architecture/core-overview.md`](docs/architecture/core-overview.md) for the current pipeline, dependency tiers, engine distinctions, and evidence boundaries. The decisions are [ADR-0016](docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md), revised by [ADR-0059](docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md) and amended by [ADR-0110](docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md), with the proof split fixed by [ADR-0035](docs/decisions/0035-lr-for-equivalence-simulation-for-compilation.md).
 
 ## Repository map
 
@@ -91,7 +91,7 @@ See [`docs/architecture/core-overview.md`](docs/architecture/core-overview.md) f
 |---|---|
 | `Bang/Core/` | IR, rows/grades, typing, kernel semantics, syntactic soundness |
 | `Bang/Frontend/` | Parser, modules, inference/elaboration, diagnostics, formatter, query/rewrite/lint |
-| `Bang/Backend/` | `evalD`, calculated and environment machines, formal Wasm, concrete WasmGC emitter |
+| `Bang/Backend/` | `evalD`, calculated and environment machines, Wasm-oriented abstract model, separate concrete WasmGC emitter |
 | `Bang/Meta/` | Binary logical relations and contextual equivalence |
 | `Bang/Witness/` | Executable regressions, counterexamples, fuzzing, laws, proof export |
 | `Bang/Reify/` | Calculated-machine proof laboratory, separate from the production pipeline |

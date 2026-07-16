@@ -187,7 +187,7 @@
       "claimRole": "supporting",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 2762,
+        "line": 2763,
         "path": "Bang/Backend/Wasm.lean"
       },
       "evidenceKind": "kernel-checked-specialization",
@@ -223,7 +223,7 @@
       "claimRole": "supporting",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 2750,
+        "line": 2751,
         "path": "Bang/Backend/Wasm.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1216,13 +1216,13 @@
       "theoremRefs": [
         "Bang.compile_forward_sim"
       ],
-      "to": "target-execution"
+      "to": "abstract-target-execution"
     }
   ],
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "711e0e9e5a354db14883ac2b9acbcf2d43169c66170937a8b09bfbc779ab608b",
+    "digest": "097e8a6e3fc69b3f3a1d91313cf77f973f9cf7bae1a2eee6c3c5dc0b15f2b2c5",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

@@ -48,8 +48,22 @@ assert architecture["engines"]["selectors"] == {
 assert architecture["engines"]["aliases"] == {"--compiled": "compiled"}
 assert architecture["engines"]["duplicatePolicy"] == "reject"
 assert architecture["engines"]["selectorCommands"] == ["run", "eval", "repl"]
-assert ARCHITECTURE_POLES == 29, "architecture pole total moved"
+assert ARCHITECTURE_POLES == 35, "architecture pole total moved"
 assert PROOF_POLES == 25, "proof pole total moved"
+nodes = {item["id"]: item for item in architecture["nodes"]}
+assert nodes["abstract-target-execution"]["name"] == "Project Wasm-oriented abstract machine execution"
+assert nodes["abstract-target-execution"]["kind"] == "abstract-target-execution"
+assert nodes["emitted-wat"]["kind"] == "emitted-wat"
+assert nodes["abstract-target-execution"]["id"] != nodes["emitted-wat"]["id"]
+assert "Formal Wasm 3.0 machine" not in json.dumps(architecture)
+arrows = {item["id"]: item for item in architecture["arrows"]}
+evidence = {item["id"]: item for item in architecture["evidence"]}
+assert arrows["source-execution-to-abstract-target"]["theoremRefs"] == ["Bang.compile_forward_sim"]
+assert evidence[arrows["source-execution-to-abstract-target"]["evidenceId"]]["label"] == "proven"
+for arrow_id in ("comp-to-emitted-wat", "emitted-wat-to-wasmtime"):
+    assert arrows[arrow_id]["theoremRefs"] == []
+assert evidence[arrows["comp-to-emitted-wat"]["evidenceId"]]["label"] == "implemented"
+assert evidence[arrows["emitted-wat-to-wasmtime"]["evidenceId"]]["label"] == "differential-tested"
 
 mismatched = copy.deepcopy(proof)
 mismatched["proofArrows"][1]["to"] = "mismatched-target"

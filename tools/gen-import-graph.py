@@ -30,7 +30,7 @@ COMPONENT_ORDER = ["Frontend", "Core", "Backend", "Meta", "Witness", "Reify", "A
 COMPONENT_DESCRIPTION = {
     "Core": "IR · typing · semantics · soundness",
     "Frontend": "text → typed core",
-    "Backend": "calculated machines → Wasm 3.0",
+    "Backend": "calculated + abstract target machines · separate WasmGC emitter",
     "Meta": "contextual-equivalence metatheory",
     "Witness": "executable evidence and counterexamples",
     "Reify": "calculated-machine proof laboratory",
