@@ -33,7 +33,7 @@ function renderRoutes() {
     '# Choose a contributor route',
     '',
     'Choose by the **first edit seam and smallest falsifying gate**, not by a reading list. ' +
-      'The frontend route now has a complete role lab; the remaining routes start at their ' +
+      'Routes labelled “role lab” have complete generated labs; remaining routes start at ' +
       'existing references.',
     '',
   ]
@@ -139,11 +139,14 @@ function appendChecks(lines, checks) {
 
 function renderRoleLab(lab) {
   const [retrieve, trace, practice, inspect] = lab.stages
+  const usesBang = practice.commands.some((command) => command.includes('$bang'))
+  const usesBundle = practice.commands.some((command) => command.includes('$bundle'))
   const lines = [
     `# ${escapeProse(lab.page.title)}`,
     '',
-    'This role lab is generated from the shared four-stage contract. Page identity, ' +
-      'prerequisites, seams, and gates remain manifest-owned.',
+    'This role lab is generated from the shared four-stage contract. Page identity, route, ' +
+      'prerequisites, first-edit seams, and gates are manifest-owned; prose, checks, the ' +
+      'fixture, and additional seams are content-owned.',
     '',
     '## Prerequisites',
     '',
@@ -187,7 +190,8 @@ function renderRoleLab(lab) {
     '"$root/tools/new-worktree.sh" "$lane" "$branch" "$base"',
     'cd "$lane"',
     `practice="$lane/${practice.fixture.path}"`,
-    'bang="$root/.lake/build/bin/bang"',
+    ...(usesBang ? ['bang="$root/.lake/build/bin/bang"'] : []),
+    ...(usesBundle ? ['bundle="$parent/evidence"', 'mkdir "$bundle"'] : []),
     'cat > "$practice" <<\'BANG\'',
     practice.fixture.source.trimEnd(),
     'BANG',

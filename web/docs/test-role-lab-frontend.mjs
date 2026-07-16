@@ -13,7 +13,11 @@ const lab = roleLabContent.find((candidate) => candidate.key === 'frontend-langu
 assert.ok(lab, 'frontend-language role-lab content exists')
 const practice = lab.stages.find((stage) => stage.id === 'isolated-practice')
 assert.ok(practice, 'isolated-practice stage exists')
-assert.equal(roleLabContent.length, 1, 'only the frontend role lab exists')
+assert.equal(
+  roleLabContent.filter((candidate) => candidate.key === 'frontend-language').length,
+  1,
+  'frontend role-lab content is unique',
+)
 
 const workdir = mkdtempSync(join(tmpdir(), 'bang-role-lab-frontend-'))
 const practicePath = join(workdir, practice.fixture.path)

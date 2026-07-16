@@ -1,6 +1,15 @@
 // Role-lab CONTENT only. Page identity, route, prerequisites, audience, order,
-// and gates live in page-manifest.json. The disposable fixture is shared by
-// the generated lesson and its executable test.
+// first-edit seams, and gates live in page-manifest.json. Prose, checks, the
+// disposable fixture, and additional seams are shared by each lesson and test.
+export const kernelProofReference = Object.freeze({
+  statement: 'Bang.subst_value',
+  implementation: 'Bang.subst_value_proof',
+  implementationDisplay: 'subst_value_proof',
+  statementSource: 'Bang/Spec.lean',
+  implementationSource: 'Bang/Core/Soundness.lean',
+  auditSource: 'Bang/Audit.lean',
+})
+
 export const roleLabContent = [
   {
     key: 'frontend-language',
@@ -98,7 +107,128 @@ frontend seams.
           'Run the route narrow gate, then the full gate, without treating a skipped step as a pass.',
           'Confirm the practice stayed in the disposable lane and made no push or GitHub mutation.',
         ],
-        issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "frontend OR parser OR type checker"`; inspect candidates with `gh issue view --repo phibkro/bang`, then choose one whose requested change crosses a traced seam.',
+        issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "frontend OR parser OR type checker"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. This only supports a recommendation: do not claim, comment on, or mutate the issue.',
+      },
+    ],
+  },
+  {
+    key: 'kernel-proof',
+    stages: [
+      {
+        id: 'retrieve-predict',
+        prose: `
+Start from the frozen public claim, not from a tactic guess. Read
+\`${kernelProofReference.statement}\` in \`${kernelProofReference.statementSource}\`,
+state its claim in plain language, then locate
+\`${kernelProofReference.implementationDisplay}\` in
+\`${kernelProofReference.implementationSource}\`. Predict the kernel trust result
+before consulting Audit. Changing the statement or adding a hypothesis is outside
+this bounded exercise; use the proof-discipline note when you need the rule rather
+than copying it here.
+`,
+        retrievalChecks: [
+          `Locate the frozen \`${kernelProofReference.statement}\` statement in \`${kernelProofReference.statementSource}\`.`,
+          `Locate \`${kernelProofReference.implementationDisplay}\` in \`${kernelProofReference.implementationSource}\` and the \`${kernelProofReference.statement}\` enrollment in \`${kernelProofReference.auditSource}\`.`,
+          'Open `docs/notes/spec-proof-discipline.md` for the repository proof rules.',
+        ],
+        predictionChecks: [
+          'Explain in plain language what substitution preserves and how the grade changes.',
+          'Predict whether the current Audit result is trusted-three-only or flagged before running the census.',
+          'Predict why changing the frozen statement or adding a hypothesis would evade rather than solve the exercise.',
+        ],
+      },
+      {
+        id: 'trace-seam',
+        prose: `
+Ownership is explicit: Spec owns the public statement; Soundness owns its proof;
+\`tools/check.sh\` owns the fast local elaboration gate; Audit owns the enrolled
+repository census. A local \`#print axioms\` answers only for the named scratch
+theorem, while \`just axioms\` runs the enrolled Audit census. Its trusted three
+are \`propext\`, \`Classical.choice\`, and \`Quot.sound\`: they are the maximum
+permitted dependencies of enrolled theorems, not axioms contributors may add.
+Source search and the marker-removal grep navigate or check workflow state; neither
+is proof evidence.
+`,
+        checks: [
+          'Name the statement owner, implementation owner, fast elaboration gate, and kernel trust evidence owner.',
+          'Explain why a successful file check and an acceptable axiom report establish different facts.',
+          'Use the tactics survey to interpret Lean suggestions without treating a suggested tactic as trusted evidence.',
+        ],
+        seams: [
+          'Bang/Audit.lean',
+          'docs/notes/spec-proof-discipline.md',
+          'docs/notes/tactics-survey.md',
+          'tools/check.sh',
+        ],
+      },
+      {
+        id: 'isolated-practice',
+        prose: `
+Create the root-level disposable fixture below; no production file imports it.
+Predict the nil and cons induction cases, then run direct Lean once and inspect
+the unique \`Try this:\` line produced by \`exact?\`. Manually replace only that
+marker with Lean's current one-line suggestion. Do not copy a stored answer and
+do not use \`simp?\`: the verified rewrite setup is what leaves a deterministic
+closing suggestion. The displayed grep then checks only that this workflow edit
+happened; it says nothing about axioms. Only after it passes run the clean check,
+the scratch theorem's local report, and the enrolled repository census.
+`,
+        fixture: {
+          path: 'KernelProofLab.lean',
+          source: `import Bang.Core.Soundness
+
+namespace Bang
+namespace GradeVec
+
+variable {M : Type}
+
+theorem zero_smul_scratch [MulZeroClass M] (γ : GradeVec M) :
+    GradeVec.smul 0 γ = GradeVec.zeros γ.length := by
+  induction γ with
+  | nil => rfl
+  | cons a γ ih =>
+    rw [smul_cons, zero_mul, List.length_cons, GradeVec.zeros,
+      List.replicate_succ, ← GradeVec.zeros]
+    exact?
+
+#print axioms Bang.GradeVec.zero_smul_scratch
+
+end GradeVec
+end Bang
+`,
+        },
+        commands: [
+          'nix develop --command lake build Bang.Core.Soundness',
+          'nix develop --command lake env lean "$practice" 2>&1 | tee "$bundle/scratch-suggestion.txt"',
+          "if grep -Fq 'exact?' \"$practice\"; then printf '%s\\n' 'STOP: replace exact? with Lean current suggestion before continuing.' >&2; false; fi",
+          'nix develop --command just check "$practice" 2>&1 | tee "$bundle/scratch-check.txt"',
+          'nix develop --command lake env lean "$practice" 2>&1 | tee "$bundle/scratch-axioms.txt"',
+          'nix develop --command just test-role-lab-kernel-proof 2>&1 | tee "$bundle/harness.txt"',
+          'nix develop --command just axioms 2>&1 | tee "$bundle/audit-axioms.txt"',
+          'cp "$practice" "$bundle/KernelProofLab.lean"',
+          'rm "$practice"',
+          'test -z "$(git status --porcelain)"',
+        ],
+        boundedOutcome: 'The disposable theorem closes without `sorry`, its own kernel report is empty, `Bang.subst_value` remains within the trusted-three baseline, and no production Lean source or import changes.',
+      },
+      {
+        id: 'inspect-select',
+        prose: `
+Keep the completed scratch source and kernel reports as the evidence bundle.
+Known-bad proofs that compile through \`sorry\` or a scratch-only declared axiom
+must fail because parsed \`#print axioms\` output exposes their dependencies, not
+because their source text was searched. Select live work read-only only after
+you can name the statement owner, proof owner, and smallest falsifying gate.
+`,
+        evidenceChecks: [
+          'Confirm the frozen statement and all production sources are unchanged.',
+          'Confirm the completed scratch source has no suggestion placeholder and differs only at that marker.',
+          'Require exactly one scratch theorem report with an empty axiom set.',
+          'Require compiling `sorryAx` and unexpected scratch-axiom variants to be rejected from parsed kernel output.',
+          'Require the current `Bang.subst_value` report to be a subset of the trusted three and contain no `sorryAx`.',
+          'Record the real narrow and full gate exit statuses; a skipped gate is not a pass.',
+        ],
+        issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "proof OR soundness OR kernel"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Recommend one only after naming its statement owner, proof owner, and smallest falsifying gate; do not claim, comment on, or mutate it.',
       },
     ],
   },
