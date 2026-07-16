@@ -221,10 +221,10 @@ def render_assertions(architecture: dict, proof: dict) -> str:
         ),
         (
             "Architecture lineage",
-            "ADR-0016 two-hop shape; target refined by ADR-0059",
+            "ADR-0016 two-hop shape; product target refined by ADR-0059; evidence boundary amended by ADR-0110",
             ", ".join(
                 f"{adr_link(adrs[item])} ({md(adrs[item]['status'])}; {', '.join(adrs[item]['lifecycle'])})"
-                for item in ("0016", "0059")
+                for item in ("0016", "0059", "0110")
             ),
         ),
     ]

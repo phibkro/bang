@@ -108,7 +108,9 @@
     },
     {
       "derived": {
-        "amendedBy": [],
+        "amendedBy": [
+          "0110"
+        ],
         "supersededBy": []
       },
       "id": "0016",
@@ -121,8 +123,8 @@
         "supersedes": "0003, 0004"
       },
       "status": "Accepted",
-      "summary": "Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target.",
-      "title": "Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target"
+      "summary": "The two-hop architecture keeps the graded-CBPV reference and CalcVM executable spec, with checked forward simulation into a project abstract target; ADR-0059 separately selects Wasm 3.0 as the product target, and ADR-0110 keeps its concrete emitter on an independent differential-evidence edge.",
+      "title": "Two-hop architecture: graded-CBPV reference, CalcVM executable spec, abstract proof target"
     },
     {
       "derived": {
@@ -810,7 +812,9 @@
     },
     {
       "derived": {
-        "amendedBy": [],
+        "amendedBy": [
+          "0110"
+        ],
         "supersededBy": []
       },
       "id": "0059",
@@ -824,7 +828,7 @@
         "seeAlso": "0044, 0015, 0025, 0030"
       },
       "status": "Accepted",
-      "summary": "Stack switching did NOT land in Wasm 3.0** (Sept 2025 standardized WasmGC, exception handling, tail calls, memory64, SIMD; typed continuations / WasmFX remain a separate in-flight proposal, shipping only on the `wasmfxtime` fork — not in stock V8/SpiderMonkey/Wasmtime). So ADR-0016's commitment to **WasmFX as the primary target** would mean leaving stock engines and putting an **opaque stack-switching primitive inside the TCB**. This ADR **refines** that target (the two-hop *architecture* is unchanged): compile to **Wasm 3.0** with a **grade-directed, pluggable backend**. The effect row gives a free 2-coloring — **pure** (empty row) → native Wasm; **effectful** → routed by resumption disposition: **abort** → Wasm exceptions (`throw`/`try_table`, zero runtime), **tail** → direct in-place call, **general/multishot** → a **GC-frame-chain runtime** (managed `struct` frames + a tail-call trampoline — the only hand-built part). Only `general` is the swappable slot: GC-frame-chain now, WasmFX `switch` as a fast-path once standardized + shipped. The decisive reason for *us* is verification: a GC-frame-chain runtime is **our** abstract machine, verified end-to-end with **no opaque primitive in the TCB** (invariant #1), and its simulation relation is the easy, append-only, arithmetic-free kind — **machine- checked per-step** (the `CtxRel`/`SegRel` relation, Lean 4.31, axiom-clean; the *cross-step* partition is unbuilt — see the open sub-clause), the same identity-keyed shape that ADR-0058 adopts to dissolve the `CrelK` Canonical wall. **SCOPE (the load-bearing sharpening):** v1's three handler forms (`state`, `throws`, `transaction` — machine-confirmed exhaustive, Core.lean:120) are ALL abort or tail-resumptive (ADR-0025, one-shot-in-place, no reification), so **v1's backend is just `throws`→exception + `state`/`transaction`→tail-call — no GC-machine, no reified resumption; closed-focus IS the v1 answer.** The GC-frame general leg + grade-derived dispatch is the **post-v1 ADR-0015 multishot frontier**: the GC-machine proofs are the *frontier's* reference proof, NOT v1's backend, and v1 ships without any of it. Grading the resumption (which `HasCTy` doesn't do) is what *post-v1* needs to derive its annotation, composing with closed-focus at the v1/post-v1 boundary (a partition, not a conflict). Detail + the open cross-step sub-clause: §\"The v1/post-v1 boundary\".",
+      "summary": "Stack switching did NOT land in Wasm 3.0** (Sept 2025 standardized WasmGC, exception handling, tail calls, memory64, SIMD; typed continuations / WasmFX remain a separate in-flight proposal, shipping only on the `wasmfxtime` fork — not in stock V8/SpiderMonkey/Wasmtime). So ADR-0016's commitment to **WasmFX as the primary target** would mean leaving stock engines and putting an **opaque stack-switching primitive inside the TCB**. This ADR **refines** that target (the two-hop *architecture* is unchanged): compile to **Wasm 3.0** with a **grade-directed, pluggable backend**. The effect row gives a free 2-coloring — **pure** (empty row) → native Wasm; **effectful** → routed by resumption disposition: **abort** → Wasm exceptions (`throw`/`try_table`, zero runtime), **tail** → direct in-place call, **general/multishot** → a **GC-frame-chain runtime** (managed `struct` frames + a tail-call trampoline — the only hand-built part). Only `general` is the swappable slot: GC-frame-chain now, WasmFX `switch` as a fast-path once standardized + shipped. The decisive reason for *us* is verification: a GC-frame-chain runtime is **our** abstract machine, whose project-model simulation is machine-checked with **no opaque primitive in that model's trusted base** (invariant #1); ADR-0110 records that the separate concrete emitter remains differentially tested, not proof-linked. The simulation relation is the easy, append-only, arithmetic-free kind — **machine- checked per-step** (the `CtxRel`/`SegRel` relation, Lean 4.31, axiom-clean; the *cross-step* partition is unbuilt — see the open sub-clause), the same identity-keyed shape that ADR-0058 adopts to dissolve the `CrelK` Canonical wall. **SCOPE (the load-bearing sharpening):** v1's three handler forms (`state`, `throws`, `transaction` — machine-confirmed exhaustive, Core.lean:120) are ALL abort or tail-resumptive (ADR-0025, one-shot-in-place, no reification), so **v1's backend is just `throws`→exception + `state`/`transaction`→tail-call — no GC-machine, no reified resumption; closed-focus IS the v1 answer.** The GC-frame general leg + grade-derived dispatch is the **post-v1 ADR-0015 multishot frontier**: the GC-machine proofs are the *frontier's* reference proof, NOT v1's backend, and v1 ships without any of it. Grading the resumption (which `HasCTy` doesn't do) is what *post-v1* needs to derive its annotation, composing with closed-focus at the v1/post-v1 boundary (a partition, not a conflict). Detail + the open cross-step sub-clause: §\"The v1/post-v1 boundary\".",
       "title": "Compile to Wasm 3.0 with a grade-directed pluggable backend (refines ADR-0016's WasmFX-primary target)"
     },
     {
@@ -1604,11 +1608,33 @@
       "status": "Accepted",
       "summary": "One schema-validated page manifest defines the public Vocs publication map and generated navigation; Vocs, repository-page projection, tour generation, and route checks consume one compiled site model. Volatile current-work pages remain repository-only links, and displayed evidence status resolves from serialized Phase 2 facts rather than styling or copied labels.",
       "title": "Page manifest is the publication and navigation authority"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0110",
+      "lifecycle": [
+        "implemented"
+      ],
+      "path": "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md",
+      "relationships": {
+        "amends": "0016 (narrows the original verified-target claim), 0059 (clarifies the evidence boundary without changing the Wasm 3.0 product target)",
+        "dependsOn": "0016 (two-hop architecture), 0035 (forward-simulation proof method), 0059 (Wasm 3.0 product target)",
+        "seeAlso": "issue #133 (concrete first-class capability representation), issue #116 (component instantiation and value-transfer measurements), issue #166"
+      },
+      "status": "Accepted",
+      "summary": "Route B preserves an explicit boundary between the project-defined Wasm-oriented abstract machine proved by `compile_forward_sim` and the separately implemented concrete WasmGC/WAT emitter. The product target remains Wasm 3.0, while emitted modules earn differential evidence from real-engine execution rather than inheriting the abstract model's theorem evidence.",
+      "title": "Preserve the Wasm proof-model to concrete-emitter boundary"
     }
   ],
   "arrows": [
     {
-      "adrRefs": [],
+      "adrRefs": [
+        "0059",
+        "0110"
+      ],
       "direction": "forward",
       "evidenceId": "wat-emitter-implemented",
       "from": "comp",
@@ -1678,17 +1704,18 @@
     {
       "adrRefs": [
         "0035",
-        "0059"
+        "0059",
+        "0110"
       ],
       "direction": "forward",
-      "evidenceId": "formal-target-simulation-proof",
+      "evidenceId": "abstract-target-simulation-proof",
       "from": "source-execution",
-      "id": "source-execution-to-formal-target",
+      "id": "source-execution-to-abstract-target",
       "method": "annotated forward simulation",
       "theoremRefs": [
         "Bang.compile_forward_sim"
       ],
-      "to": "target-execution"
+      "to": "abstract-target-execution"
     },
     {
       "adrRefs": [],
@@ -1738,6 +1765,21 @@
   },
   "evidence": [
     {
+      "claim": "Bang.compile_forward_sim proves value-preserving source execution to the project-defined Wasm-oriented abstract target for VcapFree source Comp. It does not target the concrete WAT emitter or official Wasm semantics; ADR-0059 separately makes Wasm 3.0 the product target.",
+      "commands": [
+        "lake env lean Bang/Audit.lean"
+      ],
+      "id": "abstract-target-simulation-proof",
+      "label": "proven",
+      "sources": [
+        "Bang/Spec.lean",
+        "Bang/Backend/Wasm.lean",
+        "Bang/Audit.lean",
+        "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md",
+        "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md"
+      ]
+    },
+    {
       "claim": "Bang.CalcVM.compile_correct proves that a terminating evalD run from empty stores has some fuel for which exec of compile returns the same terminal; the existential-fuel and evalD-success premises remain explicit.",
       "commands": [
         "lake env lean Bang/Audit.lean"
@@ -1772,20 +1814,6 @@
       "sources": [
         "Bang/Backend/AbstractMachine.lean",
         "Bang/Audit.lean"
-      ]
-    },
-    {
-      "claim": "Bang.compile_forward_sim proves value-preserving source execution to the project-defined Wasm-oriented abstract target for VcapFree source Comp. It does not target the concrete WAT emitter or official Wasm semantics; ADR-0059 separately makes Wasm 3.0 the product target.",
-      "commands": [
-        "lake env lean Bang/Audit.lean"
-      ],
-      "id": "formal-target-simulation-proof",
-      "label": "proven",
-      "sources": [
-        "Bang/Spec.lean",
-        "Bang/Backend/Wasm.lean",
-        "Bang/Audit.lean",
-        "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md"
       ]
     },
     {
@@ -1842,14 +1870,15 @@
       ]
     },
     {
-      "claim": "The concrete WasmGC emitter lowers Comp to WAT independently of the formal Wasm model.",
+      "claim": "The concrete WasmGC emitter lowers Comp to WAT independently of the project Wasm-oriented abstract machine. No theorem currently links this emission to that model or to official Wasm semantics.",
       "commands": [
         "lake build Bang.Backend.WasmEmit"
       ],
       "id": "wat-emitter-implemented",
       "label": "implemented",
       "sources": [
-        "Bang/Backend/WasmEmit.lean"
+        "Bang/Backend/WasmEmit.lean",
+        "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md"
       ]
     }
   ],
@@ -4597,667 +4626,667 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 2922,
+      "loc": 2923,
       "name": "Bang.Backend.Wasm",
       "path": "Bang/Backend/Wasm.lean",
       "publicSymbols": [
         {
           "kind": "inductive",
-          "line": 65,
+          "line": 66,
           "name": "Ty",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 78,
+          "line": 79,
           "name": "Val",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 89,
+          "line": 90,
           "name": "Instr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 135,
+          "line": 136,
           "name": "Code",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 138,
+          "line": 139,
           "name": "VStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 144,
+          "line": 145,
           "name": "HFrame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 155,
+          "line": 156,
           "name": "HStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 160,
+          "line": 161,
           "name": "Module",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 179,
+          "line": 180,
           "name": "compileV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 188,
+          "line": 189,
           "name": "injTerminal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 211,
+          "line": 212,
           "name": "lowerInstr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 228,
+          "line": 229,
           "name": "lowerCode",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 236,
+          "line": 237,
           "name": "compileC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 243,
+          "line": 244,
           "name": "compileHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 259,
+          "line": 260,
           "name": "recoverV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 268,
+          "line": 269,
           "name": "compileV_recoverV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 282,
+          "line": 283,
           "name": "wStateUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 301,
+          "line": 302,
           "name": "wTxnUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 316,
+          "line": 317,
           "name": "wUnwindFind",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 332,
+          "line": 333,
           "name": "wCustomUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 346,
+          "line": 347,
           "name": "wexec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 410,
+          "line": 411,
           "name": "run",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 428,
+          "line": 429,
           "name": "Comp.Pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 442,
+          "line": 443,
           "name": "Val.Pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 474,
+          "line": 475,
           "name": "InstrPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 485,
+          "line": 486,
           "name": "CodePure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 503,
+          "line": 504,
           "name": "InstrOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 507,
+          "line": 508,
           "name": "CodeOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 511,
+          "line": 512,
           "name": "CodeOk_iff_forall",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 517,
+          "line": 518,
           "name": "injStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 523,
+          "line": 524,
           "name": "injHFrame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 527,
+          "line": 528,
           "name": "injHStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 536,
+          "line": 537,
           "name": "wStateUpdate_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 589,
+          "line": 590,
           "name": "wUnwindFind_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 644,
+          "line": 645,
           "name": "wCustomUpdate_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 696,
+          "line": 697,
           "name": "wCustomUpdate_comm_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 737,
+          "line": 738,
           "name": "Val.shiftFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 754,
+          "line": 755,
           "name": "Comp.shiftFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 782,
+          "line": 783,
           "name": "Val.substFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 803,
+          "line": 804,
           "name": "Comp.substFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 838,
+          "line": 839,
           "name": "subst_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 856,
+          "line": 857,
           "name": "compile_append",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 885,
+          "line": 886,
           "name": "compile_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 947,
+          "line": 948,
           "name": "compile_ok_mem",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1026,
+          "line": 1027,
           "name": "compile_ok",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1039,
+          "line": 1040,
           "name": "compile_no_throw",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1061,
+          "line": 1062,
           "name": "TerminalPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1067,
+          "line": 1068,
           "name": "StackPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1073,
+          "line": 1074,
           "name": "HFramePure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1077,
+          "line": 1078,
           "name": "HStackPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1087,
+          "line": 1088,
           "name": "HFrameOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1090,
+          "line": 1091,
           "name": "HStackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1092,
+          "line": 1093,
           "name": "exec_wexec_sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1213,
+          "line": 1214,
           "name": "stateUpdate_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1278,
+          "line": 1279,
           "name": "txnUpdate_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1341,
+          "line": 1342,
           "name": "customUpdate_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1398,
+          "line": 1399,
           "name": "wStateUpdate_comm_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1442,
+          "line": 1443,
           "name": "wTxnUpdate_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1492,
+          "line": 1493,
           "name": "wTxnUpdate_comm_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1531,
+          "line": 1532,
           "name": "unwindFind_savedCode_codeOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1553,
+          "line": 1554,
           "name": "unwindFind_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1589,
+          "line": 1590,
           "name": "NoCustomInstr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1613,
+          "line": 1614,
           "name": "NoCustomHFrame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1622,
+          "line": 1623,
           "name": "customUpdate_none_of_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1640,
+          "line": 1641,
           "name": "wCustomUpdate_none_of_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1659,
+          "line": 1660,
           "name": "CFVal_binopEval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1667,
+          "line": 1668,
           "name": "compile_noCustom_mem",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1771,
+          "line": 1772,
           "name": "stateUpdate_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1846,
+          "line": 1847,
           "name": "txnUpdate_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1918,
+          "line": 1919,
           "name": "unwindFind_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1953,
+          "line": 1954,
           "name": "exec_wexec_sim_ok",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2117,
+          "line": 2118,
           "name": "InstrMentionsLocal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2123,
+          "line": 2124,
           "name": "MentionsLocal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2128,
+          "line": 2129,
           "name": "InstrWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2134,
+          "line": 2135,
           "name": "WellTyped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2149,
+          "line": 2150,
           "name": "HandlerLawful",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2154,
+          "line": 2155,
           "name": "Wasmfx.HandlerEquiv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2173,
+          "line": 2174,
           "name": "lowerCode_no_locals",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2209,
+          "line": 2210,
           "name": "compileC_no_local",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2219,
+          "line": 2220,
           "name": "compileC_wellTyped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2231,
+          "line": 2232,
           "name": "zero_grade_no_code_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2242,
+          "line": 2243,
           "name": "compile_well_typed_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2281,
+          "line": 2282,
           "name": "evalD_mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2407,
+          "line": 2408,
           "name": "evalD_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2417,
+          "line": 2418,
           "name": "evalD_some_le",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2433,
+          "line": 2434,
           "name": "PureCtx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2450,
+          "line": 2451,
           "name": "Sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2453,
+          "line": 2454,
           "name": "Sim.letC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2480,
+          "line": 2481,
           "name": "Sim.app",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2508,
+          "line": 2509,
           "name": "sim_letC_ret",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2514,
+          "line": 2515,
           "name": "sim_app_lam",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2520,
+          "line": 2521,
           "name": "sim_force",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2524,
+          "line": 2525,
           "name": "sim_case_inl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2527,
+          "line": 2528,
           "name": "sim_case_inr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2530,
+          "line": 2531,
           "name": "sim_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2534,
+          "line": 2535,
           "name": "sim_unfold",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2545,
+          "line": 2546,
           "name": "evalD_plug_sim_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2559,
+          "line": 2560,
           "name": "evalD_plug_letC_ret_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2565,
+          "line": 2566,
           "name": "evalD_plug_app_lam_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2571,
+          "line": 2572,
           "name": "evalD_plug_force_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2577,
+          "line": 2578,
           "name": "evalD_plug_case_inl_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2583,
+          "line": 2584,
           "name": "evalD_plug_case_inr_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2589,
+          "line": 2590,
           "name": "evalD_plug_split_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2595,
+          "line": 2596,
           "name": "evalD_plug_unfold_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2615,
+          "line": 2616,
           "name": "evalD_complete_gen",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2625,
+          "line": 2626,
           "name": "evalD_complete_gen_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2744,
+          "line": 2745,
           "name": "evalD_complete",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2750,
+          "line": 2751,
           "name": "source_eval_to_exec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2762,
+          "line": 2763,
           "name": "compile_forward_sim_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2790,
+          "line": 2791,
           "name": "compile_forward_sim_proof",
           "visibilityBasis": "public-section"
         }
@@ -11937,6 +11966,15 @@
   ],
   "nodes": [
     {
+      "id": "abstract-target-execution",
+      "kind": "abstract-target-execution",
+      "name": "Project Wasm-oriented abstract machine execution",
+      "sources": [
+        "Bang/Backend/Wasm.lean",
+        "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md"
+      ]
+    },
+    {
       "id": "calcvm",
       "kind": "machine",
       "name": "CalcVM compile + exec",
@@ -11975,15 +12013,6 @@
       "name": "evalD",
       "sources": [
         "Bang/Backend/AbstractMachine.lean"
-      ]
-    },
-    {
-      "id": "formal-target",
-      "kind": "formal-target",
-      "name": "Formal Wasm 3.0 machine",
-      "sources": [
-        "Bang/Backend/Wasm.lean",
-        "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md"
       ]
     },
     {
@@ -12029,14 +12058,6 @@
       ]
     },
     {
-      "id": "target-execution",
-      "kind": "target-execution",
-      "name": "Formal target execution",
-      "sources": [
-        "Bang/Backend/Wasm.lean"
-      ]
-    },
-    {
       "id": "wasmtime",
       "kind": "runtime",
       "name": "Wasmtime",
@@ -12065,18 +12086,19 @@
     {
       "adrRefs": [
         "0035",
-        "0059"
+        "0059",
+        "0110"
       ],
       "direction": "forward",
       "endpointType": "source-to-target-executions",
-      "evidenceId": "formal-target-simulation-proof",
+      "evidenceId": "abstract-target-simulation-proof",
       "from": "source-execution",
       "id": "source-target-forward-simulation",
       "method": "annotated forward simulation",
       "theoremRefs": [
         "Bang.compile_forward_sim"
       ],
-      "to": "target-execution"
+      "to": "abstract-target-execution"
     }
   ],
   "proofMethods": {
@@ -12090,7 +12112,8 @@
     "name": "Wasm 3.0",
     "sources": [
       "docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md",
-      "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md"
+      "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md",
+      "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md"
     ],
     "wasmfxRole": "future general-case fast path"
   },
@@ -12101,7 +12124,7 @@
       "name": "Apex"
     },
     {
-      "loc": 16966,
+      "loc": 16967,
       "moduleCount": 6,
       "name": "Backend"
     },

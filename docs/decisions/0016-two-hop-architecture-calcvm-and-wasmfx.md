@@ -1,9 +1,9 @@
-# ADR-0016 — Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target
+# ADR-0016 — Two-hop architecture: graded-CBPV reference, CalcVM executable spec, abstract proof target
 
 <!-- adr-frontmatter -->
 
 - **Status**: Accepted
-- **Summary**: Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target.
+- **Summary**: The two-hop architecture keeps the graded-CBPV reference and CalcVM executable spec, with checked forward simulation into a project abstract target; ADR-0059 separately selects Wasm 3.0 as the product target, and ADR-0110 keeps its concrete emitter on an independent differential-evidence edge.
 - **Supersedes**: 0003, 0004
 - **Depends-on**: 0001, 0002, 0015
 
@@ -11,6 +11,12 @@
 Accepted. Supersedes ADRs 0003 (own-the-runtime) and 0004 (calculated-VM-canonical),
 which it subsumes. Folds in the renumbered effect-row-algebra ADR
 (originally drafted under bang-lang-wasmfx/).
+
+**Current interpretation (ADRs 0059 and 0110):** the two-hop shape remains accepted, but WasmFX is no
+longer the primary product target and the checked second hop reaches the project-defined Wasm-oriented
+abstract machine only. Wasm 3.0 is emitted through a separate concrete WasmGC/WAT path whose real-engine
+evidence is differential; there is no checked correspondence between those target layers today. The
+WasmFX language below records the original target choice and must be read through these amendments.
 
 ## Context
 Through K0–K3 the project established a calculated-VM-as-canonical-target stance

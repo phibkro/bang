@@ -169,7 +169,7 @@
       "properties": {
         "id": { "$ref": "common.schema.json#/$defs/kebabId" },
         "name": { "$ref": "common.schema.json#/$defs/nonemptyString" },
-        "kind": { "enum": ["text", "core-ir", "source-semantics", "state-semantics", "machine", "environment-machine", "formal-target", "emitted-wat", "runtime", "source-program", "source-execution", "target-execution"] },
+        "kind": { "enum": ["text", "core-ir", "source-semantics", "state-semantics", "machine", "environment-machine", "emitted-wat", "runtime", "source-program", "source-execution", "abstract-target-execution"] },
         "sources": {
           "type": "array", "minItems": 1, "uniqueItems": true,
           "items": { "$ref": "common.schema.json#/$defs/repoPath" }

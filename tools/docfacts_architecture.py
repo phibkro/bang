@@ -38,7 +38,7 @@ from symbols import SymbolFactsError, collect_public_symbols
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "docfacts/schema/architecture.schema.json"
 FACT_PATH = ROOT / "docfacts/architecture.json"
-SELF_TEST_POLES = 29
+SELF_TEST_POLES = 35
 
 
 def evidence() -> list[dict]:
@@ -91,7 +91,7 @@ def evidence() -> list[dict]:
             "commands": ["bash tools/check-examples-env.sh"],
         },
         {
-            "id": "formal-target-simulation-proof",
+            "id": "abstract-target-simulation-proof",
             "label": "proven",
             "claim": "Bang.compile_forward_sim proves value-preserving source execution to the project-defined Wasm-oriented abstract target for VcapFree source Comp. It does not target the concrete WAT emitter or official Wasm semantics; ADR-0059 separately makes Wasm 3.0 the product target.",
             "sources": [
@@ -99,14 +99,18 @@ def evidence() -> list[dict]:
                 "Bang/Backend/Wasm.lean",
                 "Bang/Audit.lean",
                 "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md",
+                "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md",
             ],
             "commands": ["lake env lean Bang/Audit.lean"],
         },
         {
             "id": "wat-emitter-implemented",
             "label": "implemented",
-            "claim": "The concrete WasmGC emitter lowers Comp to WAT independently of the formal Wasm model.",
-            "sources": ["Bang/Backend/WasmEmit.lean"],
+            "claim": "The concrete WasmGC emitter lowers Comp to WAT independently of the project Wasm-oriented abstract machine. No theorem currently links this emission to that model or to official Wasm semantics.",
+            "sources": [
+                "Bang/Backend/WasmEmit.lean",
+                "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md",
+            ],
             "commands": ["lake build Bang.Backend.WasmEmit"],
         },
         {
@@ -137,6 +141,15 @@ def evidence() -> list[dict]:
 def nodes() -> list[dict]:
     records = [
         (
+            "abstract-target-execution",
+            "Project Wasm-oriented abstract machine execution",
+            "abstract-target-execution",
+            [
+                "Bang/Backend/Wasm.lean",
+                "docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md",
+            ],
+        ),
+        (
             "calcvm",
             "CalcVM compile + exec",
             "machine",
@@ -151,15 +164,6 @@ def nodes() -> list[dict]:
             ["Bang/Backend/EnvMachine.lean", "Main.lean"],
         ),
         ("evald", "evalD", "state-semantics", ["Bang/Backend/AbstractMachine.lean"]),
-        (
-            "formal-target",
-            "Formal Wasm 3.0 machine",
-            "formal-target",
-            [
-                "Bang/Backend/Wasm.lean",
-                "docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md",
-            ],
-        ),
         (
             "source-eval",
             "Source.eval oracle",
@@ -185,12 +189,6 @@ def nodes() -> list[dict]:
             ["Bang/Spec.lean", "Bang/Meta/BinaryLR.lean"],
         ),
         ("source-text", "Source text", "text", ["Bang/Frontend/Surface.lean"]),
-        (
-            "target-execution",
-            "Formal target execution",
-            "target-execution",
-            ["Bang/Backend/Wasm.lean"],
-        ),
         ("wasmtime", "Wasmtime", "runtime", ["tools/emit-rung4-diff.sh"]),
     ]
     return [
@@ -202,14 +200,14 @@ def nodes() -> list[dict]:
 def arrows() -> list[dict]:
     return [
         {
-            "id": "source-execution-to-formal-target",
+            "id": "source-execution-to-abstract-target",
             "from": "source-execution",
-            "to": "target-execution",
+            "to": "abstract-target-execution",
             "direction": "forward",
             "method": "annotated forward simulation",
             "theoremRefs": ["Bang.compile_forward_sim"],
-            "adrRefs": ["0035", "0059"],
-            "evidenceId": "formal-target-simulation-proof",
+            "adrRefs": ["0035", "0059", "0110"],
+            "evidenceId": "abstract-target-simulation-proof",
         },
         {
             "id": "comp-to-emitted-wat",
@@ -218,7 +216,7 @@ def arrows() -> list[dict]:
             "direction": "forward",
             "method": "WasmGC text emission",
             "theoremRefs": [],
-            "adrRefs": [],
+            "adrRefs": ["0059", "0110"],
             "evidenceId": "wat-emitter-implemented",
         },
         {
@@ -291,8 +289,8 @@ def proof_arrows() -> list[dict]:
             "evidenceId": "lr-theorems-enrolled",
         },
         "source-target-forward-simulation": {
-            "adrRefs": ["0035", "0059"],
-            "evidenceId": "formal-target-simulation-proof",
+            "adrRefs": ["0035", "0059", "0110"],
+            "evidenceId": "abstract-target-simulation-proof",
         },
     }
     return [
@@ -431,7 +429,66 @@ def validate_serialized_fact(fact: dict) -> None:
     all_structural = fact["nodes"] + fact["arrows"] + fact["proofArrows"]
     reject_duplicate_ids(fact["evidence"] + all_structural, "architecture/evidence")
     node_ids = {node["id"] for node in fact["nodes"]}
+    nodes_by_id = {node["id"]: node for node in fact["nodes"]}
+    expected_target_layers = {
+        "abstract-target-execution": (
+            "Project Wasm-oriented abstract machine execution",
+            "abstract-target-execution",
+        ),
+        "emitted-wat": ("WasmGC / WAT", "emitted-wat"),
+    }
+    for node_id, (name, kind) in expected_target_layers.items():
+        if node_id not in nodes_by_id:
+            raise ValidationError(f"target-layer node is missing: {node_id}")
+        if (nodes_by_id[node_id]["name"], nodes_by_id[node_id]["kind"]) != (
+            name,
+            kind,
+        ):
+            raise ValidationError(f"target-layer identity drifted: {node_id}")
+    if "Formal Wasm 3.0 machine" in {node["name"] for node in fact["nodes"]}:
+        raise ValidationError("abstract target was relabelled as formal Wasm 3.0")
     evidence_by_id = {record["id"]: record for record in fact["evidence"]}
+    arrows_by_id = {arrow["id"]: arrow for arrow in fact["arrows"]}
+    expected_target_edges = {
+        "source-execution-to-abstract-target": (
+            "source-execution",
+            "abstract-target-execution",
+            ["Bang.compile_forward_sim"],
+            "abstract-target-simulation-proof",
+            "proven",
+        ),
+        "comp-to-emitted-wat": (
+            "comp",
+            "emitted-wat",
+            [],
+            "wat-emitter-implemented",
+            "implemented",
+        ),
+        "emitted-wat-to-wasmtime": (
+            "emitted-wat",
+            "wasmtime",
+            [],
+            "wasmtime-differential",
+            "differential-tested",
+        ),
+    }
+    for arrow_id, (
+        source,
+        target,
+        theorem_refs,
+        evidence_id,
+        label,
+    ) in expected_target_edges.items():
+        arrow = arrows_by_id.get(arrow_id)
+        if arrow is None or (
+            arrow["from"],
+            arrow["to"],
+            arrow["theoremRefs"],
+            arrow["evidenceId"],
+        ) != (source, target, theorem_refs, evidence_id):
+            raise ValidationError(f"target-layer evidence edge drifted: {arrow_id}")
+        if evidence_by_id.get(evidence_id, {}).get("label") != label:
+            raise ValidationError(f"target-layer evidence label drifted: {evidence_id}")
     for arrow in fact["arrows"] + fact["proofArrows"]:
         if arrow["from"] not in node_ids or arrow["to"] not in node_ids:
             raise ValidationError(f"arrow endpoint is not a node: {arrow['id']}")
@@ -550,6 +607,34 @@ def self_test() -> int:
         cases.append((name, fact))
 
     mutate("stale-target-wasmfx", lambda fact: fact["target"].update(name="WasmFX"))
+    mutate(
+        "abstract-machine-relabeled-formal-wasm3",
+        lambda fact: next(
+            node for node in fact["nodes"] if node["id"] == "abstract-target-execution"
+        ).update(name="Formal Wasm 3.0 machine"),
+    )
+    mutate(
+        "abstract-machine-collapsed-into-emitted-wat",
+        lambda fact: next(
+            node for node in fact["nodes"] if node["id"] == "abstract-target-execution"
+        ).update(id="emitted-wat"),
+    )
+    mutate(
+        "abstract-proof-misattributed-to-emitter",
+        lambda fact: next(
+            arrow for arrow in fact["arrows"] if arrow["id"] == "comp-to-emitted-wat"
+        ).update(
+            method="annotated forward simulation",
+            theoremRefs=["Bang.compile_forward_sim"],
+            evidenceId="abstract-target-simulation-proof",
+        ),
+    )
+    mutate(
+        "emitter-evidence-upgraded-to-proven",
+        lambda fact: next(
+            item for item in fact["evidence"] if item["id"] == "wat-emitter-implemented"
+        ).update(label="proven"),
+    )
     mutate(
         "stale-tier",
         lambda fact: fact["modules"][0].update(
@@ -711,6 +796,52 @@ def self_test() -> int:
             else:
                 print(f"✗ known-bad {name} was accepted", file=sys.stderr)
 
+    boundary_sources = {
+        name: (ROOT / "docs/decisions" / name).read_text(encoding="utf-8")
+        for name in (
+            "0016-two-hop-architecture-calcvm-and-wasmfx.md",
+            "0035-lr-for-equivalence-simulation-for-compilation.md",
+            "0059-wasm3-grade-directed-pluggable-backend.md",
+            "0110-wasm-proof-model-concrete-emitter-boundary.md",
+        )
+    }
+    boundary_mutations = (
+        (
+            "route-b-decision-removed",
+            "Choose **Route B: preserve the honest boundary**",
+            "Choose an unspecified route",
+        ),
+        (
+            "open-correspondence-claim-removed",
+            "no proof currently connects the two target layers",
+            "the target layers are connected",
+        ),
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        decision_dir = Path(directory) / "docs/decisions"
+        decision_dir.mkdir(parents=True)
+        for name, source in boundary_sources.items():
+            (decision_dir / name).write_text(source, encoding="utf-8")
+        boundary_path = (
+            decision_dir / "0110-wasm-proof-model-concrete-emitter-boundary.md"
+        )
+        for name, old, new in boundary_mutations:
+            mutated_source = boundary_sources[boundary_path.name].replace(old, new, 1)
+            if mutated_source == boundary_sources[boundary_path.name]:
+                print(f"✗ known-bad {name} mutation did not apply", file=sys.stderr)
+                continue
+            boundary_path.write_text(mutated_source, encoding="utf-8")
+            try:
+                derive_decision_details(Path(directory))
+            except ArchitectureFactsError:
+                print(f"✓ known-bad {name} rejected")
+                passed += 1
+            else:
+                print(f"✗ known-bad {name} was accepted", file=sys.stderr)
+            boundary_path.write_text(
+                boundary_sources[boundary_path.name], encoding="utf-8"
+            )
+
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "0110-frontmatter-boundary.md"
         path.write_text(
@@ -740,7 +871,7 @@ def self_test() -> int:
         file=sys.stdout if serialized else sys.stderr,
     )
     passed += serialized
-    total = len(cases) + len(source_cases) + 2
+    total = len(cases) + len(source_cases) + len(boundary_mutations) + 2
     if total != SELF_TEST_POLES:
         print(
             f"docfacts-architecture: internal pole count mismatch: {total}",

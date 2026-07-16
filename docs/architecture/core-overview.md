@@ -8,13 +8,14 @@ Read this page to answer three questions:
 2. What evidence connects it to the source meaning?
 3. Which tier owns a change, and what may that tier import?
 
-Architecture decisions remain authoritative: [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) fixes the two-hop shape, [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) revises the target to Wasm 3.0, and [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md) separates source equivalence from compilation simulation.
+Architecture decisions remain authoritative: [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) fixes the two-hop shape, [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) revises the product target to Wasm 3.0, [ADR-0110](../decisions/0110-wasm-proof-model-concrete-emitter-boundary.md) preserves the abstract-model to concrete-emitter evidence boundary, and [ADR-0035](../decisions/0035-lr-for-equivalence-simulation-for-compilation.md) separates source equivalence from compilation simulation.
 
 ## 1. One meaning, several representations
 
 <!-- BEGIN GENERATED architecture-pipeline (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
+  n_abstract_target_execution["Project Wasm-oriented abstract machine execution"]
   n_calcvm["CalcVM compile + exec"]
   n_comp["Graded-CBPV Comp"]
   n_emitted_wat["WasmGC / WAT"]
@@ -23,7 +24,6 @@ flowchart LR
   n_source_eval["Source.eval oracle"]
   n_source_execution["Source execution"]
   n_source_text["Source text"]
-  n_target_execution["Formal target execution"]
   n_wasmtime["Wasmtime"]
   n_comp -->|implemented · WasmGC text emission| n_emitted_wat
   n_comp -->|implemented · kernel interpretation| n_source_eval
@@ -31,7 +31,7 @@ flowchart LR
   n_evald -->|proven · calculation| n_calcvm
   n_evald -->|differential-tested · environment evaluation and readback| n_env_engine
   n_evald -->|proven · state reification| n_source_eval
-  n_source_execution -->|proven · annotated forward simulation| n_target_execution
+  n_source_execution -->|proven · annotated forward simulation| n_abstract_target_execution
   n_source_text -->|differential-tested · frontend lowering| n_comp
 ```
 
@@ -39,15 +39,15 @@ flowchart LR
 
 | Representation | Kind | Sources | Outgoing boundaries |
 |---|---|---|---|
+| `Project Wasm-oriented abstract machine execution` | abstract-target-execution | `Bang/Backend/Wasm.lean`, `docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md` | — |
 | `CalcVM compile + exec` | machine | `Bang/Backend/AbstractMachine.lean` | — |
 | `Graded-CBPV Comp` | core-ir | `Bang/Core/IR.lean` | WasmGC text emission → `WasmGC / WAT` (implemented); kernel interpretation → `Source.eval oracle` (implemented) |
 | `WasmGC / WAT` | emitted-wat | `Bang/Backend/WasmEmit.lean` | real-engine execution → `Wasmtime` (differential-tested) |
 | `evalE default engine` | environment-machine | `Bang/Backend/EnvMachine.lean`, `Main.lean` | — |
 | `evalD` | state-semantics | `Bang/Backend/AbstractMachine.lean` | calculation → `CalcVM compile + exec` (proven); environment evaluation and readback → `evalE default engine` (differential-tested); state reification → `Source.eval oracle` (proven) |
 | `Source.eval oracle` | source-semantics | `Bang/Core/Semantics/Eval.lean` | — |
-| `Source execution` | source-execution | `Bang/Spec.lean` | annotated forward simulation → `Formal target execution` (proven) |
+| `Source execution` | source-execution | `Bang/Spec.lean` | annotated forward simulation → `Project Wasm-oriented abstract machine execution` (proven) |
 | `Source text` | text | `Bang/Frontend/Surface.lean` | frontend lowering → `Graded-CBPV Comp` (differential-tested) |
-| `Formal target execution` | target-execution | `Bang/Backend/Wasm.lean` | — |
 | `Wasmtime` | runtime | `tools/emit-rung4-diff.sh` | — |
 <!-- END GENERATED architecture-pipeline -->
 
@@ -60,12 +60,12 @@ _Generated from validated committed architecture and proof facts. The JSON is th
 
 | Fact | Current value | Source/evidence |
 |---|---|---|
-| Compiler target | **Wasm 3.0**, grade-directed pluggable backend; WasmFX: future general-case fast path | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md` |
+| Compiler target | **Wasm 3.0**, grade-directed pluggable backend; WasmFX: future general-case fast path | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`, `docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md` |
 | Source equivalence | binary biorthogonal LR: `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; `Bang/Spec.lean`, `Bang/Meta/LR.lean`, `Bang/Meta/BinaryLR.lean`, `Bang/Audit.lean`; validate: `lake env lean Bang/Audit.lean` |
-| Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`; validate: `lake env lean Bang/Audit.lean` |
+| Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`, `docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md`; validate: `lake env lean Bang/Audit.lean` |
 | CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases `compiled` | `Bang/Backend/EnvMachine.lean`, `Main.lean`, `docs/decisions/0094-env-semantics-in-the-machine-layer.md` |
 | Module graph | 58 modules · 117 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 58 serialized module records in `docfacts/architecture.json` |
-| Architecture lineage | ADR-0016 two-hop shape; target refined by ADR-0059 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented) |
+| Architecture lineage | ADR-0016 two-hop shape; product target refined by ADR-0059; evidence boundary amended by ADR-0110 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented), [ADR-0110](../decisions/0110-wasm-proof-model-concrete-emitter-boundary.md) (Accepted; implemented) |
 <!-- END GENERATED architecture-assertions -->
 
 ## 2. Proof arrows are different claims
@@ -73,18 +73,18 @@ _Generated from validated committed architecture and proof facts. The JSON is th
 <!-- BEGIN GENERATED proof-arrows (just architecture-assertions) — do not hand-edit -->
 ```mermaid
 flowchart LR
+  n_abstract_target_execution["Project Wasm-oriented abstract machine execution"]
   n_source_execution["Source execution"]
   n_source_program_left["Source program P"]
   n_source_program_right["Source program Q"]
-  n_target_execution["Formal target execution"]
   n_source_program_left <-->|binary biorthogonal LR · implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`| n_source_program_right
-  n_source_execution -->|annotated forward simulation · proven| n_target_execution
+  n_source_execution -->|annotated forward simulation · proven| n_abstract_target_execution
 ```
 
 | Question / endpoint type | Direction | Method and theorem refs | Evidence status |
 |---|---|---|---|
 | source-programs: `Source program P` → `Source program Q` | bidirectional-contextual | binary biorthogonal LR; `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; validate: `lake env lean Bang/Audit.lean` |
-| source-to-target-executions: `Source execution` → `Formal target execution` | forward | annotated forward simulation; `Bang.compile_forward_sim` | proven; validate: `lake env lean Bang/Audit.lean` |
+| source-to-target-executions: `Source execution` → `Project Wasm-oriented abstract machine execution` | forward | annotated forward simulation; `Bang.compile_forward_sim` | proven; validate: `lake env lean Bang/Audit.lean` |
 <!-- END GENERATED proof-arrows -->
 
 Do not describe compiler correctness as “the Benton–Hur LR.” The LR and simulation are complementary, not interchangeable; ADR-0035 is the decision record.
@@ -109,8 +109,8 @@ Axiom trust and semantic strength are independent axes. `trusted` means only tha
 | `Bang.lr_fundamental_closed`<br>`Bang/Spec.lean:308` | flagged<br>`Classical.choice`, `Quot.sound`, `propext`, `sorryAx` | partial · logical-relation · partial-kernel-declaration · role supporting | typed-contextual-semantics<br>load-bearing: closed source typing; unused: none | Closed-program specialization of the partial logical-relation fundamental theorem. Scope: Closed typed source computations. Limitations: Inherits the sorryAx dependencies of lr_fundamental and is not independent evidence. Statement: `HasCTy gamma [] c e B -> forall n, Crel n B e c c` |
 | `Bang.seq_unit`<br>`Bang/Spec.lean:324` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · contextual-equivalence-law · kernel-checked-theorem · role canonical | typed-contextual-semantics<br>load-bearing: none; unused: none | Returning a value and then sequencing is contextually equivalent to the continuation. Scope: Every typed observation effect and computation type. Limitations: A single sequencing law, not a complete equational theory. Statement: `ctxEquiv (seqComp (ret v) c) c` |
 | `Bang.compile_forward_sim`<br>`Bang/Spec.lean:365` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · forward-simulation · kernel-checked-theorem · role canonical | source-to-project-wasm-oriented-abstract-machine<br>load-bearing: literal-capability freedom, successful source evaluation; unused: none | A successful source run has a value-preserving run in the project Wasm-oriented abstract machine. Scope: Literal-capability-free programs and terminating-success executions. Limitations: One-way only.; Does not target the concrete WAT emitter or official Wasm semantics.; Excludes ambient host IO represented by literal capabilities. Statement: `VcapFree c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)` |
-| `Bang.compile_forward_sim_pure`<br>`Bang/Backend/Wasm.lean:2762` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · forward-simulation · kernel-checked-specialization · role supporting | source-to-project-wasm-oriented-abstract-machine<br>load-bearing: pure-fragment premise, successful source evaluation; unused: none | Pure successful source runs have matching abstract-target runs. Scope: Pure source fragment and terminating-success executions. Limitations: One-way only.; Does not target concrete emitted Wasm. Statement: `Pure c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)` |
-| `Bang.source_eval_to_exec`<br>`Bang/Backend/Wasm.lean:2750` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · forward-simulation · kernel-checked-theorem · role supporting | source-to-calcvm<br>load-bearing: pure-fragment premise, successful source evaluation; unused: none | Pure successful source evaluation is reproduced by compiled CalcVM code. Scope: Pure source programs with successful terminating runs. Limitations: Does not cover non-pure programs or non-success outcomes. Statement: `Pure c -> Source.eval fuel c = done v -> exists F, CalcVM.exec F 0 (compile c []) [] [] = some [ret v]` |
+| `Bang.compile_forward_sim_pure`<br>`Bang/Backend/Wasm.lean:2763` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · forward-simulation · kernel-checked-specialization · role supporting | source-to-project-wasm-oriented-abstract-machine<br>load-bearing: pure-fragment premise, successful source evaluation; unused: none | Pure successful source runs have matching abstract-target runs. Scope: Pure source fragment and terminating-success executions. Limitations: One-way only.; Does not target concrete emitted Wasm. Statement: `Pure c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)` |
+| `Bang.source_eval_to_exec`<br>`Bang/Backend/Wasm.lean:2751` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · forward-simulation · kernel-checked-theorem · role supporting | source-to-calcvm<br>load-bearing: pure-fragment premise, successful source evaluation; unused: none | Pure successful source evaluation is reproduced by compiled CalcVM code. Scope: Pure source programs with successful terminating runs. Limitations: Does not cover non-pure programs or non-success outcomes. Statement: `Pure c -> Source.eval fuel c = done v -> exists F, CalcVM.exec F 0 (compile c []) [] [] = some [ret v]` |
 | `Bang.Rung5ProofGrade.s5_effectful_forward_sim`<br>`Bang/Backend/Rung5ProofGrade.lean:101` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | alias · compatibility-alias · theorem-alias · role alias of `compile_forward_sim` | source-to-project-wasm-oriented-abstract-machine<br>load-bearing: literal-capability freedom, successful source evaluation; unused: none | Named re-export of compile_forward_sim for the rung-5 census. Scope: Exactly the scope of compile_forward_sim. Limitations: Provides no independent proof evidence. Statement: `Same proposition as compile_forward_sim` |
 | `Bang.Rung5ProofGrade.s5_exec_wexec_lockstep`<br>`Bang/Backend/Rung5ProofGrade.lean:110` | trusted<br>`Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role supporting | calcvm-to-project-wasm-oriented-abstract-machine<br>load-bearing: code well-formedness, handler-stack well-formedness, successful CalcVM execution; unused: none | Successful CalcVM execution is preserved by the project abstract target executor. Scope: Well-formed code and handler stacks on successful executions. Limitations: One-way success correspondence between two in-repo abstract machines. Statement: `CodeOk code -> HStackOk hs -> exec ... = some s' -> wexec ... = some (injStack s')` |
 | `Bang.compileC_satisfies_current_instrWF`<br>`Bang/Spec.lean:340` | trusted<br>`propext` | structural · structural-invariant · kernel-checked-theorem · role canonical | project-wasm-oriented-abstract-machine<br>load-bearing: compileC output shape; unused: none | Every compileC instruction satisfies the current project-defined InstrWF predicate. Scope: All source computations lowered to the project abstract instruction list. Limitations: InstrWF only rejects local get/set today.; Not source type preservation, official Wasm validation, or concrete-emitter validation. Statement: `Wasmfx.WellTyped (compileC c)` |
@@ -163,7 +163,7 @@ flowchart LR
     subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
       component_Frontend["Frontend<br/>12 modules · 17266 LOC"]
       component_Core["Core<br/>12 modules · 8162 LOC"]
-      component_Backend["Backend<br/>6 modules · 16966 LOC"]
+      component_Backend["Backend<br/>6 modules · 16967 LOC"]
       component_Meta["Meta<br/>2 modules · 3852 LOC"]
       component_Witness["Witness<br/>19 modules · 3683 LOC"]
       component_Reify["Reify<br/>3 modules · 1883 LOC"]
@@ -188,7 +188,7 @@ flowchart LR
 |---|---|---:|---:|---|
 | `Frontend` | text → typed core | 12 | 17266 | `Core` (4) |
 | `Core` | IR · typing · semantics · soundness | 12 | 8162 | — |
-| `Backend` | calculated machines → Wasm 3.0 | 6 | 16966 | `Core` (8) |
+| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 6 | 16967 | `Core` (8) |
 | `Meta` | contextual-equivalence metatheory | 2 | 3852 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3683 | `Frontend` (5), `Core` (27), `Backend` (4) |
 | `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |

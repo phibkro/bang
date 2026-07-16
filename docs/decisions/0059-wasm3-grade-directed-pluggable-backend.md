@@ -14,8 +14,10 @@
   **general/multishot** → a **GC-frame-chain runtime** (managed `struct` frames + a tail-call trampoline —
   the only hand-built part). Only `general` is the swappable slot: GC-frame-chain now, WasmFX `switch` as a
   fast-path once standardized + shipped. The decisive reason for *us* is verification: a GC-frame-chain
-  runtime is **our** abstract machine, verified end-to-end with **no opaque primitive in the TCB**
-  (invariant #1), and its simulation relation is the easy, append-only, arithmetic-free kind — **machine-
+  runtime is **our** abstract machine, whose project-model simulation is machine-checked with **no opaque
+  primitive in that model's trusted base** (invariant #1); ADR-0110 records that the separate concrete
+  emitter remains differentially tested, not proof-linked. The simulation relation is the easy,
+  append-only, arithmetic-free kind — **machine-
   checked per-step** (the `CtxRel`/`SegRel` relation, Lean 4.31, axiom-clean; the *cross-step* partition is
   unbuilt — see the open sub-clause), the same identity-keyed shape that ADR-0058 adopts to dissolve the
   `CrelK` Canonical wall. **SCOPE (the load-bearing sharpening):** v1's three handler forms (`state`,
@@ -37,6 +39,12 @@ Accepted (2026-06-26), during the Lexa / Wasm-3.0 design session. The two-hop ar
 source → graded-CBPV `eval` → CalcVM → target) stands; this ADR revises only the **target** of the second
 hop and how dispatch lowers. Implementation is **inc-6** (CalcVM route-B + Compile re-key).
 
+**Evidence amendment (ADR-0110, 2026-07-16):** Wasm 3.0 remains the product target, but
+`compile_forward_sim` reaches only the project-defined Wasm-oriented abstract machine. The independent
+WasmGC/WAT emitter is differentially tested on a real engine; no theorem currently connects it to that
+abstract model or to official Wasm semantics. Read references below to a "verified" GC machine as scoped
+to the project abstract model, not as an end-to-end concrete-emitter correspondence.
+
 ## Context
 
 - **Wasm 3.0 reality (Sept 2025):** landed = WasmGC (struct/array, typed refs), exception handling (tags,
@@ -54,7 +62,8 @@ hop and how dispatch lowers. Implementation is **inc-6** (CalcVM route-B + Compi
 - **The verification fact that decides it for us.** Targeting WasmFX puts the engine's `switch` semantics in
   the trusted base — and the Iris-WasmFX mechanization found a real bug in the proposal's suspend
   translation, so "trust the engine's stack-switch" is not free. A GC-frame-chain runtime is *our* abstract
-  machine; the source→(GC-machine) simulation is specified and verified with no opaque primitive in the TCB.
+  machine; the source→(GC-machine) abstract simulation is specified and verified with no opaque primitive
+  in that model's trusted base. ADR-0110 keeps the separate concrete-emitter edge explicit.
   That is invariant #1 ("proof rides the reference; never ship an execution path with no oracle behind it")
   applied to the backend.
 - **The relation is machine-checked easy.** The GC-machine simulation (`CtxRel`/`SegRel`, Lean 4.31,
@@ -80,7 +89,8 @@ Abort and tail are backend-independent (any 3.0 engine, forever). **Only `genera
 GC-frame-chain runtime now; WasmFX `switch`/`resume` as a fast-path once standardized and shipped. The
 `compile_forward_sim` hop (ADR-0016's LR) targets the **GC-frame abstract machine** (managed `struct` frames
 linked by `.parent`, handler identity = the struct reference, raise/resume = re-point a `.parent` field) —
-for which the simulation relation is machine-checked easy (above).
+for which the simulation relation is machine-checked easy (above). It does not target emitted WAT or
+official WebAssembly execution (ADR-0110).
 
 ## Consequences
 
@@ -88,8 +98,8 @@ for which the simulation relation is machine-checked easy (above).
   post-standardization fast-path for the `general` case only. The two-hop architecture and the calculation /
   LR split are unchanged.
 - **inc-6 re-targets the GC-machine** (CalcVM route-B + Compile, task #15). The machine-checked
-  `CtxRel`/`SegRel` is the reference for both the codegen *and* (via ADR-0058) the `CrelK` re-key — one
-  identity-keyed relation serves both.
+  `CtxRel`/`SegRel` is a design reference for codegen and (via ADR-0058) the `CrelK` re-key. ADR-0110
+  records that a design reference is not a checked relation to the separate concrete emitter.
 - **Smaller TCB.** Trusted = an idealized GC heap (reference stability + reachability), not an opaque
   `switch`. A precise GC model adds reachability obligations — strictly smaller than `next`-arithmetic
   survival across `sfree`.
