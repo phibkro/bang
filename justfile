@@ -131,6 +131,12 @@ test-cli:
 test-release-version:
     bash tools/test-release-version.sh
 
+# Network-free release-integrity poles: deterministic all-platform SHA256SUMS,
+# one-tag installer resolution, exact manifest parsing, checksum verification, and
+# atomic preservation of an existing install across every fetch/validation failure.
+test-release-integrity:
+    bash tools/test-release-integrity.sh
+
 # Gate for `bang test` (#60's CLI wiring over the landed LawTest/lawInstancesOf
 # seam): a real true trait law (PASS), a deliberately false one (FAIL +
 # counterexample), no-laws-found (vacuous success), and the decls-only-input
