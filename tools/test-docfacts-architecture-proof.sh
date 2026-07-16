@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=CONTEXT.md,docfacts/architecture.json,docfacts/proof-claims.json,docfacts/proof.json,docfacts/schema/proof-claims.schema.json,tools/docfacts_architecture.py,tools/docfacts_proof.py,tools/gen-proof-state.py runs-in=fitness
+# tool: role=test couples=CONTEXT.md,docfacts/architecture.json,docfacts/proof-claims.json,docfacts/proof.json,docfacts/schema/proof-claims.schema.json,tools/docfacts_architecture.py,tools/docfacts_proof.py,tools/gen-proof-state.py,tools/gen-dashboard.py runs-in=fitness
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -112,6 +112,61 @@ assert "**claims:** 22 trusted-axiom (⊆ trusted-3) · 0 pending (build in flig
 assert "**enrollment roles:** 18 canonical · 8 supporting · 6 aliases · 1 placeholder" in context
 assert "**flagged:** `handler_compiles`" not in context
 assert "**placeholder:** `handler_lowering_placeholder`" in context
+
+dashboard = runpy.run_path(str(root / "tools/gen-dashboard.py"))
+health = dashboard["parse_health"](context)
+assert health == dashboard["ProofHealth"](
+    trusted_axiom=22,
+    pending=0,
+    flagged=4,
+    strong=17,
+    structural=3,
+    bounded=2,
+    partial=3,
+    conjectural=1,
+    canonical=18,
+    supporting=8,
+    aliases=6,
+    placeholders=1,
+    sorries=8,
+), "dashboard proof-state projection drifted"
+
+rendered_dashboard = dashboard["render"](
+    [{
+        "state": "closed", "open_issues": 0, "number": 1,
+        "title": "fixture", "description": "fixture",
+    }],
+    [("◊1", "fixture", True)],
+    health,
+    [("proof", "fixture", "deadbeef")],
+)
+assert "22 trusted-axiom claims" in rendered_dashboard
+assert "17 strong · 3 structural · 2 bounded · 3 partial · 1 conjectural" in rendered_dashboard
+assert "18 canonical · 8 supporting · 6 aliases · 1 placeholder" in rendered_dashboard
+assert "aliases/placeholders excluded from claim totals" in rendered_dashboard
+assert "headlines clean" not in rendered_dashboard
+
+for stale_context in (
+    context.replace("**claims:**", "**headlines:**", 1),
+    context.replace("- **claims:**", "- **claims:** 0 trusted-axiom (⊆ trusted-3) · 0 pending (build in flight) · 0 flagged (aliases/placeholders excluded)\n- **claims:**", 1),
+    context.replace("**claims:** 22", "**claims:** many", 1),
+    context.replace("**semantic strength:** 17", "**semantic strength:** 18", 1),
+    context.replace("- **semantic strength:**", "- **old semantic strength:**", 1),
+    context.replace("- **enrollment roles:**", "- **old enrollment roles:**", 1),
+    context.replace("- **sorries:**", "- **old sorries:**", 1),
+    context.replace(
+        dashboard["PROOF_STATE_END"],
+        dashboard["PROOF_STATE_BEGIN"] + "\n" + dashboard["PROOF_STATE_END"],
+        1,
+    ),
+    context.replace(dashboard["PROOF_STATE_END"], "", 1),
+):
+    try:
+        dashboard["parse_health"](stale_context)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("dashboard accepted a stale or malformed proof-state contract")
 
 print(
     "docfacts architecture/proof: PASS — "

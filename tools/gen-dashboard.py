@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=ROADMAP.md,CONTEXT.md,CHANGELOG.md,_site/index.html runs-in=manual
+# tool: role=gen couples=ROADMAP.md,CONTEXT.md,CHANGELOG.md,gen-proof-state.py,_site/index.html runs-in=manual
 """Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages).
 
 A GENERATED VIEW over data the repo already owns (single-source-of-truth, generate rung):
   • GitHub MILESTONES (`gh api`)      — the PROJECT map (one milestone per product checkpoint)
   • ROADMAP.md  ◊1–◊6 table            — the PROOF map (verification spine)
-  • CONTEXT.md  generated proof-state  — the HEALTH panel (headlines clean/flagged · sorries)
+  • CONTEXT.md  generated proof-state  — the HEALTH panel (claim trust/strength/roles · sorries)
   • CHANGELOG.md  ### Features          — the PULSE feed (recent shipped increments)
 
 Self-contained: inline CSS + inline JS only, NO external CDN/font/script — renders offline,
@@ -15,6 +15,7 @@ expected shape is missing, `sys.exit` rather than emit a half-empty dashboard.
 Usage:  gen-dashboard.py            write _site/index.html
 """
 
+from dataclasses import dataclass
 import html
 import json
 import re
@@ -46,6 +47,30 @@ ICONS = [  # (filename in tools/pwa AND _site, sizes, extra manifest keys)
 CACHE_VERSION = (
     "bang-progress-v1"  # bump to invalidate the precached shell on the next install
 )
+
+PROOF_STATE_BEGIN = (
+    "<!-- BEGIN GENERATED proof-state (just proof-state) — do not hand-edit -->"
+)
+PROOF_STATE_END = "<!-- END GENERATED proof-state -->"
+
+
+@dataclass(frozen=True)
+class ProofHealth:
+    """Dashboard projection of gen-proof-state.py's generated CONTEXT contract."""
+
+    trusted_axiom: int
+    pending: int
+    flagged: int
+    strong: int
+    structural: int
+    bounded: int
+    partial: int
+    conjectural: int
+    canonical: int
+    supporting: int
+    aliases: int
+    placeholders: int
+    sorries: int
 
 
 def fetch_milestones():
@@ -98,22 +123,76 @@ def parse_checkpoints(text):
     return rows
 
 
+def _proof_state_block(text):
+    """Return the one generated proof-state block; reject ambiguous marker shapes."""
+    if text.count(PROOF_STATE_BEGIN) != 1 or text.count(PROOF_STATE_END) != 1:
+        sys.exit(
+            "gen-dashboard: CONTEXT.md must contain exactly one generated proof-state block."
+        )
+    begin = text.index(PROOF_STATE_BEGIN) + len(PROOF_STATE_BEGIN)
+    end = text.index(PROOF_STATE_END)
+    if begin > end:
+        sys.exit("gen-dashboard: CONTEXT.md proof-state markers are out of order.")
+    return text[begin:end]
+
+
+def _one_proof_row(block, label, pattern):
+    matches = re.findall(pattern, block, re.MULTILINE)
+    if len(matches) != 1:
+        sys.exit(
+            f"gen-dashboard: expected exactly one current proof-state '{label}:' row "
+            "in CONTEXT.md."
+        )
+    return tuple(int(value) for value in matches[0])
+
+
 def parse_health(text):
-    """(clean, pending, flagged, sorries) from CONTEXT.md's generated proof-state block."""
-    m = re.search(
-        r"\*\*headlines:\*\*\s*(\d+)\s*clean.*?·\s*(\d+)\s*pending.*?·\s*(\d+)\s*flagged",
-        text,
+    """Parse gen-proof-state.py's current semantic proof-state shape.
+
+    This is intentionally not backward-compatible with the former ``headlines:`` row:
+    accepting both contracts would let generator/dashboard drift reach the Pages build.
+    """
+    block = _proof_state_block(text)
+    claims = _one_proof_row(
+        block,
+        "claims",
+        r"^- \*\*claims:\*\* (\d+) trusted-axiom \(⊆ trusted-3\) · "
+        r"(\d+) pending \(build in flight\) · (\d+) flagged "
+        r"\(aliases/placeholders excluded\)$",
     )
-    if not m:
+    strengths = _one_proof_row(
+        block,
+        "semantic strength",
+        r"^- \*\*semantic strength:\*\* (\d+) strong · (\d+) structural · "
+        r"(\d+) bounded · (\d+) partial · (\d+) conjectural$",
+    )
+    roles = _one_proof_row(
+        block,
+        "enrollment roles",
+        r"^- \*\*enrollment roles:\*\* (\d+) canonical · (\d+) supporting · "
+        r"(\d+) aliases · (\d+) placeholder$",
+    )
+    (sorries,) = _one_proof_row(
+        block,
+        "sorries",
+        r"^- \*\*sorries:\*\* (\d+) \(per `burndown\.sh`\)$",
+    )
+    health = ProofHealth(*claims, *strengths, *roles, sorries)
+    substantive_totals = {
+        health.trusted_axiom + health.pending + health.flagged,
+        health.strong
+        + health.structural
+        + health.bounded
+        + health.partial
+        + health.conjectural,
+        health.canonical + health.supporting,
+    }
+    if len(substantive_totals) != 1:
         sys.exit(
-            "gen-dashboard: could not parse the proof-state 'headlines:' line in CONTEXT.md."
+            "gen-dashboard: proof-state claim, semantic-strength, and substantive-role "
+            "totals disagree."
         )
-    sm = re.search(r"\*\*sorries:\*\*\s*(\d+)", text)
-    if not sm:
-        sys.exit(
-            "gen-dashboard: could not parse the proof-state 'sorries:' line in CONTEXT.md."
-        )
-    return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(sm.group(1))
+    return health
 
 
 def parse_pulse(text, n=8):
@@ -210,7 +289,6 @@ def pulse_rows(pulse):
 
 
 def render(ms, cps, health, pulse):
-    clean, pending, flagged, sorries = health
     done_ms = sum(1 for m in ms if m["state"] == "closed")
     done_cp = sum(1 for _, _, d in cps if d)
     return f"""<!DOCTYPE html>
@@ -330,7 +408,7 @@ def render(ms, cps, health, pulse):
     <h1><span class="bang">bang</span> — progress</h1>
     <span class="tag">a verified effect-typed language · paradigm &amp; runtime are values</span>
   </header>
-  <div class="updated">generated view · {done_ms}/{len(ms)} projects · {done_cp}/{len(cps)} proof checkpoints · {clean} headlines clean</div>
+  <div class="updated">generated view · {done_ms}/{len(ms)} projects · {done_cp}/{len(cps)} proof checkpoints · {health.trusted_axiom} trusted-axiom claims</div>
 
   <section>
     <h2>Projects <span class="count">the product map — programs that pull features into being</span></h2>
@@ -347,18 +425,20 @@ def render(ms, cps, health, pulse):
   </section>
 
   <section>
-    <h2>Proof health <span class="count">axiom census of the headline theorems</span></h2>
+    <h2>Proof health <span class="count">axiom census of substantive enrolled claims</span></h2>
     <div class="health">
-      <div class="stat clean"><div class="num">{clean}</div><div class="lbl">headlines clean (⊆ trusted-3)</div></div>
-      <div class="stat flagged"><div class="num">{flagged}</div><div class="lbl">flagged (carry sorryAx)</div></div>
-      <div class="stat sorries"><div class="num">{sorries}</div><div class="lbl">open sorries (burndown)</div></div>
-      <div class="stat pending"><div class="num">{pending}</div><div class="lbl">pending (build in flight)</div></div>
+      <div class="stat clean"><div class="num">{health.trusted_axiom}</div><div class="lbl">trusted-axiom claims (⊆ trusted-3)</div></div>
+      <div class="stat flagged"><div class="num">{health.flagged}</div><div class="lbl">flagged substantive claims</div></div>
+      <div class="stat sorries"><div class="num">{health.sorries}</div><div class="lbl">open sorries (burndown)</div></div>
+      <div class="stat pending"><div class="num">{health.pending}</div><div class="lbl">pending claims (build in flight)</div></div>
     </div>
     <div class="bar">
-      <div class="seg-clean" style="width:{pct(clean, clean + flagged)}%"></div>
-      <div class="seg-flagged" style="width:{pct(flagged, clean + flagged)}%"></div>
+      <div class="seg-clean" style="width:{pct(health.trusted_axiom, health.trusted_axiom + health.flagged)}%"></div>
+      <div class="seg-flagged" style="width:{pct(health.flagged, health.trusted_axiom + health.flagged)}%"></div>
     </div>
-    <div class="barlbl"><span>{clean} clean</span><span>{flagged} flagged</span></div>
+    <div class="barlbl"><span>{health.trusted_axiom} trusted-axiom</span><span>{health.flagged} flagged</span></div>
+    <div class="barlbl"><span>semantic strength: {health.strong} strong · {health.structural} structural · {health.bounded} bounded · {health.partial} partial · {health.conjectural} conjectural</span></div>
+    <div class="barlbl"><span>enrollment roles: {health.canonical} canonical · {health.supporting} supporting · {health.aliases} aliases · {health.placeholders} placeholder</span><span>aliases/placeholders excluded from claim totals</span></div>
   </section>
 
   <section>
@@ -501,7 +581,8 @@ def main():
     print(
         f"dashboard: wrote {OUT.relative_to(ROOT)} + manifest/sw/{len(ICONS)} icons — "
         f"{len(ms)} milestones · {len(cps)} checkpoints · "
-        f"{health[0]} clean/{health[2]} flagged/{health[3]} sorries · {len(pulse)} pulse entries."
+        f"{health.trusted_axiom} trusted-axiom/{health.flagged} flagged/"
+        f"{health.sorries} sorries · {len(pulse)} pulse entries."
     )
 
 
