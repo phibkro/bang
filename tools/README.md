@@ -67,7 +67,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/gen-onboarding.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (32)
+## test (33)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -91,6 +91,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-docfacts-architecture-proof.sh`](test-docfacts-architecture-proof.sh) | `fitness` | `docfacts/architecture.json`, `docfacts/proof.json`, `tools/docfacts_architecture.py`, `tools/docfacts_proof.py` | (no purpose comment) |
 | [`test-docfacts-language.sh`](test-docfacts-language.sh) | `verify` | `docfacts/language.json`, `docs/reference/language.md`, `web/docs/bang.tmLanguage.json` | focused executable agreement for the language docfact seam |
 | [`test-docfacts-logger.sh`](test-docfacts-logger.sh) | `verify` | `examples/logger-counting`, `examples/logger-silent`, `docfacts/examples/logger-counting.json` | executable evidence for the logger handler-swap docfact |
+| [`test-example-exit-status.sh`](test-example-exit-status.sh) | `verify` | `tools/check-examples.sh`, `tools/check-examples-env.sh` | Falsification gate for issue #173: matching stdout must not hide runner failure |
 | [`test-explain.sh`](test-explain.sh) | `verify` | `Bang/Frontend/DiagCodes.lean` | the CLI gate for stable diagnostic codes + `bang explain` (plan 013 slice 5) |
 | [`test-fmt.sh`](test-fmt.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang fmt` (issue #58's CLI half) |
 | [`test-hostio-seam.sh`](test-hostio-seam.sh) | `verify` | `Main.lean`, `Bang/Backend/EnvMachine.lean`, `std/Io.bang` | the SEAM + CLI-surface gate for the host-IO wedge (ADR-0104) |

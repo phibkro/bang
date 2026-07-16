@@ -14,17 +14,22 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-bang=".lake/build/bin/bang"
+bang="${BANG_BIN:-.lake/build/bin/bang}"
 
 # Honor run-batteries.sh's single up-front build (BANG_BIN_FRESH) like the other
 # batteries; standalone (`just check-examples-env`) still (re)builds — incremental.
-if [ -z "${BANG_BIN_FRESH:-}" ]; then
+if [ -z "${BANG_BIN_FRESH:-}" ] && [ -z "${BANG_BIN:-}" ]; then
   echo "building bang runner…" >&2
   lake build bang >&2
 fi
 
 pass=0
 fail=0
+expected_count=0
+for dir in examples/*/; do
+  [ -f "$dir/main.bang" ] && expected_count=$((expected_count + 1))
+done
+
 for dir in examples/*/; do
   main="$dir/main.bang"
   expected="$dir/expected.txt"
@@ -33,15 +38,24 @@ for dir in examples/*/; do
   if [ ! -f "$expected" ]; then
     echo "✗ $name — no expected.txt"; fail=$((fail + 1)); continue
   fi
-  got="$("$bang" run "$main" --engine=env 2>/dev/null)" || true
+  if got="$("$bang" run "$main" --engine=env 2>/dev/null)"; then
+    run_status=0
+  else
+    run_status=$?
+  fi
   want="$(cat "$expected")"
-  if [ "$got" = "$want" ]; then
+  if [ "$run_status" -eq 0 ] && [ "$got" = "$want" ]; then
     echo "✓ $name → $got"; pass=$((pass + 1))
   else
-    echo "✗ $name — expected [$want], got [$got]"; fail=$((fail + 1))
+    echo "✗ $name — expected [$want], got [$got], status [$run_status]"; fail=$((fail + 1))
   fi
 done
 
 echo "──────────────────────────────"
 echo "examples (--engine=env): $pass passed, $fail failed"
+processed=$((pass + fail))
+if [ "$processed" -ne "$expected_count" ]; then
+  echo "check-examples-env: INTERNAL ERROR — processed $processed of $expected_count examples" >&2
+  exit 1
+fi
 [ "$fail" -eq 0 ]
