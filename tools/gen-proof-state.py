@@ -128,39 +128,6 @@ def main() -> int:
     lean_root = os.path.abspath(args.lean_root)
     context = os.path.abspath(args.context or os.path.join(lean_root, "CONTEXT.md"))
 
-    # FAST PATH (non-authoritative --check only): exact typed provenance binds both the
-    # complete `Bang/` tree and every repository input that can alter the projection
-    # (classifier/parser/generator/build manifests/toolchain). If both identities are
-    # unchanged, lake cannot reveal new derived content, so the local fitness path may
-    # skip elaboration. `--build` always bypasses this shortcut and compares a fresh
-    # authoritative render, including every headline/sorry count byte.
-    if args.check and not args.build and os.path.exists(context):
-        md0 = open(context, encoding="utf-8").read()
-        m = re.search(
-            r"Proof-state for Bang tree `tree:([0-9a-f]+)`; "
-            r"inputs `proof-input:([0-9a-f]{64})`",
-            md0,
-        )
-        try:
-            expected_tree = bang_tree(lean_root, args.end)
-            expected_inputs = proof_input_id(lean_root, args.end)
-        except ProvenanceError as exc:
-            print(f"── proof-state ──\nFAIL: cannot derive Bang tree: {exc}")
-            return 1
-        if (
-            BEGIN in md0
-            and END in md0
-            and m
-            and m.group(1) == expected_tree
-            and m.group(2) == expected_inputs
-        ):
-            print(
-                "── proof-state ──\nPASS: provenance ≡ exact Bang tree + proof-input "
-                "manifest — lake skipped."
-            )
-            return 0
-        # else fall through to the full lake-based check below.
-
     report_text = axiom_report(lean_root, build=args.build)
     report = parse_axioms(report_text) if report_text is not None else {}
 

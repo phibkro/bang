@@ -260,9 +260,9 @@ wasmfx-probe:
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
 # STM-only) + ADR link integrity + ADR decided-ledger currency (gen-adr-index
 # --check: README ≡ frontmatter, Status copies agree, Q⟺ADR) + the
-# import-direction V (ADR-0046/0047: Core imports neither edge). Fast: no Lean
-# build when the exact Bang tree and complete proof-input manifest are unchanged;
-# otherwise the proof-state leg elaborates Audit.lean. Also run by `just audit`.
+# import-direction V (ADR-0046/0047: Core imports neither edge). The proof-state
+# leg always elaborates Audit.lean and full-compares the projection; typed input
+# identities do not substitute for checking the derived counts. Also run by `just audit`.
 # adr-check is HERE (not just in `just verify`)
 # so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:

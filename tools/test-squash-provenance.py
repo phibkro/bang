@@ -419,6 +419,20 @@ def main() -> int:
             cwd=root,
             env=proof_env(fake_bin),
         )
+        expect_fail(
+            "proof count tamper fails normal --check",
+            sys.executable,
+            str(TOOLS / "gen-proof-state.py"),
+            "--lean-root",
+            str(root),
+            "--context",
+            str(root / "CONTEXT.md"),
+            "--check",
+            "--end",
+            landed,
+            cwd=root,
+            env=proof_env(fake_bin),
+        )
         (root / "CONTEXT.md").write_text(original_context)
 
         blob = git(root, "rev-parse", f"{landed}:CHANGELOG.md")
