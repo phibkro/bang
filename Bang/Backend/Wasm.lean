@@ -25,7 +25,7 @@ public import Bang.Backend.U5bComplete
   Wasm-oriented abstract instruction stream and proves a one-directional FORWARD SIMULATION
   (AsmFX/Benton–Hur shape):
 
-      Source.eval fuel c = done v  ⇒  ∃ f', Wasmfx.run f' (compileC c) = done (compileV v)
+      Source.eval fuel c = done v  ⇒  ∃ f', Wasmfx.run f' (compileC c) = some (compileV v)
 
   The proof composes the PROVEN CalcVM bridge (`compile_correct`,
   `evalD_agrees_source`) with a lockstep `wexec ≈ exec` simulation: the WasmFX
@@ -406,13 +406,13 @@ def wexec : Nat → Nat → Code → VStack → HStack → Option VStack
                   | some (c', s', hs') => wexec f g c' (compileV v :: s') hs'  -- ABORT to (Kₒ, ret v)
                   | none               => none
 
-/-- Run a compiled module to a single value on the operand stack. The closed
-program starts on the empty stack + empty handler stack; `done` = a singleton. -/
-def run (fuel : Nat) (m : Module) : Result Val :=
+/-- Run a compiled module from empty operand/handler stacks. Only a singleton
+final stack yields `some`; every other abstract-machine outcome is neutral `none`.
+The neutral result deliberately does not classify its underlying cause. -/
+def run (fuel : Nat) (m : Module) : Option Val :=
   match wexec fuel 0 m.body [] [] with     -- route-B: the mint counter starts at 0 (mirrors `exec`/`evalD`)
-  | some [v] => .done v
-  | some _   => .stuck
-  | none     => .oom
+  | some [v] => some v
+  | _        => none
 
 /-! ### The pure fragment (Milestone A scope)
 
@@ -2257,7 +2257,7 @@ The forward simulation chains:
     ──(`exec_wexec_sim`, PROVEN)──▸
   wexec F (lowerCode (compile c [])) [] = some [compileV v]
     ──(`run` unfold)──▸
-  Wasmfx.run F (compileC c) = done (compileV v)
+  Wasmfx.run F (compileC c) = some (compileV v)
 
 All three legs are PROVEN. The first leg — `Source.eval` ⟹ `exec ∘ compile` — is the
 reverse of the CalcVM bridge (`evalD_agrees_source` goes `evalD ⟹ Source.eval`); it is a
@@ -2763,7 +2763,7 @@ simulation `evalD_complete`) through the `exec ⟹ wexec` lockstep
 theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
     (hpure : Wasmfx.Comp.Pure c)
     (h : Source.eval fuel c = Result.done v) :
-    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = some (compileV v) := by
   obtain ⟨F, hexec⟩ := source_eval_to_exec c v fuel hpure h
   have hcp : Wasmfx.CodePure (CalcVM.compile c []) :=
     Wasmfx.compile_pure hpure (fun _ hm => by simp at hm)
@@ -2773,9 +2773,9 @@ theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
   -- injStack [.ret v] = [compileV v]; wexec yields it.
   rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
     simp [Wasmfx.injStack, injTerminal]] at hsim
-  -- `run` reduces on `wexec … = some [compileV v]` (singleton-operand-stack ⇒ done).
+  -- `run` reduces on `wexec … = some [compileV v]` (singleton-operand-stack ⇒ some).
   have hb : Wasmfx.wexec F 0 (compileC c).body [] [] = some [compileV v] := hsim
-  show Wasmfx.run F (compileC c) = Result.done (compileV v)
+  show Wasmfx.run F (compileC c) = some (compileV v)
   unfold Wasmfx.run
   rw [hb]
 
@@ -2791,7 +2791,7 @@ total reverse bridge `evalD_complete_gen` + `exec_wexec_sim_ok` (GAP 2 closed).
 theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
     (hvf : Bang.Model.VcapFree c)
     (h : Source.eval fuel c = Result.done v) :
-    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = some (compileV v) := by
   by_cases hpure : Wasmfx.Comp.Pure c
   · -- PURE fragment: GAP 1 closed, axiom-clean.
     exact compile_forward_sim_pure hpure h
@@ -2811,7 +2811,7 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
     rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
       simp [Wasmfx.injStack, injTerminal]] at hsim
     have hb : Wasmfx.wexec F 0 (compileC c).body [] [] = some [compileV v] := hsim
-    show Wasmfx.run F (compileC c) = Result.done (compileV v)
+    show Wasmfx.run F (compileC c) = some (compileV v)
     unfold Wasmfx.run
     rw [hb]
 
@@ -2834,7 +2834,7 @@ landed. -/
 -- state resume (no abort, savedCode unused): wexec ≡ kernel.
 example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.perform (.vvar 0) "get" .vunit)) = Result.done (.vint 42) := by rfl
 example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.perform (.vvar 0) "get" .vunit)))
-    = Result.done (.int 42) := by rfl
+    = some (.int 42) := by rfl
 
 -- abort, outer cont = identity-on-the-value: wexec ≡ kernel (7).
 example : Source.eval 50
@@ -2842,7 +2842,7 @@ example : Source.eval 50
     = Result.done (.vint 7) := by rfl
 example : Wasmfx.run 50
     (compileC (.letC (.handle (.throws 0) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
-    = Result.done (.int 7) := by rfl
+    = some (.int 7) := by rfl
 
 -- ✓ THE FORMER COUNTEREXAMPLE — now AGREES. An APP β-residual produces a `handle` that
 -- ABORTS; the outer let-cont IGNORES the aborted value (7) and returns 100. The kernel returns
@@ -2855,7 +2855,7 @@ example : Source.eval 80
 example : Wasmfx.run 80
     (compileC (.letC (.app (.lam (.handle (.throws 0) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
                      (.force (.vthunk (.ret (.vint 100))))))
-    = Result.done (.int 100)   -- ✓ SOUND: the threaded outer cont returns 100 (was int 7 pre-fix)
+    = some (.int 100)   -- ✓ SOUND: the threaded outer cont returns 100 (was int 7 pre-fix)
     := by rfl
 
 -- ✓ TRANSACTION RESUME — `wexec`'s new `wTxnUpdate` branch (operator ruling: verify txn). A
@@ -2867,7 +2867,7 @@ example : Source.eval 50
     = Result.done (.vint 5) := by rfl
 example : Wasmfx.run 50
     (compileC (.handle (.transaction 0 []) (.letC (.perform (.vvar 0) "newTVar" (.vint 5)) (.perform (.vvar 1) "readTVar" (.vint 0)))))
-    = Result.done (.int 5) := by rfl
+    = some (.int 5) := by rfl
 
 -- ✓ CUSTOM CLAUSE-SERVICE + ONE-SHOT RESUME — `wexec`'s new `wCustomUpdate` branch (#62 Stage-4 WASM
 -- leg). A `custom` handler (label 1, read-only param 100) services `read 5` by running the clause
@@ -2882,13 +2882,13 @@ example : Source.eval 200
 example : Wasmfx.run 200
     (compileC (.handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
       (.letC (.perform (.vvar 0) "read" (.vint 5)) (.binop .add (.vvar 0) (.vint 1)))))
-    = Result.done (.int 106) := by rfl
+    = some (.int 106) := by rfl
 
 -- ✓ CUSTOM HANDLE, body RETURNS DIRECTLY — the WASM markH install arm is GENERIC over the handler
 -- kind (#62 slice 3): a `custom` frame installs+pops exactly like state/txn/throws with NO OP. The
 -- frozen `compile_forward_sim` now holds UNCONDITIONALLY over custom (CustomFree premise dropped).
 example : Source.eval 50 (.handle (.custom 2 .vunit []) (.ret (.vint 5))) = Result.done (.vint 5) := by rfl
-example : Wasmfx.run 100 (compileC (.handle (.custom 2 .vunit []) (.ret (.vint 5)))) = Result.done (.int 5) := by rfl
+example : Wasmfx.run 100 (compileC (.handle (.custom 2 .vunit []) (.ret (.vint 5)))) = some (.int 5) := by rfl
 
 -- ✓ CUSTOM CLAUSE-MISS → THROWS ABORT — a custom frame (id 3) NESTED inside an outer `throws` (id 0).
 -- The perform's op `raise` has NO matching clause in the custom frame, so `customUpdate` misses; the
@@ -2904,7 +2904,7 @@ example : Wasmfx.run 80
     (compileC (.handle (.throws 0)
       (.letC (.handle (.custom 3 .vunit [("known", .ret (.vint 1))])
                (.letC (.perform (.vvar 1) "raise" (.vint 9)) (.ret (.vint 99)))) (.ret (.vvar 0)))))
-    = Result.done (.int 9) := by rfl
+    = some (.int 9) := by rfl
 
 -- ✓ CUSTOM two-clause dispatch — the perform selects the SECOND clause `dbl arg = arg+arg` (find?
 -- walks past `inc`), resuming the letC continuation. Strengthens the corpus over the multi-clause
@@ -2916,7 +2916,35 @@ example : Source.eval 200
 example : Wasmfx.run 200
     (compileC (.handle (.custom 4 .vunit [("inc", .binop .add (.vvar 0) (.vint 1)), ("dbl", .binop .add (.vvar 0) (.vvar 0))])
       (.letC (.perform (.vvar 0) "dbl" (.vint 6)) (.binop .add (.vvar 0) (.vint 1)))))
-    = Result.done (.int 13) := by rfl
+    = some (.int 13) := by rfl
+
+/-! ## §7c — `run` boundary examples
+
+These examples permanently pin the intentionally neutral `Option` boundary. They
+do not classify `none` by cause; they only distinguish a singleton successful
+final value from every collapsed non-value path. -/
+
+-- Successful singleton final stack.
+example : Wasmfx.run 2 { body := [.const .vunit], result := .unit } = some .unit := by rfl
+
+-- Fuel exhaustion.
+example : Wasmfx.run 0 { body := [.const .vunit], result := .unit } = none := by rfl
+
+-- Malformed operand-stack use: `bindS` requires an operand, but the stack is empty.
+example : Wasmfx.run 2 { body := [.bindS (.ret .vunit) []], result := .unit } = none := by rfl
+
+-- A non-singleton final operand stack is not a successful module result.
+example : Wasmfx.run 3 { body := [.const .vunit, .const .vunit], result := .unit } = none := by rfl
+
+-- `unmarkH` requires an installed handler frame, but the initial handler stack is empty.
+example : Wasmfx.run 2 { body := [.unmarkH], result := .unit } = none := by rfl
+
+-- An operation with no installed handler remains a neutral non-value.
+example : Wasmfx.run 2 { body := [.opH 0 "raise" .vunit []], result := .unit } = none := by rfl
+
+-- A throws handler does not accept a mismatched operation name.
+example : Wasmfx.run 20 (compileC (.handle (.throws 0)
+    (.perform (.vvar 0) "not-raise" .vunit))) = none := by rfl
 
 end -- public section
 end Bang

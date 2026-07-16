@@ -11,11 +11,12 @@ PROOF gap (evalD=none blocks the completeness route), not a statement falsehood.
 namespace Bang.CustomStage1Refute
 open Bang (Val Comp Handler)
 
-/-- (A) custom handle, body RETURNS: BOTH sides reach done 5 (WASM HANDLE mints+pops generically,
-matching the kernel). Frozen headline HOLDS here — not a refutation. -/
+/-- (A) custom handle, body RETURNS: BOTH sides succeed with 5 (source `done`, abstract target
+`some`; the WASM HANDLE mints+pops generically, matching the kernel). Frozen headline HOLDS here
+— not a refutation. -/
 def cTrivial : Comp := .handle (Handler.custom 0 .vunit (fun _ => none)) (.ret (.vint 5))
 example : Source.eval 50 cTrivial = Result.done (.vint 5) := by rfl
-example : Wasmfx.run 100 (compileC cTrivial) = Result.done (.int 5) := by rfl
+example : Wasmfx.run 100 (compileC cTrivial) = some (.int 5) := by rfl
 
 /-- (B) custom handle, body PERFORMS a custom op: the kernel does NOT reach done — custom dispatch is
 INERT (handlesOp custom = false ⇒ idDispatch none ⇒ the perform ESCAPES). So the frozen headline's

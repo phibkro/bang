@@ -39,10 +39,11 @@ example : ¬ Bang.Model.FreshCfg (0, ([] : Bang.EvalCtx), cWitness) := by
   simp at this
 
 /-- (4) THE HEADLINE-TRUTH CHECK (manager's request): does the WASM side ALSO complete cWitness?
-YES — `Wasmfx.run 100 (compileC cWitness) = done unit` (compiled rfl). So `compile_forward_sim`
-is TRUE on cWitness (both sides reach done unit) — it is TRUE-BUT-UNPROVABLE-WITHOUT-THE-PREMISE,
+YES — `Wasmfx.run 100 (compileC cWitness) = some unit` (compiled rfl). So `compile_forward_sim`
+is TRUE on cWitness (source reaches `done unit`; the abstract target reaches `some unit`) —
+it is TRUE-BUT-UNPROVABLE-WITHOUT-THE-PREMISE,
 NOT false. This is the evidence for the "premise an unprovable statement" reframing (vs "repair a
 false one"): the never-forced thunk is dead code both sides discard. -/
-example : Wasmfx.run 100 (compileC cWitness) = Result.done .unit := by rfl
+example : Wasmfx.run 100 (compileC cWitness) = some .unit := by rfl
 
 end Bang.VcapFreeRefute
