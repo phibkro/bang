@@ -101,8 +101,8 @@ moat law is a **6-line corollary** of that — both ICs predicted "cheap" and we
 **verified** (a ladder climb above rung 2's *tested* law) for almost no extra budget.
 
 **Four things worth carrying forward:**
-1. **`oom` is the FUEL sentinel — never reuse it for a runtime error.** K1 used `oom` for an out-of-range
-   `readTVar`; `oom` is untypable, so a well-typed bad read stepped to a stuck-untypable state and
+1. **`Comp.oom` is the legacy untypable sentinel — never reuse it for a runtime error.** K1 used
+   `Comp.oom` for an out-of-range `readTVar`, so a well-typed bad read stepped to a stuck-untypable state and
    falsified preservation. Fix: keep `readTVar` **total** via a default-initialized store (TVarRef=int,
    S=int, miss returns `Θ.getD i (vint 0)`) — closes preservation with **no change to the frozen
    `type_safety` statement**. The WASM-aligned alternative (a typed `trap`, amending the safety theorem)
@@ -121,7 +121,7 @@ moat law is a **6-line corollary** of that — both ICs predicted "cheap" and we
 ## CONTROL-FLOW NOTE (multi-agent process)
 
 This rung exercised the full triad twice (K1 → K1.5 → K2) with two STOP-and-escalate moments handled
-well: the proof-engineer refused to fake a proof over a broken typing rule (surfaced the `TVarRef`/`oom`
+well: the proof-engineer refused to fake a proof over a broken typing rule (surfaced the `TVarRef`/`Comp.oom`
 gap → ADR amendment); the kernel-engineer refused to apply two incompatible orchestrator instructions
 (default-witness-constructor vs untouchable-helpers → re-decided to S=int). One coordination miss: the
 orchestrator overlapped K1.5 and K2 on the same file (shared working tree) — caught early, resynced, no

@@ -286,7 +286,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- A TVar = a heap index, so `TVarRef = int` (the single `vint : int` rule types `newTVar`'s result
   -- + `read`/`write`'s ref payload). Cells are `int` too, so the TOTAL store's default (`vint 0`, for
   -- an out-of-range `readTVar`) inhabits the cell type — making `readTVar` total WITHOUT a separate
-  -- default-witness field, so `oom` (the fuel sentinel, untypable) never leaks into the read path.
+  -- default-witness field, so the legacy untypable `Comp.oom` sentinel never leaks into the read path.
   -- The stm interface is `newTVar : int → int`, `readTVar : int → int`, `writeTVar : int × int → unit`
   -- (the op-partial `EffSig`, ADR-0023 D6). THE GRADE DISCIPLINE (ADR-0025/0030): every cell of the
   -- initial heap `Θ₀` is a CLOSED `int` value (grade `[]`), so the CK machine's closed focus threads
@@ -430,7 +430,7 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
   -- Mirrors `HasCTy.handleTransaction` / `stateF`: discharges `ℓ`, the monomorphic-`int` stm interface,
   -- the heap `Θ` all CLOSED `int` cells (the grade discipline). `int`-pinning (cell + `TVarRef`) is what
   -- makes `readTVar`'s total-store default (`vint 0`) typable + `newTVar`'s `vint`-index typable, so the
-  -- resume preservation cases close without `oom`.
+  -- resume preservation cases close without `Comp.oom`.
   | transactionF : ∀ {K n ℓ Θ e φ eo q} {A : VTy Eff Mult} {Co},
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some (VTy.int : VTy Eff Mult) →
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some (VTy.int : VTy Eff Mult) →

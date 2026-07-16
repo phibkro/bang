@@ -269,7 +269,7 @@ to this message would close the loop.
    running it*, not hand-written — the SSoT discipline visible in the tooling itself.
 
 7. **No undefined behavior, and it's a documented design pillar.** Every failure is
-   a named terminal (`oom`/`escapedCap`/`wrong`/`stuck`-unreachable-when-typed).
+   a named terminal (`outOfFuel`/`escapedCap`/`wrong`/`stuck`-unreachable-when-typed).
    Coming from C-family languages this is a breath of air, and the reference states
    it as a *guarantee* against the C trichotomy.
 

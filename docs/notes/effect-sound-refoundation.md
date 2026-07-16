@@ -149,7 +149,7 @@ dispatcher, not of the static type — a strength, not a vacuity.
 1. **Value-agreement — a THEOREM (not convention).** `Source.eval` stays the oracle, and the tie is
    PROVEN: `runTrace_erase_eq_run (Bang/Core/Semantics/Eval.lean)`:
    `Result.eraseTrace (Config.runTrace n cfg e t) = Config.run n cfg` for all `n, cfg, e, t`
-   (`eraseTrace` = project the `done`-value, preserve `oom`/`escapedCap`/`stuck`), with the
+   (`eraseTrace` = project the `done`-value, preserve `outOfFuel`/`escapedCap`/`stuck`), with the
    entry corollary `evalTrace_erase_eq_eval : eraseTrace (evalTrace fuel c e) = eval fuel c`. A
    fuel induction via `Config.runTrace.induct` mirroring the copied control flow (~15 lines, `simp`
    per case). This converts value-agreement from convention (copied control flow) to a machine fact —

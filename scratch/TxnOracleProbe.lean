@@ -12,7 +12,7 @@ def oracleInt (M : Comp) : String :=
   match Source.eval 2000 M with
   | .done (.vint n) => toString n
   | .done _         => "NON-INT-VALUE"
-  | .oom            => "OOM"
+  | .outOfFuel      => "OUT-OF-FUEL"
   | _               => "STUCK-OR-DIVERGE"
 
 -- A11: handle (transaction) (new r=100; write r 70; raise 100) ⟹ 100 (abort, rollback)

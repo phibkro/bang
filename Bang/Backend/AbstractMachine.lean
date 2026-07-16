@@ -5308,7 +5308,7 @@ theorem CapsBelow_ctxNetEffect {g : Nat} {K : Bang.EvalCtx} (σ : SStore) (τ : 
 
 /-- An ESCAPED capability's label is immaterial to `Config.run`: when `splitAtId K n = none` the
 `idDispatch` short-circuits BEFORE reading the label, so `Source.step` is `none` for ANY label and the
-run lands on the same `escapedCap`/`oom` terminal. Used by `run_evalD`'s raised `perform` base case to
+run lands on the same `escapedCap`/`outOfFuel` terminal. Used by `run_evalD`'s raised `perform` base case to
 discharge the escape sub-case (where `labelOf K n = default ≠` the cap's stored `ℓ`). -/
 theorem run_perform_label_irrel {g : Nat} {K : Bang.EvalCtx} {n : Nat} {op : Bang.OpId} {v : Val}
     (ℓ1 ℓ2 : Bang.EffectRow.Label) (hsplit : Bang.splitAtId K n = none) (fuel : Nat) :

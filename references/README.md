@@ -115,7 +115,7 @@ sit bib-only like the STM block. Cite by key from `refs.bib`.
 - `bracha-04-pluggable-type-systems` — coined **optional + pluggable typing** (type systems that neither affect runtime semantics nor are mandatory). The term-origin for **ADR-0026**'s pluggable-checker dispatch.
 - `amin-rompf-popl17-definitional-interpreters` — type soundness for a **fuel-total** definitional interpreter (step budget + timeout, Coq). The technique behind **ADR-0028**'s fuel-bounded total interpreter for the `Div` superset.
 - `brown-palsberg-popl16-self-interpreter-fomega` — a **typed self-interpreter** for strongly-normalizing F-ω. **ADR-0028**'s witness that a *total* self-interpreter cannot exist for a Turing-complete object language (the totality wall — interpreting divergence would force divergence). Grounds the bang-in-bang fuel-or-`Div` choice.
-- `capretta-lmcs05-general-recursion-coinductive` — the **Delay monad** (partiality as a coinductive type, now/later). The semantic root of **ADR-0028**'s `Div` fragment; the partial `Comp` + fuel + `oom` is its fuel-bounded shadow.
+- `capretta-lmcs05-general-recursion-coinductive` — the **Delay monad** (partiality as a coinductive type, now/later). The semantic root of **ADR-0028**'s `Div` fragment; `Source.eval` + fuel + `Result.outOfFuel` is its fuel-bounded shadow.
 - `orchard-icfp19-granule` — **Granule** (graded modal types, data-as-resource over a semiring). The graded-modal **surface-language UX** reference for **ADR-0027**'s grade polymorphism.
 - `mcbride-16-plenty-o-nuttin` — origin of the **quantitative (multiplicity) grade** (0/1/ω in a dependent theory), QTT's ancestor. The multiplicity-grade root for **ADR-0027** and the coeffect arithmetic bang inherits from Torczon.
 

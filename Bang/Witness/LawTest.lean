@@ -375,7 +375,7 @@ def intOrdPrelude : String :=
 `Bool`/`false`): a law that HOLDS on every sample, a COUNTEREXAMPLE (with its shrunk witness), a
 law whose program is UNTYPEABLE (the elaboration/type error itself, so the caller sees WHY, not
 just "false"), EVAL-STUCK (the sample elaborated and type-checked but `Source.eval` produced
-neither `done (vint 1)` nor `done (vint 0)` — `.oom`/`.escapedCap`/`.stuck`/a non-Int `done`, each
+neither `done (vint 1)` nor `done (vint 0)` — `.outOfFuel`/`.escapedCap`/`.stuck`/a non-Int `done`, each
 a genuinely different failure mode from "the law is false"; distinguished from `.counterexample`
 because a law author needs to know their LAW EVALUATES rather than merely FALSIFIES), and SKIPPED
 (issue #113: a law on an impl `unreachableIntImplDiagnostics` already flags — its op is shadowed by
@@ -689,4 +689,3 @@ def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s =
     | .ok outcomes => outcomes.length == 6 && outcomes.all (fun o => match o.outcome with
         | .holds _ => true | _ => false)
     | .error _ => false)
-

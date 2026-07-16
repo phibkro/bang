@@ -34,13 +34,13 @@ private def vCapCorrect : Val :=
 private def migrate (v : Val) : Comp :=
   .app (.lam (.handle (.throws 2) (.force (.vvar 0)))) v
 
-/-- Classify the run result as an Int, or a tag for stuck/oom/non-int. -/
+/-- Classify the run result as an Int, or a tag for stuck/out-of-fuel/non-int. -/
 private def runTag (fuel : Nat) (c : Comp) : String :=
   match Source.eval fuel c with
   | .done (.vint n) => s!"done {n}"
   | .done _         => "done(non-int)"
   | .stuck          => "STUCK"
-  | .oom            => "oom"
+  | .outOfFuel      => "outOfFuel"
 
 -- Intended answer for BOTH is 7 (get reads the thunk's own state). Watch which one mis-evaluates.
 #eval runTag 200 (migrate vFragile)      -- cap 0: expected to MIS-evaluate under absolute caps

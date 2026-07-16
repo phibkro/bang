@@ -251,7 +251,7 @@
       "premiseUsage": { "loadBearing": ["initial configuration typing at bottom effect"], "unused": ["tautological NonEscape' conjunct"] },
       "guarantee": "A fully handled well-typed source program cannot produce the unclassified stuck result.",
       "scope": "Fuel-bounded Source.eval from a fresh empty configuration.",
-      "limitations": ["Defined capability escape and fuel-exhaustion oom remain allowed.", "Does not prove termination."]
+      "limitations": ["Defined capability escape and the `outOfFuel` outcome remain allowed.", "Does not prove termination."]
     },
     {
       "writtenRef": "no_accidental_handling",
@@ -290,7 +290,7 @@
       "premiseUsage": { "loadBearing": ["closed bottom-effect source typing"], "unused": [] },
       "guarantee": "Every closed, fully handled, well-typed program avoids the unclassified stuck result.",
       "scope": "All closed bottom-effect programs, including but not requiring custom handlers.",
-      "limitations": ["Defined capability escape and fuel-exhaustion oom remain allowed.", "Does not identify or isolate a custom-handler fragment."]
+      "limitations": ["Defined capability escape and the `outOfFuel` outcome remain allowed.", "Does not identify or isolate a custom-handler fragment."]
     },
     {
       "writtenRef": "custom_program_safe",

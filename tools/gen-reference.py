@@ -651,7 +651,7 @@ def render():
     # constructors. The observation prose is keyed off them; a rename/add in source
     # breaks generation (fail-loud), forcing the section to be reviewed.
     result_ctors = set(extract_result_ctors(EVAL.read_text()))
-    expected_result = {"done", "oom", "escapedCap", "stuck"}
+    expected_result = {"done", "outOfFuel", "escapedCap", "stuck"}
     if result_ctors != expected_result:
         sys.exit(
             f"gen-reference: Result constructors {sorted(result_ctors)} != "
@@ -673,7 +673,7 @@ def render():
     L.append("| Outcome | Meaning |")
     L.append("|---|---|")
     L.append("| `done v` | terminated with value `v` — at ground type, the observed answer |")
-    L.append("| `oom` | fuel exhausted — the v1 stand-in for divergence (the fuel-bounded `Div` fragment) |")
+    L.append("| `outOfFuel` | evaluation fuel exhausted — the v1 stand-in for divergence (the fuel-bounded `Div` fragment) |")
     L.append("| `escapedCap` | a capability escaped its handler — a defined fail-loud terminal (ADR-0063) |")
     L.append("| `stuck` | genuine stuck — a well-typed `⊥`-row program NEVER reaches it (`type_safety`) |")
     L.append("")
@@ -712,7 +712,7 @@ def render():
     L.append("|---|---|")
     L.append("| undefined behavior | **∅** — every reachable failure is a defined terminal |")
     L.append("| unspecified behavior | **∅** — the reference semantics is deterministic |")
-    L.append("| implementation-defined | the **fuel bound** only (when `oom` is reported); integer width is *not* one — `Int` is unbounded ℤ, overflow never UB (ADR-0067) |")
+    L.append("| implementation-defined | the **fuel bound** only (when `outOfFuel` is reported); integer width is *not* one — `Int` is unbounded ℤ, overflow never UB (ADR-0067) |")
     L.append("")
     L.append("**Static errors** reject a term before it is a program: parse errors, type errors, and")
     L.append("effect-signature violations (an `! {ρ}` annotation that under-declares the inferred row).")
@@ -724,7 +724,7 @@ def render():
     L.append("")
     L.append("| Terminal | When it arises | Corpus example / definition |")
     L.append("|---|---|---|")
-    L.append("| `oom` | fuel exhausted before the program returned — the v1 divergence proxy | `Config.run` fuel-0 arm (`Bang/Core/Semantics/Eval.lean`) |")
+    L.append("| `outOfFuel` | evaluation fuel exhausted before the program returned — the v1 divergence proxy | `Config.run` fuel-0 arm (`Bang/Core/Semantics/Eval.lean`) |")
     L.append("| `escapedCap` | a first-class capability is forced after its handler has popped; dispatch finds no frame (ADR-0063) | `capEscape` `#guard` (`Bang/Examples.lean`) |")
     L.append("| `wrong s` | an explicit IR abort — e.g. `wrong \"elab-failed\"` when elaboration fails (`Bang/Frontend/NamedCore.lean`) | `Comp.wrong` (`Bang/Core/IR.lean`) |")
     L.append("")

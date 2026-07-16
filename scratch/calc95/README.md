@@ -53,7 +53,7 @@ on the calc parser inputs. It **TERMINATES with the correct value** (agreeing wi
 and `ck`) but pays a **super-linear residual-recompile cost**, so at a 60 s dogfood timeout
 it *presented* as a hang. This is a **cost pathology, NOT unsoundness** — invariant #1's
 value-agreement holds; only the "fail-loud-promptly" expectation is missed (it grinds
-rather than OOMing quickly).
+rather than reporting `outOfFuel` quickly).
 
 **Capstone**: the FULL `examples/calc/main.bang` (10 `$calc` inputs + nodes + roundTrips)
 on `--compiled` **terminates with `11021193` in 873 s** — the exact value `env`/`ck`/

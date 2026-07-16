@@ -80,11 +80,11 @@ This is the section only the codebase can settle. The landed seam fixes every in
   value, wrap the Bool body as `let #r = body in if #r then 1 else 0`, elaborate → check → lower →
   `Source.eval 400`, and accept iff the result is `.done (.vint 1)`.
 - `Source.eval (fuel : Nat) (c : Comp) : Result Val` (`Eval.lean:231`), where
-  `Result` = `.done α | .oom | .escapedCap | .stuck` (`Eval.lean:38`). It is **fuel-bounded**:
-  `Div`-fragment laws (`let rec`) can `.oom`; total-fragment laws always reach `.done`.
+  `Result` = `.done α | .outOfFuel | .escapedCap | .stuck` (`Eval.lean:38`). It is **fuel-bounded**:
+  `Div`-fragment laws (`let rec`) can `.outOfFuel`; total-fragment laws always reach `.done`.
 
 So a law of `k` params is, semantically, a **`k`-ary predicate reified as a `Comp`** that evaluates
-to `vint 1` (true) or `vint 0` (false) under `Source.eval`, with `.oom`/`.stuck`/`.escapedCap` as
+to `vint 1` (true) or `vint 0` (false) under `Source.eval`, with `.outOfFuel`/`.stuck`/`.escapedCap` as
 the "didn't even evaluate to a Bool" failure modes the runner's `LawOutcome` already distinguishes
 (`LawTest.lean:361`).
 

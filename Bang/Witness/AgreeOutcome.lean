@@ -13,17 +13,18 @@ public import Bang.Backend.AbstractMachine
   two-hop oracle at the VALUE level: they only assert something when `Source.eval` reaches
   `.done v`, and treat `escapedCap ↔ none` as a single admitted disjunct (`fuzzAgree`'s
   `.escapedCap, none => true` arm). That makes a genuine divergence in the OTHER THREE
-  outcomes structurally invisible: if `Source.eval` said `.oom` but `exec ∘ compile` said
+  outcomes structurally invisible: if `Source.eval` said `.outOfFuel` but `exec ∘ compile` said
   `none` for a reason that ISN'T fuel exhaustion (a real stuck/escape the machine masks as
   "just needs more fuel"), no existing `#guard` would ever catch it — both sides silently
   fall through their disjunction's "good enough" arm.
 
   This module makes the comparison TOTAL: every one of the kernel's four `Result` outcomes
-  (`done`/`oom`/`escapedCap`/`stuck`) is compared against an EXPLICIT machine-side outcome,
-  with no residual "either side, whatever" disjunct. The mapping `exec = none ↦ {oom, stuck,
+  (`done`/`outOfFuel`/`escapedCap`/`stuck`) is compared against an EXPLICIT machine-side outcome,
+  with no residual "either side, whatever" disjunct. The mapping
+  `exec = none ↦ {outOfFuel, stuck,
   escapedCap}` is resolved the same way `Config.run` resolves it: `Result Val` (not a new
   machine-side ADT) is the single shared outcome type — `Bang.Core.Semantics.Eval` already
-  names exactly these four cases (`done`/`oom`/`escapedCap`/`stuck`), so this module reuses
+  names exactly these four cases (`done`/`outOfFuel`/`escapedCap`/`stuck`), so this module reuses
   it rather than inventing a parallel copy (single-source-of-truth). What's NEW is the
   OBSERVATION: classifying which of the three `none`-causing outcomes a given `(fuel, M)`
   falls into, purely by comparing `exec` at TWO fuel values (see `§1`) — never by reading a
@@ -56,9 +57,9 @@ signal that the `none` at the ORIGINAL fuel was not fuel exhaustion.
 FAILURE POLARITY of the `slack` bound: `slack` is finite, so this classifier is an
 APPROXIMATION, not a proof — a program that genuinely needs more than `fuel + slack` extra
 steps to reach `.done` would be MISCLASSIFIED as escape-or-stuck (`.inr false`) instead of
-`.oom`. This is fail-LOUD, never fail-silent: `agreeOutcome` would then compare that
+`.outOfFuel`. This is fail-LOUD, never fail-silent: `agreeOutcome` would then compare that
 misclassification against the kernel's OWN `Source.eval fuel M` (also under-fueled, so also
-NOT `.done`) — the mismatch is between "genuinely oom" and "looks stuck", both non-`done`,
+NOT `.done`) — the mismatch is between "genuinely out of fuel" and "looks stuck", both non-`done`,
 so the worst case is a `#guard` FAILING on a case that should have passed with more slack
 (a red build demanding a bigger `slack`), never a `#guard` PASSING on a real divergence. A
 false negative here is loud and actionable; there is no false-positive path. -/
@@ -71,7 +72,7 @@ def slack : Nat := 2000
 
 /-- The machine-side outcome, computed OBSERVATIONALLY (no new `exec` tag):
     - `some [.ret v]` at the given fuel            ⇒ `.done v`  (the value was reached)
-    - `none` at the given fuel, `some _` at `+slack` ⇒ `.oom`     (fuel-exhaustion — needed more)
+    - `none` at the given fuel, `some _` at `+slack` ⇒ `.outOfFuel`     (fuel-exhaustion — needed more)
     - `none` at both                                ⇒ escape-or-stuck, NOT resolved here —
       the machine alone cannot tell these apart (both are `none`); see `§2`. -/
 def machineOutcome (fuel : Nat) (M : Comp) : Option Val ⊕ Bool :=
@@ -79,7 +80,7 @@ def machineOutcome (fuel : Nat) (M : Comp) : Option Val ⊕ Bool :=
   | some [.ret v] => .inl (some v)
   | _ =>
     match exec (fuel + slack) 0 (compile M []) [] [] with
-    | some [.ret _] => .inr true   -- settles with more fuel ⇒ was oom at `fuel`
+    | some [.ret _] => .inr true   -- settles with more fuel ⇒ was outOfFuel at `fuel`
     | _             => .inr false  -- still stuck even generously re-fueled ⇒ escape-or-stuck
 
 /-! ## 2. The shared outcome type — `Result Val` (`Bang.Core.Semantics.Eval`), reused, not
@@ -94,7 +95,7 @@ lone escape example (`exec … = none` + `Source.eval … = .escapedCap`, Abstra
 /-- The TOTAL differential predicate. Every one of the kernel's four `Result` outcomes has
 an explicit, DISTINCT machine-side signature — no admitted "either of these" disjunct:
   - `.done v`     ⇔ machine reaches `some [.ret v]` at `fuel`, SAME value (`valEq`, ported).
-  - `.oom`        ⇔ machine is `none` at `fuel` but `some _` at `fuel + slack` (needed fuel).
+  - `.outOfFuel`        ⇔ machine is `none` at `fuel` but `some _` at `fuel + slack` (needed fuel).
   - `.escapedCap` ⇔ machine is `none` at BOTH fuels (kernel says: a capability escaped).
   - `.stuck`      ⇔ machine is `none` at BOTH fuels (kernel says: genuinely stuck).
 `escapedCap` and `stuck` share a machine signature (`none`/`none`) BY CONSTRUCTION — the
@@ -102,7 +103,7 @@ machine's `Option Stack` has no third value to split them, so the total agreemen
 predicate checks is: "the machine says none/some exactly when the kernel's OWN four-way
 classification says a non-done/some outcome should occur", with the kernel's `Result` doing
 the fine-grained escape-vs-stuck naming. This is what makes the comparison worth more than
-`fuzzAgree`'s disjunction: `.oom`-vs-`.stuck` (fuel-exhaustion vs genuine-stuck) — the pair
+`fuzzAgree`'s disjunction: `.outOfFuel`-vs-`.stuck` (fuel-exhaustion vs genuine-stuck) — the pair
 `fuzzAgree` could NOT tell apart (both value-invisible) — is now a DISTINCT, checked case. -/
 def valEq : Val → Val → Bool
   | .vunit,       .vunit       => true
@@ -121,8 +122,8 @@ def agreeOutcome (fuel : Nat) (M : Comp) : Bool :=
   match Source.eval fuel M, machineOutcome fuel M with
   | .done v,     .inl (some v') => valEq v v'
   | .done _,     _              => false          -- kernel done, machine disagrees ⇒ DIVERGENCE
-  | .oom,        .inr true      => true           -- both: needed more fuel
-  | .oom,        _              => false          -- kernel oom, machine already settled/genuinely-stuck ⇒ DIVERGENCE
+  | .outOfFuel,  .inr true      => true           -- both: needed more fuel
+  | .outOfFuel,  _              => false          -- kernel exhausted fuel, machine already settled/genuinely-stuck ⇒ DIVERGENCE
   | .escapedCap, .inr false     => true           -- both: a defined escape (machine: genuinely none, not just under-fueled)
   | .escapedCap, _              => false          -- DIVERGENCE
   | .stuck,      .inr false     => true           -- both: genuinely stuck (machine: none, not just under-fueled)
@@ -176,10 +177,10 @@ value-comparison accepted). -/
 /-! ## 4. NEW cases — only visible at the OUTCOME level (a value-only oracle admits these
 by construction, so no prior battery exercises them). -/
 
--- ─── FUEL-EXHAUSTION (`.oom` both sides) ─────────────────────────────────────
--- A trivial value at fuel `0`: `Config.run 0 _ = .oom` unconditionally (no step taken);
--- `exec 0 _ _ _ _ = none` unconditionally too — the CHEAPEST possible oom witness, and the
--- one case every prior value-only battery had NO reason to ever construct (an oom outcome
+-- ─── FUEL-EXHAUSTION (`.outOfFuel` both sides) ─────────────────────────────────────
+-- A trivial value at fuel `0`: `Config.run 0 _ = .outOfFuel` unconditionally (no step taken);
+-- `exec 0 _ _ _ _ = none` unconditionally too — the CHEAPEST possible fuel-exhaustion witness,
+-- and the one case every prior value-only battery had NO reason to ever construct (this outcome
 -- carries no value, so `Agree`'s `∃ v` shape can't even STATE it).
 #guard agreeOutcome 0 (.ret (.vint 5))
 #guard agreeOutcome 0 (.app (.lam (.ret (.vvar 0))) (.vint 5))

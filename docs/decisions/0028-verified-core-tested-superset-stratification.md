@@ -59,7 +59,7 @@ fuel, not proven total). A meta-circular `eval` for bang is written **either** (
 total fragment** — `eval : Nat → Prog → Result` — total (terminates by fuel), hence verifiable; **or** (b)
 **`Div`-effected in the superset** — `eval : Prog → A ! Div` — partial, tested. **The kernel already
 demonstrates (a)**: `Source.eval : Nat → Comp → Result Val` is a *total* (Lean is total) interpreter for the
-*partial, Turing-complete* `Comp` via fuel + `oom` (Amin–Rompf, "Type Soundness via Definitional
+*partial, Turing-complete* `Comp` via fuel + `Result.outOfFuel` (Amin–Rompf, "Type Soundness via Definitional
 Interpreters", POPL 2017; Capretta's `Delay`). bang-in-bang does the identical thing. The Gödel/Tarski
 "no system contains its own evaluator" is resolved the standard way: **stratify, and verify *safety
 properties*, not *totality*** — exactly how seL4/CertiKOS verify an OS whose scheduler loops forever.

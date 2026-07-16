@@ -6,7 +6,7 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # Two concerns, both CLI-surface (not covered by test-repl.sh/test-fmt.sh/test-check-json.sh,
 # which each gate one subcommand's own behavior): (1) `--help`/`--version` — a help/version
 # REQUEST is a success (issue #66's --help-exits-1 fix), not folded into any one subcommand's
-# usage path; (2) every non-zero RUNTIME outcome (oom/escapedCap/stuck/compiled-collapse) gets
+# usage path; (2) every non-zero RUNTIME outcome (outOfFuel/escapedCap/stuck/compiled-collapse) gets
 # a human-readable stderr message ALONGSIDE its exit code (issue #67) — the exit code stays the
 # machine contract, the message is the "the error teaches" half.
 set -euo pipefail
@@ -61,15 +61,15 @@ check "version-short-exit" "$got_v_exit" "0"
 check "version-long-and-short-agree" "$got_v_out" "$ver_out"
 
 # ── RUNTIME MESSAGES (issue #67): each non-zero outcome names the outcome + a next step ──
-# oom (exit 2) — a genuinely-diverging `Div` recursion exhausts the fuel ceiling.
-oom_tmp="$(mktemp /tmp/bang-cli-test-oom-XXXXXX.bang)"
-printf 'let rec loop : Int -> Int ! {Div} = fun n => $loop (n + 1) in $loop 0' > "$oom_tmp"
+# outOfFuel (exit 2) — a genuinely-diverging `Div` recursion exhausts the fuel ceiling.
+out_of_fuel_tmp="$(mktemp /tmp/bang-cli-test-out-of-fuel-XXXXXX.bang)"
+printf 'let rec loop : Int -> Int ! {Div} = fun n => $loop (n + 1) in $loop 0' > "$out_of_fuel_tmp"
 # post-flip (v0.1.0): the sub-classified diagnosis is the ORACLE's contract — pin it there.
-oom_stderr="$("$bang" run --engine=oracle "$oom_tmp" 2>&1 >/dev/null)" && oom_exit=0 || oom_exit=$?
-rm -f "$oom_tmp"
-check "oom-exit" "$oom_exit" "2"
-contains "oom-message-names-outcome" "$oom_stderr" "out of fuel"
-contains "oom-message-names-issue" "$oom_stderr" "#61"
+out_of_fuel_stderr="$("$bang" run --engine=oracle "$out_of_fuel_tmp" 2>&1 >/dev/null)" && out_of_fuel_exit=0 || out_of_fuel_exit=$?
+rm -f "$out_of_fuel_tmp"
+check "out-of-fuel-exit" "$out_of_fuel_exit" "2"
+contains "out-of-fuel-message-names-outcome" "$out_of_fuel_stderr" "out of fuel"
+contains "out-of-fuel-message-names-issue" "$out_of_fuel_stderr" "#61"
 
 # escapedCap (exit 3) — a `{get}` thunk forced after its `state` handler already returned.
 esc_stderr="$("$bang" eval --engine=oracle --no-typecheck 'let c = (state 0 in {get}) in $c' 2>&1 >/dev/null)" && esc_exit=0 || esc_exit=$?

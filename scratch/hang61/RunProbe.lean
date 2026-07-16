@@ -3,11 +3,11 @@
 
   Term size was LINEAR (SizeProbe) — so the cost is at RUNTIME. This probe runs
   `Source.eval` at a LADDER of fuel bounds on the minimal sib programs and reports
-  the outcome (done / oom) at each. A COMPILED harness (`def main` + native run) —
+  the outcome (done / outOfFuel) at each. A COMPILED harness (`def main` + native run) —
   the repo gotcha bans `lake env lean` #eval for fuel recursion; a compiled exe is
   the reliable measurement.
 
-  Reports, per program, the SMALLEST fuel at which it terminates (or "oom@F" if it
+  Reports, per program, the SMALLEST fuel at which it terminates (or "outOfFuel@F" if it
   is still out of fuel at bound F) — the step count to completion. A geometric
   step-count in N (sibling count) or in input length localizes the cliff.
 
@@ -27,7 +27,7 @@ def runAt (src : String) (fuel : Nat) : String :=
   | .ok c =>
     match Bang.Source.eval fuel c with
     | .done _     => s!"done@{fuel}"
-    | .oom        => s!"oom@{fuel}"
+    | .outOfFuel  => s!"outOfFuel@{fuel}"
     | .escapedCap => s!"escaped@{fuel}"
     | .stuck      => s!"stuck@{fuel}"
 
