@@ -1709,6 +1709,7 @@
       "0094"
     ],
     "default": "env",
+    "duplicatePolicy": "reject",
     "fuel": {
       "compiledDefault": 1000000,
       "compiledScale": 10,
@@ -1719,23 +1720,16 @@
       "env": "runEnv",
       "oracle": "Bang.Source.eval"
     },
-    "selectorPrecedence": [
-      {
-        "engine": "oracle",
-        "flags": [
-          "--engine=oracle"
-        ],
-        "precedence": 1
-      },
-      {
-        "engine": "compiled",
-        "flags": [
-          "--engine=compiled",
-          "--compiled"
-        ],
-        "precedence": 2
-      }
+    "selectorCommands": [
+      "run",
+      "eval",
+      "repl"
     ],
+    "selectors": {
+      "--engine=compiled": "compiled",
+      "--engine=env": "env",
+      "--engine=oracle": "oracle"
+    },
     "variants": [
       "oracle",
       "compiled",

@@ -2,17 +2,37 @@
   "cli": {
     "commands": [
       {
+        "parserOptionFamilies": [
+          "engine",
+          "noTypecheck",
+          "fuel",
+          "hostEnv",
+          "allow",
+          "record",
+          "replay",
+          "maxHostRequests"
+        ],
         "path": [
           "run"
         ],
         "principalFlags": [
           "--engine=oracle|compiled|env",
           "--no-typecheck",
-          "--fuel"
+          "--fuel",
+          "--env=sim|real",
+          "--allow",
+          "--record",
+          "--replay",
+          "--max-host-requests"
         ],
         "synopsis": "bang run  [FLAGS] <file.bang>      run a bang program from a file"
       },
       {
+        "parserOptionFamilies": [
+          "engine",
+          "noTypecheck",
+          "fuel"
+        ],
         "path": [
           "eval"
         ],
@@ -24,6 +44,11 @@
         "synopsis": "bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly"
       },
       {
+        "parserOptionFamilies": [
+          "engine",
+          "noTypecheck",
+          "fuel"
+        ],
         "path": [
           "repl"
         ],
@@ -35,6 +60,7 @@
         "synopsis": "bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "fmt"
         ],
@@ -42,6 +68,9 @@
         "synopsis": "bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file"
       },
       {
+        "parserOptionFamilies": [
+          "json"
+        ],
         "path": [
           "check"
         ],
@@ -51,6 +80,9 @@
         "synopsis": "bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file"
       },
       {
+        "parserOptionFamilies": [
+          "out"
+        ],
         "path": [
           "emit"
         ],
@@ -61,6 +93,11 @@
         "synopsis": "bang emit <file.bang> [-o out.wat] lower to a WasmGC .wat MODULE (issue #136) — prints to stdout,"
       },
       {
+        "parserOptionFamilies": [
+          "out",
+          "component",
+          "adapter"
+        ],
         "path": [
           "build"
         ],
@@ -72,6 +109,7 @@
         "synopsis": "bang build <file.bang> [-o out.wasm]  emit → `wasm-tools parse`/`validate` → a runnable Wasm"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "explain"
         ],
@@ -79,6 +117,9 @@
         "synopsis": "bang explain <CODE>                print the teaching entry for a stable diagnostic code"
       },
       {
+        "parserOptionFamilies": [
+          "moduleFlag"
+        ],
         "path": [
           "new"
         ],
@@ -88,6 +129,7 @@
         "synopsis": "bang new <NAME> [--module]         scaffold examples/<NAME>/ — a runnable starter main.bang, a"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "test"
         ],
@@ -95,6 +137,7 @@
         "synopsis": "bang test [<file.bang>]            discover + sample-check every trait law (issue #60);"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query"
         ],
@@ -102,6 +145,7 @@
         "synopsis": "bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "dump"
@@ -110,6 +154,7 @@
         "synopsis": "bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "symbols"
@@ -118,6 +163,7 @@
         "synopsis": "bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "type"
@@ -126,6 +172,7 @@
         "synopsis": "bang query type <file.bang> <name>      the checked type ! row of one top-level binding"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "effects"
@@ -134,6 +181,7 @@
         "synopsis": "bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "laws"
@@ -142,6 +190,7 @@
         "synopsis": "bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "def"
@@ -150,6 +199,7 @@
         "synopsis": "bang query def <name> <file.bang>       the decl that defines <name>"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "refs"
@@ -158,6 +208,7 @@
         "synopsis": "bang query refs <name> <file.bang>      every decl whose body mentions <name>"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "query",
           "hover"
@@ -166,6 +217,9 @@
         "synopsis": "bang query hover [<file.bang>] <line> <col>"
       },
       {
+        "parserOptionFamilies": [
+          "write"
+        ],
         "path": [
           "rewrite"
         ],
@@ -173,6 +227,9 @@
         "synopsis": "bang rewrite <verb> ...             the CQS COMMAND side over `query`'s read model (issue #81);"
       },
       {
+        "parserOptionFamilies": [
+          "write"
+        ],
         "path": [
           "rewrite",
           "fmt"
@@ -183,6 +240,9 @@
         "synopsis": "bang rewrite fmt [<file.bang>] [-w]       rewrite #0: the canonical formatter (issue #58),"
       },
       {
+        "parserOptionFamilies": [
+          "write"
+        ],
         "path": [
           "rewrite",
           "rename"
@@ -193,6 +253,9 @@
         "synopsis": "bang rewrite rename <old> <new> <file.bang> [-w]"
       },
       {
+        "parserOptionFamilies": [
+          "write"
+        ],
         "path": [
           "rewrite",
           "annotate"
@@ -203,6 +266,12 @@
         "synopsis": "bang rewrite annotate [<file.bang>] [-w]  infer types AND effect rows for every top-level"
       },
       {
+        "parserOptionFamilies": [
+          "json",
+          "quietClean",
+          "fix",
+          "write"
+        ],
         "path": [
           "lint"
         ],
@@ -213,6 +282,12 @@
         "synopsis": "bang lint [<file.bang>] [--json] [--quiet-clean]"
       },
       {
+        "parserOptionFamilies": [
+          "json",
+          "quietClean",
+          "fix",
+          "write"
+        ],
         "path": [
           "lint",
           "--fix"
@@ -224,6 +299,7 @@
         "synopsis": "bang lint --fix <file.bang> [-w]   apply the dead-private findings' fixit (delete the"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "holes"
         ],
@@ -231,6 +307,7 @@
         "synopsis": "bang holes [<file.bang>]           list every decl carrying a residual/underdetermined"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "impact"
         ],
@@ -238,6 +315,7 @@
         "synopsis": "bang impact <file.bang> <decl>     the transitive DEPENDENTS of <decl> — the pre-edit blast"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "semver-diff"
         ],
@@ -245,6 +323,7 @@
         "synopsis": "bang semver-diff <old.bang> <new.bang>"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "--help"
         ],
@@ -254,6 +333,7 @@
         "synopsis": "bang --help, -h                    print this text and exit 0"
       },
       {
+        "parserOptionFamilies": [],
         "path": [
           "--version"
         ],
@@ -558,6 +638,8 @@
       "label": "differential-tested",
       "sources": [
         "Main.lean",
+        "tools/cli_facts.py",
+        "tools/docfacts_language.py",
         "tools/test-docfacts-language.sh",
         "tools/test-cli.sh",
         "tools/test-check-json.sh",
