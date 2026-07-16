@@ -189,8 +189,6 @@ private theorem basis_insert [Zero M] [One M] (n k i : Nat) (hk : k ≤ n) :
     first
       | rfl
       | (exfalso; omega)
-      | (exact absurd rfl (by omega))
-      | (symm; exact absurd rfl (by omega))
 
 /-- The `k`-th entry of `basis n i`: `1` if `k = i` (and in range), else `0`. -/
 theorem basis_getElem [Zero M] [One M] (n i k : Nat) (hk : k < n) :
@@ -217,8 +215,6 @@ theorem basis_eraseIdx [Zero M] [One M] (n i k : Nat) (hk : k < n) (hik : i ≠ 
     first
       | rfl
       | (exfalso; omega)
-      | (exact absurd rfl (by omega))
-      | (symm; exact absurd rfl (by omega))
 
 /-- Erasing any position from `zeros n` gives `zeros (n-1)` (for `k < n`). -/
 private theorem zeros_eraseIdx [Zero M] (n k : Nat) (hk : k < n) :

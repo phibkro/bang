@@ -1713,7 +1713,7 @@ theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e :
 termination_by sizeOf c
 decreasing_by
   all_goals simp_wf
-  all_goals first | omega | (simp_all; omega)
+  all_goals omega
 end
 
 /-- ◊4.5b fundamental theorem (value), frozen-signature wrapper over the term-measured

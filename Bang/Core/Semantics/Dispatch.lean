@@ -50,10 +50,7 @@ theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp 
     h.label = ℓ := by
   cases h <;> simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hc <;>
     simp only [Handler.label] <;>
-    -- built-ins: `hc.1` is the label equality; custom: `hc : false = true` is absurd (inert, stage 1).
-    first
-      | exact hc.1
-      | exact (Bool.false_ne_true hc).elim
+    exact hc.1
 
 /-- Split a stack at the nearest frame catching `(ℓ, op)`: returns `(Kᵢ, h, Kₒ)` with
 `K = Kᵢ ++ handleF h :: Kₒ`, `Kᵢ` containing no catching frame (the inner captured continuation),

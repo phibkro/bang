@@ -281,7 +281,7 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M
     | force a =>
         cases a with
         | vthunk M0 => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
-        | _ => simp [evalD] at h ⊢ <;> exact h
+        | _ => simp [evalD] at h ⊢
     | app M0 u =>
         simp only [evalD] at h ⊢
         cases hM0 : evalD f g σ τ κ M0 with
@@ -313,7 +313,7 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M
                 cases hcl : cls.find? (·.1 == op) with
                 | none => simp only [hσ, hτ, hκ, hcl] at h ⊢; exact h
                 | some clause => simp only [hσ, hτ, hκ, hcl] at h ⊢; exact ih _ _ _ _ _ _ h
-        | _ => simp [evalD] at h ⊢ <;> exact h
+        | _ => simp [evalD] at h ⊢
     | handle h0 M0 =>
         cases h0 with
         | custom ℓ0 p0 cls0 =>
@@ -371,15 +371,15 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M
         cases a with
         | inl v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
         | inr v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
-        | _ => simp [evalD] at h ⊢ <;> exact h
+        | _ => simp [evalD] at h ⊢
     | split a N =>
         cases a with
         | pair v w => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
-        | _ => simp [evalD] at h ⊢ <;> exact h
+        | _ => simp [evalD] at h ⊢
     | unfold a =>
         cases a with
         | fold v => simpa [evalD] using h
-        | _ => simp [evalD] at h ⊢ <;> exact h
+        | _ => simp [evalD] at h ⊢
     | binop op a b =>
         cases a <;> cases b <;> (simp only [evalD] at h ⊢ <;> exact h)
     | oom => simp [evalD] at h

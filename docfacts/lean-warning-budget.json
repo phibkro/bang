@@ -8,7 +8,7 @@
     "leanBuild": "Release"
   },
   "zeroWarningTarget": true,
-  "totalWarnings": 529,
+  "totalWarnings": 507,
   "buckets": [
     {
       "module": "Bang.Backend.AbstractMachine",
@@ -32,18 +32,8 @@
     },
     {
       "module": "Bang.Backend.U5bComplete",
-      "category": "unreachableTactic",
-      "count": 5
-    },
-    {
-      "module": "Bang.Backend.U5bComplete",
       "category": "unusedSimpArgs",
       "count": 9
-    },
-    {
-      "module": "Bang.Backend.U5bComplete",
-      "category": "unusedTactic",
-      "count": 5
     },
     {
       "module": "Bang.Backend.U5bComplete",
@@ -76,16 +66,6 @@
       "count": 1
     },
     {
-      "module": "Bang.Core.Semantics.Dispatch",
-      "category": "unreachableTactic",
-      "count": 1
-    },
-    {
-      "module": "Bang.Core.Semantics.Dispatch",
-      "category": "unusedTactic",
-      "count": 1
-    },
-    {
       "module": "Bang.Core.Semantics.Eval",
       "category": "unusedSimpArgs",
       "count": 1
@@ -93,11 +73,6 @@
     {
       "module": "Bang.Core.Soundness",
       "category": "unnecessarySeqFocus",
-      "count": 4
-    },
-    {
-      "module": "Bang.Core.Soundness",
-      "category": "unreachableTactic",
       "count": 4
     },
     {
@@ -114,11 +89,6 @@
       "module": "Bang.Core.Soundness",
       "category": "unusedSimpArgs",
       "count": 63
-    },
-    {
-      "module": "Bang.Core.Soundness",
-      "category": "unusedTactic",
-      "count": 4
     },
     {
       "module": "Bang.Core.Soundness",
@@ -142,18 +112,8 @@
     },
     {
       "module": "Bang.Meta.BinaryLR",
-      "category": "unreachableTactic",
-      "count": 1
-    },
-    {
-      "module": "Bang.Meta.BinaryLR",
       "category": "unusedSimpArgs",
       "count": 9
-    },
-    {
-      "module": "Bang.Meta.BinaryLR",
-      "category": "unusedTactic",
-      "count": 1
     },
     {
       "module": "Bang.Meta.LR",

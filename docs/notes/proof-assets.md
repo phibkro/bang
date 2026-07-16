@@ -138,8 +138,8 @@ new proofs in a module, check its set before re-proving a rewrite.
 
 ### `Bang/Core/Semantics/Dispatch.lean` (4)
 
-- `handlerCount_letF` (Dispatch.lean:211)
-- `handlerCount_appF` (Dispatch.lean:213)
-- `handlerCount_handleF` (Dispatch.lean:215)
-- `handlesOp_substFrom` (Dispatch.lean:265)
+- `handlerCount_letF` (Dispatch.lean:208)
+- `handlerCount_appF` (Dispatch.lean:210)
+- `handlerCount_handleF` (Dispatch.lean:212)
+- `handlesOp_substFrom` (Dispatch.lean:262)
 
