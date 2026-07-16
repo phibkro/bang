@@ -279,6 +279,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **test** — assert success-path CLI exit status (#182) (`8234fd40`)
 - **release** — verify installer artifacts end to end (#188) (`8f9bc10c`)
 - **tooling** — make developer gates fail closed (#177) (`f0b8e0a2`)
-- **tooling** — make generated provenance squash-safe (`change:2b88870f276f15ab71eedb790850013f3e36199d652243cabd2b9a9016d0d20f`)
+- **tooling** — make generated provenance squash-safe (`change:fe230d4ea3179261b5f94d16423ff3bb6a058675e4545deb3e56672495363911`)
 
 <!-- END GENERATED changelog -->
