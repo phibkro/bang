@@ -272,5 +272,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **site** — resolve shared docfact schemas (`18ba9ebe`)
 - **onboarding** — make readiness and evidence fail loud (`377187b5`)
 - **onboarding** — bind artifacts and public routes (`425656c1`)
+- **cli** — validate host replay traces strictly (#174) (`38a38d5e`)
+- **cli** — contain new scaffolds within examples (`c5530251`)
 
 <!-- END GENERATED changelog -->
