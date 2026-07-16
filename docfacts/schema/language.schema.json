@@ -106,11 +106,12 @@
       "properties": { "name": { "$ref": "#/$defs/nonempty" }, "signature": { "type": ["string", "null"] } }
     },
     "cliCommand": {
-      "type": "object", "additionalProperties": false, "required": ["path", "synopsis", "principalFlags"],
+      "type": "object", "additionalProperties": false, "required": ["path", "synopsis", "principalFlags", "parserOptionFamilies"],
       "properties": {
         "path": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonempty" } },
         "synopsis": { "$ref": "#/$defs/nonempty" },
-        "principalFlags": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
+        "principalFlags": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "parserOptionFamilies": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
       }
     },
     "exitContract": {

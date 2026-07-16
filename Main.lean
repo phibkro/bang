@@ -81,108 +81,281 @@ inductive Engine where
   | env
   deriving DecidableEq
 
-/-- Parse the engine selector from the flag list: `--engine=env` / `--engine=compiled` / `--engine=oracle`,
-with `--compiled` kept as a back-compat alias for `--engine=compiled` (issue #6's original spelling).
-THE DEFAULT IS `env` (ADR-0094 A1's final step, operator-ruled at v0.1.0): the environment machine,
-PROVEN ≡ the oracle (`evalE_agrees_evalD`, trusted-three) and differentially gated (9/9 corpus,
-tools/check-examples-env.sh) — dissolving #61's per-step substitution cost (~300× on the json
-dogfood). The substitution oracle stays one flag away (`--engine=oracle`) and remains the arbiter
-in every differential gate. Unknown `--engine=<x>` falls to the default. -/
-def parseEngine (flags : List String) : Engine :=
-  if flags.contains "--engine=oracle" then .oracle
-  else if flags.contains "--engine=compiled" || flags.contains "--compiled" then .compiled
-  else .env
-
-/-- Parse `--fuel N` out of the raw flag list (issue #103(a)): a TWO-TOKEN flag (unlike every
-other `--…` flag in this CLI, which is single-token), so it needs its own scan rather than a
-`.contains` check. Returns `defaultFuel` when absent, when the value fails to parse as a `Nat`, or
-when `--fuel` is the last token with no following value — never a silent 0/crash; an unparseable
-value falls back to the safe default rather than becoming a surprising fuel-less run. -/
-def parseFuel (flags : List String) : Nat :=
-  let rec go : List String → Nat
-    | "--fuel" :: v :: _ => v.toNat?.getD defaultFuel
-    | _ :: rest          => go rest
-    | []                 => defaultFuel
-  go flags
-
-/-- Strip `--fuel N` (BOTH tokens) out of a flag list, alongside the SAME `"--".isPrefixOf`
-single-token filter every other subcommand already applies — so `--fuel`'s VALUE token (a bare
-number, no `--` prefix) doesn't leak through as a stray positional. Composes with
-`.filter (fun a => !("--".isPrefixOf a))`: apply THIS first, then that. -/
-def stripFuelFlag : List String → List String
-  | "--fuel" :: _ :: rest => stripFuelFlag rest
-  | a :: rest             => a :: stripFuelFlag rest
-  | []                    => []
-
-/-! ### Host-IO flag parsing (ADR-0104) — `--env`, `--allow`, `--record`/`--replay`, `--max-host-requests`. -/
-
 /-- The default host-request ceiling (ADR-0104 §4): the replay-prefix driver re-evaluates once per
 host request (O(n²)), so this bounds the quadratic. Generous for the Console/Clock wedge (a handful
 of ops); a program exceeding it fails LOUD naming `--max-host-requests`, not a silent slowdown. -/
 def defaultMaxHostRequests : Nat := 1024
 
-/-- `--env=real` present ⟹ the real host environment (do actual IO). Absent / `--env=sim` ⟹ the
-pure sim (today's default engine path). `--replay <file>` also implies the host driver (pure, but the
-answers come from the trace, not IO). -/
-def wantsHostEnv (flags : List String) : Bool :=
-  flags.contains "--env=real" || (flags.any (· == "--record")) ||
-  (flags.any (fun a => a == "--replay" || "--replay=".isPrefixOf a)) ||
-  flags.any (fun a => "--record=".isPrefixOf a)
+/-! ### Fail-closed, command-scoped CLI option validation (#178).
 
-/-- Parse a `--flag=value` (single-token, `=`-joined) out of the flag list; `none` if absent. -/
-def parseEqFlag (key : String) (flags : List String) : Option String :=
-  (flags.find? (fun a => (key ++ "=").isPrefixOf a)).map (fun a => (a.drop (key.length + 1)).toString)
+This scanner is the sole option parser. No fallback can turn a present-but-invalid value into a
+default. In particular, `ParsedCli.allow = none` means the option was genuinely absent; malformed
+`--allow` input is an `Except.error`, never ADR-0104's grant-all default.
+-/
 
-/-- `--allow=A,B` or `--allow A,B` → `some ["A","B"]`; absent → `none` (grant ALL, ADR-0104 §2). -/
-def parseAllow (flags : List String) : Option (List String) :=
-  match parseEqFlag "--allow" flags <|> (do
-      let rec go : List String → Option String
-        | "--allow" :: v :: _ => some v
-        | _ :: rest           => go rest
-        | []                  => none
-      go flags) with
-  | some s => some ((s.splitOn ",").filterMap (fun t => let t := t.trim; if t.isEmpty then none else some t))
-  | none   => none
+/-- Every option family understood by the CLI.  A subcommand passes the exact subset it accepts;
+recognised options outside that subset are errors rather than discarded tokens. -/
+inductive CliFlagKind where
+  | engine | noTypecheck | fuel
+  | hostEnv | allow | record | replay | maxHostRequests
+  | json | out | component | adapter | moduleFlag | write | fix | quietClean
+  deriving DecidableEq
 
-/-- `--max-host-requests N` (two-token) or `--max-host-requests=N`; `defaultMaxHostRequests` otherwise. -/
-def parseMaxHostRequests (flags : List String) : Nat :=
-  match parseEqFlag "--max-host-requests" flags <|> (do
-      let rec go : List String → Option String
-        | "--max-host-requests" :: v :: _ => some v
-        | _ :: rest                       => go rest
-        | []                              => none
-      go flags) with
-  | some v => v.toNat?.getD defaultMaxHostRequests
-  | none   => defaultMaxHostRequests
+/-- The one typed result of parsing a subcommand.  Option fields distinguish absence from a valid
+value, while duplicate occurrences are rejected during construction. -/
+structure ParsedCli where
+  /-- Parser-internal reverse accumulation is restored to caller order before `.ok` is returned. -/
+  positionals : List String := []
+  engine : Option Engine := none
+  noTypecheck : Bool := false
+  fuel : Option Nat := none
+  hostReal : Option Bool := none
+  allow : Option (List String) := none
+  recordPath : Option String := none
+  replayPath : Option String := none
+  maxHostRequests : Option Nat := none
+  json : Bool := false
+  outPath : Option String := none
+  component : Bool := false
+  adapterPath : Option String := none
+  moduleFlag : Bool := false
+  write : Bool := false
+  fix : Bool := false
+  quietClean : Bool := false
 
-/-- `--record <file>` / `--record=<file>` → the trace output path (`none` if absent). -/
-def parseRecord (flags : List String) : Option String :=
-  parseEqFlag "--record" flags <|> (do
-    let rec go : List String → Option String
-      | "--record" :: v :: _ => if "--".isPrefixOf v then none else some v
-      | _ :: rest            => go rest
-      | []                   => none
-    go flags)
+def ParsedCli.selectedEngine (p : ParsedCli) : Engine := p.engine.getD .env
+def ParsedCli.selectedFuel (p : ParsedCli) : Nat := p.fuel.getD defaultFuel
+def ParsedCli.selectedMaxHostRequests (p : ParsedCli) : Nat :=
+  p.maxHostRequests.getD defaultMaxHostRequests
 
-/-- `--replay <file>` / `--replay=<file>` → the trace input path (`none` if absent). -/
-def parseReplay (flags : List String) : Option String :=
-  parseEqFlag "--replay" flags <|> (do
-    let rec go : List String → Option String
-      | "--replay" :: v :: _ => if "--".isPrefixOf v then none else some v
-      | _ :: rest            => go rest
-      | []                   => none
-    go flags)
+/-- Does a token clearly begin another option rather than provide a two-token option's value? -/
+def isCliOptionToken (s : String) : Bool :=
+  "-".isPrefixOf s
 
-/-- Strip every host-IO TWO-TOKEN flag's value token (`--allow V`, `--max-host-requests V`,
-`--record V`, `--replay V`) so a bare value doesn't leak as a stray positional (mirrors
-`stripFuelFlag`). Single-token `=`-joined forms are removed by the ordinary `--`-prefix filter. -/
-def stripHostFlags : List String → List String
-  | "--allow" :: _ :: rest              => stripHostFlags rest
-  | "--max-host-requests" :: _ :: rest  => stripHostFlags rest
-  | "--record" :: v :: rest             => if "--".isPrefixOf v then "--record" :: stripHostFlags (v :: rest) else stripHostFlags rest
-  | "--replay" :: v :: rest             => if "--".isPrefixOf v then "--replay" :: stripHostFlags (v :: rest) else stripHostFlags rest
-  | a :: rest                           => a :: stripHostFlags rest
-  | []                                  => []
+/-- Parse a nonempty natural-valued option.  Zero remains valid: it deliberately requests an
+immediate fuel/request ceiling and was accepted by the previous CLI. -/
+def parseCliNat (command option value : String) : Except String Nat :=
+  if value.isEmpty then
+    .error s!"bang {command}: option '{option}' requires a value"
+  else match value.toNat? with
+    | some n => .ok n
+    | none => .error s!"bang {command}: invalid value '{value}' for option '{option}' (expected a natural number)"
+
+/-- Parse `--allow` without silently filtering empty labels.  Whitespace-only values and any empty
+comma segment are malformed, so they cannot collapse to absence/grant-all or silently narrow a
+grant list. -/
+def parseCliAllow (command value : String) : Except String (List String) :=
+  let labels := (value.splitOn ",").map (fun s => s.trimAscii.toString)
+  if labels.isEmpty || labels.any (fun s => s.isEmpty) then
+    .error s!"bang {command}: invalid value '{value}' for option '--allow' (expected a nonempty comma-separated label list)"
+  else if labels.eraseDups.length != labels.length then
+    .error s!"bang {command}: invalid value '{value}' for option '--allow' (duplicate labels are not allowed)"
+  else
+    .ok labels
+
+/-- Validate every token before dispatching the command.  The scan is deliberately total before
+any file read/write or host effect occurs.  Aliases share one typed field, so e.g. `--compiled`
+plus any `--engine=…` is a duplicate even when both select the same engine. -/
+def parseCliArgs (command : String) (allowed : List CliFlagKind) (raw : List String) :
+    Except String ParsedCli :=
+  let rejectNotAllowed (kind : CliFlagKind) (token : String) : Except String Unit :=
+    if allowed.contains kind then .ok ()
+    else .error s!"bang {command}: option '{token}' is not valid for this subcommand"
+  let duplicate {α : Type} (token : String) : Except String α :=
+    .error s!"bang {command}: duplicate option '{token}'"
+  let missing {α : Type} (token : String) : Except String α :=
+    .error s!"bang {command}: option '{token}' requires a value"
+  let rec go (acc : ParsedCli) : List String → Except String ParsedCli
+    | [] =>
+      let acc := { acc with positionals := acc.positionals.reverse }
+      if acc.recordPath.isSome && acc.replayPath.isSome then
+        .error s!"bang {command}: options '--record' and '--replay' cannot be used together"
+      else if acc.recordPath.isSome && acc.hostReal != some true then
+        .error s!"bang {command}: option '--record' requires '--env=real'"
+      else if acc.replayPath.isSome && acc.hostReal == some true then
+        .error s!"bang {command}: option '--replay' cannot be used with '--env=real'"
+      else if acc.replayPath.isNone && acc.hostReal.getD false == false && acc.allow.isSome then
+        .error s!"bang {command}: option '--allow' requires '--env=real' or '--replay'"
+      else if acc.replayPath.isNone && acc.hostReal.getD false == false &&
+          acc.maxHostRequests.isSome then
+        .error s!"bang {command}: option '--max-host-requests' requires '--env=real' or '--replay'"
+      else if (acc.hostReal == some true || acc.recordPath.isSome || acc.replayPath.isSome) &&
+          acc.engine.isSome then
+        .error s!"bang {command}: option '--engine'/'--compiled' is not valid with real, record, or replay host mode"
+      else if (acc.hostReal == some true || acc.recordPath.isSome || acc.replayPath.isSome) &&
+          acc.noTypecheck then
+        .error s!"bang {command}: option '--no-typecheck' is not valid with real, record, or replay host mode"
+      else if acc.adapterPath.isSome && !acc.component then
+        .error s!"bang {command}: option '--adapter' requires '--component'"
+      else
+        .ok acc
+    | token :: rest => do
+      if token == "--compiled" then
+        rejectNotAllowed .engine token
+        if acc.engine.isSome then duplicate token
+        go { acc with engine := some .compiled } rest
+      else if "--engine=".isPrefixOf token then
+        rejectNotAllowed .engine token
+        if acc.engine.isSome then duplicate token
+        let value := (token.drop "--engine=".length).toString
+        let engine ← match value with
+          | "oracle" => .ok Engine.oracle
+          | "compiled" => .ok Engine.compiled
+          | "env" => .ok Engine.env
+          | _ => .error s!"bang {command}: invalid value '{value}' for option '--engine' (expected oracle, compiled, or env)"
+        go { acc with engine := some engine } rest
+      else if token == "--no-typecheck" then
+        rejectNotAllowed .noTypecheck token
+        if acc.noTypecheck then duplicate token
+        go { acc with noTypecheck := true } rest
+      else if token == "--fuel" then
+        rejectNotAllowed .fuel token
+        if acc.fuel.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else
+            let n ← parseCliNat command token value
+            go { acc with fuel := some n } tail
+        | [] => missing token
+      else if "--env=".isPrefixOf token then
+        rejectNotAllowed .hostEnv token
+        if acc.hostReal.isSome then duplicate token
+        let value := (token.drop "--env=".length).toString
+        let real ← match value with
+          | "real" => .ok true
+          | "sim" => .ok false
+          | _ => .error s!"bang {command}: invalid value '{value}' for option '--env' (expected sim or real)"
+        go { acc with hostReal := some real } rest
+      else if token == "--allow" then
+        rejectNotAllowed .allow token
+        if acc.allow.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else
+            let labels ← parseCliAllow command value
+            go { acc with allow := some labels } tail
+        | [] => missing token
+      else if "--allow=".isPrefixOf token then
+        rejectNotAllowed .allow token
+        if acc.allow.isSome then duplicate token
+        let labels ← parseCliAllow command (token.drop "--allow=".length).toString
+        go { acc with allow := some labels } rest
+      else if token == "--record" then
+        rejectNotAllowed .record token
+        if acc.recordPath.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else if value.isEmpty then missing token
+          else go { acc with recordPath := some value } tail
+        | [] => missing token
+      else if "--record=".isPrefixOf token then
+        rejectNotAllowed .record token
+        if acc.recordPath.isSome then duplicate token
+        let value := (token.drop "--record=".length).toString
+        if value.isEmpty then missing "--record"
+        else go { acc with recordPath := some value } rest
+      else if token == "--replay" then
+        rejectNotAllowed .replay token
+        if acc.replayPath.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else if value.isEmpty then missing token
+          else go { acc with replayPath := some value } tail
+        | [] => missing token
+      else if "--replay=".isPrefixOf token then
+        rejectNotAllowed .replay token
+        if acc.replayPath.isSome then duplicate token
+        let value := (token.drop "--replay=".length).toString
+        if value.isEmpty then missing "--replay"
+        else go { acc with replayPath := some value } rest
+      else if token == "--max-host-requests" then
+        rejectNotAllowed .maxHostRequests token
+        if acc.maxHostRequests.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else
+            let n ← parseCliNat command token value
+            go { acc with maxHostRequests := some n } tail
+        | [] => missing token
+      else if "--max-host-requests=".isPrefixOf token then
+        rejectNotAllowed .maxHostRequests token
+        if acc.maxHostRequests.isSome then duplicate token
+        let n ← parseCliNat command "--max-host-requests" (token.drop "--max-host-requests=".length).toString
+        go { acc with maxHostRequests := some n } rest
+      else if token == "--json" then
+        rejectNotAllowed .json token
+        if acc.json then duplicate token
+        go { acc with json := true } rest
+      else if token == "-o" then
+        rejectNotAllowed .out token
+        if acc.outPath.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else if value.isEmpty then missing token
+          else go { acc with outPath := some value } tail
+        | [] => missing token
+      else if "--out=".isPrefixOf token then
+        rejectNotAllowed .out token
+        if acc.outPath.isSome then duplicate token
+        let value := (token.drop "--out=".length).toString
+        if value.isEmpty then missing "--out"
+        else go { acc with outPath := some value } rest
+      else if token == "--component" then
+        rejectNotAllowed .component token
+        if acc.component then duplicate token
+        go { acc with component := true } rest
+      else if token == "--adapter" then
+        rejectNotAllowed .adapter token
+        if acc.adapterPath.isSome then duplicate token
+        match rest with
+        | value :: tail =>
+          if isCliOptionToken value then missing token
+          else if value.isEmpty then missing token
+          else go { acc with adapterPath := some value } tail
+        | [] => missing token
+      else if "--adapter=".isPrefixOf token then
+        rejectNotAllowed .adapter token
+        if acc.adapterPath.isSome then duplicate token
+        let value := (token.drop "--adapter=".length).toString
+        if value.isEmpty then missing "--adapter"
+        else go { acc with adapterPath := some value } rest
+      else if token == "--module" then
+        rejectNotAllowed .moduleFlag token
+        if acc.moduleFlag then duplicate token
+        go { acc with moduleFlag := true } rest
+      else if token == "-w" then
+        rejectNotAllowed .write token
+        if acc.write then duplicate token
+        go { acc with write := true } rest
+      else if token == "--fix" then
+        rejectNotAllowed .fix token
+        if acc.fix then duplicate token
+        go { acc with fix := true } rest
+      else if token == "--quiet-clean" then
+        rejectNotAllowed .quietClean token
+        if acc.quietClean then duplicate token
+        go { acc with quietClean := true } rest
+      else if "--".isPrefixOf token then
+        .error s!"bang {command}: unknown option '{token}'"
+      else if "-".isPrefixOf token && token != "-" && token.toInt?.isNone then
+        -- Keep negative integer expressions such as `bang eval -1` positional-compatible while
+        -- rejecting unsupported short options (`-z`) with the offending token named.
+        .error s!"bang {command}: unknown option '{token}'"
+      else
+        go { acc with positionals := token :: acc.positionals } rest
+  go {} raw
+
+/-- Uniform option/usage failure: stderr, stable nonzero status, and the command/token/value in the
+message supplied by `parseCliArgs`. -/
+def cliError (message : String) : IO UInt32 := do
+  IO.eprintln s!"error: {message}"
+  pure 1
 
 /-- A `Str` value (ADR-0074, #49) — `SNil = fold (inl ())`, `SCons(Char cp, …) = fold (inr (fold cp,
 …))` — rendered to its glyphs (code points → chars). `none` if the value is not a char-list. Only a
@@ -803,11 +976,23 @@ def resolveAllow (effMap : List (String × Bang.EffectRow.Label)) (allow : Optio
       -- `import Io`s sees the effect as `Io_Console` (ADR-0093 module-qualification), but a user
       -- writes `--allow=Console` naturally — accept both (`Io_Console` ends in `_Console`).
       let nameMatches (nm en : String) : Bool := en == nm || en.endsWith ("_" ++ nm)
-      names.foldlM (init := []) (fun acc nm =>
-        match effMap.find? (fun p => nameMatches nm p.1) with
-        | some (_, ℓ) => .ok (acc ++ [ℓ])
-        | none        => .error s!"--allow names '{nm}', which is not a declared effect in this program \
-                          (declared: {String.intercalate ", " (effMap.map (·.1))})")
+      let rec resolveNames (acc : List (String × Bang.EffectRow.Label)) :
+          List String → Except String (List Bang.EffectRow.Label)
+        | [] => .ok (acc.map (·.2))
+        | nm :: rest =>
+          let candidates := effMap.filter (fun p => nameMatches nm p.1)
+          match candidates with
+          | [] => .error s!"--allow names '{nm}', which is not a declared effect in this program \
+                            (declared: {String.intercalate ", " (effMap.map (·.1))})"
+          | [(canonical, ℓ)] =>
+            if acc.any (fun p => p.2 == ℓ) then
+              .error s!"--allow names '{nm}', but that resolves to '{canonical}', whose authority label \
+                was already granted by another name (duplicate resolved labels are not allowed)"
+            else
+              resolveNames (acc ++ [(canonical, ℓ)]) rest
+          | _ => .error s!"--allow name '{nm}' is ambiguous; it matches declared effects \
+                            {String.intercalate ", " (candidates.map (·.1))}; use one exact declared name"
+      resolveNames [] names
 
 /-- Parse a `--replay` trace's `result` field back to a `Val`, DISPATCHED BY OP (ADR-0104 §3,
 hostio-widen lane). The op name pins the result TYPE, so the parse can't guess wrong: `readLine`/
@@ -890,7 +1075,7 @@ def runHostProg (fuel maxReq : Nat) (allow : Option (List String))
   | .error e => IO.eprintln s!"error: {e}"; pure 1
   | .ok (c, effMap) =>
     match resolveAllow effMap allow with
-    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .error e => IO.eprintln s!"error: bang run: {e}"; pure 1
     | .ok hostLabels =>
       match replay with
       | some tracePath =>
@@ -1940,6 +2125,13 @@ def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
   "  bang run  [FLAGS] <file.bang>      run a bang program from a file\n" ++
+  "             --env=sim|real                 select host mode; sim/default is pure, real enables host IO\n" ++
+  "             --allow LABELS                effect grants for real or replay mode only\n" ++
+  "             --record PATH                 record real host requests as ndJSON; requires --env=real\n" ++
+  "             --replay PATH                 pure replay in sim/default mode; conflicts with --env=real\n" ++
+  "             --max-host-requests N         bound real/replay host requests (invalid in pure sim; default " ++
+  s!"{defaultMaxHostRequests})\n" ++
+  "             host mode rejects --engine/--compiled and --no-typecheck (those control the pure runner)\n" ++
   "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n" ++
   "  bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)\n" ++
   "             --engine=oracle|compiled|env   select the execution engine (ADR-0094; default env)\n" ++
@@ -2249,9 +2441,11 @@ def main (args : List String) : IO UInt32 := do
       -- A HELP REQUEST IS A SUCCESS (issue #66): stdout (not stderr — this is the ordinary
       -- `usage` case's convention, reversed on purpose, since a piped `bang --help | less`
       -- reader expects the text on stdout), exit 0.
-      IO.println usage; pure 0
+      if rest.isEmpty then IO.println usage; pure 0
+      else cliError s!"bang {cmd}: unexpected argument '{rest.head!}'"
     else if cmd == "--version" || cmd == "-v" then
-      IO.println s!"bang {bangVersion}"; pure 0
+      if rest.isEmpty then IO.println s!"bang {bangVersion}"; pure 0
+      else cliError s!"bang {cmd}: unexpected argument '{rest.head!}'"
     else if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
       -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file
@@ -2260,120 +2454,107 @@ def main (args : List String) : IO UInt32 := do
       -- takes the actual resolve-and-merge path. `eval`'s inline string has no FILE to resolve
       -- relative to, so it stays on the single-string `runSource` path unconditionally (below) —
       -- an `import` in an `eval`-string program is out of v1 scope (no directory to search).
-      let engine     := parseEngine rest
-      let typecheck  := !rest.contains "--no-typecheck"
-      let fuel       := parseFuel rest
-      match stripHostFlags (stripFuelFlag rest) |>.filter (fun a => !("--".isPrefixOf a)) with
-      | [arg] =>
-        match ← resolveEntryFile arg with
-        | .error e   => IO.eprintln s!"error: {e}"; pure 1
-        | .ok merged =>
-          -- ADR-0104: `--env=real` / `--record` / `--replay` route through the host-IO driver;
-          -- otherwise the ordinary pure run (sim = the default engine).
-          if wantsHostEnv rest then
-            runHostProg fuel (parseMaxHostRequests rest) (parseAllow rest)
-              (parseRecord rest) (parseReplay rest) merged
-          else runResolvedProg typecheck engine fuel merged
-      | _ => IO.eprintln usage; pure 1
+      match parseCliArgs "run"
+          [.engine, .noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]
+          rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [arg] =>
+          match ← resolveEntryFile arg with
+          | .error e   => IO.eprintln s!"error: {e}"; pure 1
+          | .ok merged =>
+            -- ADR-0104: `--env=real` / `--record` / `--replay` route through the host-IO driver;
+            -- otherwise the ordinary pure run (sim = the default engine).
+            if opts.hostReal.getD false || opts.recordPath.isSome || opts.replayPath.isSome then
+              runHostProg opts.selectedFuel opts.selectedMaxHostRequests opts.allow
+                opts.recordPath opts.replayPath merged
+            else runResolvedProg (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel merged
+        | _ => cliError s!"bang run: expected exactly one <file.bang> positional argument; got {opts.positionals.length}"
     else if cmd == "eval" then
-      let engine     := parseEngine rest
-      let typecheck  := !rest.contains "--no-typecheck"
-      let fuel       := parseFuel rest
-      match stripFuelFlag rest |>.filter (fun a => !("--".isPrefixOf a)) with
-      | [arg] => runSource typecheck engine fuel arg
-      | _ => IO.eprintln usage; pure 1
+      match parseCliArgs "eval" [.engine, .noTypecheck, .fuel] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [arg] => runSource (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel arg
+        | _ => cliError s!"bang eval: expected exactly one surface-expression positional argument; got {opts.positionals.length}"
     else if cmd == "repl" then
-      let engine    := parseEngine rest
-      let typecheck := !rest.contains "--no-typecheck"
-      let fuel      := parseFuel rest
-      runRepl typecheck engine fuel
+      match parseCliArgs "repl" [.engine, .noTypecheck, .fuel] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        if opts.positionals.isEmpty then
+          runRepl (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel
+        else
+          cliError s!"bang repl: unexpected positional argument '{opts.positionals.head!}'"
     else if cmd == "fmt" then
       -- no `--` flags this slice (no `-w`, per the team lead's hold); any non-positional is usage.
-      match rest with
-      | []      => runFmt (← (← IO.getStdin).readToEnd)   -- `bang fmt` with no file: read stdin
-      | [arg]   => runFmt (← IO.FS.readFile ⟨arg⟩)
-      | _       => IO.eprintln usage; pure 1
+      match parseCliArgs "fmt" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | []      => runFmt (← (← IO.getStdin).readToEnd)   -- `bang fmt` with no file: read stdin
+        | [arg]   => runFmt (← IO.FS.readFile ⟨arg⟩)
+        | _       => cliError s!"bang fmt: expected at most one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "check" then
       -- `--json` may appear anywhere before the single optional positional; anything else is usage.
-      let json := rest.contains "--json"
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | []      => runCheck json none        -- `bang check [--json]` with no file: read stdin
-      | [arg]   => runCheck json (some arg)
-      | _       => IO.eprintln usage; pure 1
+      match parseCliArgs "check" [.json] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | []      => runCheck opts.json none        -- `bang check [--json]` with no file: read stdin
+        | [arg]   => runCheck opts.json (some arg)
+        | _       => cliError s!"bang check: expected at most one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "emit" then
       -- `bang emit <file> [-o out.wat | --out=out.wat]` (#136): lower to a WasmGC .wat module,
       -- print to stdout or `-o`. Module resolution is shared with `run` (`resolveEntryFile`), so an
       -- import-ing program emits. `-o PATH` is a two-token flag; `--out=PATH` the `=` form.
-      let out : Option String :=
-        parseEqFlag "--out" rest <|> (do
-          let rec find : List String → Option String
-            | "-o" :: v :: _ => some v
-            | _ :: rst       => find rst
-            | []             => none
-          find rest)
-      -- strip the `-o PATH` pair before filtering positionals (PATH is not a `--`-prefixed token).
-      let rec stripOut : List String → List String
-        | "-o" :: _ :: rst => stripOut rst
-        | a :: rst         => a :: stripOut rst
-        | []               => []
-      match (stripOut rest).filter (fun a => !("--".isPrefixOf a)) with
-      | [arg] => runEmit arg out
-      | _     => IO.eprintln usage; pure 1
+      match parseCliArgs "emit" [.out] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [arg] => runEmit arg opts.outPath
+        | _ => cliError s!"bang emit: expected exactly one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "build" then
       -- `bang build <file> [-o out.wasm] [--component] [--adapter PATH|--adapter=PATH]` (#136):
       -- emit → `wasm-tools parse`/`validate` → write a runnable Wasm artifact. `-o`/`--out` and
       -- `--adapter` are two-token OR `=`-form flags (mirrors `emit`'s `-o` handling); `--component`
       -- is a bare flag; any OTHER `--`-prefixed token falls to usage.
-      let out : Option String :=
-        parseEqFlag "--out" rest <|> (do
-          let rec findOut : List String → Option String
-            | "-o" :: v :: _ => some v
-            | _ :: rst       => findOut rst
-            | []             => none
-          findOut rest)
-      let adapter : Option String :=
-        parseEqFlag "--adapter" rest <|> (do
-          let rec findAdapter : List String → Option String
-            | "--adapter" :: v :: _ => some v
-            | _ :: rst              => findAdapter rst
-            | []                    => none
-          findAdapter rest)
-      let component := rest.contains "--component"
-      -- strip the two-token flag PAIRS before filtering positionals (their values are bare tokens).
-      let rec stripPairs : List String → List String
-        | "-o" :: _ :: rst        => stripPairs rst
-        | "--adapter" :: _ :: rst => stripPairs rst
-        | a :: rst                => a :: stripPairs rst
-        | []                      => []
-      match (stripPairs rest).filter (fun a => !("--".isPrefixOf a)) with
-      | [arg] => runBuild arg out component adapter
-      | _     => IO.eprintln usage; pure 1
+      match parseCliArgs "build" [.out, .component, .adapter] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [arg] => runBuild arg opts.outPath opts.component opts.adapterPath
+        | _ => cliError s!"bang build: expected exactly one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "explain" then
       -- `bang explain <CODE>` (plan 013 s5): exactly one positional code; anything else is usage.
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | [code] => runExplain code
-      | _      => IO.eprintln usage; pure 1
+      match parseCliArgs "explain" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [code] => runExplain code
+        | _ => cliError s!"bang explain: expected exactly one diagnostic code; got {opts.positionals.length} positionals"
     else if cmd == "new" then
       -- `bang new <NAME> [--module]` (plan 013 s7): scaffold examples/<NAME>/. `--module` picks the
       -- multi-file import shape; any OTHER `--`-prefixed arg falls to usage (mirrors run/check).
-      let isModule := rest.contains "--module"
-      let unknownFlags := rest.filter (fun a => "--".isPrefixOf a && a != "--module")
-      if !unknownFlags.isEmpty then
-        IO.eprintln usage; pure 1
-      else
-        match rest.filter (fun a => !("--".isPrefixOf a)) with
-        | [name] => runNew name isModule
-        | []     => runNew "" isModule -- grammar owns the clear empty-name diagnostic
-        | _      => IO.eprintln usage; pure 1
+      match parseCliArgs "new" [.moduleFlag] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [name] => runNew name opts.moduleFlag
+        | []     => runNew "" opts.moduleFlag -- grammar owns the clear empty-name diagnostic
+        | _      => cliError s!"bang new: expected exactly one project name; got {opts.positionals.length} positionals"
     else if cmd == "test" then
       -- `bang test [<file.bang>]` discovers + checks laws; `bang test --update <NAME>` (plan 013 s8)
       -- is handled at the HARNESS level (tools/check-examples.sh --update), NOT here — `test`'s CLI
       -- shape reads a single .bang FILE, whereas --update names an example DIRECTORY the run-oracle
       -- harness owns (see that script's header). No flags on this verb this slice.
-      match rest with
-      | []      => runTest none        -- `bang test` with no file: read stdin
-      | [arg]   => runTest (some arg)
-      | _       => IO.eprintln usage; pure 1
+      match parseCliArgs "test" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | []      => runTest none        -- `bang test` with no file: read stdin
+        | [arg]   => runTest (some arg)
+        | _       => cliError s!"bang test: expected at most one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "query" then
       -- `bang query <op> ...` (#80). Per-op ARGUMENT ORDER matches the issue's own spec exactly
       -- (name-addressed ops put the NAME first when a bare-file positional would be ambiguous with
@@ -2381,39 +2562,45 @@ def main (args : List String) : IO UInt32 := do
       -- matching `check`/`fmt`'s own convention). `--json` is NOT a flag here (`Bang.Query`'s
       -- module header: `--json` is the ONLY v1 output, not an opt-in) — a stray `--`-prefixed arg
       -- falls through to the usage error like every other subcommand's unknown-flag case.
-      match rest with
-      | ["dump", file]          => runQueryDump (some file)
-      | ["dump"]                => runQueryDump none
-      | ["symbols", file]       => runQuerySymbols (some file)
-      | ["symbols"]             => runQuerySymbols none
-      | ["type", file, name]    => runQueryType (some file) name
-      | ["effects", name, file] => runQueryEffects (some file) name
-      | ["effects", name]       => runQueryEffects none name
-      | ["laws", file]          => runQueryLaws (some file)
-      | ["laws"]                => runQueryLaws none
-      | ["def", name, file]     => runQueryDef (some file) name
-      | ["refs", name, file]    => runQueryRefs (some file) name
-      | ["hover", file, lineS, colS] =>
-          match lineS.toNat?, colS.toNat? with
-          | some line, some col => runQueryHover (some file) line col
-          | _, _                 => IO.eprintln usage; pure 1
-      | ["hover", lineS, colS] =>
-          match lineS.toNat?, colS.toNat? with
-          | some line, some col => runQueryHover none line col   -- stdin, no path to resolve imports
-          | _, _                 => IO.eprintln usage; pure 1
-      | _                       => IO.eprintln usage; pure 1
+      match parseCliArgs "query" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | ["dump", file]          => runQueryDump (some file)
+        | ["dump"]                => runQueryDump none
+        | ["symbols", file]       => runQuerySymbols (some file)
+        | ["symbols"]             => runQuerySymbols none
+        | ["type", file, name]    => runQueryType (some file) name
+        | ["effects", name, file] => runQueryEffects (some file) name
+        | ["effects", name]       => runQueryEffects none name
+        | ["laws", file]          => runQueryLaws (some file)
+        | ["laws"]                => runQueryLaws none
+        | ["def", name, file]     => runQueryDef (some file) name
+        | ["refs", name, file]    => runQueryRefs (some file) name
+        | ["hover", file, lineS, colS] =>
+            match lineS.toNat?, colS.toNat? with
+            | some line, some col => runQueryHover (some file) line col
+            | none, _ => cliError s!"bang query hover: invalid line value '{lineS}' (expected a natural number)"
+            | _, none => cliError s!"bang query hover: invalid column value '{colS}' (expected a natural number)"
+        | ["hover", lineS, colS] =>
+            match lineS.toNat?, colS.toNat? with
+            | some line, some col => runQueryHover none line col   -- stdin, no path to resolve imports
+            | none, _ => cliError s!"bang query hover: invalid line value '{lineS}' (expected a natural number)"
+            | _, none => cliError s!"bang query hover: invalid column value '{colS}' (expected a natural number)"
+        | _ => cliError "bang query: invalid operation or positional arguments"
     else if cmd == "rewrite" then
       -- `bang rewrite <verb> ...` (#81). `-w` may appear anywhere; every OTHER `--`-prefixed arg
       -- is unrecognized (mirrors `query`'s own "unknown flag falls to usage" convention).
-      let write := rest.contains "-w"
-      let pos := rest.filter (fun a => a != "-w" && !("--".isPrefixOf a))
-      match pos with
-      | ["fmt", file] => runRewriteFmt write (some file)
-      | ["fmt"]       => runRewriteFmt write none
-      | ["rename", old, new, file] => runRewriteRename write old new file
-      | ["annotate", file] => runRewriteAnnotate write (some file)
-      | ["annotate"]       => runRewriteAnnotate write none
-      | _             => IO.eprintln usage; pure 1
+      match parseCliArgs "rewrite" [.write] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | ["fmt", file] => runRewriteFmt opts.write (some file)
+        | ["fmt"]       => runRewriteFmt opts.write none
+        | ["rename", old, new, file] => runRewriteRename opts.write old new file
+        | ["annotate", file] => runRewriteAnnotate opts.write (some file)
+        | ["annotate"]       => runRewriteAnnotate opts.write none
+        | _ => cliError "bang rewrite: invalid verb or positional arguments"
     else if cmd == "lint" then
       -- `bang lint [<file.bang>] [--json] [--quiet-clean]` (#82 item 2), or
       -- `bang lint --fix <file.bang> [-w]` (plan 013 slice 6 — the preservation-gated fixit path,
@@ -2421,37 +2608,52 @@ def main (args : List String) : IO UInt32 := do
       -- `rewrite rename`'s own file-required convention since the gate needs a real program to
       -- re-elaborate both sides of). `--json`/`--quiet-clean` may appear anywhere before the single
       -- optional positional in the REPORT path; any OTHER `--`-prefixed arg falls to usage.
-      if rest.contains "--fix" then
-        let write := rest.contains "-w"
-        match rest.filter (fun a => a != "--fix" && a != "-w") with
-        | [file] => runLintFix write file
-        | _      => IO.eprintln usage; pure 1
-      else
-        let json := rest.contains "--json"
-        let quietClean := rest.contains "--quiet-clean"
-        match rest.filter (fun a => !("--".isPrefixOf a)) with
-        | []      => runLint json quietClean none
-        | [arg]   => runLint json quietClean (some arg)
-        | _       => IO.eprintln usage; pure 1
+      match parseCliArgs "lint" [.json, .quietClean, .fix, .write] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        if opts.fix then
+          if opts.json then cliError "bang lint: option '--json' is not valid with '--fix'"
+          else if opts.quietClean then cliError "bang lint: option '--quiet-clean' is not valid with '--fix'"
+          else match opts.positionals with
+            | [file] => runLintFix opts.write file
+            | _ => cliError s!"bang lint --fix: expected exactly one <file.bang>; got {opts.positionals.length} positionals"
+        else if opts.write then
+          cliError "bang lint: option '-w' requires '--fix'"
+        else
+          match opts.positionals with
+          | []      => runLint opts.json opts.quietClean none
+          | [arg]   => runLint opts.json opts.quietClean (some arg)
+          | _       => cliError s!"bang lint: expected at most one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "holes" then
       -- `bang holes [<file.bang>]` (#82 item 3). ALWAYS JSON (agents are the audience — no `--json`
       -- flag, matching `query`'s own convention); any `--`-prefixed arg falls to usage.
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | []      => runHoles none        -- read stdin
-      | [arg]   => runHoles (some arg)
-      | _       => IO.eprintln usage; pure 1
+      match parseCliArgs "holes" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | []      => runHoles none        -- read stdin
+        | [arg]   => runHoles (some arg)
+        | _       => cliError s!"bang holes: expected at most one <file.bang>; got {opts.positionals.length} positionals"
     else if cmd == "impact" then
       -- `bang impact <file.bang> <decl>` (#82 item 5). ALWAYS JSON; file THEN decl (file-first,
       -- matching `query type`'s own file-first order — the file is unambiguous, the decl names
       -- what to blast-radius). A stray `--`-prefixed arg falls to usage.
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | [file, decl] => runImpact file decl
-      | _            => IO.eprintln usage; pure 1
+      match parseCliArgs "impact" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [file, decl] => runImpact file decl
+        | _ => cliError s!"bang impact: expected <file.bang> and <decl>; got {opts.positionals.length} positionals"
     else if cmd == "semver-diff" then
       -- `bang semver-diff <old.bang> <new.bang>` (#82 item 6). ALWAYS JSON; OLD then NEW positional.
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | [oldF, newF] => runSemverDiff oldF newF
-      | _            => IO.eprintln usage; pure 1
+      match parseCliArgs "semver-diff" [] rest with
+      | .error e => cliError e
+      | .ok opts =>
+        match opts.positionals with
+        | [oldF, newF] => runSemverDiff oldF newF
+        | _ => cliError s!"bang semver-diff: expected <old.bang> and <new.bang>; got {opts.positionals.length} positionals"
+    else if "--".isPrefixOf cmd || ("-".isPrefixOf cmd && cmd != "-" && cmd.toInt?.isNone) then
+      cliError s!"bang: unknown option '{cmd}'"
     else
-      IO.eprintln usage; pure 1
+      cliError s!"bang: unknown command '{cmd}'"
   | _ => IO.eprintln usage; pure 1

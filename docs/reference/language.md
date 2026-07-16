@@ -1260,7 +1260,7 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 
 | Command path | Principal flags | Synopsis |
 |---|---|---|
-| `bang run` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel` | `bang run  [FLAGS] <file.bang>      run a bang program from a file` |
+| `bang run` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel`, `--env=sim|real`, `--allow`, `--record`, `--replay`, `--max-host-requests` | `bang run  [FLAGS] <file.bang>      run a bang program from a file` |
 | `bang eval` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel` | `bang eval [FLAGS] "<surface expr>"  run a surface expression directly` |
 | `bang repl` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel` | `bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)` |
 | `bang fmt` | — | `bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file` |
@@ -1313,7 +1313,7 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 | `generated` | Surface and parser-table facts are extracted from the parser authority and consumed only after JSON reload. | `Bang/Frontend/Surface.lean`<br>`tools/docfacts_language.py`<br>`docfacts/schema/language.schema.json` | `python3 tools/docfacts_language.py --check` |
 | `implemented` | The diagnostic JSON contract and stable explain registry are implemented by the frontend authorities. | `Bang/Frontend/Diagnostics.lean`<br>`Bang/Frontend/DiagCodes.lean` | `just test-check-json`<br>`just test-explain` |
 | `generated` | Prelude declaration order and descriptive signatures are joined without duplicating an order field. | `Prelude.bang`<br>`Bang/Frontend/TypeCheck.lean`<br>`tools/docfacts_language.py` | `python3 tools/docfacts_language.py --check` |
-| `differential-tested` | Documented CLI paths and representative exit contracts agree with the real binary. | `Main.lean`<br>`tools/test-docfacts-language.sh`<br>`tools/test-cli.sh`<br>`tools/test-check-json.sh`<br>`tools/test-explain.sh` | `just test-docfacts-language`<br>`just test-cli`<br>`just test-check-json`<br>`just test-explain` |
+| `differential-tested` | Documented CLI paths and representative exit contracts agree with the real binary. | `Main.lean`<br>`tools/cli_facts.py`<br>`tools/docfacts_language.py`<br>`tools/test-docfacts-language.sh`<br>`tools/test-cli.sh`<br>`tools/test-check-json.sh`<br>`tools/test-explain.sh` | `just test-docfacts-language`<br>`just test-cli`<br>`just test-check-json`<br>`just test-explain` |
 
 ## Diagnostic codes (`bang explain`)
 
