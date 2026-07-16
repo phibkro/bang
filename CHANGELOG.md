@@ -273,6 +273,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **onboarding** — make readiness and evidence fail loud (`377187b5`)
 - **onboarding** — bind artifacts and public routes (`425656c1`)
 - **cli** — validate host replay traces strictly (#174) (`38a38d5e`)
-- **cli** — contain new scaffolds within examples (`c5530251`)
+- **cli** — contain new scaffolds within examples (#181) (`312f14b9`)
+- **test** — reject failed example runners (`3e4985c1`)
 
 <!-- END GENERATED changelog -->
