@@ -281,6 +281,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **tooling** — make developer gates fail closed (#177) (`f0b8e0a2`)
 - **tooling** — make generated provenance squash-safe (`change:c63f243f27950fd9c9d7c2ad7707f677b0ca209ecdd68449e2e85ff0eba6c80a`)
 - **cli** — reject unknown and malformed options (`change:25fbfc7982a2acf968e208dd083d7e9d4ea2c5fb376b930f5d164a1b3bcba456`)
-- **cli** — require explicit real-host authority (`change:cfac111ecdee86f9f8be717e88b62c24f07f34cd1f3ee93be3a36a71cbe5fcd0`)
+- **cli** — require explicit real-host authority (`change:27cae13bf0bbd570c4b51f4332f79b4006b6f722b65c32afab6ea6ef16ea6b75`)
 
 <!-- END GENERATED changelog -->
