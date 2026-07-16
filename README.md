@@ -57,7 +57,7 @@ The source declares a `Log` effect and installs a counting handler. Changing the
 
 | Engine | Role |
 |---|---|
-| `env` | Default environment/closure machine; proved to agree with the reference and differentially gated |
+| `env` | Default environment/closure machine; machine-checked correspondence to `evalD` under explicit premises, and differentially gated against the `Source.eval` oracle |
 | `oracle` | `Source.eval`, the substitution-based kernel reference and failure arbiter |
 | `compiled` | Calculated `exec ∘ compile` machine; `--compiled` is an alias |
 
@@ -70,10 +70,11 @@ flowchart LR
   S[Source text] -->|tested frontend| C[Graded-CBPV Comp]
   C -->|kernel semantics| O[Source.eval]
   C -->|state reification + calculation| VM[CalcVM]
-  VM -->|annotated forward simulation| W[Wasm 3.0]
+  VM -->|annotated forward simulation| F[Project Wasm-oriented abstract machine]
+  C -->|separate emitter; differentially tested| W[Wasm 3.0 WAT]
 ```
 
-**Reading the diagram:** CalcVM is calculated from the source semantics rather than designed independently. Wasm 3.0 is the compiler target; WasmFX is only a future fast path for the post-v1 general-resumption slot.
+**Reading the diagram:** CalcVM is calculated from the source semantics rather than designed independently. The machine-checked forward simulation targets the project-defined formal abstract machine, not the concrete WAT emitter or official Wasm semantics. Wasm 3.0 remains the product target through a separate, differentially tested emitter; closing that correspondence is tracked independently. WasmFX is only a future fast path for the post-v1 general-resumption slot.
 
 Two proof methods answer different questions:
 

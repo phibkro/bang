@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/**/*.lean,Bang/Audit.lean,Bang/Spec.lean,lean-toolchain,lakefile.toml,lake-manifest.json,docfacts/schema/proof.schema.json,docfacts/proof.json runs-in=fitness
+# tool: role=gen couples=Bang/**/*.lean,Bang/Audit.lean,Bang/Spec.lean,lean-toolchain,lakefile.toml,lake-manifest.json,docfacts/proof-claims.json,docfacts/schema/proof-claims.schema.json,docfacts/schema/proof.schema.json,docfacts/proof.json runs-in=fitness
 """Generate, statically check, and live-check BANG proof documentation facts."""
 
 from __future__ import annotations
@@ -33,9 +33,25 @@ from symbols import SymbolFactsError, collect_public_symbols, collect_symbols
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "docfacts/schema/proof.schema.json"
+CLAIMS_SCHEMA_PATH = ROOT / "docfacts/schema/proof-claims.schema.json"
+CLAIMS_PATH = ROOT / "docfacts/proof-claims.json"
 FACT_PATH = ROOT / "docfacts/proof.json"
 ARCHITECTURE_PATH = ROOT / "docfacts/architecture.json"
-SELF_TEST_POLES = 16
+SELF_TEST_POLES = 25
+
+SEMANTIC_KEYS = (
+    "claimRole",
+    "claimStrength",
+    "claimKind",
+    "evidenceKind",
+    "targetModelKind",
+    "statementShape",
+    "premiseUsage",
+    "guarantee",
+    "scope",
+    "limitations",
+    "aliasOf",
+)
 
 
 class ProofFactsError(ValueError):
@@ -66,7 +82,14 @@ def tracked_proof_paths() -> list[str]:
         capture_output=True,
         text=True,
     )
-    paths = sorted(set(result.stdout.splitlines()))
+    paths = sorted(
+        set(result.stdout.splitlines())
+        | {
+            "docfacts/proof-claims.json",
+            "docfacts/schema/proof-claims.schema.json",
+            "docfacts/schema/proof.schema.json",
+        }
+    )
     required = {"lean-toolchain", "lakefile.toml", "lake-manifest.json"}
     if not required <= set(paths) or not any(
         path.startswith("Bang/") and path.endswith(".lean") for path in paths
@@ -128,8 +151,68 @@ def spec_headlines() -> list[dict]:
     return sorted(records, key=lambda item: item["source"]["line"])
 
 
+def validate_semantic_records(claims: list[dict]) -> None:
+    refs = [item["writtenRef"] for item in claims]
+    if len(refs) != len(set(refs)):
+        raise ProofFactsError("claim semantics contain duplicate writtenRef values")
+    by_ref = {item["writtenRef"]: item for item in claims}
+    for item in claims:
+        load_bearing = set(item["premiseUsage"]["loadBearing"])
+        unused = set(item["premiseUsage"]["unused"])
+        if load_bearing & unused:
+            raise ProofFactsError(
+                f"premise cannot be both load-bearing and unused: {item['writtenRef']}"
+            )
+        if item["claimStrength"] == "strong" and item["claimRole"] in {
+            "alias",
+            "deprecated-alias",
+            "placeholder",
+        }:
+            raise ProofFactsError(
+                f"alias/placeholder cannot inflate strong claims: {item['writtenRef']}"
+            )
+        if (
+            item["claimKind"] in {"runtime-invariant", "structural-invariant"}
+            and item["claimStrength"] == "strong"
+        ):
+            raise ProofFactsError(
+                f"structural/runtime claim cannot borrow strong semantic status: {item['writtenRef']}"
+            )
+        if item["claimRole"] in {"alias", "deprecated-alias"}:
+            target = by_ref.get(item["aliasOf"])
+            if target is None or target is item:
+                raise ProofFactsError(
+                    f"alias target is missing or self-referential: {item['writtenRef']}"
+                )
+
+
+def claim_semantics() -> list[dict]:
+    try:
+        fact = json.loads(CLAIMS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ProofFactsError(
+            f"cannot read reviewed claim semantics: {error}"
+        ) from error
+    schema_validator(CLAIMS_SCHEMA_PATH).validate(fact)
+    claims = fact["claims"]
+    validate_semantic_records(claims)
+    return claims
+
+
 def build_enrollments(report_entries: list[tuple[str, list[str]]]) -> list[dict]:
     audit_entries = audit_facts.enrollments(ROOT)
+    semantics = claim_semantics()
+    expected_refs = [entry.written_ref for entry in audit_entries]
+    semantic_refs = [item["writtenRef"] for item in semantics]
+    if len(semantic_refs) != len(expected_refs) or set(semantic_refs) != set(
+        expected_refs
+    ):
+        raise ProofFactsError(
+            "reviewed claim semantics must cover Audit enrollments 1:1 by writtenRef; "
+            f"missing {sorted(set(expected_refs) - set(semantic_refs))}, "
+            f"extra {sorted(set(semantic_refs) - set(expected_refs))}"
+        )
+    semantics_by_ref = {item["writtenRef"]: item for item in semantics}
     resolved = audit_facts.resolve_reports(audit_entries, report_entries)
     all_symbols = source_symbols()
     spec_names = {item["name"] for item in spec_headlines()}
@@ -147,10 +230,10 @@ def build_enrollments(report_entries: list[tuple[str, list[str]]]) -> list[dict]
             "definitionSource": resolve_definition(enrollment.written_ref, all_symbols),
             "specHeadline": is_spec,
             "axioms": sorted(set(axioms)),
-            "classification": "trusted" if trusted else "flagged",
+            "axiomTrust": "trusted" if trusted else "flagged",
         }
-        if trusted:
-            record["evidenceLabel"] = "proven"
+        semantic = semantics_by_ref[enrollment.written_ref]
+        record.update({key: semantic[key] for key in SEMANTIC_KEYS if key in semantic})
         records.append(record)
     return records
 
@@ -166,13 +249,56 @@ def proof_arrows() -> list[dict]:
     ]
 
 
+def validate_arrow_claim_compatibility(arrow: dict, supporting: list[dict]) -> None:
+    requirements = {
+        "binary biorthogonal LR": {
+            "claimKind": "logical-relation",
+            "targetModelKind": "typed-contextual-semantics",
+        },
+        "annotated forward simulation": {
+            "claimKind": "forward-simulation",
+            "targetModelKind": "source-to-project-wasm-oriented-abstract-machine",
+            "claimStrength": "strong",
+        },
+        "calculation": {
+            "claimKind": "machine-correspondence",
+            "targetModelKind": "calcvm",
+            "claimStrength": "strong",
+        },
+        "state reification": {
+            "claimKind": "machine-correspondence",
+            "targetModelKind": "calcvm-to-source-ck-machine",
+            "claimStrength": "strong",
+        },
+    }
+    expected = requirements.get(arrow["method"])
+    if not supporting or expected is None:
+        return
+    for item in supporting:
+        if item["claimRole"] in {"alias", "deprecated-alias", "placeholder"}:
+            raise ValidationError(
+                f"proof arrow cannot use alias/placeholder support: {arrow['id']}"
+            )
+        for key, value in expected.items():
+            if item[key] != value:
+                raise ValidationError(
+                    f"proof arrow support is semantically incompatible: "
+                    f"{arrow['id']} -> {item['reportName']} ({key})"
+                )
+
+
 def proof_evidence() -> list[dict]:
     return [
         {
             "id": "audit-generated",
             "label": "generated",
-            "claim": "Enrollment, source-location, Spec-headline, fingerprint, and axiom classifications are deterministic projections of tracked proof sources and fresh kernel output.",
-            "sources": ["Bang/Audit.lean", "Bang/Spec.lean", "tools/docfacts_proof.py"],
+            "claim": "Enrollment, source-location, Spec-headline, fingerprint, and axiom trust are deterministic projections of tracked proof sources and fresh kernel output; semantic strength is copied exactly from the separately reviewed complete claim registry.",
+            "sources": [
+                "Bang/Audit.lean",
+                "Bang/Spec.lean",
+                "docfacts/proof-claims.json",
+                "tools/docfacts_proof.py",
+            ],
             "commands": ["python3 tools/docfacts_proof.py --live-check"],
         },
         {
@@ -190,7 +316,7 @@ def proof_evidence() -> list[dict]:
         {
             "id": "simulation-proven",
             "label": "proven",
-            "claim": "Bang.compile_forward_sim is trusted-Audit-backed support for the one-way source-execution to formal-target-execution simulation, under the theorem's VcapFree and successful-source premises.",
+            "claim": "Bang.compile_forward_sim is trusted-Audit-backed support for the one-way source-execution to project-defined Wasm-oriented abstract-machine execution simulation, under the theorem's VcapFree and successful-source premises. It is not a theorem about the concrete WAT emitter or official Wasm semantics.",
             "sources": ["Bang/Spec.lean", "Bang/Backend/Wasm.lean", "Bang/Audit.lean"],
             "commands": ["lake env lean Bang/Audit.lean"],
         },
@@ -199,11 +325,11 @@ def proof_evidence() -> list[dict]:
 
 def build_fact(report_entries: list[tuple[str, list[str]]]) -> dict:
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "kind": "proof",
         "id": "proof",
         "title": "BANG proof inventory",
-        "summary": "Kernel-reported axiom sets, Spec headline enrollment, proof-method arrows, and a dirty-tree-sensitive proof-source fingerprint.",
+        "summary": "Kernel-reported axiom trust, reviewed per-declaration semantic strength and boundaries, Spec headline enrollment, proof-method arrows, and a dirty-tree-sensitive proof-source fingerprint.",
         "trustedAxioms": sorted(audit_facts.TRUSTED),
         "sourceFingerprint": proof_fingerprint(),
         "specHeadlines": spec_headlines(),
@@ -256,17 +382,17 @@ def validate_serialized_fact(fact: dict) -> None:
         report_names.append(item["reportName"])
         trusted = set(item["axioms"]) <= audit_facts.TRUSTED
         expected_class = "trusted" if trusted else "flagged"
-        if item["classification"] != expected_class:
+        if item["axiomTrust"] != expected_class:
             raise ValidationError(
                 f"axiom classification disagrees with actual set: {item['writtenRef']}"
             )
-        if trusted and item.get("evidenceLabel") != "proven":
+        if "evidenceLabel" in item:
             raise ValidationError(
-                f"trusted theorem lacks proven evidence: {item['writtenRef']}"
+                f"axiom trust must not imply a generic evidence label: {item['writtenRef']}"
             )
-        if not trusted and "evidenceLabel" in item:
+        if item["axiomTrust"] == "flagged" and item["claimStrength"] == "strong":
             raise ValidationError(
-                f"flagged theorem labelled proven: {item['writtenRef']}"
+                f"flagged declaration cannot be a strong claim: {item['writtenRef']}"
             )
         if item["axioms"] != sorted(set(item["axioms"])):
             raise ValidationError(
@@ -293,6 +419,16 @@ def validate_serialized_fact(fact: dict) -> None:
             f"Spec headline set is not exactly Audit-enrolled: {missing}"
         )
 
+    validate_semantic_records(
+        [
+            {
+                "writtenRef": item["writtenRef"],
+                **{key: item[key] for key in SEMANTIC_KEYS if key in item},
+            }
+            for item in fact["enrollments"]
+        ]
+    )
+
     evidence_by_id = {item["id"]: item for item in fact["evidence"]}
     for arrow in fact["proofArrows"]:
         if arrow["evidenceId"] not in evidence_by_id:
@@ -310,9 +446,10 @@ def validate_serialized_fact(fact: dict) -> None:
                 )
             supporting.append(matches[0])
         if evidence_by_id[arrow["evidenceId"]]["label"] == "proven" and any(
-            item["classification"] != "trusted" for item in supporting
+            item["axiomTrust"] != "trusted" for item in supporting
         ):
             raise ValidationError(f"proven arrow has flagged support: {arrow['id']}")
+        validate_arrow_claim_compatibility(arrow, supporting)
     semantic_keys = (
         "id",
         "from",
@@ -340,8 +477,19 @@ def validate_fact(fact: dict) -> None:
         (item.written_ref, item.line) for item in source_enrollments
     ]:
         raise ValidationError("Audit enrollment inventory is stale")
-    if len(fact["specHeadlines"]) != 18 or len(fact["enrollments"]) != 27:
+    if len(fact["specHeadlines"]) != 23 or len(fact["enrollments"]) != 33:
         raise ValidationError("current Spec/Audit cardinality pole moved")
+    semantics_by_ref = {item["writtenRef"]: item for item in claim_semantics()}
+    if set(item["writtenRef"] for item in fact["enrollments"]) != set(semantics_by_ref):
+        raise ValidationError("reviewed claim-semantic enrollment coverage drifted")
+    for item in fact["enrollments"]:
+        expected = semantics_by_ref[item["writtenRef"]]
+        actual = {key: item[key] for key in SEMANTIC_KEYS if key in item}
+        reviewed = {key: expected[key] for key in SEMANTIC_KEYS if key in expected}
+        if actual != reviewed:
+            raise ValidationError(
+                f"reviewed claim semantics drifted: {item['writtenRef']}"
+            )
     if fact["evidence"] != sorted(proof_evidence(), key=lambda item: item["id"]):
         raise ValidationError("proof evidence drifted")
     all_symbols = source_symbols()
@@ -384,11 +532,12 @@ def validate_cross_fact(architecture: dict, proof: dict) -> None:
                 f"architecture proven arrow has no theorem support: {arrow['id']}"
             )
         if evidence_record["label"] == "proven" and any(
-            item["classification"] != "trusted" for item in support
+            item["axiomTrust"] != "trusted" for item in support
         ):
             raise ValidationError(
                 f"architecture proven arrow has flagged support: {arrow['id']}"
             )
+        validate_arrow_claim_compatibility(arrow, support)
 
     semantic_keys = (
         "id",
@@ -452,15 +601,15 @@ def self_test() -> int:
     flagged_index = next(
         index
         for index, item in enumerate(base["enrollments"])
-        if item["classification"] == "flagged"
+        if item["axiomTrust"] == "flagged"
     )
     mutate(
         "removed-sorryax",
         lambda fact: fact["enrollments"][flagged_index].update(axioms=["propext"]),
     )
     mutate(
-        "flagged-labelled-proven",
-        lambda fact: fact["enrollments"][flagged_index].update(evidenceLabel="proven"),
+        "axiom-trust-labelled-generic-proven",
+        lambda fact: fact["enrollments"][0].update(evidenceLabel="proven"),
     )
     mutate(
         "collapsed-lr-simulation",
@@ -482,6 +631,63 @@ def self_test() -> int:
     mutate(
         "duplicate-id",
         lambda fact: fact["evidence"][1].update(id=fact["proofArrows"][0]["id"]),
+    )
+    structural_index = next(
+        index
+        for index, item in enumerate(base["enrollments"])
+        if item["claimKind"] == "structural-invariant"
+    )
+    alias_index = next(
+        index
+        for index, item in enumerate(base["enrollments"])
+        if item["claimRole"] == "deprecated-alias"
+    )
+    runtime_index = next(
+        index
+        for index, item in enumerate(base["enrollments"])
+        if item["claimKind"] == "runtime-invariant"
+    )
+    mutate(
+        "missing-semantic-guarantee",
+        lambda fact: fact["enrollments"][0].pop("guarantee"),
+    )
+    mutate(
+        "reviewed-semantic-drift",
+        lambda fact: fact["enrollments"][0].update(guarantee="inflated guarantee"),
+    )
+    mutate(
+        "structural-claim-laundered-strong",
+        lambda fact: fact["enrollments"][structural_index].update(
+            claimStrength="strong"
+        ),
+    )
+    mutate(
+        "premise-both-used-and-unused",
+        lambda fact: fact["enrollments"][0]["premiseUsage"]["unused"].append(
+            fact["enrollments"][0]["premiseUsage"]["loadBearing"][0]
+        ),
+    )
+    mutate(
+        "abstract-target-collapsed-to-concrete-emitter",
+        lambda fact: fact["enrollments"][structural_index].update(
+            targetModelKind="concrete-wasm-emitter"
+        ),
+    )
+    mutate(
+        "alias-target-removed",
+        lambda fact: fact["enrollments"][alias_index].pop("aliasOf"),
+    )
+    mutate(
+        "limitations-removed",
+        lambda fact: fact["enrollments"][0].update(limitations=[]),
+    )
+    mutate(
+        "alias-inflates-strong-count",
+        lambda fact: fact["enrollments"][alias_index].update(claimStrength="strong"),
+    )
+    mutate(
+        "runtime-invariant-laundered-strong",
+        lambda fact: fact["enrollments"][runtime_index].update(claimStrength="strong"),
     )
 
     passed = sum(expect_invalid(name, fact) for name, fact in cases)
@@ -558,8 +764,11 @@ def print_axiom_census(fact: dict) -> None:
     print("── audited theorem axioms ──")
     for item in fact["enrollments"]:
         axioms = ", ".join(item["axioms"]) or "none"
-        marker = "✓" if item["classification"] == "trusted" else "⚠"
-        print(f"{marker} {item['reportName']}: [{axioms}]")
+        marker = "✓" if item["axiomTrust"] == "trusted" else "⚠"
+        print(
+            f"{marker} {item['reportName']}: [{axioms}] "
+            f"{item['claimStrength']} / {item['claimKind']} / {item['targetModelKind']}"
+        )
 
 
 def check_output(live: bool) -> int:

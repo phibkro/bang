@@ -82,7 +82,7 @@ def evidence() -> list[dict]:
         {
             "id": "env-implemented-differential",
             "label": "differential-tested",
-            "claim": "The env/readback path is implemented as the default engine and is differentially tested against the oracle; evalE_agrees_evalD is not Audit-enrolled, so this fact does not label the boundary proven.",
+            "claim": "The env/readback path is implemented as the default engine and is differentially tested against the oracle. The separately Audit-enrolled evalE_agrees_evalD theorem proves successful empty-store env-to-evalD correspondence under explicit premises, not direct unconditional Source.eval agreement, so this product execution edge remains labelled differential-tested.",
             "sources": [
                 "Bang/Backend/EnvMachine.lean",
                 "Main.lean",
@@ -93,7 +93,7 @@ def evidence() -> list[dict]:
         {
             "id": "formal-target-simulation-proof",
             "label": "proven",
-            "claim": "Bang.compile_forward_sim proves value-preserving source execution to the formal target execution for VcapFree source Comp. The Lean namespace Wasmfx is historical; ADR-0059 makes Wasm 3.0 the product target.",
+            "claim": "Bang.compile_forward_sim proves value-preserving source execution to the project-defined Wasm-oriented abstract target for VcapFree source Comp. It does not target the concrete WAT emitter or official Wasm semantics; ADR-0059 separately makes Wasm 3.0 the product target.",
             "sources": [
                 "Bang/Spec.lean",
                 "Bang/Backend/Wasm.lean",
@@ -262,9 +262,9 @@ def arrows() -> list[dict]:
             "evidenceId": "env-implemented-differential",
         },
         {
-            "id": "source-eval-to-evald",
-            "from": "source-eval",
-            "to": "evald",
+            "id": "evald-to-source-eval",
+            "from": "evald",
+            "to": "source-eval",
             "direction": "forward",
             "method": "state reification",
             "theoremRefs": ["Bang.CalcVM.evalD_agrees_source"],

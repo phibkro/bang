@@ -2110,11 +2110,9 @@ theorem exec_wexec_sim_ok :
 /-! ### Structural predicates (`WellTyped`, `MentionsLocal`)
 
 `MentionsLocal m k` — the module's instruction stream contains a `getL k`/`setL
-k`. For the QTT-erasure headline (`zero_grade_no_code`), a 0-graded binder emits
-NO `local` reference, so the pure-spine `compileC` (which threads no `getL`/`setL`
-for closed-focus substitution code) trivially has none — the calculated machine
-is substitution-based (closed focus, ADR-0025 D2), so `compile c []` carries no
-free-variable locals at all. -/
+k`. The current substitution-based abstract lowering emits no local instructions
+for any input or index. This is a structural property, not grade-directed erasure
+and not a claim about the concrete Wasm emitter. -/
 /-- Instruction `i` references local `j` (a `getL j`/`setL j`). -/
 def InstrMentionsLocal : Instr → Nat → Prop
   | .getL k, j => k = j
@@ -2125,11 +2123,8 @@ def InstrMentionsLocal : Instr → Nat → Prop
 def MentionsLocal (m : Module) (k : Nat) : Prop :=
   ∃ i ∈ m.body, InstrMentionsLocal i k
 
-/-- A module is well-typed when its body is a well-formed pure-spine stream. For
-Milestone A: the pure-spine opcodes are always well-formed (the calculated
-`compile` of a typed program emits only RET/LAMI/SUBST/APP, which lower to
-const/clos/bindS/callS). Made a structural `Prop` so `compile_well_typed`
-discharges by construction. -/
+/-- The current structural instruction predicate. It rejects local get/set and
+accepts every other project-abstract opcode. This is not official Wasm validation. -/
 def InstrWF : Instr → Prop
   | .getL _ => False        -- closed-focus compile emits no locals (Milestone A)
   | .setL _ => False
@@ -2161,10 +2156,9 @@ def Wasmfx.HandlerEquiv (_ : Wasmfx.Module) (_ : Handler) : Prop := True
 
 /-! ## §7 proofs — Milestone A
 
-The structural headlines (`zero_grade_no_code`, `compile_well_typed`) and the
-forward simulation (`compile_forward_sim`). Statements are FROZEN in
-`Bang/Spec.lean`; these `_proof` lemmas are wired there (the project convention:
-Spec owns the claim, a sibling module owns the proof). -/
+The structural facts underlying `compileC_emits_no_locals` and
+`compileC_satisfies_current_instrWF`, plus the forward simulation
+`compile_forward_sim`. `Bang/Spec.lean` owns the public claim boundary. -/
 
 namespace Wasmfx
 
@@ -2220,8 +2214,8 @@ theorem compileC_no_local (c : Comp) (k : Nat) :
   · exact hg _ rfl
   · exact hs _ rfl
 
-/-- `compileC` output is well-typed (pure-spine, Milestone A): every instruction
-is `InstrWF` because none is a `getL`/`setL`. -/
+/-- Every `compileC` instruction satisfies the current structural `InstrWF`
+predicate because no emitted instruction is a `getL`/`setL`. -/
 theorem compileC_wellTyped (c : Comp) : WellTyped (compileC c) := by
   intro i hi
   obtain ⟨hg, hs⟩ := lowerCode_no_locals (CalcVM.compile c []) i hi
@@ -2231,11 +2225,9 @@ theorem compileC_wellTyped (c : Comp) : WellTyped (compileC c) := by
 
 end Wasmfx
 
-/-- `zero_grade_no_code` proof (the QTT-erasure headline): a 0-graded binder emits
-no `local` reference. STRONGER than required — the substitution-based calculated
-machine emits NO locals at all (any binder, any grade), so the grade-0 hypothesis
-is not even needed. The headline is observable in the output: `compileC` never
-references local 0. -/
+/-- Legacy compatibility proof for `zero_grade_no_code`. The grade-zero premise
+is unused because the abstract lowering emits no locals for any input. This is
+not grade-directed erasure evidence. -/
 theorem zero_grade_no_code_proof {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
@@ -2244,10 +2236,9 @@ theorem zero_grade_no_code_proof {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     ¬ Wasmfx.MentionsLocal (compileC c) 0 :=
   Wasmfx.compileC_no_local c 0
 
-/-- `compile_well_typed` proof (Milestone A): the pure-spine lowering is
-well-formed by construction. The typing premise is unused at Milestone A (every
-`compileC` output is structurally `InstrWF`); it becomes load-bearing when the
-result type is refined and the continuation/ADT opcodes land (Milestone B). -/
+/-- Legacy compatibility proof for `compile_well_typed`. The source typing
+premise is unused: every abstract `compileC` output satisfies the current
+structural `InstrWF`. This is not target type preservation or Wasm validation. -/
 theorem compile_well_typed_proof {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=docfacts/architecture.json,docfacts/proof.json,docfacts/schema/architecture.schema.json,docfacts/schema/proof.schema.json,docs/architecture/core-overview.md,docfacts_architecture.py,docfacts_proof.py,genblock.py runs-in=fitness
+# tool: role=gen couples=docfacts/architecture.json,docfacts/proof-claims.json,docfacts/proof.json,docfacts/schema/architecture.schema.json,docfacts/schema/proof-claims.schema.json,docfacts/schema/proof.schema.json,docs/architecture/core-overview.md,docfacts_architecture.py,docfacts_proof.py,genblock.py runs-in=fitness
 """Render/check architecture and proof projections from committed documentation facts."""
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def evidence_text(
 
 def support_status(proof: dict, arrow: dict, evidence: dict) -> str:
     enrollments = theorem_enrollments(proof, arrow["theoremRefs"])
-    flagged = [item for item in enrollments if item["classification"] == "flagged"]
+    flagged = [item for item in enrollments if item["axiomTrust"] == "flagged"]
     if flagged:
         names = ", ".join(code(item["reportName"]) for item in flagged)
         return f"{md(evidence['label'])}; flagged support: {names}"
@@ -289,18 +289,33 @@ def render_proof_arrows(architecture: dict, proof: dict) -> str:
 
 
 def render_audited_axioms(proof: dict) -> str:
-    counts = Counter(item["classification"] for item in proof["enrollments"])
+    counts = Counter(item["axiomTrust"] for item in proof["enrollments"])
+    strength_counts = Counter(item["claimStrength"] for item in proof["enrollments"])
     no_axioms = sum(not item["axioms"] for item in proof["enrollments"])
+    strong = [
+        item["reportName"]
+        for item in proof["enrollments"]
+        if item["claimStrength"] == "strong"
+        and item["claimRole"] not in {"alias", "deprecated-alias", "placeholder"}
+    ]
     audit_evidence = evidence_by_id(proof)["audit-generated"]
     validator = ", ".join(code(item) for item in audit_evidence["commands"])
     lines = [
         AUDITED_AXIOMS_BEGIN,
         f"**Census:** {len(proof['enrollments'])} enrolled theorems · {counts['trusted']} trusted · {counts['flagged']} flagged · {no_axioms} with no axioms.",
         "",
+        f"**Semantic inventory:** {len(strong)} strong scoped claims · {strength_counts['structural']} structural · {strength_counts['bounded']} bounded · {strength_counts['partial']} partial · {strength_counts['conjectural']} conjectural · {strength_counts['placeholder']} placeholder · {strength_counts['alias']} aliases. Alias and placeholder rows never increase the strong count.",
+        "",
+        "**Strong, precisely scoped claims:** "
+        + ", ".join(code(item) for item in strong)
+        + ".",
+        "",
         f"_Live validator: {validator}._",
         "",
-        "| Theorem | Source | Axiom set | Status/evidence |",
-        "|---|---|---|---|",
+        "Axiom trust and semantic strength are independent axes. `trusted` means only that the kernel-reported axiom set is within the reviewed trusted set; it is not a generic product-level `proven` badge.",
+        "",
+        "| Theorem / source | Axiom trust | Semantic evidence | Target / premise usage | Exact guarantee and boundary |",
+        "|---|---|---|---|---|",
     ]
     for item in proof["enrollments"]:
         source = item["definitionSource"]
@@ -312,11 +327,29 @@ def render_audited_axioms(proof: dict) -> str:
             if not item["axioms"]
             else ", ".join(code(axiom) for axiom in item["axioms"])
         )
-        status = md(item["classification"])
-        if item.get("evidenceLabel"):
-            status += f" · {md(item['evidenceLabel'])}"
+        status = md(item["axiomTrust"])
+        semantic = (
+            f"{md(item['claimStrength'])} · {md(item['claimKind'])} · "
+            f"{md(item['evidenceKind'])} · role {md(item['claimRole'])}"
+        )
+        if item.get("aliasOf"):
+            semantic += f" of {code(item['aliasOf'])}"
+        load_bearing = item["premiseUsage"]["loadBearing"]
+        unused = item["premiseUsage"]["unused"]
+        premise_text = (
+            "load-bearing: "
+            + (", ".join(md(value) for value in load_bearing) or "none")
+            + "; unused: "
+            + (", ".join(md(value) for value in unused) or "none")
+        )
+        boundary = (
+            f"{md(item['guarantee'])} Scope: {md(item['scope'])} "
+            f"Limitations: {'; '.join(md(value) for value in item['limitations'])} "
+            f"Statement: {code(item['statementShape'])}"
+        )
         lines.append(
-            f"| {code(item['reportName'])} | {source_text} | {axioms} | {status} |"
+            f"| {code(item['reportName'])}<br>{source_text} | {status}<br>{axioms} | "
+            f"{semantic} | {md(item['targetModelKind'])}<br>{premise_text} | {boundary} |"
         )
     lines.append(AUDITED_AXIOMS_END)
     return "\n".join(lines)

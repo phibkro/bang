@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=test couples=provenance.py,gen-changelog.py,gen-proof-state.py,check-sha-reachable.sh,.github/workflows/verify.yml runs-in=fitness
+# tool: role=test couples=docfacts/proof-claims.json,provenance.py,gen-changelog.py,gen-proof-state.py,check-sha-reachable.sh,.github/workflows/verify.yml runs-in=fitness
 """Integration/falsifier suite for squash-stable generated provenance."""
 
 from __future__ import annotations
@@ -89,6 +89,11 @@ def write_fixture(root: Path) -> tuple[str, str, Path]:
     git(root, "config", "user.email", "provenance@example.invalid")
     (root / "Bang").mkdir()
     (root / "Bang/Audit.lean").write_text("#print axioms foo\n")
+    (root / "docfacts").mkdir()
+    (root / "docfacts/proof-claims.json").write_text(
+        '{"claims":[{"writtenRef":"foo","claimRole":"canonical",'
+        '"claimStrength":"strong"}]}\n'
+    )
     (root / "CHANGELOG.md").write_text(
         "# Fixture changelog\n\n"
         "<!-- BEGIN GENERATED changelog (just changelog) — do not hand-edit -->\n\n"
@@ -402,7 +407,9 @@ def main() -> int:
 
         git(root, "checkout", "landed")
         original_context = (root / "CONTEXT.md").read_text()
-        mutated_context = original_context.replace("1 clean", "9 clean")
+        mutated_context = original_context.replace(
+            "**claims:** 1 trusted-axiom", "**claims:** 9 trusted-axiom"
+        )
         (root / "CONTEXT.md").write_text(mutated_context)
         expect_fail(
             "proof count tamper fails authoritative --build check",

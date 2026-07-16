@@ -127,8 +127,7 @@ def rejected(axiom):
         if item["writtenRef"] == "compile_well_typed"
     )
     target["axioms"] = sorted(set(target["axioms"] + [axiom]))
-    target["classification"] = "flagged"
-    target.pop("evidenceLabel", None)
+    target["axiomTrust"] = "flagged"
     with patch.object(proof, "FACT_PATH", baseline_path), \
          patch.object(proof, "live_fact", return_value=live):
         try:
