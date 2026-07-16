@@ -67,7 +67,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/gen-onboarding.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (33)
+## test (34)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -86,6 +86,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-annotate.sh`](test-annotate.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite annotate` (#82 item 1) |
 | [`test-bang-build.sh`](test-bang-build.sh) | `verify` | `Main.lean`, `Bang/Backend/WasmEmit.lean` | the CLI gate for `bang build` (issue #136 productized) |
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |
+| [`test-cli-exit-status.sh`](test-cli-exit-status.sh) | `verify` | `tools/test-query.sh`, `tools/test-fmt.sh` | Falsifier for success-path stdout captures: a proxy emits the real expected bytes, then mutates |
 | [`test-cli.sh`](test-cli.sh) | `verify` | — | the non-interactive gate for `bang`'s TOP-LEVEL CLI hygiene (issue #66/#67) |
 | [`test-compiled-dogfood.sh`](test-compiled-dogfood.sh) | `verify` | `examples/calc`, `examples/json` | the --compiled DIFFERENTIAL gate for the dogfood programs (#135) |
 | [`test-docfacts-architecture-proof.sh`](test-docfacts-architecture-proof.sh) | `fitness` | `docfacts/architecture.json`, `docfacts/proof.json`, `tools/docfacts_architecture.py`, `tools/docfacts_proof.py` | (no purpose comment) |
