@@ -22,7 +22,7 @@ bang eval '1 + 2'
 # 3
 ```
 
-The installer selects the matching [GitHub Release](https://github.com/phibkro/bang/releases) asset and writes it to `~/.local/bin`. Linux binaries require glibc 2.26 or newer. Intel macOS and Windows are not release targets yet.
+The installer resolves one [GitHub Release](https://github.com/phibkro/bang/releases) tag, verifies the matching binary against that release's `SHA256SUMS`, and atomically writes it to `~/.local/bin`. A same-release checksum detects corruption and wrong-asset selection, but is not an independent authenticity signature. GitHub also records signed build-provenance attestations for each binary; users with GitHub CLI can verify one with `gh attestation verify ./bang-vX.Y.Z-TRIPLE -R phibkro/bang`. Linux binaries require glibc 2.26 or newer. Intel macOS and Windows are not release targets yet.
 
 Build from source with the pinned Nix environment:
 

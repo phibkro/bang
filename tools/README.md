@@ -67,7 +67,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`site-build.sh`](site-build.sh) | `ci` | `flake.nix`, `web/docs/package.json`, `web/docs/page-manifest.json`, `web/docs/site-model.mjs`, `web/docs/sync-docs.mjs`, `web/docs/gen-onboarding.mjs`, `web/docs/site-smoke.mjs`, `.github/workflows/site.yml`, `.github/workflows/pages.yml`, `.github/workflows/release.yml` | One production-site build interface for contributors, CI, Pages, and releases |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (34)
+## test (35)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -103,6 +103,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-onboarding-preflight.sh`](test-onboarding-preflight.sh) | `fitness` | `onboarding-preflight.sh` | Known-good/known-bad poles for the read-only newcomer preflight |
 | [`test-query.sh`](test-query.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
 | [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
+| [`test-release-integrity.sh`](test-release-integrity.sh) | `verify` | `tools/install.sh`, `tools/release-manifest.sh`, `.github/workflows/release.yml` | Local, network-free falsification poles for release manifest generation and atomic, |
 | [`test-release-version.sh`](test-release-version.sh) | `verify` | `check-release-version.sh` | Known-good/known-bad poles for the exact release identity gate |
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
@@ -117,19 +118,20 @@ _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 | [`eval.sh`](eval.sh) | `manual` | `Bang/Audit.lean` | submit a Lean snippet, get its elaborator output |
 | [`hooks/session-start.sh`](hooks/session-start.sh) | `hook` | `orient.sh` | SessionStart hook — print orient so the agent lands oriented |
 | [`install-hooks.sh`](install-hooks.sh) | `manual` | `git-hooks/pre-commit` | link tracked git hooks into .git/hooks/ |
-| [`install.sh`](install.sh) | `manual` | `.github/workflows/release.yml` | the curl-able installer for the `bang` binary. Detects the platform, |
+| [`install.sh`](install.sh) | `manual` | `.github/workflows/release.yml`, `tools/release-manifest.sh` | the curl-able installer for the `bang` binary. Resolves ONE latest |
 | [`new-worktree.sh`](new-worktree.sh) | `manual` | — | the ONE blessed way to spawn an isolated IC checkout (#40b) |
 | [`orient.sh`](orient.sh) | `manual` | `burndown.sh`, `paths/PATH-*.md`, `CONTEXT.md` | one-shot orient for fresh sessions |
 | [`setup.sh`](setup.sh) | `manual` | `install-hooks.sh` | first-time bootstrap for a fresh clone |
 | [`tool-log.sh`](tool-log.sh) | `manual` | `tools/*.sh`, `tools/*.py`, `justfile` | the single home for invocation telemetry (plan 012 slice 1) |
 
-## lane (1)
+## lane (2)
 
 _Lane scripts — one-off orchestration helpers._
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
+| [`release-manifest.sh`](release-manifest.sh) | `ci` | `.github/workflows/release.yml`, `tools/install.sh` | Build the canonical SHA256SUMS for one complete, tag-scoped release. The fixed asset |
 
 ## lib (7)
 

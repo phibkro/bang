@@ -2,9 +2,10 @@ name: Release
 
 # Binary distribution for `bang` — fires on a version tag (`v*`), builds the native
 # runner for each Tier-1 platform (a 3-row matrix: x86_64-linux, aarch64-linux,
-# aarch64-darwin), strips + smoke-tests each stripped artifact, and attaches all three
-# to ONE GitHub Release. install.sh (README install line) picks the right asset by
-# `uname`. The three rows share the tag; the create-vs-upload race is handled below.
+# aarch64-darwin), strips + smoke-tests each stripped artifact, then a single publish
+# job assembles all three plus one deterministic SHA256SUMS into a draft before making
+# ONE GitHub Release visible. install.sh resolves that tag and verifies its platform
+# asset against the manifest before atomically replacing an installation.
 #
 # The BUILD half mirrors verify.yml exactly (nix installer + the elan/Mathlib-olean
 # cache + `nix develop` for the toolchain) — the single sanctioned first-setup path,
@@ -26,7 +27,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # create the Release + upload the asset
+  contents: read
 
 jobs:
   site-build:
@@ -42,6 +43,10 @@ jobs:
     needs: site-build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     # Three Lean Tier-1 targets (distribution-survey.md rung 0). The build half is
     # platform-agnostic: `nix develop` → elan reads lean-toolchain and fetches the
@@ -49,8 +54,8 @@ jobs:
     # runner. release-artifact.sh guards the de-nix step by TRIPLE (ELF interp rewrite
     # on *-linux, strip-only + linkage-report on *-darwin — Mach-O has no ELF interp).
     #
-    # fail-fast:false — the three artifacts are independent; one platform's failure must
-    # not cancel a green build on the others (a partial release is better than none).
+    # fail-fast:false preserves every row's diagnostic output. Publication still needs
+    # every row, so one failed platform can never expose a partial Release.
     #
     # Cold-build cost per row: ~2 min olean fetch + ~4 min lake build (README §cold-start),
     # so ~10 min/row warm-cache-miss. The actions/cache below warms elan + .lake per
@@ -124,22 +129,60 @@ jobs:
           path: ${{ steps.artifact.outputs.path }}
           if-no-files-found: error
 
-      - name: Create the Release (once) and upload this row's asset
+      # This signed provenance is independent of the same-release checksum manifest.
+      # It is optional for the dependency-light installer, but consumers with gh can
+      # verify repository/workflow/commit identity via `gh attestation verify`.
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.artifact.outputs.path }}
+
+  publish:
+    name: Publish complete release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # These artifacts can only come from the three successful matrix rows in this
+      # workflow run. merge-multiple yields the exact files release-manifest validates.
+      - name: Download all platform assets from this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bang-*
+          path: dist
+          merge-multiple: true
+
+      - name: Build deterministic checksum manifest
+        run: bash tools/release-manifest.sh "$VERSION" dist
+
+      - name: Create complete draft, then publish it
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.ver.outputs.version }}
-          ASSET_PATH: ${{ steps.artifact.outputs.path }}
         run: |
-          # All three matrix rows share ONE tag → one Release. Whichever row lands first
-          # creates it; the rest see "already exists" and just upload their asset. `gh
-          # release create` is not idempotent, so create-if-absent then upload, rather
-          # than racing three creates. `--clobber` lets a re-run replace a stale asset.
-          if ! gh release view "$VERSION" >/dev/null 2>&1; then
-            gh release create "$VERSION" \
-              --title "bang $VERSION" \
-              --generate-notes \
-              --notes "Native \`bang\` runner — prebuilt for x86_64-linux, aarch64-linux, and aarch64-darwin (Apple Silicon). Linux binaries link glibc + libgcc_s only and are de-nixed to the distro-standard loader (glibc 2.26+). The darwin binary is stripped but its dylib linkage is UNVERIFIED off the CI runner until the first real macOS install — see the asset's build log. Install: \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${VERSION}/tools/install.sh | sh\`" \
-            || echo "release create raced with another row; falling through to upload"
+          # Never mutate a visible release asset-by-asset: a retry must fail closed and
+          # receive operator review instead of opening a binary/manifest mismatch window.
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "release '$VERSION' already exists; refusing in-place replacement" >&2
+            exit 1
           fi
-          gh release upload "$VERSION" "$ASSET_PATH" --clobber
+          assets=(
+            "dist/bang-$VERSION-aarch64-darwin"
+            "dist/bang-$VERSION-aarch64-linux"
+            "dist/bang-$VERSION-x86_64-linux"
+            "dist/SHA256SUMS"
+          )
+          gh release create "$VERSION" "${assets[@]}" \
+            --verify-tag \
+            --draft \
+            --title "bang $VERSION" \
+            --generate-notes \
+            --notes "Native \`bang\` runner — prebuilt for x86_64-linux, aarch64-linux, and aarch64-darwin (Apple Silicon). SHA256SUMS detects corruption or wrong-asset selection within this GitHub Release; signed GitHub build-provenance attestations provide the independent repository/workflow identity layer. Linux binaries link glibc + libgcc_s only and are de-nixed to the distro-standard loader (glibc 2.26+). The darwin binary is stripped but its dylib linkage is UNVERIFIED off the CI runner until the first real macOS install — see the asset's build log. Install: \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${VERSION}/tools/install.sh | sh\`"
+          gh release edit "$VERSION" --draft=false
