@@ -111,12 +111,17 @@ namespace Bang.Tools.DeadCode
 def roots : List Name :=
   [ ``lr_sound, ``lr_fundamental, ``lr_fundamental_closed, ``seq_unit,
     ``compile_forward_sim, ``Bang.compile_forward_sim_pure, ``Bang.source_eval_to_exec,
-    ``compile_well_typed, ``handler_compiles, ``zero_grade_no_code, ``subst_value,
+    ``compileC_satisfies_current_instrWF, ``compile_well_typed,
+    ``handler_lowering_placeholder, ``handler_compiles,
+    ``compileC_emits_no_locals, ``zero_grade_no_code, ``subst_value,
     ``preservation, ``progress, ``type_safety, ``no_accidental_handling,
-    ``no_accidental_handling_custom, ``custom_program_safe, ``rowinst_requires_disjoint,
-    ``effect_sound, ``zero_usage_erasable, ``Bang.Surface.cell_reflects_latest,
+    ``no_accidental_handling_custom, ``closed_fully_handled_program_no_unclassified_stuck,
+    ``custom_program_safe, ``rowinst_requires_disjoint,
+    ``evalTrace_dispatches_within_recorded_live_bound, ``effect_sound,
+    ``zero_usage_erasable, ``Bang.Surface.cell_reflects_latest,
     ``Bang.CalcVM.compile_correct, ``Bang.CalcVM.evalD_agrees_source,
     ``Bang.CalcVM.sim, ``Bang.CalcVM.run_evalD,
+    ``Bang.EnvMachine.evalE_agrees_evalD,
     ``main ]
 
 /-- Transitive-closure BFS over `getUsedConstantsAsSet`, seeded by `roots`. -/

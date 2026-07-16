@@ -7,6 +7,7 @@ public import Bang.Spec
 public import Bang.Frontend.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
 public import Bang.Backend.AbstractMachine    -- ◊3: the calculated-machine compile_correct (verification spine)
 public import Bang.Backend.Rung5ProofGrade    -- rung-5 S5: the effectful-obligation re-exports (durable axiom pin)
+public import Bang.Backend.EnvMachine          -- default engine: environment-to-evalD correspondence
 
 /-!
   Audit.lean — the headline-theorem axiom census.
@@ -48,8 +49,11 @@ open Bang
 -- `docs/notes/rung5-s5-proofgrade-refutation.md`.)
 #print axioms Bang.Rung5ProofGrade.s5_effectful_forward_sim
 #print axioms Bang.Rung5ProofGrade.s5_exec_wexec_lockstep
+#print axioms compileC_satisfies_current_instrWF
 #print axioms compile_well_typed
+#print axioms handler_lowering_placeholder
 #print axioms handler_compiles
+#print axioms compileC_emits_no_locals
 #print axioms zero_grade_no_code
 #print axioms subst_value
 #print axioms preservation
@@ -59,11 +63,13 @@ open Bang
 -- #44 STAGE 6 (ADR-0085) — user-effect soundness composition. Both ⊆ trusted-three (custom_program_safe
 -- rides type_safety; no_accidental_handling_custom rides the axiom-free no_accidental_handling).
 #print axioms no_accidental_handling_custom
+#print axioms closed_fully_handled_program_no_unclassified_stuck
 #print axioms custom_program_safe
 #print axioms rowinst_requires_disjoint
 -- `all_or_nothing_abort` (rung-3 atomicity) RETIRED in b8f2652 (ADR-0054 collapse: the ~1225-line
 -- positional-machinery purge deleted E.3 atomicity). v1 all-or-nothing rollback is now demonstrated
 -- by the Surface `ledgerAbort` #guard (the tested rung), not a spine theorem — so it leaves the gate.
+#print axioms evalTrace_dispatches_within_recorded_live_bound
 #print axioms effect_sound
 #print axioms zero_usage_erasable
 #print axioms Bang.Surface.cell_reflects_latest
@@ -72,3 +78,4 @@ open Bang
 -- O2 two-part forms (term ∧ raised); pin the shapes against silent regression.
 #print axioms Bang.CalcVM.sim
 #print axioms Bang.CalcVM.run_evalD
+#print axioms Bang.EnvMachine.evalE_agrees_evalD

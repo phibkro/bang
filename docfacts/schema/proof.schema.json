@@ -9,7 +9,7 @@
     "sourceFingerprint", "specHeadlines", "enrollments", "proofArrows", "evidence"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "kind": { "const": "proof" },
     "id": { "const": "proof" },
     "title": { "$ref": "common.schema.json#/$defs/nonemptyString" },
@@ -67,7 +67,12 @@
     },
     "enrollment": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "writtenRef", "reportName", "auditLine", "definitionSource", "specHeadline", "axioms", "classification"],
+      "required": [
+        "id", "writtenRef", "reportName", "auditLine", "definitionSource",
+        "specHeadline", "axioms", "axiomTrust", "claimRole", "claimStrength",
+        "claimKind", "evidenceKind", "targetModelKind", "statementShape",
+        "premiseUsage", "guarantee", "scope", "limitations"
+      ],
       "properties": {
         "id": { "$ref": "common.schema.json#/$defs/kebabId" },
         "writtenRef": { "$ref": "common.schema.json#/$defs/nonemptyString" },
@@ -84,14 +89,24 @@
           "type": "array", "uniqueItems": true,
           "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
         },
-        "classification": { "enum": ["trusted", "flagged"] },
-        "evidenceLabel": { "const": "proven" }
+        "axiomTrust": { "enum": ["trusted", "flagged"] },
+        "claimRole": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/claimRole" },
+        "claimStrength": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/claimStrength" },
+        "claimKind": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/claimKind" },
+        "evidenceKind": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/evidenceKind" },
+        "targetModelKind": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/targetModelKind" },
+        "statementShape": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/statementShape" },
+        "premiseUsage": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/premiseUsage" },
+        "guarantee": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/guarantee" },
+        "scope": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/scope" },
+        "limitations": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/limitations" },
+        "aliasOf": { "$ref": "proof-claims.schema.json#/$defs/claim/properties/aliasOf" }
       },
       "allOf": [
         {
-          "if": { "properties": { "classification": { "const": "trusted" } } },
-          "then": { "required": ["evidenceLabel"] },
-          "else": { "not": { "required": ["evidenceLabel"] } }
+          "if": { "properties": { "claimRole": { "enum": ["alias", "deprecated-alias"] } } },
+          "then": { "required": ["aliasOf"] },
+          "else": { "not": { "required": ["aliasOf"] } }
         }
       ]
     },

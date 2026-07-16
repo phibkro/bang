@@ -1,471 +1,1155 @@
 {
   "enrollments": [
     {
-      "auditLine": 33,
+      "auditLine": 34,
+      "axiomTrust": "flagged",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext",
         "sorryAx"
       ],
-      "classification": "flagged",
+      "claimKind": "logical-relation",
+      "claimRole": "canonical",
+      "claimStrength": "partial",
       "definitionSource": {
-        "line": 249,
+        "line": 267,
         "path": "Bang/Spec.lean"
       },
+      "evidenceKind": "partial-kernel-declaration",
+      "guarantee": "Partial logical-relation adequacy from related computations to typed contextual approximation.",
       "id": "bang-lr-sound",
+      "limitations": [
+        "Depends on sorryAx at the documented capability-reshape observation bridge."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "step-indexed Crel premise"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.lr_sound",
+      "scope": "Typed source computations at one effect and computation type.",
       "specHeadline": true,
+      "statementShape": "(forall n, Crel n B e c1 c2) -> ctxApprox c1 c2",
+      "targetModelKind": "typed-contextual-semantics",
       "writtenRef": "lr_sound"
     },
     {
-      "auditLine": 34,
+      "auditLine": 35,
+      "axiomTrust": "flagged",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext",
         "sorryAx"
       ],
-      "classification": "flagged",
+      "claimKind": "logical-relation",
+      "claimRole": "canonical",
+      "claimStrength": "partial",
       "definitionSource": {
-        "line": 280,
+        "line": 298,
         "path": "Bang/Spec.lean"
       },
+      "evidenceKind": "partial-kernel-declaration",
+      "guarantee": "Partial fundamental theorem for related closures of a typed open computation.",
       "id": "bang-lr-fundamental",
+      "limitations": [
+        "Depends on sorryAx in the handler and up compatibility spine."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "source typing",
+          "related closing environments"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.lr_fundamental",
+      "scope": "Step-indexed binary logical relation over typed source terms.",
       "specHeadline": true,
+      "statementShape": "HasCTy gamma Gamma c e B -> forall n delta1 delta2, EnvRel n Gamma delta1 delta2 -> Crel n B e (closeC delta1 c) (closeC delta2 c)",
+      "targetModelKind": "typed-contextual-semantics",
       "writtenRef": "lr_fundamental"
     },
     {
-      "auditLine": 35,
+      "auditLine": 36,
+      "axiomTrust": "flagged",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext",
         "sorryAx"
       ],
-      "classification": "flagged",
+      "claimKind": "logical-relation",
+      "claimRole": "supporting",
+      "claimStrength": "partial",
       "definitionSource": {
-        "line": 290,
+        "line": 308,
         "path": "Bang/Spec.lean"
       },
+      "evidenceKind": "partial-kernel-declaration",
+      "guarantee": "Closed-program specialization of the partial logical-relation fundamental theorem.",
       "id": "bang-lr-fundamental-closed",
+      "limitations": [
+        "Inherits the sorryAx dependencies of lr_fundamental and is not independent evidence."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "closed source typing"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.lr_fundamental_closed",
+      "scope": "Closed typed source computations.",
       "specHeadline": true,
+      "statementShape": "HasCTy gamma [] c e B -> forall n, Crel n B e c c",
+      "targetModelKind": "typed-contextual-semantics",
       "writtenRef": "lr_fundamental_closed"
     },
     {
-      "auditLine": 37,
+      "auditLine": 38,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "contextual-equivalence-law",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 306,
+        "line": 324,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Returning a value and then sequencing is contextually equivalent to the continuation.",
       "id": "bang-seq-unit",
+      "limitations": [
+        "A single sequencing law, not a complete equational theory."
+      ],
+      "premiseUsage": {
+        "loadBearing": [],
+        "unused": []
+      },
       "reportName": "Bang.seq_unit",
+      "scope": "Every typed observation effect and computation type.",
       "specHeadline": true,
+      "statementShape": "ctxEquiv (seqComp (ret v) c) c",
+      "targetModelKind": "typed-contextual-semantics",
       "writtenRef": "seq_unit"
     },
     {
-      "auditLine": 38,
+      "auditLine": 39,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "forward-simulation",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 338,
+        "line": 365,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A successful source run has a value-preserving run in the project Wasm-oriented abstract machine.",
       "id": "bang-compile-forward-sim",
+      "limitations": [
+        "One-way only.",
+        "Does not target the concrete WAT emitter or official Wasm semantics.",
+        "Excludes ambient host IO represented by literal capabilities."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "literal-capability freedom",
+          "successful source evaluation"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.compile_forward_sim",
+      "scope": "Literal-capability-free programs and terminating-success executions.",
       "specHeadline": true,
+      "statementShape": "VcapFree c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)",
+      "targetModelKind": "source-to-project-wasm-oriented-abstract-machine",
       "writtenRef": "compile_forward_sim"
     },
     {
-      "auditLine": 41,
+      "auditLine": 42,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "forward-simulation",
+      "claimRole": "supporting",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 2771,
+        "line": 2762,
         "path": "Bang/Backend/Wasm.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-specialization",
+      "guarantee": "Pure successful source runs have matching abstract-target runs.",
       "id": "bang-compile-forward-sim-pure",
+      "limitations": [
+        "One-way only.",
+        "Does not target concrete emitted Wasm."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "pure-fragment premise",
+          "successful source evaluation"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.compile_forward_sim_pure",
+      "scope": "Pure source fragment and terminating-success executions.",
       "specHeadline": false,
+      "statementShape": "Pure c -> Source.eval fuel c = done v -> exists fuel', Wasmfx.run fuel' (compileC c) = done (compileV v)",
+      "targetModelKind": "source-to-project-wasm-oriented-abstract-machine",
       "writtenRef": "Bang.compile_forward_sim_pure"
     },
     {
-      "auditLine": 42,
+      "auditLine": 43,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "forward-simulation",
+      "claimRole": "supporting",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 2759,
+        "line": 2750,
         "path": "Bang/Backend/Wasm.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Pure successful source evaluation is reproduced by compiled CalcVM code.",
       "id": "bang-source-eval-to-exec",
+      "limitations": [
+        "Does not cover non-pure programs or non-success outcomes."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "pure-fragment premise",
+          "successful source evaluation"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.source_eval_to_exec",
+      "scope": "Pure source programs with successful terminating runs.",
       "specHeadline": false,
+      "statementShape": "Pure c -> Source.eval fuel c = done v -> exists F, CalcVM.exec F 0 (compile c []) [] [] = some [ret v]",
+      "targetModelKind": "source-to-calcvm",
       "writtenRef": "Bang.source_eval_to_exec"
     },
     {
-      "auditLine": 49,
+      "aliasOf": "compile_forward_sim",
+      "auditLine": 50,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "compatibility-alias",
+      "claimRole": "alias",
+      "claimStrength": "alias",
       "definitionSource": {
         "line": 101,
         "path": "Bang/Backend/Rung5ProofGrade.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "theorem-alias",
+      "guarantee": "Named re-export of compile_forward_sim for the rung-5 census.",
       "id": "bang-rung5proofgrade-s5-effectful-forward-sim",
+      "limitations": [
+        "Provides no independent proof evidence."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "literal-capability freedom",
+          "successful source evaluation"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.Rung5ProofGrade.s5_effectful_forward_sim",
+      "scope": "Exactly the scope of compile_forward_sim.",
       "specHeadline": false,
+      "statementShape": "Same proposition as compile_forward_sim",
+      "targetModelKind": "source-to-project-wasm-oriented-abstract-machine",
       "writtenRef": "Bang.Rung5ProofGrade.s5_effectful_forward_sim"
     },
     {
-      "auditLine": 50,
+      "auditLine": 51,
+      "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-correspondence",
+      "claimRole": "supporting",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 110,
         "path": "Bang/Backend/Rung5ProofGrade.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Successful CalcVM execution is preserved by the project abstract target executor.",
       "id": "bang-rung5proofgrade-s5-exec-wexec-lockstep",
+      "limitations": [
+        "One-way success correspondence between two in-repo abstract machines."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "code well-formedness",
+          "handler-stack well-formedness",
+          "successful CalcVM execution"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.Rung5ProofGrade.s5_exec_wexec_lockstep",
+      "scope": "Well-formed code and handler stacks on successful executions.",
       "specHeadline": false,
+      "statementShape": "CodeOk code -> HStackOk hs -> exec ... = some s' -> wexec ... = some (injStack s')",
+      "targetModelKind": "calcvm-to-project-wasm-oriented-abstract-machine",
       "writtenRef": "Bang.Rung5ProofGrade.s5_exec_wexec_lockstep"
     },
     {
-      "auditLine": 51,
+      "auditLine": 52,
+      "axiomTrust": "trusted",
       "axioms": [
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "structural-invariant",
+      "claimRole": "canonical",
+      "claimStrength": "structural",
       "definitionSource": {
-        "line": 320,
+        "line": 340,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
-      "id": "bang-compile-well-typed",
-      "reportName": "Bang.compile_well_typed",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Every compileC instruction satisfies the current project-defined InstrWF predicate.",
+      "id": "bang-compilec-satisfies-current-instrwf",
+      "limitations": [
+        "InstrWF only rejects local get/set today.",
+        "Not source type preservation, official Wasm validation, or concrete-emitter validation."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "compileC output shape"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.compileC_satisfies_current_instrWF",
+      "scope": "All source computations lowered to the project abstract instruction list.",
       "specHeadline": true,
+      "statementShape": "Wasmfx.WellTyped (compileC c)",
+      "targetModelKind": "project-wasm-oriented-abstract-machine",
+      "writtenRef": "compileC_satisfies_current_instrWF"
+    },
+    {
+      "aliasOf": "compileC_satisfies_current_instrWF",
+      "auditLine": 53,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "propext"
+      ],
+      "claimKind": "compatibility-alias",
+      "claimRole": "deprecated-alias",
+      "claimStrength": "alias",
+      "definitionSource": {
+        "line": 347,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceKind": "deprecated-theorem-alias",
+      "guarantee": "Compatibility form of the current structural InstrWF invariant.",
+      "id": "bang-compile-well-typed",
+      "limitations": [
+        "Name overstates the current predicate and must not be presented as target validation."
+      ],
+      "premiseUsage": {
+        "loadBearing": [],
+        "unused": [
+          "source typing"
+        ]
+      },
+      "reportName": "Bang.compile_well_typed",
+      "scope": "Typed closed source programs, although the structural conclusion holds for every input.",
+      "specHeadline": true,
+      "statementShape": "HasCTy [] [] c e (F q A) -> Wasmfx.WellTyped (compileC c)",
+      "targetModelKind": "project-wasm-oriented-abstract-machine",
       "writtenRef": "compile_well_typed"
     },
     {
-      "auditLine": 52,
+      "auditLine": 54,
+      "axiomTrust": "flagged",
       "axioms": [
         "sorryAx"
       ],
-      "classification": "flagged",
+      "claimKind": "placeholder",
+      "claimRole": "placeholder",
+      "claimStrength": "placeholder",
       "definitionSource": {
-        "line": 345,
+        "line": 374,
         "path": "Bang/Spec.lean"
       },
-      "id": "bang-handler-compiles",
-      "reportName": "Bang.handler_compiles",
+      "evidenceKind": "placeholder-kernel-declaration",
+      "guarantee": "Tracks the intended future handler-lowering proposition only.",
+      "id": "bang-handler-lowering-placeholder",
+      "limitations": [
+        "Depends on sorryAx.",
+        "Current premise and conclusion are True placeholders and constrain no behavior."
+      ],
+      "premiseUsage": {
+        "loadBearing": [],
+        "unused": [
+          "HandlerLawful h"
+        ]
+      },
+      "reportName": "Bang.handler_lowering_placeholder",
+      "scope": "Roadmap placeholder over an empty compiled module and True predicates.",
       "specHeadline": true,
+      "statementShape": "HandlerLawful h -> Wasmfx.HandlerEquiv (compileHandler h) h",
+      "targetModelKind": "handler-lowering-placeholder",
+      "writtenRef": "handler_lowering_placeholder"
+    },
+    {
+      "aliasOf": "handler_lowering_placeholder",
+      "auditLine": 55,
+      "axiomTrust": "flagged",
+      "axioms": [
+        "sorryAx"
+      ],
+      "claimKind": "compatibility-alias",
+      "claimRole": "deprecated-alias",
+      "claimStrength": "alias",
+      "definitionSource": {
+        "line": 379,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceKind": "deprecated-theorem-alias",
+      "guarantee": "Compatibility name for the handler-lowering roadmap placeholder.",
+      "id": "bang-handler-compiles",
+      "limitations": [
+        "Depends on the placeholder and provides no independent evidence."
+      ],
+      "premiseUsage": {
+        "loadBearing": [],
+        "unused": [
+          "HandlerLawful h"
+        ]
+      },
+      "reportName": "Bang.handler_compiles",
+      "scope": "No product-evidence scope.",
+      "specHeadline": true,
+      "statementShape": "Same proposition as handler_lowering_placeholder",
+      "targetModelKind": "handler-lowering-placeholder",
       "writtenRef": "handler_compiles"
     },
     {
-      "auditLine": 53,
+      "auditLine": 56,
+      "axiomTrust": "trusted",
       "axioms": [
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "structural-invariant",
+      "claimRole": "canonical",
+      "claimStrength": "structural",
       "definitionSource": {
-        "line": 349,
+        "line": 386,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
-      "id": "bang-zero-grade-no-code",
-      "reportName": "Bang.zero_grade_no_code",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "The substitution-based abstract lowering emits no local get/set instruction at any index.",
+      "id": "bang-compilec-emits-no-locals",
+      "limitations": [
+        "Not grade-directed erasure.",
+        "Does not inspect the concrete Wasm emitter or source computations embedded in abstract instructions."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "compileC output shape"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.compileC_emits_no_locals",
+      "scope": "Every source computation and every local index in the abstract instruction list.",
       "specHeadline": true,
+      "statementShape": "not Wasmfx.MentionsLocal (compileC c) k",
+      "targetModelKind": "project-wasm-oriented-abstract-machine",
+      "writtenRef": "compileC_emits_no_locals"
+    },
+    {
+      "aliasOf": "compileC_emits_no_locals",
+      "auditLine": 57,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "propext"
+      ],
+      "claimKind": "compatibility-alias",
+      "claimRole": "deprecated-alias",
+      "claimStrength": "alias",
+      "definitionSource": {
+        "line": 392,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceKind": "deprecated-theorem-alias",
+      "guarantee": "Compatibility specialization of compileC_emits_no_locals at local index zero.",
+      "id": "bang-zero-grade-no-code",
+      "limitations": [
+        "Not evidence that grade zero directs erasure or that the concrete emitter omits code."
+      ],
+      "premiseUsage": {
+        "loadBearing": [],
+        "unused": [
+          "grade-zero source typing"
+        ]
+      },
+      "reportName": "Bang.zero_grade_no_code",
+      "scope": "Grade-zero-typed inputs, although the structural conclusion holds for every input.",
+      "specHeadline": true,
+      "statementShape": "HasCTy (0 :: gamma) (A :: Gamma) c e B -> not Wasmfx.MentionsLocal (compileC c) 0",
+      "targetModelKind": "project-wasm-oriented-abstract-machine",
       "writtenRef": "zero_grade_no_code"
     },
     {
-      "auditLine": 54,
+      "auditLine": 58,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "typing-metatheorem",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 104,
+        "line": 109,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Capture-avoiding value substitution preserves typing with graded context arithmetic.",
       "id": "bang-subst-value",
+      "limitations": [
+        "A syntactic typing theorem, not observational grade erasure."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "value typing",
+          "computation typing",
+          "binder grade rho"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.subst_value",
+      "scope": "Core graded source typing.",
       "specHeadline": true,
+      "statementShape": "HasVTy gammaV Gamma v A -> HasCTy (rho :: gamma) (A :: Gamma) c e B -> HasCTy (gamma + rho * gammaV) Gamma (subst v c) e B",
+      "targetModelKind": "source-type-system",
       "writtenRef": "subst_value"
     },
     {
-      "auditLine": 55,
+      "auditLine": 59,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "typing-metatheorem",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 119,
+        "line": 124,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "One source CK step preserves the whole-program type while the running effect may shrink.",
       "id": "bang-preservation",
+      "limitations": [
+        "One-step preservation only; it does not establish termination."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "configuration typing and NonEscape",
+          "concrete step equality"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.preservation",
+      "scope": "Configurations satisfying the stronger HasConfig invariant.",
       "specHeadline": true,
+      "statementShape": "HasConfig cfg eo Co -> step cfg = some cfg' -> exists eo', eo' <= eo and HasConfig cfg' eo' Co",
+      "targetModelKind": "source-ck-machine",
       "writtenRef": "preservation"
     },
     {
-      "auditLine": 56,
+      "auditLine": 60,
+      "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-safety",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 134,
+        "line": 139,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A fully handled typed configuration returns, steps, or reaches the classified capability-escape terminal.",
       "id": "bang-progress",
+      "limitations": [
+        "Defined capability escape is allowed.",
+        "Not a return-or-step-only theorem or termination proof."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "configuration typing at bottom effect and returner type"
+        ],
+        "unused": [
+          "tautological NonEscape' conjunct"
+        ]
+      },
       "reportName": "Bang.progress",
+      "scope": "Bottom-effect configurations with returner type.",
       "specHeadline": true,
+      "statementShape": "HasConfig' cfg bottom (F q A) -> isReturnConfig cfg or (exists cfg', step cfg = some cfg') or IsDefinedEscape cfg",
+      "targetModelKind": "source-ck-machine",
       "writtenRef": "progress"
     },
     {
-      "auditLine": 57,
+      "auditLine": 61,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-safety",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 156,
+        "line": 161,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A fully handled well-typed source program cannot produce the unclassified stuck result.",
       "id": "bang-type-safety",
+      "limitations": [
+        "Defined capability escape and fuel-exhaustion oom remain allowed.",
+        "Does not prove termination."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "initial configuration typing at bottom effect"
+        ],
+        "unused": [
+          "tautological NonEscape' conjunct"
+        ]
+      },
       "reportName": "Bang.type_safety",
+      "scope": "Fuel-bounded Source.eval from a fresh empty configuration.",
       "specHeadline": true,
+      "statementShape": "HasConfig' (0, [], c) bottom (F q A) -> forall fuel, Source.eval fuel c != stuck",
+      "targetModelKind": "source-ck-machine",
       "writtenRef": "type_safety"
     },
     {
-      "auditLine": 58,
+      "auditLine": 62,
+      "axiomTrust": "trusted",
       "axioms": [],
-      "classification": "trusted",
+      "claimKind": "dispatch-isolation",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 60,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A handler scoped to one row cannot report that it handles an operation in a disjoint row.",
       "id": "bang-no-accidental-handling",
+      "limitations": [
+        "Not by itself a whole-run noninterference theorem."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "handler label containment",
+          "row disjointness",
+          "foreign-label membership"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.no_accidental_handling",
+      "scope": "The label-indexed handlesOp dispatch predicate.",
       "specHeadline": true,
+      "statementShape": "HandlesWithin l h -> Disjoint l e -> labelEff l' <= e -> handlesOp h l' op = false",
+      "targetModelKind": "effect-dispatch-predicate",
       "writtenRef": "no_accidental_handling"
     },
     {
-      "auditLine": 61,
+      "auditLine": 65,
+      "axiomTrust": "trusted",
       "axioms": [
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "dispatch-isolation",
+      "claimRole": "supporting",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 71,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-specialization",
+      "guarantee": "A custom handler cannot report that it handles a foreign label.",
       "id": "bang-no-accidental-handling-custom",
+      "limitations": [
+        "Constrains label matching only, not arbitrary handler behavior."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "row disjointness",
+          "foreign-label membership"
+        ],
+        "unused": [
+          "custom handler parameter and clauses"
+        ]
+      },
       "reportName": "Bang.no_accidental_handling_custom",
+      "scope": "Custom-handler specialization of dispatch isolation.",
       "specHeadline": true,
+      "statementShape": "Disjoint (labelEff l) e -> labelEff l' <= e -> handlesOp (custom l p cl) l' op = false",
+      "targetModelKind": "effect-dispatch-predicate",
       "writtenRef": "no_accidental_handling_custom"
     },
     {
-      "auditLine": 62,
+      "auditLine": 66,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-safety",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
-        "line": 84,
+        "line": 81,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
-      "id": "bang-custom-program-safe",
-      "reportName": "Bang.custom_program_safe",
+      "evidenceKind": "kernel-checked-corollary",
+      "guarantee": "Every closed, fully handled, well-typed program avoids the unclassified stuck result.",
+      "id": "bang-closed-fully-handled-program-no-unclassified-stuck",
+      "limitations": [
+        "Defined capability escape and fuel-exhaustion oom remain allowed.",
+        "Does not identify or isolate a custom-handler fragment."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "closed bottom-effect source typing"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.closed_fully_handled_program_no_unclassified_stuck",
+      "scope": "All closed bottom-effect programs, including but not requiring custom handlers.",
       "specHeadline": true,
+      "statementShape": "HasCTy [] [] c bottom (F q A) -> forall fuel, Source.eval fuel c != stuck",
+      "targetModelKind": "source-ck-machine",
+      "writtenRef": "closed_fully_handled_program_no_unclassified_stuck"
+    },
+    {
+      "aliasOf": "closed_fully_handled_program_no_unclassified_stuck",
+      "auditLine": 67,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "claimKind": "compatibility-alias",
+      "claimRole": "deprecated-alias",
+      "claimStrength": "alias",
+      "definitionSource": {
+        "line": 89,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceKind": "deprecated-theorem-alias",
+      "guarantee": "Compatibility name for generic closed-program no-unclassified-stuck safety.",
+      "id": "bang-custom-program-safe",
+      "limitations": [
+        "The name does not establish that a program contains or exercises a custom handler."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "closed bottom-effect source typing"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.custom_program_safe",
+      "scope": "Exactly the scope of closed_fully_handled_program_no_unclassified_stuck.",
+      "specHeadline": true,
+      "statementShape": "Same proposition as closed_fully_handled_program_no_unclassified_stuck",
+      "targetModelKind": "source-ck-machine",
       "writtenRef": "custom_program_safe"
     },
     {
-      "auditLine": 63,
+      "auditLine": 68,
+      "axiomTrust": "trusted",
       "axioms": [],
-      "classification": "trusted",
+      "claimKind": "definition-projection",
+      "claimRole": "canonical",
+      "claimStrength": "structural",
       "definitionSource": {
         "line": 49,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-definition-projection",
+      "guarantee": "Well-formed row instantiation includes its required disjointness condition.",
       "id": "bang-rowinst-requires-disjoint",
+      "limitations": [
+        "A projection from the definition, not an independently derived metatheorem."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "WfInst record proposition"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.rowinst_requires_disjoint",
+      "scope": "The project WfInst definition.",
       "specHeadline": true,
+      "statementShape": "WfInst q L epsilon -> Disjoint epsilon L",
+      "targetModelKind": "row-instantiation-judgment",
       "writtenRef": "rowinst_requires_disjoint"
     },
     {
-      "auditLine": 67,
+      "auditLine": 72,
+      "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "runtime-invariant",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
       "definitionSource": {
-        "line": 200,
+        "line": 207,
         "path": "Bang/Spec.lean"
       },
-      "evidenceLabel": "proven",
-      "id": "bang-effect-sound",
-      "reportName": "Bang.effect_sound",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Every recorded dispatch label lies within the runtime live bound recorded beside that dispatch.",
+      "id": "bang-evaltrace-dispatches-within-recorded-live-bound",
+      "limitations": [
+        "Not static effect soundness.",
+        "The checked bound is runtime instrumentation stored in each trace event."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "successful instrumented run"
+        ],
+        "unused": [
+          "source typing"
+        ]
+      },
+      "reportName": "Bang.evalTrace_dispatches_within_recorded_live_bound",
+      "scope": "Successful runs of the instrumented source CK trace evaluator.",
       "specHeadline": true,
+      "statementShape": "HasCTy [] [] c e (F q A) -> evalTrace fuel c e = done (v, t) -> traceWithin t",
+      "targetModelKind": "source-trace-runtime",
+      "writtenRef": "evalTrace_dispatches_within_recorded_live_bound"
+    },
+    {
+      "aliasOf": "evalTrace_dispatches_within_recorded_live_bound",
+      "auditLine": 73,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "claimKind": "compatibility-alias",
+      "claimRole": "deprecated-alias",
+      "claimStrength": "alias",
+      "definitionSource": {
+        "line": 220,
+        "path": "Bang/Spec.lean"
+      },
+      "evidenceKind": "deprecated-theorem-alias",
+      "guarantee": "Compatibility name for the runtime-recorded-live-bound invariant.",
+      "id": "bang-effect-sound",
+      "limitations": [
+        "Must not be described as static effect soundness."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "successful instrumented run"
+        ],
+        "unused": [
+          "source typing"
+        ]
+      },
+      "reportName": "Bang.effect_sound",
+      "scope": "Exactly the scope of evalTrace_dispatches_within_recorded_live_bound.",
+      "specHeadline": true,
+      "statementShape": "Same proposition as evalTrace_dispatches_within_recorded_live_bound",
+      "targetModelKind": "source-trace-runtime",
       "writtenRef": "effect_sound"
     },
     {
-      "auditLine": 68,
+      "auditLine": 74,
+      "axiomTrust": "flagged",
       "axioms": [
         "propext",
         "sorryAx"
       ],
-      "classification": "flagged",
+      "claimKind": "conjecture",
+      "claimRole": "canonical",
+      "claimStrength": "conjectural",
       "definitionSource": {
-        "line": 165,
+        "line": 170,
         "path": "Bang/Spec.lean"
       },
+      "evidenceKind": "conjectural-kernel-declaration",
+      "guarantee": "Conjectures observational irrelevance of substitutions for a zero-graded binder.",
       "id": "bang-zero-usage-erasable",
+      "limitations": [
+        "The proof body is sorry and depends on sorryAx.",
+        "Must not be presented as established grade erasure."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "intended grade-zero source typing premise"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.zero_usage_erasable",
+      "scope": "Typed contextual equivalence at every observation type.",
       "specHeadline": true,
+      "statementShape": "HasCTy (0 :: gamma) (A :: Gamma) c e B -> NotEvaluated 0 c",
+      "targetModelKind": "typed-contextual-semantics",
       "writtenRef": "zero_usage_erasable"
     },
     {
-      "auditLine": 69,
+      "auditLine": 75,
+      "axiomTrust": "trusted",
       "axioms": [
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "example-law",
+      "claimRole": "supporting",
+      "claimStrength": "bounded",
       "definitionSource": {
         "line": 2828,
         "path": "Bang/Frontend/Surface.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "The canonical cell example returns the latest written integer under the fixed evaluator bound.",
       "id": "bang-surface-cell-reflects-latest",
+      "limitations": [
+        "Example-level regression law, not a universal theorem about reactive cells."
+      ],
+      "premiseUsage": {
+        "loadBearing": [],
+        "unused": []
+      },
       "reportName": "Bang.Surface.cell_reflects_latest",
+      "scope": "One fixed cellComp program family at fuel 80.",
       "specHeadline": false,
+      "statementShape": "forall s0 v, Source.eval 80 (cellComp s0 v) = done (vint v)",
+      "targetModelKind": "surface-example",
       "writtenRef": "Bang.Surface.cell_reflects_latest"
     },
     {
-      "auditLine": 70,
+      "auditLine": 76,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-correspondence",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 3456,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A terminating evalD term result is reproduced by compiled CalcVM code.",
       "id": "bang-calcvm-compile-correct",
+      "limitations": [
+        "One-way convergent result theorem and does not directly mention Source.eval."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "terminating evalD term result"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.CalcVM.compile_correct",
+      "scope": "Successful term outcomes from empty initial machine state.",
       "specHeadline": false,
+      "statementShape": "evalD n 0 [] [] [] M = some (term t, ...) -> exists F, exec F 0 (compile M []) [] [] = some [t]",
+      "targetModelKind": "calcvm",
       "writtenRef": "Bang.CalcVM.compile_correct"
     },
     {
-      "auditLine": 71,
+      "auditLine": 77,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-correspondence",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 6843,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A literal-capability-free terminating evalD return is reproduced by Source.eval.",
       "id": "bang-calcvm-evald-agrees-source",
+      "limitations": [
+        "One-way success correspondence and excludes literal capabilities."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "literal-capability freedom",
+          "successful evalD return"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.CalcVM.evalD_agrees_source",
+      "scope": "Successful returned values from empty initial state.",
       "specHeadline": false,
+      "statementShape": "VcapFree M -> evalD f 0 [] [] [] M = some (term (ret v), ...) -> exists F, Source.eval F M = done v",
+      "targetModelKind": "calcvm-to-source-ck-machine",
       "writtenRef": "Bang.CalcVM.evalD_agrees_source"
     },
     {
-      "auditLine": 73,
+      "auditLine": 79,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-correspondence",
+      "claimRole": "supporting",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 2296,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "The invariant-rich calculation theorem relates evalD outcomes to CalcVM execution.",
       "id": "bang-calcvm-sim",
+      "limitations": [
+        "Internal proof infrastructure rather than a direct end-user compiler equation."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "evalD result",
+          "store correspondence",
+          "handler-stack correspondence",
+          "freshness and disjointness invariants"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.CalcVM.sim",
+      "scope": "Term and raised outcomes under the stated machine invariants.",
       "specHeadline": false,
+      "statementShape": "evalD result plus store and handler-stack invariants -> matching exec behavior and preserved invariants",
+      "targetModelKind": "calcvm",
       "writtenRef": "Bang.CalcVM.sim"
     },
     {
-      "auditLine": 74,
+      "auditLine": 80,
+      "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
         "Quot.sound",
         "propext"
       ],
-      "classification": "trusted",
+      "claimKind": "machine-correspondence",
+      "claimRole": "supporting",
+      "claimStrength": "strong",
       "definitionSource": {
         "line": 5494,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
-      "evidenceLabel": "proven",
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Relates evalD term and raised outcomes to source configuration execution under explicit invariants.",
       "id": "bang-calcvm-run-evald",
+      "limitations": [
+        "Not a premise-free whole-program evaluator equality."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "evalD result",
+          "store and context correspondence",
+          "capability-label coherence",
+          "freshness",
+          "NoResume for raised results"
+        ],
+        "unused": []
+      },
       "reportName": "Bang.CalcVM.run_evalD",
+      "scope": "Invariant-rich internal bridge to the source CK configuration runner.",
       "specHeadline": false,
+      "statementShape": "evalD term or raised result plus correspondence, coherence, freshness, and NoResume premises -> matching Config.run behavior",
+      "targetModelKind": "calcvm-to-source-config-run",
       "writtenRef": "Bang.CalcVM.run_evalD"
+    },
+    {
+      "auditLine": 81,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "Classical.choice",
+        "Quot.sound",
+        "propext"
+      ],
+      "claimKind": "machine-correspondence",
+      "claimRole": "canonical",
+      "claimStrength": "strong",
+      "definitionSource": {
+        "line": 3147,
+        "path": "Bang/Backend/EnvMachine.lean"
+      },
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A successful default environment-machine return is reproduced by evalD after closing the source term and reading back the value.",
+      "id": "bang-envmachine-evale-agrees-evald",
+      "limitations": [
+        "Concludes evalD correspondence, not direct Source.eval agreement.",
+        "Does not cover non-success outcomes or arbitrary initial stores."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "environment agreement",
+          "environment well-formedness",
+          "closure well-formedness",
+          "source scoping",
+          "handler well-formedness",
+          "successful empty-store evalE return"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.EnvMachine.evalE_agrees_evalD",
+      "scope": "Empty input stores, agreeing well-formed environments, scoped handler-well-formed source terms, and successful returned outcomes.",
+      "specHeadline": false,
+      "statementShape": "EnvAgrees rho gamma -> MEnv.WF rho -> MEnv.WFClos rho -> ScopedC gamma.length M -> HandlerWF gamma.length M -> evalE f 0 [] [] [] rho M = some (mterm (mret mv), g', eSigma', eTau', eKappa') -> exists g'' sigma' tau' kappa', evalD f 0 [] [] [] (substEnv gamma M) = some (term (ret (readback mv)), g'', sigma', tau', kappa')",
+      "targetModelKind": "environment-machine-to-calcvm",
+      "writtenRef": "Bang.EnvMachine.evalE_agrees_evalD"
     }
   ],
   "evidence": [
     {
-      "claim": "Enrollment, source-location, Spec-headline, fingerprint, and axiom classifications are deterministic projections of tracked proof sources and fresh kernel output.",
+      "claim": "Enrollment, source-location, Spec-headline, fingerprint, and axiom trust are deterministic projections of tracked proof sources and fresh kernel output; semantic strength is copied exactly from the separately reviewed complete claim registry.",
       "commands": [
         "python3 tools/docfacts_proof.py --live-check"
       ],
@@ -474,6 +1158,7 @@
       "sources": [
         "Bang/Audit.lean",
         "Bang/Spec.lean",
+        "docfacts/proof-claims.json",
         "tools/docfacts_proof.py"
       ]
     },
@@ -492,7 +1177,7 @@
       ]
     },
     {
-      "claim": "Bang.compile_forward_sim is trusted-Audit-backed support for the one-way source-execution to formal-target-execution simulation, under the theorem's VcapFree and successful-source premises.",
+      "claim": "Bang.compile_forward_sim is trusted-Audit-backed support for the one-way source-execution to project-defined Wasm-oriented abstract-machine execution simulation, under the theorem's VcapFree and successful-source premises. It is not a theorem about the concrete WAT emitter or official Wasm semantics.",
       "commands": [
         "lake env lean Bang/Audit.lean"
       ],
@@ -534,10 +1219,10 @@
       "to": "target-execution"
     }
   ],
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "948103763babeb39c2326fa162acf2821005e9198494f2ee8e828f66ba782e86",
+    "digest": "711e0e9e5a354db14883ac2b9acbcf2d43169c66170937a8b09bfbc779ab608b",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",
@@ -597,6 +1282,9 @@
       "Bang/Witness/SendableFragment.lean",
       "Bang/Witness/StateEscapeWitness.lean",
       "Bang/Witness/VcapFreeRefute.lean",
+      "docfacts/proof-claims.json",
+      "docfacts/schema/proof-claims.schema.json",
+      "docfacts/schema/proof.schema.json",
       "lake-manifest.json",
       "lakefile.toml",
       "lean-toolchain"
@@ -629,9 +1317,17 @@
     },
     {
       "kind": "theorem",
+      "name": "Bang.closed_fully_handled_program_no_unclassified_stuck",
+      "source": {
+        "line": 81,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
       "name": "Bang.custom_program_safe",
       "source": {
-        "line": 84,
+        "line": 89,
         "path": "Bang/Spec.lean"
       }
     },
@@ -639,7 +1335,7 @@
       "kind": "theorem",
       "name": "Bang.subst_value",
       "source": {
-        "line": 104,
+        "line": 109,
         "path": "Bang/Spec.lean"
       }
     },
@@ -647,7 +1343,7 @@
       "kind": "theorem",
       "name": "Bang.preservation",
       "source": {
-        "line": 119,
+        "line": 124,
         "path": "Bang/Spec.lean"
       }
     },
@@ -655,7 +1351,7 @@
       "kind": "theorem",
       "name": "Bang.progress",
       "source": {
-        "line": 134,
+        "line": 139,
         "path": "Bang/Spec.lean"
       }
     },
@@ -663,7 +1359,7 @@
       "kind": "theorem",
       "name": "Bang.type_safety",
       "source": {
-        "line": 156,
+        "line": 161,
         "path": "Bang/Spec.lean"
       }
     },
@@ -671,7 +1367,15 @@
       "kind": "theorem",
       "name": "Bang.zero_usage_erasable",
       "source": {
-        "line": 165,
+        "line": 170,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.evalTrace_dispatches_within_recorded_live_bound",
+      "source": {
+        "line": 207,
         "path": "Bang/Spec.lean"
       }
     },
@@ -679,7 +1383,7 @@
       "kind": "theorem",
       "name": "Bang.effect_sound",
       "source": {
-        "line": 200,
+        "line": 220,
         "path": "Bang/Spec.lean"
       }
     },
@@ -687,7 +1391,7 @@
       "kind": "theorem",
       "name": "Bang.lr_sound",
       "source": {
-        "line": 249,
+        "line": 267,
         "path": "Bang/Spec.lean"
       }
     },
@@ -695,7 +1399,7 @@
       "kind": "theorem",
       "name": "Bang.lr_fundamental",
       "source": {
-        "line": 280,
+        "line": 298,
         "path": "Bang/Spec.lean"
       }
     },
@@ -703,7 +1407,7 @@
       "kind": "theorem",
       "name": "Bang.lr_fundamental_closed",
       "source": {
-        "line": 290,
+        "line": 308,
         "path": "Bang/Spec.lean"
       }
     },
@@ -711,7 +1415,15 @@
       "kind": "theorem",
       "name": "Bang.seq_unit",
       "source": {
-        "line": 306,
+        "line": 324,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.compileC_satisfies_current_instrWF",
+      "source": {
+        "line": 340,
         "path": "Bang/Spec.lean"
       }
     },
@@ -719,7 +1431,7 @@
       "kind": "theorem",
       "name": "Bang.compile_well_typed",
       "source": {
-        "line": 320,
+        "line": 347,
         "path": "Bang/Spec.lean"
       }
     },
@@ -727,7 +1439,15 @@
       "kind": "theorem",
       "name": "Bang.compile_forward_sim",
       "source": {
-        "line": 338,
+        "line": 365,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.handler_lowering_placeholder",
+      "source": {
+        "line": 374,
         "path": "Bang/Spec.lean"
       }
     },
@@ -735,7 +1455,15 @@
       "kind": "theorem",
       "name": "Bang.handler_compiles",
       "source": {
-        "line": 345,
+        "line": 379,
+        "path": "Bang/Spec.lean"
+      }
+    },
+    {
+      "kind": "theorem",
+      "name": "Bang.compileC_emits_no_locals",
+      "source": {
+        "line": 386,
         "path": "Bang/Spec.lean"
       }
     },
@@ -743,12 +1471,12 @@
       "kind": "theorem",
       "name": "Bang.zero_grade_no_code",
       "source": {
-        "line": 349,
+        "line": 392,
         "path": "Bang/Spec.lean"
       }
     }
   ],
-  "summary": "Kernel-reported axiom sets, Spec headline enrollment, proof-method arrows, and a dirty-tree-sensitive proof-source fingerprint.",
+  "summary": "Kernel-reported axiom trust, reviewed per-declaration semantic strength and boundaries, Spec headline enrollment, proof-method arrows, and a dirty-tree-sensitive proof-source fingerprint.",
   "title": "BANG proof inventory",
   "trustedAxioms": [
     "Classical.choice",

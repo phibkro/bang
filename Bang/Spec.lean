@@ -75,17 +75,22 @@ theorem no_accidental_handling_custom
       handlesOp (Handler.custom ℓ p cl) ℓ' op = false
     := no_accidental_handling_custom_proof
 
--- [KEY] #44 STAGE 6 (ADR-0085) — the MOAT CAPSTONE: end-to-end user-effect soundness. A well-typed
--- program whose effects are fully discharged (row `⊥`, e.g. by installing a `custom` handler over its
--- label) never runs to `.stuck`. A corollary of the frozen `type_safety` (constructor-agnostic, so it
--- already covers the custom fragment) composed with the initial-config packaging — it STATES the
--- user-defined-effect soundness story directly over a `HasCTy`, rather than leaving it implied by the
--- trusted-three census. See `docs/notes/stage6-soundness-design.md`.
-theorem custom_program_safe
+-- [KEY] Generic source safety corollary. The proposition does not require a custom handler:
+-- every closed, fully handled, well-typed program avoids the unclassified `.stuck` result.
+-- Defined escape and fuel exhaustion remain possible outcomes. See `type_safety` above.
+theorem closed_fully_handled_program_no_unclassified_stuck
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
     HasCTy (Eff := Eff) (Mult := Mult) [] [] c ⊥ (CTy.F q A) →
     ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := custom_program_safe_proof
+
+/-- Deprecated compatibility alias. The proposition is generic and does not require a custom
+handler; use `closed_fully_handled_program_no_unclassified_stuck`. -/
+theorem custom_program_safe
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy (Eff := Eff) (Mult := Mult) [] [] c ⊥ (CTy.F q A) →
+    ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    := closed_fully_handled_program_no_unclassified_stuck
 
 
 /-! ## 3. Core syntactic metatheory -/
@@ -187,7 +192,9 @@ theorem zero_usage_erasable
   -- axiom-free (the `NotEvaluated` axiom is REMOVED — it is now a real `def` in `Bang/LR.lean`).
   sorry
 
--- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
+-- [INV] Runtime trace invariant: every recorded dispatch label lies within the live bound
+-- recorded beside that dispatch. This is not static effect soundness: the typing premise is
+-- unused, and the bound is computed by runtime instrumentation.
 -- Q14 RE-FOUNDATION (ADR-0105; the three `Trace`/`evalTrace`/`traceWithin` axioms are now defs):
 -- the INFORMATIVE runtime bound — each dispatched label is `≤` the LIVE effect it was performed
 -- under (`traceWithin t`, per-dispatch = `e ⊔ {live handler labels}`), NOT the discharged top-level
@@ -197,7 +204,7 @@ theorem zero_usage_erasable
 -- PROOF: `runTrace_traceWithin` — a machine induction (`Config.runTrace.induct`), NO preservation,
 -- NO LR; the `HasCTy` premise is not needed (the runtime bound is typing-independent), so the
 -- theorem holds for ANY well-loaded run. The static premise stays for the intended reading.
-theorem effect_sound
+theorem evalTrace_dispatches_within_recorded_live_bound
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
     {v : Val} {t : Trace Eff} :
     HasCTy [] [] c e (CTy.F q A) →
@@ -206,6 +213,17 @@ theorem effect_sound
   intro _ hrun
   unfold Source.evalTrace at hrun
   exact runTrace_traceWithin fuel (0, [], c) e [] v t hrun (traceWithin_nil)
+
+/-- Deprecated compatibility alias. This is a runtime-recorded-bound invariant, not a theorem
+that the static source effect row bounds observations; use
+`evalTrace_dispatches_within_recorded_live_bound`. -/
+theorem effect_sound
+    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
+    {v : Val} {t : Trace Eff} :
+    HasCTy [] [] c e (CTy.F q A) →
+    Source.evalTrace (Mult := Mult) fuel c e = Result.done (v, t) →
+    traceWithin (Mult := Mult) t :=
+  evalTrace_dispatches_within_recorded_live_bound
 
 
 /-! ## 5. Logical relation theorems -/
@@ -316,11 +334,20 @@ theorem seq_unit (v : Val) {c : Comp} {e : Eff} {B : CTy Eff Mult} :
 
 /-! ## 7. WasmFX compilation correctness (the contribution) -/
 
--- [KEY] Type preservation under translation.
+-- [INV] Current structural target predicate. `Wasmfx.InstrWF` rejects local get/set and
+-- accepts every other abstract instruction; `compileC` emits no locals. This proposition is
+-- independent of source typing and is not Wasm validation or target type preservation.
+theorem compileC_satisfies_current_instrWF (c : Comp) :
+    Wasmfx.WellTyped (compileC c) :=
+  Wasmfx.compileC_wellTyped c
+
+/-- Deprecated compatibility alias. The source-typing premise is unused and the conclusion is
+the project abstract machine's current structural `InstrWF`, not Wasm validation. Use
+`compileC_satisfies_current_instrWF`. -/
 theorem compile_well_typed
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
     HasCTy [] [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) :=
-  compile_well_typed_proof
+  fun _ => compileC_satisfies_current_instrWF c
 
 -- [KEY] Forward simulation — the heart of the contribution. PROVEN sorryAx-free for the FULL
 -- fragment (handlers AND user-defined/custom effects included), premised on `VcapFree c` ONLY. The
@@ -341,17 +368,33 @@ theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
   compile_forward_sim_proof
 
--- [KEY] Handler ↦ suspend/resume.
-theorem handler_compiles {h : Handler} :
+-- [ROADMAP][PLACEHOLDER] The predicates are currently `True` and `compileHandler` returns an
+-- empty module. Keeping this declaration `sorry` tracks a future handler-lowering obligation;
+-- it is not product evidence and must remain classified as a placeholder.
+theorem handler_lowering_placeholder {h : Handler} :
     HandlerLawful h → Wasmfx.HandlerEquiv (compileHandler h) h := sorry
 
--- [KEY] Erasure observable in output: 0-graded binder (index 0) emits no code.
+/-- Deprecated compatibility alias for the roadmap placeholder. It must not be presented as a
+proved handler-compilation theorem; use `handler_lowering_placeholder` only for gap tracking. -/
+theorem handler_compiles {h : Handler} :
+    HandlerLawful h → Wasmfx.HandlerEquiv (compileHandler h) h :=
+  handler_lowering_placeholder
+
+-- [INV] The substitution-based abstract lowering emits no local get/set instructions for any
+-- source computation or local index. This is structural, not grade-directed erasure and not a
+-- claim about the concrete Wasm emitter.
+theorem compileC_emits_no_locals (c : Comp) (k : Nat) :
+    ¬ Wasmfx.MentionsLocal (compileC c) k :=
+  Wasmfx.compileC_no_local c k
+
+/-- Deprecated compatibility alias. The grade-zero typing premise is unused because `compileC`
+emits no locals at any index for any input; use `compileC_emits_no_locals`. -/
 theorem zero_grade_no_code
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy ((0 : Mult) :: γ) (A :: Γ) c e B →
     ¬ Wasmfx.MentionsLocal (compileC c) 0 :=
-  zero_grade_no_code_proof
+  fun _ => compileC_emits_no_locals c 0
 
 end -- public section
 end Bang

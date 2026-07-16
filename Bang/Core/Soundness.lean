@@ -3355,10 +3355,9 @@ Stage 6 is a COMPOSITION, not a new grind: `preservation`/`progress`/`type_safet
 the STATEMENT), so their custom arms were folded in as Stages 2–5 landed — the `just axioms` census
 gate ADR-0085 assigns Stage 6 already passes. What Stage 6 STATES is (i) the abstraction-safety
 property INSTANTIATED at a user label (`no_accidental_handling_custom_proof`, via
-`custom_handlesWithin`) and (ii) the end-to-end user-effect soundness headline
-(`custom_program_safe_proof`) — a program installing a custom handler and discharging its label to
-`⊥` never runs to `.stuck`, a corollary of the frozen `type_safety`. See
-`docs/notes/stage6-soundness-design.md`. -/
+`custom_handlesWithin`) and (ii) a generic closed-program safety corollary
+(`custom_program_safe_proof`). The latter includes programs using custom handlers but does not
+require or identify that fragment. See `docs/notes/stage6-soundness-design.md`. -/
 
 /-- NO ACCIDENTAL HANDLING at a USER LABEL (#44 STAGE 6, ADR-0085): a scoped `custom ℓ p cl` handler
 never catches a FOREIGN operation (label in a disjoint row `e`). `no_accidental_handling` instantiated
@@ -3382,13 +3381,10 @@ theorem hasConfig'_of_closed
     HasConfig' (0, [], c) ⊥ (CTy.F q A) :=
   fun hc => ⟨⟨⊥, CTy.F q A, hc, HasStack.nil⟩, nonEscape'_all _⟩
 
-/-- END-TO-END USER-EFFECT SOUNDNESS (#44 STAGE 6, ADR-0085 — the moat capstone): a well-typed program
-`c` whose effects are fully discharged (row `⊥`, e.g. by installing a `custom` handler over its label)
-never runs to `.stuck` at any fuel. A corollary of the frozen `type_safety` — which is
-constructor-agnostic, so it already covers the custom fragment inside `c`; this composes it with the
-initial-config packaging (`hasConfig'_of_closed`) to STATE user-effect soundness directly over a
-`HasCTy`. This is what makes the user-defined-effect soundness story a stated theorem, not an implied
-census fact. -/
+/-- Generic closed-program safety corollary: a well-typed program `c` whose effects are fully
+discharged (row `⊥`) never runs to the unclassified `.stuck` result at any fuel. A corollary of
+`type_safety`, composed with the initial-config packaging (`hasConfig'_of_closed`). It includes
+custom-handler programs but has no premise saying that `c` contains or exercises one. -/
 theorem custom_program_safe_proof
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
     HasCTy (Eff := Eff) (Mult := Mult) [] [] c ⊥ (CTy.F q A) →

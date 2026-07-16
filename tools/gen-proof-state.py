@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/Audit.lean,audit_facts.py,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
+# tool: role=gen couples=Bang/Audit.lean,docfacts/proof-claims.json,audit_facts.py,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
 """gen-proof-state.py — generate CONTEXT.md's proof-state line from the gate (the root).
 
 CONTEXT.md hand-maintains a "proof-state" summary (which headline theorems are
@@ -35,9 +35,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
+from collections import Counter
 
 from audit_facts import axiom_report, classify, headlines, parse_axioms, run
 from genblock import splice as _splice
@@ -60,8 +62,45 @@ def sorry_total(lean_root: str):
     return None
 
 
+def semantic_inventory(lean_root: str) -> dict[str, dict]:
+    path = os.path.join(lean_root, "docfacts", "proof-claims.json")
+    with open(path, encoding="utf-8") as stream:
+        claims = json.load(stream)["claims"]
+    refs = [item["writtenRef"] for item in claims]
+    enrolled = headlines(lean_root)
+    if len(refs) != len(set(refs)) or set(refs) != set(enrolled):
+        raise ValueError(
+            "proof-claim semantics must cover Audit enrollments exactly by writtenRef"
+        )
+    return {item["writtenRef"]: item for item in claims}
+
+
 def render(lean_root: str, report: dict[str, list[str]], end: str = "HEAD") -> str:
     clean, pending, flagged = classify(lean_root, report)
+    semantics = semantic_inventory(lean_root)
+    substantive_roles = {"canonical", "supporting"}
+    aliases = [
+        ref
+        for ref, item in semantics.items()
+        if item["claimRole"] in {"alias", "deprecated-alias"}
+    ]
+    placeholders = [
+        ref for ref, item in semantics.items() if item["claimRole"] == "placeholder"
+    ]
+    clean_claims = [
+        ref for ref in clean if semantics[ref]["claimRole"] in substantive_roles
+    ]
+    pending_claims = [
+        ref for ref in pending if semantics[ref]["claimRole"] in substantive_roles
+    ]
+    flagged_claims = [
+        (ref, axioms)
+        for ref, axioms in flagged
+        if semantics[ref]["claimRole"] in substantive_roles
+    ]
+    role_counts = Counter(item["claimRole"] for item in semantics.values())
+    strength_counts = Counter(item["claimStrength"] for item in semantics.values())
+    alias_count = role_counts["alias"] + role_counts["deprecated-alias"]
     s = sorry_total(lean_root)
     lines = [
         BEGIN,
@@ -69,11 +108,22 @@ def render(lean_root: str, report: dict[str, list[str]], end: str = "HEAD") -> s
         f"Proof-state for Bang tree `tree:{bang_tree(lean_root, end)}`; "
         f"inputs `proof-input:{proof_input_id(lean_root, end)}`._",
         "",
-        f"- **headlines:** {len(clean)} clean (⊆ trusted-3) · {len(pending)} pending "
-        f"(build in flight) · {len(flagged)} flagged",
+        f"- **claims:** {len(clean_claims)} trusted-axiom (⊆ trusted-3) · "
+        f"{len(pending_claims)} pending (build in flight) · {len(flagged_claims)} flagged "
+        "(aliases/placeholders excluded)",
+        f"- **semantic strength:** {strength_counts['strong']} strong · "
+        f"{strength_counts['structural']} structural · {strength_counts['bounded']} bounded · "
+        f"{strength_counts['partial']} partial · {strength_counts['conjectural']} conjectural",
+        f"- **enrollment roles:** {role_counts['canonical']} canonical · "
+        f"{role_counts['supporting']} supporting · {alias_count} aliases · "
+        f"{role_counts['placeholder']} placeholder",
     ]
-    for name, axs in flagged:
+    for name, axs in flagged_claims:
         lines.append(f"- **flagged:** `{name}` → [{', '.join(axs)}]")
+    for name in placeholders:
+        axioms = next((axs for ref, axs in flagged if ref == name), [])
+        lines.append(f"- **placeholder:** `{name}` → [{', '.join(axioms)}]")
+    lines.append(f"- **aliases:** {', '.join(f'`{name}`' for name in aliases)}")
     lines.append(
         f"- **sorries:** {s if s is not None else 'unknown'} (per `burndown.sh`)"
     )

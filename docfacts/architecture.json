@@ -1667,13 +1667,13 @@
       ],
       "direction": "forward",
       "evidenceId": "evald-source-proof",
-      "from": "source-eval",
-      "id": "source-eval-to-evald",
+      "from": "evald",
+      "id": "evald-to-source-eval",
       "method": "state reification",
       "theoremRefs": [
         "Bang.CalcVM.evalD_agrees_source"
       ],
-      "to": "evald"
+      "to": "source-eval"
     },
     {
       "adrRefs": [
@@ -1750,7 +1750,7 @@
       ]
     },
     {
-      "claim": "The env/readback path is implemented as the default engine and is differentially tested against the oracle; evalE_agrees_evalD is not Audit-enrolled, so this fact does not label the boundary proven.",
+      "claim": "The env/readback path is implemented as the default engine and is differentially tested against the oracle. The separately Audit-enrolled evalE_agrees_evalD theorem proves successful empty-store env-to-evalD correspondence under explicit premises, not direct unconditional Source.eval agreement, so this product execution edge remains labelled differential-tested.",
       "commands": [
         "bash tools/check-examples-env.sh"
       ],
@@ -1775,7 +1775,7 @@
       ]
     },
     {
-      "claim": "Bang.compile_forward_sim proves value-preserving source execution to the formal target execution for VcapFree source Comp. The Lean namespace Wasmfx is historical; ADR-0059 makes Wasm 3.0 the product target.",
+      "claim": "Bang.compile_forward_sim proves value-preserving source execution to the project-defined Wasm-oriented abstract target for VcapFree source Comp. It does not target the concrete WAT emitter or official Wasm semantics; ADR-0059 separately makes Wasm 3.0 the product target.",
       "commands": [
         "lake env lean Bang/Audit.lean"
       ],
@@ -1859,11 +1859,12 @@
     {
       "directImports": [
         "Bang.Backend.AbstractMachine",
+        "Bang.Backend.EnvMachine",
         "Bang.Backend.Rung5ProofGrade",
         "Bang.Frontend.Surface",
         "Bang.Spec"
       ],
-      "loc": 75,
+      "loc": 82,
       "name": "Bang.Audit",
       "path": "Bang/Audit.lean",
       "publicSymbols": [],
@@ -4596,7 +4597,7 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 2931,
+      "loc": 2922,
       "name": "Bang.Backend.Wasm",
       "path": "Bang/Backend/Wasm.lean",
       "publicSymbols": [
@@ -5028,235 +5029,235 @@
         },
         {
           "kind": "def",
-          "line": 2119,
+          "line": 2117,
           "name": "InstrMentionsLocal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2125,
+          "line": 2123,
           "name": "MentionsLocal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2133,
+          "line": 2128,
           "name": "InstrWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2139,
+          "line": 2134,
           "name": "WellTyped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2154,
+          "line": 2149,
           "name": "HandlerLawful",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2159,
+          "line": 2154,
           "name": "Wasmfx.HandlerEquiv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2179,
+          "line": 2173,
           "name": "lowerCode_no_locals",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2215,
+          "line": 2209,
           "name": "compileC_no_local",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2225,
+          "line": 2219,
           "name": "compileC_wellTyped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2239,
+          "line": 2231,
           "name": "zero_grade_no_code_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2251,
+          "line": 2242,
           "name": "compile_well_typed_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2290,
+          "line": 2281,
           "name": "evalD_mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2416,
+          "line": 2407,
           "name": "evalD_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2426,
+          "line": 2417,
           "name": "evalD_some_le",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2442,
+          "line": 2433,
           "name": "PureCtx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2459,
+          "line": 2450,
           "name": "Sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2462,
+          "line": 2453,
           "name": "Sim.letC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2489,
+          "line": 2480,
           "name": "Sim.app",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2517,
+          "line": 2508,
           "name": "sim_letC_ret",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2523,
+          "line": 2514,
           "name": "sim_app_lam",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2529,
+          "line": 2520,
           "name": "sim_force",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2533,
+          "line": 2524,
           "name": "sim_case_inl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2536,
+          "line": 2527,
           "name": "sim_case_inr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2539,
+          "line": 2530,
           "name": "sim_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2543,
+          "line": 2534,
           "name": "sim_unfold",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2554,
+          "line": 2545,
           "name": "evalD_plug_sim_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2568,
+          "line": 2559,
           "name": "evalD_plug_letC_ret_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2574,
+          "line": 2565,
           "name": "evalD_plug_app_lam_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2580,
+          "line": 2571,
           "name": "evalD_plug_force_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2586,
+          "line": 2577,
           "name": "evalD_plug_case_inl_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2592,
+          "line": 2583,
           "name": "evalD_plug_case_inr_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2598,
+          "line": 2589,
           "name": "evalD_plug_split_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2604,
+          "line": 2595,
           "name": "evalD_plug_unfold_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2624,
+          "line": 2615,
           "name": "evalD_complete_gen",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2634,
+          "line": 2625,
           "name": "evalD_complete_gen_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2753,
+          "line": 2744,
           "name": "evalD_complete",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2759,
+          "line": 2750,
           "name": "source_eval_to_exec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2771,
+          "line": 2762,
           "name": "compile_forward_sim_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2799,
+          "line": 2790,
           "name": "compile_forward_sim_proof",
           "visibilityBasis": "public-section"
         }
@@ -7003,7 +7004,7 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 3400,
+      "loc": 3396,
       "name": "Bang.Core.Soundness",
       "path": "Bang/Core/Soundness.lean",
       "publicSymbols": [
@@ -7339,19 +7340,19 @@
         },
         {
           "kind": "theorem",
-          "line": 3367,
+          "line": 3366,
           "name": "no_accidental_handling_custom_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3379,
+          "line": 3378,
           "name": "hasConfig'_of_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3392,
+          "line": 3388,
           "name": "custom_program_safe_proof",
           "visibilityBasis": "public-section"
         }
@@ -10750,7 +10751,7 @@
         "Bang.Meta.BinaryLR",
         "Bang.Meta.LR"
       ],
-      "loc": 358,
+      "loc": 401,
       "name": "Bang.Spec",
       "path": "Bang/Spec.lean",
       "publicSymbols": [
@@ -10774,91 +10775,121 @@
         },
         {
           "kind": "theorem",
-          "line": 84,
+          "line": 81,
+          "name": "closed_fully_handled_program_no_unclassified_stuck",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 89,
           "name": "custom_program_safe",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 104,
+          "line": 109,
           "name": "subst_value",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 119,
+          "line": 124,
           "name": "preservation",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 134,
+          "line": 139,
           "name": "progress",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 156,
+          "line": 161,
           "name": "type_safety",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 165,
+          "line": 170,
           "name": "zero_usage_erasable",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 200,
+          "line": 207,
+          "name": "evalTrace_dispatches_within_recorded_live_bound",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 220,
           "name": "effect_sound",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 249,
+          "line": 267,
           "name": "lr_sound",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 280,
+          "line": 298,
           "name": "lr_fundamental",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 290,
+          "line": 308,
           "name": "lr_fundamental_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 306,
+          "line": 324,
           "name": "seq_unit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 320,
+          "line": 340,
+          "name": "compileC_satisfies_current_instrWF",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 347,
           "name": "compile_well_typed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 338,
+          "line": 365,
           "name": "compile_forward_sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 345,
+          "line": 374,
+          "name": "handler_lowering_placeholder",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 379,
           "name": "handler_compiles",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 349,
+          "line": 386,
+          "name": "compileC_emits_no_locals",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 392,
           "name": "zero_grade_no_code",
           "visibilityBasis": "public-section"
         }
@@ -12065,17 +12096,17 @@
   },
   "tiers": [
     {
-      "loc": 1010,
+      "loc": 1060,
       "moduleCount": 4,
       "name": "Apex"
     },
     {
-      "loc": 16975,
+      "loc": 16966,
       "moduleCount": 6,
       "name": "Backend"
     },
     {
-      "loc": 8166,
+      "loc": 8162,
       "moduleCount": 12,
       "name": "Core"
     },

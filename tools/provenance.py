@@ -39,6 +39,7 @@ PROOF_INPUT_FILES = frozenset(
         "tools/leanlex.py",
         "tools/genblock.py",
         "tools/provenance.py",
+        "docfacts/proof-claims.json",
         "lean-toolchain",
         "lakefile.toml",
         "lake-manifest.json",

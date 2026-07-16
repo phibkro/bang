@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bang-lang.org/docfacts/schema/proof-claims.schema.json",
+  "title": "BANG reviewed proof-claim semantics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "claims"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "proof-claim-semantics" },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/claim" }
+    }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "writtenRef", "claimRole", "claimStrength", "claimKind", "evidenceKind",
+        "targetModelKind", "statementShape", "premiseUsage", "guarantee", "scope",
+        "limitations"
+      ],
+      "properties": {
+        "writtenRef": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "claimRole": {
+          "enum": ["canonical", "supporting", "alias", "deprecated-alias", "placeholder"]
+        },
+        "claimStrength": {
+          "enum": ["strong", "bounded", "structural", "partial", "conjectural", "placeholder", "alias"]
+        },
+        "claimKind": {
+          "enum": [
+            "typing-metatheorem", "machine-safety", "dispatch-isolation",
+            "definition-projection", "runtime-invariant", "structural-invariant",
+            "logical-relation", "contextual-equivalence-law", "forward-simulation",
+            "machine-correspondence", "example-law", "conjecture", "placeholder",
+            "compatibility-alias"
+          ]
+        },
+        "evidenceKind": {
+          "enum": [
+            "kernel-checked-theorem", "kernel-checked-corollary",
+            "kernel-checked-specialization", "kernel-checked-definition-projection",
+            "partial-kernel-declaration", "conjectural-kernel-declaration",
+            "placeholder-kernel-declaration", "theorem-alias", "deprecated-theorem-alias"
+          ]
+        },
+        "targetModelKind": {
+          "enum": [
+            "source-type-system", "source-ck-machine", "source-trace-runtime",
+            "typed-contextual-semantics", "effect-dispatch-predicate",
+            "row-instantiation-judgment", "calcvm", "project-wasm-oriented-abstract-machine",
+            "source-to-calcvm", "source-to-project-wasm-oriented-abstract-machine",
+            "calcvm-to-project-wasm-oriented-abstract-machine", "calcvm-to-source-ck-machine",
+            "calcvm-to-source-config-run", "surface-example", "handler-lowering-placeholder",
+            "environment-machine-to-calcvm"
+          ]
+        },
+        "statementShape": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "premiseUsage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["loadBearing", "unused"],
+          "properties": {
+            "loadBearing": { "$ref": "#/$defs/stringList" },
+            "unused": { "$ref": "#/$defs/stringList" }
+          }
+        },
+        "guarantee": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "scope": { "$ref": "common.schema.json#/$defs/nonemptyString" },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+        },
+        "aliasOf": { "$ref": "common.schema.json#/$defs/nonemptyString" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "claimRole": { "enum": ["alias", "deprecated-alias"] } } },
+          "then": {
+            "required": ["aliasOf"],
+            "properties": {
+              "claimStrength": { "const": "alias" },
+              "claimKind": { "const": "compatibility-alias" }
+            }
+          },
+          "else": { "not": { "required": ["aliasOf"] } }
+        },
+        {
+          "if": { "properties": { "claimRole": { "const": "placeholder" } } },
+          "then": {
+            "properties": {
+              "claimStrength": { "const": "placeholder" },
+              "claimKind": { "const": "placeholder" },
+              "evidenceKind": { "const": "placeholder-kernel-declaration" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
