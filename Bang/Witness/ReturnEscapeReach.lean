@@ -69,7 +69,7 @@ inc-5 diagonal cannot establish from typing, hence reclassified as defined v1 be
 theorem progComp_typeable :
     HasCTy (Eff := EffRow) (Mult := QTT) [] [] progComp (⊥ ⊔ (⊥ ⊔ ⊥)) (CTy.F 1 VTy.unit) := by
   have hint : ∀ op B, EffSig.opArg (Eff := EffRow) (Mult := QTT) 1 op = some B → op = "get" ∨ op = "put" := by
-    intro op B hop; by_contra hne; push_neg at hne
+    intro op B hop; by_contra hne; push Not at hne
     simp [sigS, EffSig.opArg, hne.1, hne.2] at hop
   -- inner perform body `perform (vvar 1) "get" unit` in `[cap 1, cap 1, cap 1]`.
   have hbodyN : HasCTy (Eff := EffRow) (Mult := QTT) [0, 1, 0]

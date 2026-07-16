@@ -386,7 +386,7 @@ theorem Config.run_done_add (k : Nat) :
       rw [show m + 1 + k = (m + k) + 1 by omega]
       show Result.done v = Result.done w
       exact hwv.symm
-    · push_neg at hret
+    · push Not at hret
       rw [Config.run_step m cfg hret] at h
       rw [show m + 1 + k = (m + k) + 1 by omega, Config.run_step (m + k) cfg hret]
       cases hstep : Source.step cfg with
