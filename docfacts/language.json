@@ -8,6 +8,8 @@
           "fuel",
           "hostEnv",
           "allow",
+          "allowFsRead",
+          "allowFsWrite",
           "record",
           "replay",
           "maxHostRequests"
@@ -21,6 +23,8 @@
           "--fuel",
           "--env=sim|real",
           "--allow",
+          "--allow-fs-read",
+          "--allow-fs-write",
           "--record",
           "--replay",
           "--max-host-requests"

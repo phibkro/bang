@@ -1260,7 +1260,7 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 
 | Command path | Principal flags | Synopsis |
 |---|---|---|
-| `bang run` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel`, `--env=sim|real`, `--allow`, `--record`, `--replay`, `--max-host-requests` | `bang run  [FLAGS] <file.bang>      run a bang program from a file` |
+| `bang run` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel`, `--env=sim|real`, `--allow`, `--allow-fs-read`, `--allow-fs-write`, `--record`, `--replay`, `--max-host-requests` | `bang run  [FLAGS] <file.bang>      run a bang program from a file` |
 | `bang eval` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel` | `bang eval [FLAGS] "<surface expr>"  run a surface expression directly` |
 | `bang repl` | `--engine=oracle|compiled|env`, `--no-typecheck`, `--fuel` | `bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)` |
 | `bang fmt` | — | `bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file` |

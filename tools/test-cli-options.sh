@@ -101,9 +101,9 @@ reject max-host-duplicate run "duplicate option '--max-host-requests=2'" \
 # Host modes are an explicit compatibility matrix, validated after the total token scan but before
 # source resolution, trace access, or real host effects.
 missing_source="$tmpdir/does-not-exist.bang"
-reject allow-without-host-mode run "requires '--env=real' or '--replay'" \
+reject allow-without-host-mode run "requires '--env=real'" \
   run --allow=Console "$missing_source"
-reject allow-with-sim-only run "requires '--env=real' or '--replay'" \
+reject allow-with-sim-only run "requires '--env=real'" \
   run --env=sim --allow=Console "$missing_source"
 reject max-without-host-mode run "requires '--env=real' or '--replay'" \
   run --max-host-requests=0 "$missing_source"
@@ -243,9 +243,9 @@ expect_eq valid-real-host-options-mixed-order-zero "$real_out" ih
 echo_main="$PWD/examples/hostio-echo/main.bang"
 empty_trace="$tmpdir/empty.ndjson"
 printf '\n' >"$empty_trace"
-replay_out="$("$bang" run --env=sim --replay "$empty_trace" --allow=Console \
+replay_out="$("$bang" run --env=sim --replay "$empty_trace" \
   --max-host-requests=0 "$echo_main")"
-expect_eq valid-sim-replay-allow-max "$replay_out" ih
+expect_eq valid-sim-replay-max "$replay_out" ih
 
 ambient_main="$PWD/examples/hostio-echo/ambient.bang"
 reject allow-canonical-duplicate run "duplicate resolved labels are not allowed" \
@@ -257,7 +257,7 @@ effect A_Console { ping : Int -> Int }
 effect B_Console { pong : Int -> Int }
 let main = 1
 BANG
-reject allow-ambiguous-tail run "--allow name 'Console' is ambiguous" \
+reject allow-untrusted-ambiguous-tail run "did not originate in the resolver-owned bundled" \
   run --env=real --allow=Console "$ambiguous_program"
 help_out="$("$bang" --help)"
 expect_contains valid-help "$help_out" "USAGE:"

@@ -136,6 +136,11 @@ test-cli:
 test-cli-options:
     bash tools/test-cli-options.sh
 
+# Explicit real-host effect authority, trusted bundled-Io identity, Fs read/write roots,
+# containment, and success-only record publication (#169). Part of verify.
+test-host-authority:
+    bash tools/test-host-authority.sh
+
 # Exact release tag ↔ binary provenance poles: accepts only byte-exact `bang X.Y.Z`,
 # rejects stale/suffixed/noisy/nonzero binaries and malformed tags. Part of verify.
 test-release-version:

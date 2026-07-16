@@ -11,8 +11,8 @@
 --
 -- SEPARATE LABELS, NOT ONE `effect IO { … }` (row-attenuation): each label is a
 -- separately-grantable capability. `--allow=Console` grants Console without Clock; the
--- driver (Main.lean) resolves those names to their allocated labels via the program's
--- effect table (labels are `4 + decl-index`, not fixed — ADR-0104).
+-- driver (Main.lean) joins resolver-owned bundled-Io provenance to allocated labels (labels
+-- are `4 + decl-index`, not fixed — ADR-0104). Matching user names/ops are never host identity.
 --
 -- PAYLOADS ARE SENDABLE (ADR-0101 G7): `Str` is μ-data, `Int`/`Unit` are ground, so every
 -- op payload and result serializes into the record/replay trace (host-io-design §3). An op
@@ -85,7 +85,8 @@ pub effect Fs { readFile : Str -> Str, writeFile : Str * Str -> Unit, exists : S
 -- MAP (writeFile updating what a later readFile returns) wants carried-param UPDATE (ADR-0092 D5,
 -- open), so the honest v1 sim is FIXED-source: `readFile` returns a constant body, `exists`
 -- returns a constant, `writeFile` swallows (returns unit, no persistence). A program that wants
--- record/replay determinism over REAL fs nondeterminism uses `--env=real --record` then
+-- record/replay determinism over REAL fs nondeterminism uses explicit `--allow=Fs` plus typed
+-- `--allow-fs-read`/`--allow-fs-write` roots under `--env=real --record`, then
 -- `--replay` (ADR-0104 §3) — the trace, not a sim map, is the v1 determinism source for Fs:
 --
 --     with Io_Fs as fs {

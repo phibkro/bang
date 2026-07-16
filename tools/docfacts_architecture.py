@@ -690,8 +690,8 @@ def self_test() -> int:
         (
             "engine-command-allow-list-drift",
             main_source.replace(
-                "[.engine, .noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
-                "[.noTypecheck, .fuel, .hostEnv, .allow, .record, .replay, .maxHostRequests]",
+                "[.engine, .noTypecheck, .fuel, .hostEnv, .allow, .allowFsRead, .allowFsWrite,\n            .record, .replay, .maxHostRequests]",
+                "[.noTypecheck, .fuel, .hostEnv, .allow, .allowFsRead, .allowFsWrite,\n            .record, .replay, .maxHostRequests]",
                 1,
             ),
         ),
