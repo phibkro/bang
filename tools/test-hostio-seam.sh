@@ -60,6 +60,13 @@ check_contains() {
   else echo "✗ $name — expected to find [$needle] in [$haystack]"; fail=$((fail + 1)); fi
 }
 
+expect_replay_failure() {
+  local name="$1" trace="$2" program="$3" needle="$4" cwd="$5" err code
+  err="$(cd "$cwd" && "$bang_abs" run --replay "$trace" "$program" 2>&1 >/dev/null)" && code=0 || code=$?
+  check "$name-exit" "$code" "7"
+  check_contains "$name-error" "$err" "$needle"
+}
+
 workdir="$(mktemp -d --tmpdir bang-hostio-test-XXXXXX)"
 trap 'rm -rf "$workdir"' EXIT
 
@@ -90,6 +97,7 @@ recorded="$("$bang" run "$echo_main" 2>/dev/null)" && ocode=0 || ocode=$?
 check "record-succeeds"        "$rcode" "0"
 check "replay-reproduces-run"  "$replayed" "$recorded"
 check "replay-exit"            "$pcode" "0"
+check "reference-run-exit"     "$ocode" "0"
 
 # ── 5 · --max-host-requests is accepted (the O(n²) ceiling flag exists + parses; ADR-0104 §4) ──
 got="$("$bang" run --env=real --allow=Console --max-host-requests 8 "$echo_main" 2>/dev/null)" && code=0 || code=$?
@@ -203,6 +211,37 @@ check "fs-escaped-body-round-trips" "$replay_out" "$real_out"
 # the recorded trace stayed ONE line per row (the newline inside the value did NOT split it).
 check "fs-escaped-trace-one-row-per-op" "$(grep -c '"op"' "$fs_jail/q.ndjson")" "2"
 
+# ── 8 · STRICT REPLAY VALIDATION (#164) — falsify every request field and both directions of
+#        trace-length drift. Every replay fails BEFORE any real host IO; the final disk assertion makes
+#        that purity observable for the first `writeFile` request. Each fixture is derived from the known-
+#        good three-row trace above so only the named dimension changes. ──
+sed '1s/"label":[0-9][0-9]*/"label":999999/' "$fs_jail/fs.ndjson" > "$fs_jail/bad-label.ndjson"
+expect_replay_failure "replay-label-mismatch" "$fs_jail/bad-label.ndjson" "$fs_ambient" "label mismatch" "$fs_jail"
+
+sed '1s/"op":"writeFile"/"op":"readFile"/' "$fs_jail/fs.ndjson" > "$fs_jail/bad-op.ndjson"
+expect_replay_failure "replay-op-mismatch" "$fs_jail/bad-op.ndjson" "$fs_ambient" "op mismatch" "$fs_jail"
+
+sed '1s/(g.t, hi)/(g.t, bye)/' "$fs_jail/fs.ndjson" > "$fs_jail/bad-payload.ndjson"
+expect_replay_failure "replay-payload-mismatch" "$fs_jail/bad-payload.ndjson" "$fs_ambient" "payload mismatch" "$fs_jail"
+
+printf '{not valid json}\n' > "$fs_jail/invalid.ndjson"
+expect_replay_failure "replay-invalid-json" "$fs_jail/invalid.ndjson" "$fs_ambient" "invalid replay trace row 1" "$fs_jail"
+
+sed '$d' "$fs_jail/fs.ndjson" > "$fs_jail/missing-row.ndjson"
+expect_replay_failure "replay-missing-row" "$fs_jail/missing-row.ndjson" "$fs_ambient" "trace exhausted" "$fs_jail"
+
+cp "$fs_jail/fs.ndjson" "$fs_jail/extra-row.ndjson"
+sed -n '1p' "$fs_jail/fs.ndjson" >> "$fs_jail/extra-row.ndjson"
+expect_replay_failure "replay-extra-row" "$fs_jail/extra-row.ndjson" "$fs_ambient" "unconsumed extra row" "$fs_jail"
+
+check "strict-replay-did-no-real-io" "$( [ -e "$fs_jail/g.t" ] && echo present || echo absent )" "absent"
+check "strict-replay-left-repo-root-clean" "$( [ -e "$repo/g.t" ] && echo present || echo absent )" "absent"
+
 echo "──────────────────────────────"
 echo "hostio: $pass passed, $fail failed"
-[ "$fail" -eq 0 ]
+expected=48
+if [ "$pass" -ne "$expected" ]; then
+  echo "✗ hostio-check-count — expected $expected completed checks, got $pass"
+  fail=$((fail + 1))
+fi
+[ "$pass" -eq "$expected" ] && [ "$fail" -eq 0 ]
