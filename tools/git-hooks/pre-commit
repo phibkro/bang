@@ -99,7 +99,7 @@ if [ -n "$staged_lean" ]; then
   fi
 fi
 
-# ── 3b. Auto-regenerate the CHANGELOG from conventional commits ─────────
+# ── 3b. Auto-regenerate squash-stable CHANGELOG provenance ───────────────
 # The changelog is a DERIVATION of git history (the GENERATE rung), not a hand-maintained copy. Rather
 # than block a commit when it lags (a feat/fix commit can't include its OWN not-yet-existing entry — the
 # pre-commit's `git log` doesn't see the in-flight commit), we regenerate it here from ALREADY-committed
@@ -114,8 +114,27 @@ fi
 # OWN `git diff --cached` below intentionally KEEPS the env, since a pathspec commit points
 # GIT_INDEX_FILE at a temporary index the hook must read to see the correct staged set.
 if [ -f CHANGELOG.md ]; then
-  env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command just changelog > /dev/null 2>&1 || true
-  git add CHANGELOG.md 2>/dev/null || true
+  # Never absorb unrelated CHANGELOG prose through the historical `git add` here.
+  # Reject partial staging; the generated block itself is the only recursive field.
+  if ! git diff --quiet -- CHANGELOG.md; then
+    echo "❌ pre-commit: CHANGELOG.md cannot be partially staged."
+    echo "   Stage its prose intentionally or restore the unstaged bytes."
+    exit 1
+  fi
+
+  # `git commit <paths>` supplies a temporary GIT_INDEX_FILE. Capture THAT proposed
+  # tree before crossing into nix, where Git env is deliberately stripped. On the
+  # generated follow-up, HEAD contains the one product subject and this tree contains
+  # every staged projection: precisely the virtual squash final tree.
+  changelog_after_tree=$(git write-tree)
+  export CHANGELOG_AFTER_TREE="$changelog_after_tree"
+  env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE \
+    nix develop --command just changelog > /dev/null
+  git add CHANGELOG.md
+  # The generated block is normalized in the identity, so staging it cannot alter
+  # CHANGELOG_AFTER_TREE's change id. Re-export the final index tree for fitness.
+  CHANGELOG_AFTER_TREE=$(git write-tree)
+  export CHANGELOG_AFTER_TREE
 fi
 
 # ── 4. Fitness functions (fast, NO Lean build) — ALWAYS ────────────────
@@ -127,7 +146,8 @@ fi
 # NOTE: don't enumerate the fitness legs here — the hand-list drifted once already;
 # the composition's SSoT is generated (`just gate-index` → .claude/codebase-maintenance.md).
 echo "→ pre-commit: running just fitness (full composition: just gate-index)"
-if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
+if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE \
+  nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
   echo "❌ pre-commit: just fitness failed. Last 20 lines:"
   tail -20 /tmp/bang-fitness.log | sed 's/^/    /'
   echo "   (full log: /tmp/bang-fitness.log) — fix the drift, or 'git commit --no-verify' to bypass."

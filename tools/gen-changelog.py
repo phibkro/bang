@@ -1,113 +1,191 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=CHANGELOG.md runs-in=fitness
-"""gen-changelog.py — generate CHANGELOG.md from conventional commits (the GENERATE rung).
+# tool: role=gen couples=CHANGELOG.md,provenance.py runs-in=fitness
+"""Generate CHANGELOG.md from canonical history plus one virtual squash landing.
 
-The changelog is a DERIVATION of git history, NOT a hand-maintained second copy — that would
-violate single-source-of-truth + "history lives in git, not docs" (CLAUDE.md). So there is no
-"write an entry" discipline and no per-merge gate: the conventional commit subject IS the entry,
-written once where git already keeps it, and `--check` keeps the rendered file ≡ the commits
-(same pattern as gen-adr-index / gen-import-graph / gen-proof-state).
+Entries through the fixed v2 schema boundary retain their durable canonical-main
+commit anchors byte-for-byte. Later entries carry ``change:<sha256>``: a digest of
+the canonical parent, normalized conventional subject, and complete before/after
+delta manifests (normalizing only CHANGELOG.md's recursive generated block). A
+PR's source + generated-follow-up range and GitHub's configured squash commit
+therefore render byte-identically when their final trees and titles agree.
 
-An entry = a `feat` / `fix` / `perf` commit since the MVP BASELINE (the direction-shift to
-"surface the verified kernel"). Commits before the baseline are the v1-verification grind
-(`feat(kernel)`, `feat(model)`, …) — recorded in git + ROADMAP, NOT the product changelog.
-Squash-merging each increment to `main` yields one clean conventional commit per shipped unit,
-which is the right entry granularity for free (no per-commit noise, no per-merge gate).
-
-Zero dependencies (stdlib), like the other tools/ generators.
-
-Usage:
-    gen-changelog.py                # rewrite the block in ./CHANGELOG.md
-    gen-changelog.py --check        # gate: file ≡ a fresh render (drift = exit 1)
-    gen-changelog.py --check --end <sha>  # check an explicit history endpoint
+The optional ``--base`` declares the stable parent of a virtual landing ending at
+``--end``.  That range may contain exactly one product-notable commit.  In CI the
+base, end, stable ref, and PR title are explicit event facts.  Locally a full clone
+derives the base from origin/main.  ``--end-index`` lets the pre-commit hook bind
+the staged final tree before the generated follow-up commit exists.
 """
+
 from __future__ import annotations
 
 import argparse
 import os
 import re
-import subprocess
 import sys
+
+from genblock import splice as _splice
+from provenance import (
+    ProvenanceError,
+    change_id,
+    commit,
+    default_stable_ref,
+    git_text,
+    index_tree,
+    normalize_subject,
+)
 
 BEGIN = "<!-- BEGIN GENERATED changelog (just changelog) — do not hand-edit -->"
 END = "<!-- END GENERATED changelog -->"
-
-# The MVP product era began at the direction-shift (the GitHub-issues migration). Commits before
-# this are the v1-verification grind (out of product-changelog scope). Anchored to the commit, not
-# a tag, because the repo has no release tags yet; switch to `git describe --tags` once it does.
 BASELINE = "833e3a95f1c668b9346d35dcfcf06ee4c72c3160"
-
-# (type, heading) — only PRODUCT-NOTABLE types. docs/chore/wip/test/tooling/refactor/simplify are
-# dev-noise and excluded by construction (the entry-test below only keeps these three).
+LEGACY_BOUNDARY = "ef7a0fba03204d73492478685088c5dc25e23a76"
 SECTIONS = [("feat", "Features"), ("fix", "Fixes"), ("perf", "Performance")]
-
-# `<sha>\x1f<type>(scope)!?: subject`  — `\x1f` (unit separator) can't appear in a subject.
 ENTRY_RE = re.compile(
-    r"^(?P<sha>[0-9a-f]+)\x1f(?P<type>[a-z]+)(\((?P<scope>[^)]+)\))?(?P<bang>!)?: (?P<subject>.+)$")
-FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+    r"^(?P<type>[a-z]+)(\((?P<scope>[^)]+)\))?(?P<bang>!)?: (?P<subject>.+)$"
+)
 
 
-def commits(root: str, end: str = "HEAD", start: str = BASELINE) -> list[str]:
-    """Conventional-commit subjects in start..end, oldest-first."""
-    res = subprocess.run(
-        ["git", "-C", root, "log", f"{start}..{end}", "--reverse", "--format=%H\x1f%s"],
-        capture_output=True, text=True)
-    if res.returncode != 0:
-        detail = res.stderr.strip() or f"git log exited {res.returncode}"
-        raise RuntimeError(f"cannot derive changelog history for {end}: {detail}")
-    return res.stdout.splitlines()
+def parse_entry(subject: str, *, squash_title: bool = False):
+    value = normalize_subject(subject) if squash_title else subject
+    match = ENTRY_RE.match(value)
+    if not match or match.group("type") not in dict(SECTIONS):
+        return None
+    return (
+        match.group("type"),
+        match.group("scope"),
+        match.group("subject"),
+        bool(match.group("bang")),
+    )
 
 
-def git_text(root: str, *args: str) -> str:
-    res = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
-    if res.returncode != 0:
-        detail = res.stderr.strip() or f"git {' '.join(args)} exited {res.returncode}"
-        raise RuntimeError(detail)
-    return res.stdout.strip()
+def history(root: str, start: str, end: str) -> list[tuple[str, str]]:
+    try:
+        raw = git_text(root, "log", f"{start}..{end}", "--reverse", "--format=%H%x1f%s")
+    except ProvenanceError as exc:
+        raise ProvenanceError(f"cannot derive changelog history: {exc}") from exc
+    rows = []
+    for line in raw.splitlines():
+        if line:
+            rows.append(tuple(line.split("\x1f", 1)))
+    return rows
 
 
-def lag_refs(root: str, end: str) -> list[str]:
-    """The sole parent that may satisfy the one-commit self-hash lag.
-
-    Never guess across a merge. Callers checking a synthetic merge must declare the
-    source commit through `--end` / `CHANGELOG_END`.
-    """
-    fields = git_text(root, "rev-list", "--parents", "-n", "1", end).split()
-    parents = fields[1:]
-    if len(parents) > 1:
-        raise RuntimeError(
-            f"{end} is a merge commit; set --end or CHANGELOG_END to the source commit"
+def canonical_entries(root: str, start: str, end: str, boundary: str) -> list[tuple]:
+    boundary_sha = commit(root, boundary)
+    if git_text(root, "merge-base", boundary_sha, end) != boundary_sha:
+        raise ProvenanceError(
+            f"schema boundary {boundary_sha} is not an ancestor of endpoint {end}"
         )
-    return parents
-
-
-def entries(root: str, end: str = "HEAD", start: str = BASELINE) -> dict[str, list[tuple]]:
-    buckets: dict[str, list[tuple]] = {t: [] for t, _ in SECTIONS}
-    for line in commits(root, end, start):
-        m = ENTRY_RE.match(line)
-        if not m or m.group("type") not in buckets:
+    legacy = set(git_text(root, "rev-list", boundary_sha).splitlines())
+    result = []
+    for sha, subject in history(root, start, end):
+        is_legacy = sha in legacy
+        parsed = parse_entry(subject, squash_title=not is_legacy)
+        if not parsed:
             continue
-        sha = m.group("sha")
-        if not FULL_SHA_RE.fullmatch(sha):
-            raise RuntimeError(f"git log returned a non-full commit id: {sha!r}")
-        buckets[m.group("type")].append(
-            (m.group("scope"), m.group("subject"), sha[:8], bool(m.group("bang"))))
+        if is_legacy:
+            identity = sha[:8]
+        else:
+            parent = git_text(root, "rev-parse", f"{sha}^")
+            identity = f"change:{change_id(root, parent, sha, subject)}"
+        result.append((*parsed, identity))
+    return result
+
+
+def virtual_entry(
+    root: str, base: str, end: str, after: str, expected_title: str | None
+):
+    rows = [
+        (sha, subject)
+        for sha, subject in history(root, base, end)
+        if parse_entry(subject, squash_title=True)
+    ]
+    if not rows:
+        return None
+    if len(rows) != 1:
+        raise ProvenanceError(
+            f"virtual landing {base[:12]}..{end[:12]} has {len(rows)} product-notable "
+            "commits; squash policy requires exactly one"
+        )
+    _, subject = rows[0]
+    if expected_title is not None and normalize_subject(
+        expected_title
+    ) != normalize_subject(subject):
+        raise ProvenanceError(
+            "squash title does not match the product commit: "
+            f"{expected_title!r} != {subject!r}"
+        )
+    return (
+        *parse_entry(subject, squash_title=True),
+        f"change:{change_id(root, base, after, subject)}",
+    )
+
+
+def resolve_base(root: str, end: str, explicit: str | None) -> tuple[str, str]:
+    stable = os.environ.get("CHANGELOG_STABLE_REF", default_stable_ref(root))
+    stable_sha = commit(root, stable)
+    if explicit:
+        base = commit(root, explicit)
+        if base != stable_sha:
+            raise ProvenanceError(
+                f"declared base {base} is stale; stable ref {stable} is {stable_sha}"
+            )
+        return base, stable
+    end_sha = commit(root, end)
+    if end_sha == stable_sha:
+        return end_sha, stable
+    base = git_text(root, "merge-base", end_sha, stable_sha)
+    if base != stable_sha:
+        raise ProvenanceError(
+            f"{end} is not based on stable ref {stable} ({stable_sha})"
+        )
+    return base, stable
+
+
+def entries(
+    root: str,
+    *,
+    start: str = BASELINE,
+    boundary: str = LEGACY_BOUNDARY,
+    base: str | None = None,
+    end: str = "HEAD",
+    after: str | None = None,
+    title: str | None = None,
+) -> dict[str, list[tuple]]:
+    start_sha = commit(root, start)
+    end_sha = commit(root, end)
+    base_sha, _ = resolve_base(root, end_sha, base)
+    if git_text(root, "merge-base", start_sha, base_sha) != start_sha:
+        raise ProvenanceError(f"baseline {start_sha} is not an ancestor of {base_sha}")
+    buckets: dict[str, list[tuple]] = {kind: [] for kind, _ in SECTIONS}
+    for kind, scope, subject, bang, identity in canonical_entries(
+        root, start_sha, base_sha, boundary
+    ):
+        buckets[kind].append((scope, subject, identity, bang))
+    if end_sha != base_sha:
+        if git_text(root, "merge-base", base_sha, end_sha) != base_sha:
+            raise ProvenanceError(
+                f"base {base_sha} is not an ancestor of end {end_sha}"
+            )
+        item = virtual_entry(root, base_sha, end_sha, after or end_sha, title)
+        if item:
+            kind, scope, subject, bang, identity = item
+            buckets[kind].append((scope, subject, identity, bang))
     return buckets
 
 
-def render(root: str, end: str = "HEAD") -> str:
-    b = entries(root, end)
+def render(root: str, **kwargs) -> str:
+    buckets = entries(root, **kwargs)
     out = [BEGIN, "", "## Unreleased", ""]
     populated = False
-    for t, heading in SECTIONS:
-        if not b[t]:
+    for kind, heading in SECTIONS:
+        if not buckets[kind]:
             continue
         populated = True
         out.append(f"### {heading}")
-        for scope, subject, sha, bang in b[t]:
+        for scope, subject, identity, bang in buckets[kind]:
             mark = "**⚠ BREAKING** " if bang else ""
-            pre = f"**{scope}** — " if scope else ""
-            out.append(f"- {mark}{pre}{subject} (`{sha}`)")
+            prefix = f"**{scope}** — " if scope else ""
+            out.append(f"- {mark}{prefix}{subject} (`{identity}`)")
         out.append("")
     if not populated:
         out += ["_Nothing notable since the MVP baseline yet._", ""]
@@ -115,69 +193,63 @@ def render(root: str, end: str = "HEAD") -> str:
     return "\n".join(out)
 
 
-from genblock import splice as _splice  # the shared GEN-block primitive (#113)
 def splice(md: str, block: str) -> str:
     return _splice(md, BEGIN, END, block)
 
 
 def main() -> int:
-    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
-    except Exception: pass
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--root", default=".", help="repo root (default: cwd)")
-    ap.add_argument("--file", default=None, help="changelog path (default: <root>/CHANGELOG.md)")
-    ap.add_argument(
-        "--end",
-        default=os.environ.get("CHANGELOG_END", "HEAD"),
-        help="history endpoint (default: CHANGELOG_END or HEAD)",
-    )
-    ap.add_argument("--check", action="store_true", help="gate: file ≡ fresh render (drift → exit 1)")
-    args = ap.parse_args()
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", default=".")
+    parser.add_argument("--file", default=None)
+    parser.add_argument("--start", default=BASELINE)
+    parser.add_argument("--boundary", default=LEGACY_BOUNDARY)
+    parser.add_argument("--base", default=os.environ.get("CHANGELOG_BASE"))
+    parser.add_argument("--end", default=os.environ.get("CHANGELOG_END", "HEAD"))
+    parser.add_argument("--title", default=os.environ.get("CHANGELOG_TITLE"))
+    parser.add_argument("--after-tree", default=os.environ.get("CHANGELOG_AFTER_TREE"))
+    parser.add_argument("--end-index", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
     root = os.path.abspath(args.root)
     path = os.path.abspath(args.file or os.path.join(root, "CHANGELOG.md"))
     try:
-        block = render(root, args.end)
-    except RuntimeError as exc:
+        if args.end_index and args.after_tree:
+            raise ProvenanceError("choose only one of --end-index and --after-tree")
+        after = index_tree(root) if args.end_index else args.after_tree
+        block = render(
+            root,
+            start=args.start,
+            boundary=args.boundary,
+            base=args.base,
+            end=args.end,
+            after=after,
+            title=args.title,
+        )
+    except ProvenanceError as exc:
         print(f"── changelog ──\nFAIL: {exc}")
         return 1
-
     if not os.path.exists(path):
-        if args.check:
-            print(f"── changelog ──\nFAIL: {path} missing — run `just changelog`.")
-            return 1
-        print(f"changelog: {path} missing — create it with the GEN markers first.", file=sys.stderr)
+        print(f"── changelog ──\nFAIL: {path} missing")
         return 1
-
     md = open(path, encoding="utf-8").read()
     if BEGIN not in md or END not in md:
-        print(f"── changelog ──\nFAIL: {path} has no GEN markers — add them.")
+        print(f"── changelog ──\nFAIL: {path} has no GEN markers")
         return 1
-
+    expected = splice(md, block)
     if args.check:
-        if splice(md, block) == md:
-            print("── changelog ──\nPASS: CHANGELOG.md ≡ the conventional commits.")
+        if expected == md:
+            print(
+                "── changelog ──\nPASS: CHANGELOG.md ≡ canonical history + virtual squash landing."
+            )
             return 0
-        # A commit cannot contain a changelog entry for its own not-yet-existing hash.
-        # The caller declares the history endpoint; only that commit's sole parent may
-        # satisfy the one-commit fixpoint lag.
-        try:
-            candidates = lag_refs(root, args.end)
-            for ref in candidates:
-                if splice(md, render(root, ref)) != md:
-                    continue
-                short = git_text(root, "rev-parse", "--short=8", ref)
-                print(f"── changelog ──\nPASS: CHANGELOG.md ≡ the commits as of {short} "
-                      "(the self-hash fixpoint lag — resyncs on the next `just changelog`).")
-                return 0
-        except RuntimeError as exc:
-            print(f"── changelog ──\nFAIL: cannot check changelog fixpoint: {exc}")
-            return 1
-        print("── changelog ──\nFAIL: CHANGELOG.md is stale (≥2 commits behind) — run `just changelog`.")
+        print(
+            "── changelog ──\nFAIL: CHANGELOG.md provenance is stale — run `just changelog`."
+        )
         return 1
-
-    open(path, "w", encoding="utf-8").write(splice(md, block))
-    print(f"changelog: regenerated the block in {os.path.relpath(path, root)}.")
+    open(path, "w", encoding="utf-8").write(expected)
+    print(
+        f"changelog: regenerated {os.path.relpath(path, root)} with stable change ids."
+    )
     return 0
 
 
