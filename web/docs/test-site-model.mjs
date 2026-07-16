@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   compileSite,
   renderSiteModel,
+  resolveRoleLabContent,
   resolveTourContent,
   rewriteMarkdownLinks,
   validateJsonSchema,
@@ -302,6 +303,125 @@ try {
   )
   caseCount += 1
 
+  const roleLabSite = compileMutation('role-lab-page', (manifest) => {
+    const generatedPage = (id, section, route, order, prerequisites = []) => ({
+      id,
+      title: id,
+      section,
+      audience: ['contributor', 'agent'],
+      lifecycle: 'snapshot',
+      prerequisites,
+      status: { kind: 'not-applicable', reason: 'generated-onboarding' },
+      target: { kind: 'onboarding-page', route, contentKey: id },
+      navigation: { order },
+    })
+    manifest.pages.push(
+      generatedPage('common-journey-evidence', 'learn', '/learn/common-journey-evidence', 10),
+      generatedPage('contributor-routes', 'contribute', '/contribute/routes', 10),
+      generatedPage('language-and-cli', 'reference', '/reference/language', 10),
+      generatedPage(
+        'frontend-language-role-lab',
+        'contribute',
+        '/contribute/routes/frontend-language',
+        20,
+        ['common-journey-evidence', 'contributor-routes', 'language-and-cli'],
+      ),
+    )
+    manifest.pages.at(-1).target.contentKey = 'language'
+    manifest.routeChoices[0].targetPage = 'frontend-language-role-lab'
+  })
+  const roleLabRecord = {
+    key: 'language',
+    stages: [
+      {
+        id: 'retrieve-predict',
+        prose: 'Retrieve the relevant language and CLI contract, then predict the graph.',
+        retrievalChecks: ['Locate formatter and query contracts.'],
+        predictionChecks: ['Predict double → quad → main.'],
+      },
+      {
+        id: 'trace-seam',
+        prose: 'Trace the edit through the frontend seam and its executable gate.',
+        checks: ['Locate the parser and type-check boundary.'],
+        seams: ['CONTRIBUTING.md'],
+      },
+      {
+        id: 'isolated-practice',
+        prose: 'Work only in a disposable copy.',
+        fixture: {
+          path: 'main.bang',
+          source: 'let rec double : Int -> Int = fun n => n+n\nlet quad = {fun n => $double ($double n)}\nlet main = $quad 3\n',
+        },
+        commands: ['bang fmt main.bang', 'bang check --json main.bang'],
+        boundedOutcome: 'Formatting changes bytes but preserves facts and result.',
+      },
+      {
+        id: 'inspect-select',
+        prose: 'Inspect evidence before selecting current work.',
+        evidenceChecks: ['Compare declarations, reference edges, impact, and result.'],
+        issueSelection: 'Use gh issue list --state open and choose one matching the frontend seams.',
+      },
+    ],
+  }
+  const resolvedRoleLabs = resolveRoleLabContent(roleLabSite, [roleLabRecord])
+  assert.equal(resolvedRoleLabs.length, 1)
+  assert.equal(resolvedRoleLabs[0].page.id, 'frontend-language-role-lab')
+  assert.equal(resolvedRoleLabs[0].routeChoice.id, 'language')
+  assert.deepEqual(
+    resolvedRoleLabs[0].prerequisites.map((page) => page.id),
+    ['common-journey-evidence', 'contributor-routes', 'language-and-cli'],
+  )
+  assert.deepEqual(resolvedRoleLabs[0].seams, ['README.md', 'CONTRIBUTING.md'])
+  assert.equal(resolvedRoleLabs[0].narrowGate, 'just check Bang/Frontend/TypeCheck.lean')
+  assert.equal(resolvedRoleLabs[0].fullGate, 'just verify')
+
+  function rejectRoleLab(name, mutateSite, mutateRecords, pattern) {
+    const candidateSite = mutateSite ? mutateSite() : roleLabSite
+    const records = structuredClone([roleLabRecord])
+    if (mutateRecords) mutateRecords(records)
+    assert.throws(() => resolveRoleLabContent(candidateSite, records), pattern, name)
+    caseCount += 1
+  }
+
+  rejectRoleLab('missing-role-lab-content', null, (records) => records.pop(), /has no role lab content/)
+  rejectRoleLab('duplicate-role-lab-content', null, (records) => records.push(structuredClone(records[0])), /duplicate role lab content key/)
+  rejectRoleLab('extra-role-lab-content', null, (records) => records.push({ ...structuredClone(records[0]), key: 'proof' }), /role lab content has no manifest route choice: proof/)
+  rejectRoleLab('unknown-role-choice', () => site, null, /role lab content has no manifest route choice: language/)
+  rejectRoleLab('content-owns-manifest-field', null, (records) => { records[0].title = 'owned twice' }, /fields are owned by the page manifest: title/)
+  rejectRoleLab('record-key-mismatch', null, (records) => { records[0].key = 'frontend-language-role-lab' }, /has no role lab content/)
+  rejectRoleLab('page-content-key-mismatch', () => {
+    const broken = structuredClone(roleLabSite)
+    broken.pages.find((page) => page.id === 'frontend-language-role-lab').target.contentKey = 'other'
+    return broken
+  }, null, /content key other must equal route choice language/)
+
+  for (const missingPrerequisite of ['common-journey-evidence', 'contributor-routes', 'language-and-cli']) {
+    rejectRoleLab(`missing-${missingPrerequisite}-prerequisite`, () => compileMutation(`role-lab-missing-${missingPrerequisite}`, (manifest) => {
+      const lab = roleLabSite.pages.find((page) => page.id === 'frontend-language-role-lab')
+      manifest.pages = structuredClone(roleLabSite.pages)
+      manifest.routeChoices = structuredClone(validManifest.routeChoices)
+      manifest.routeChoices[0].targetPage = 'frontend-language-role-lab'
+      manifest.pages.find((page) => page.id === lab.id).prerequisites = lab.prerequisites.filter((id) => id !== missingPrerequisite)
+    }), null, new RegExp(`role lab language requires prerequisite ${missingPrerequisite}`))
+  }
+
+  rejectRoleLab('missing-stage', null, (records) => records[0].stages.pop(), /stages must be exactly retrieve-predict, trace-seam, isolated-practice, inspect-select/)
+  rejectRoleLab('duplicate-stage', null, (records) => { records[0].stages[1].id = 'retrieve-predict' }, /stages must be exactly/)
+  rejectRoleLab('reordered-stage', null, (records) => { records[0].stages.reverse() }, /stages must be exactly/)
+  rejectRoleLab('fifth-stage', null, (records) => records[0].stages.push({ id: 'extra' }), /stages must be exactly/)
+  rejectRoleLab('empty-retrieval-checks', null, (records) => { records[0].stages[0].retrievalChecks = [] }, /retrieve-predict requires nonempty retrievalChecks/)
+  rejectRoleLab('empty-prediction-checks', null, (records) => { records[0].stages[0].predictionChecks = [] }, /retrieve-predict requires nonempty predictionChecks/)
+  rejectRoleLab('untracked-combined-seam', null, (records) => { records[0].stages[1].seams = ['missing/seam.lean'] }, /tracked source does not exist.*missing\/seam\.lean/)
+  rejectRoleLab('duplicate-combined-seam', null, (records) => { records[0].stages[1].seams = ['README.md'] }, /duplicate role lab seam README\.md/)
+  rejectRoleLab('missing-fixture', null, (records) => { delete records[0].stages[2].fixture }, /isolated-practice requires a fixture/)
+  rejectRoleLab('unsafe-fixture-path', null, (records) => { records[0].stages[2].fixture.path = '../outside.bang' }, /fixture path must be one safe filename/)
+  rejectRoleLab('heredoc-terminator-in-fixture', null, (records) => { records[0].stages[2].fixture.source = '0\nBANG\n' }, /must not terminate the generated heredoc/)
+  rejectRoleLab('missing-commands', null, (records) => { records[0].stages[2].commands = [] }, /isolated-practice requires nonempty commands/)
+  rejectRoleLab('missing-bounded-outcome', null, (records) => { records[0].stages[2].boundedOutcome = '' }, /isolated-practice requires a boundedOutcome/)
+  rejectRoleLab('missing-evidence-checks', null, (records) => { records[0].stages[3].evidenceChecks = [] }, /inspect-select requires nonempty evidenceChecks/)
+  rejectRoleLab('missing-issue-selection', null, (records) => { records[0].stages[3].issueSelection = '' }, /inspect-select requires an issueSelection/)
+  rejectRoleLab('fixed-issue-number', null, (records) => { records[0].stages[3].issueSelection = 'Choose issue #183.' }, /must not contain a fixed issue number/)
+
   const catalog = compileMutation('catalog-publication', (manifest) => {
     manifest.publications.push({
       kind: 'tree',
@@ -362,6 +482,10 @@ try {
 
   expectReject('missing-route-choice-gate', (broken) => {
     broken.routeChoices[0].narrowGate = ''
+  }, /schema validation failed/)
+
+  expectReject('missing-route-choice-full-gate', (broken) => {
+    broken.routeChoices[0].fullGate = ''
   }, /schema validation failed/)
 
   expectReject('missing-audience', (broken) => {

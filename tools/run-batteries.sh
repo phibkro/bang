@@ -34,7 +34,7 @@ export BANG_BIN_FRESH=1
 batteries=(check-examples check-examples-env test-example-exit-status test-repl test-fmt test-check-json test-query \
            test-cli-exit-status test-rewrite test-annotate test-lint test-82-verbs test-cli test-release-version test-release-integrity test-law test-modules \
            test-explain test-hostio-seam test-reference-samples test-docfacts-language test-docfacts-logger test-onboarding-journey \
-           test-compiled-dogfood test-bang-build)
+           test-role-lab-frontend test-compiled-dogfood test-bang-build)
 
 workdir="$(mktemp -d --tmpdir bang-run-batteries-XXXXXX)"
 trap 'rm -rf "$workdir"' EXIT
