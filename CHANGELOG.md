@@ -282,5 +282,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **tooling** — make generated provenance squash-safe (`change:c63f243f27950fd9c9d7c2ad7707f677b0ca209ecdd68449e2e85ff0eba6c80a`)
 - **cli** — reject unknown and malformed options (`change:25fbfc7982a2acf968e208dd083d7e9d4ea2c5fb376b930f5d164a1b3bcba456`)
 - **cli** — require explicit real-host authority (`change:462bc2b51dcd1026cb3e7fffcb1dd335008b41577d15167b4e55f9078303f130`)
+- **proof** — align public claims with semantic strength (`change:f9b062a481c262e3ee7abf8d40252c20dcf29d952756c1540ae989651be8cefa`)
 
 <!-- END GENERATED changelog -->
