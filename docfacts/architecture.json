@@ -6248,7 +6248,7 @@
       "directImports": [
         "Bang.Core.Semantics.Subst"
       ],
-      "loc": 273,
+      "loc": 270,
       "name": "Bang.Core.Semantics.Dispatch",
       "path": "Bang/Core/Semantics/Dispatch.lean",
       "publicSymbols": [
@@ -6272,61 +6272,61 @@
         },
         {
           "kind": "def",
-          "line": 67,
+          "line": 64,
           "name": "splitAt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 78,
+          "line": 75,
           "name": "splitAtId",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 99,
+          "line": 96,
           "name": "tvarIdx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 104,
+          "line": 101,
           "name": "storeSet",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 128,
+          "line": 125,
           "name": "dispatchOn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 186,
+          "line": 183,
           "name": "idDispatch",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 205,
+          "line": 202,
           "name": "handlerCount",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 250,
+          "line": 247,
           "name": "CapResolves",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 257,
+          "line": 254,
           "name": "FocusResolves",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 265,
+          "line": 262,
           "name": "handlesOp_substFrom",
           "visibilityBasis": "public-section"
         }
@@ -7033,7 +7033,7 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 3396,
+      "loc": 3392,
       "name": "Bang.Core.Soundness",
       "path": "Bang/Core/Soundness.lean",
       "publicSymbols": [
@@ -7141,247 +7141,247 @@
         },
         {
           "kind": "theorem",
-          "line": 196,
+          "line": 194,
           "name": "basis_getElem",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 209,
+          "line": 207,
           "name": "basis_eraseIdx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 245,
+          "line": 241,
           "name": "HasCTy.length_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 310,
+          "line": 306,
           "name": "HasVTy.length_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 388,
+          "line": 384,
           "name": "insG",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 392,
+          "line": 388,
           "name": "insT",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 397,
+          "line": 393,
           "name": "insG_smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 406,
+          "line": 402,
           "name": "insG_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 415,
+          "line": 411,
           "name": "insG_add_smul_aux",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 422,
+          "line": 418,
           "name": "insG_add_smul_aux'",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 437,
+          "line": 433,
           "name": "HasVTy.shift_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 504,
+          "line": 500,
           "name": "HasVTy.subst_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 577,
+          "line": 573,
           "name": "HasVTy.weaken",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 691,
+          "line": 687,
           "name": "HasCTy.weaken",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 829,
+          "line": 825,
           "name": "slotGrade",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 843,
+          "line": 839,
           "name": "eraseIdx_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 863,
+          "line": 859,
           "name": "slotGrade_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 874,
+          "line": 870,
           "name": "slotGrade_smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 884,
+          "line": 880,
           "name": "Sgrade",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 897,
+          "line": 893,
           "name": "Sgrade_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 913,
+          "line": 909,
           "name": "Sgrade_smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1349,
+          "line": 1345,
           "name": "HasCTy.subst_gen",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1533,
+          "line": 1529,
           "name": "subst_value_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1623,
+          "line": 1619,
           "name": "HasCTy.ret_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1635,
+          "line": 1631,
           "name": "HasCTy.letC_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1690,
+          "line": 1686,
           "name": "HasCTy.handleState_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2210,
+          "line": 2206,
           "name": "splitAtId_decomp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2252,
+          "line": 2248,
           "name": "HasStack.handlesOp_of_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2294,
+          "line": 2290,
           "name": "HasCTy.perform_full_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2311,
+          "line": 2307,
           "name": "HasVTy.cap_canonical",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2318,
+          "line": 2314,
           "name": "preservation_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2709,
+          "line": 2705,
           "name": "hasConfigTy_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3136,
+          "line": 3132,
           "name": "progress'_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3282,
+          "line": 3278,
           "name": "type_safety'_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3298,
+          "line": 3294,
           "name": "HandlesWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3318,
+          "line": 3314,
           "name": "custom_handlesWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3331,
+          "line": 3327,
           "name": "no_accidental_handling_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3347,
+          "line": 3343,
           "name": "rowinst_requires_disjoint_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3366,
+          "line": 3362,
           "name": "no_accidental_handling_custom_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3378,
+          "line": 3374,
           "name": "hasConfig'_of_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3388,
+          "line": 3384,
           "name": "custom_program_safe_proof",
           "visibilityBasis": "public-section"
         }
@@ -12129,7 +12129,7 @@
       "name": "Backend"
     },
     {
-      "loc": 8162,
+      "loc": 8155,
       "moduleCount": 12,
       "name": "Core"
     },
