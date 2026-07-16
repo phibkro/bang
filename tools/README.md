@@ -17,7 +17,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`docfacts_proof.py`](docfacts_proof.py) | `fitness` | `Bang/**/*.lean`, `Bang/Audit.lean`, `Bang/Spec.lean`, `lean-toolchain`, `lakefile.toml`, `lake-manifest.json`, `docfacts/schema/proof.schema.json`, `docfacts/proof.json` | Generate, statically check, and live-check BANG proof documentation facts |
 | [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `adr_facts.py`, `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
 | [`gen-agent-pack.py`](gen-agent-pack.py) | `fitness` | `.claude/lane-discipline.md`, `.claude/agents/*.md`, `genblock.py` | splice the lane-discipline pack into each subagent role file |
-| [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md` | generate CHANGELOG.md from conventional commits (the GENERATE rung) |
+| [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md`, `provenance.py` | Generate CHANGELOG.md from canonical history plus one virtual squash landing |
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
 | [`gen-deadcode-imports.py`](gen-deadcode-imports.py) | `manual` | `tools/DeadCode.lean`, `Bang/**/*.lean`, `Main.lean` | keep tools/DeadCode.lean's import block ≡ the module set |
 | [`gen-gate-index.py`](gen-gate-index.py) | `fitness` | `justfile`, `.claude/codebase-maintenance.md`, `genblock.py` | the gate composition, generated from the justfile (the root) |
@@ -58,7 +58,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |
 | [`check-release-version.sh`](check-release-version.sh) | `ci` | `Main.lean`, `tools/release.sh`, `tools/release-artifact.sh` | Exact release-tag ↔ compiler-provenance gate. One comparison seam for local |
 | [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
-| [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt` | orientation-doc SHA reachability fitness function |
+| [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt`, `provenance.py` | Orientation-doc provenance gate. Untyped SHA tokens are commit claims and must |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `autoquality.sh`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh`, `autoquality.sh`, `.claude/settings.json` | Claude Code PostToolUse feedback for Edit/Write |
@@ -68,7 +68,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (36)
+## test (37)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -109,6 +109,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
 | [`test-role-lab-frontend.sh`](test-role-lab-frontend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `web/docs/page-manifest.json` | Executable agreement between the generated frontend lab and its content-owned practice fixture |
+| [`test-squash-provenance.py`](test-squash-provenance.py) | `fitness` | `provenance.py`, `gen-changelog.py`, `gen-proof-state.py`, `check-sha-reachable.sh`, `.github/workflows/verify.yml` | Integration/falsifier suite for squash-stable generated provenance |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 
 ## workflow (8)
@@ -135,7 +136,7 @@ _Lane scripts — one-off orchestration helpers._
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
 | [`release-manifest.sh`](release-manifest.sh) | `ci` | `.github/workflows/release.yml`, `tools/install.sh` | Build the canonical SHA256SUMS for one complete, tag-scoped release. The fixed asset |
 
-## lib (7)
+## lib (8)
 
 __
 
@@ -148,6 +149,7 @@ __
 | [`import_facts.py`](import_facts.py) | `fitness` | `Bang/**/*.lean`, `gen-import-graph.py`, `arch-check.py` | Shared, fail-loud facts for BANG's internal Lean module graph |
 | [`leanlex.py`](leanlex.py) | `manual` | `tools/clone-report.py`, `tools/gen-proof-assets.py` | tiny shared lexer helpers for Lean sources (comment stripping) |
 | [`onboarding_journey.py`](onboarding_journey.py) | `manual` | `examples/thunk-force/main.bang`, `examples/effect-op-arith/main.bang`, `examples/logger-counting/main.bang`, `examples/logger-silent/main.bang` | Execute the machine-checkable substrate of the common newcomer journey |
+| [`provenance.py`](provenance.py) | `fitness` | `gen-changelog.py`, `gen-proof-state.py`, `test-squash-provenance.py` | Landing-independent Git provenance primitives |
 
 ## wrapper (1)
 
