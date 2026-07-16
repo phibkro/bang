@@ -927,8 +927,8 @@ def self_test(base=None, sources=None, base_validated=False):
         ("cli-usage-dispatcher-mismatch", {AUTHORITY_PATHS["main"]: bad_usage})
     )
     bad_flag = sources["main"].replace(
-        "else runResolvedProg (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel merged",
-        "else runResolvedProg (!opts.noTypecheck) .env opts.selectedFuel merged",
+        "| .ok merged => runResolvedProg (!opts.noTypecheck) opts.selectedEngine opts.selectedFuel merged",
+        "| .ok merged => runResolvedProg (!opts.noTypecheck) .env opts.selectedFuel merged",
         1,
     )
     build_cases.append(("per-command-flag-drift", {AUTHORITY_PATHS["main"]: bad_flag}))
