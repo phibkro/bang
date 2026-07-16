@@ -254,7 +254,21 @@ build:
        && [ ! -e .lake/packages/mathlib/.lake/build ]; then
       lake exe cache get   # main checkout, first setup only
     fi
-    lake build
+    python3 tools/lean-warnings.py build
+
+# Run the same single-build warning ratchet as `just build`, without the
+# first-checkout cache bootstrap. Lake replays stored diagnostics on warm builds.
+warnings:
+    python3 tools/lean-warnings.py build
+
+# Regenerate the canonical warning ceiling from one successful build. Reductions
+# should be captured; increases require explicit review and should normally be fixed.
+warnings-update:
+    python3 tools/lean-warnings.py update
+
+# Fixture/mutation poles for the warning parser, schema, comparison, and wrapper.
+test-lean-warnings:
+    bash tools/test-lean-warnings.sh
 
 # Static + dynamic audit gate: the live proof fact comparison is the fail-closed
 # axiom policy; tools/audit.sh adds the static/fitness belt and suspenders.
