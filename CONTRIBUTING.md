@@ -98,7 +98,7 @@ issue (GitHub)  →  branch  →  make the change  →  the VERIFY GATE  →  PR
   just fitness        # the derived-doc gate: adr-check · reference · questions-index · hygiene · changelog · …
   just axioms         # for proof work: #print axioms per headline theorem
   ```
-  **Green means:** `lake build` succeeds without exceeding the ratcheted Lean warning budget,
+  **Green means:** `lake build Bang bang` succeeds without exceeding the ratcheted library/runner warning budget,
   `fitness` exits 0, and (for proofs) each headline theorem's axiom set ⊆
   `{propext, Classical.choice, Quot.sound}`. Gate-traps to avoid: a piped exit code (`cmd | head` is always
   0), and `grep "sorry"`/`grep "error:"` (use `#print axioms` and the build exit code — see `CLAUDE.md` §"How

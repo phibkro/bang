@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=tools/lean-warnings.py,docfacts/lean-warning-budget.json,justfile runs-in=verify
+# tool: role=test couples=Main.lean,tools/lean-warnings.py,docfacts/lean-warning-budget.json,justfile runs-in=verify
 # Falsification poles for the deterministic, reduction-friendly Lean warning budget.
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 set -euo pipefail
@@ -80,6 +80,25 @@ assert identities[0] == {
 PY
 pass "toolchain release identity is independent of the host triple"
 
+# The standing wrapper must explicitly request both the complete Bang library
+# and native runner in one Lake invocation, avoiding a second cold build.
+python3 - <<'PY'
+import argparse
+import importlib.util
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("lean_warnings", Path("tools/lean-warnings.py"))
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert module.command_from(argparse.Namespace(command=None)) == ["lake", "build", "Bang", "bang"]
+PY
+pass "default warning build includes the native bang runner"
+
+"${tool[@]}" --help >"$workdir/help.out"
+grep -Fq 'build command (default: lake build Bang bang)' "$workdir/help.out"
+pass "help names the exact default warning build command"
+
 # Same three warnings in deliberately different order, locations, ANSI display,
 # and cold/replayed progress noise.  Their generated maps must be byte-identical.
 printf '\033[1;33mwarning:\033[0m Bang/Fixture/A.lean:10:2: This simp argument is unused:\n' >"$workdir/good-a.log"
@@ -142,6 +161,15 @@ warning: Bang/Fixture/C.lean:3:1: This simp argument is unused:
 LOG
 expect_failure_text "new modules fail" "new module Bang.Fixture.C" \
   "${tool[@]}" check --baseline "$baseline_a" --input "$workdir/new-module.log"
+
+cat >"$workdir/runner-only.log" <<'LOG'
+warning: Bang/Fixture/A.lean:1:1: This simp argument is unused:
+warning: Bang/Fixture/A.lean:2:1: This simp argument is unused:
+warning: Bang/Fixture/B.lean:3:1: `old` has been deprecated: Use `new` instead
+warning: Main.lean:4:1: `oldRunnerApi` has been deprecated: Use `newRunnerApi` instead
+LOG
+expect_failure_text "runner-only warnings cannot escape" "new module Main" \
+  "${tool[@]}" check --baseline "$baseline_a" --input "$workdir/runner-only.log"
 
 cat >"$workdir/new-category.log" <<'LOG'
 warning: Bang/Fixture/A.lean:1:1: This simp argument is unused:
