@@ -30,6 +30,10 @@ test-onboarding-preflight:
 test-onboarding-journey *ARGS:
     bash tools/test-onboarding-journey.sh {{ARGS}}
 
+# Content-owned frontend role-lab fixture through fmt/check/query/impact/rewrite/run.
+test-role-lab-frontend:
+    bash tools/test-role-lab-frontend.sh
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:

@@ -277,6 +277,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **test** — reject failed example runners (#175) (`7870e029`)
 - **test** — assert success-path CLI exit status (#182) (`8234fd40`)
 - **release** — verify installer artifacts end to end (#188) (`8f9bc10c`)
-- **tooling** — make developer gates fail closed (`c61f8351`)
+- **tooling** — make developer gates fail closed (#177) (`f0b8e0a2`)
 
 <!-- END GENERATED changelog -->

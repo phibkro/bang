@@ -94,11 +94,11 @@
       "title": "Frontend / language",
       "summary": "Change parsing, surface syntax, diagnostics, or type checking.",
       "order": 10,
-      "targetPage": "language-and-cli",
+      "targetPage": "frontend-language-role-lab",
       "seams": ["Bang/Frontend/Surface.lean", "Bang/Frontend/TypeCheck.lean"],
       "firstChange": "Add or adjust one checked syntax or elaboration fixture.",
-      "narrowGate": "just check Bang/Frontend/TypeCheck.lean",
-      "fullGate": "just verify"
+      "narrowGate": "nix develop --command just check Bang/Frontend/TypeCheck.lean",
+      "fullGate": "nix develop --command just verify"
     },
     {
       "id": "kernel-proof",
@@ -370,6 +370,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
       "target": { "kind": "onboarding-page", "route": "/contribute/routes", "contentKey": "contributor-routes" },
       "navigation": { "order": 30 }
+    },
+    {
+      "id": "frontend-language-role-lab",
+      "title": "Frontend / language role lab",
+      "section": "contribute",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["common-journey-evidence", "contributor-routes", "language-and-cli"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/contribute/routes/frontend-language", "contentKey": "frontend-language" },
+      "navigation": { "order": 40 }
     },
     {
       "id": "current-architecture",

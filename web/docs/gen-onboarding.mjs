@@ -5,7 +5,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { escapeProse } from './mdx-safe.mjs'
-import { compileSite } from './site-model.mjs'
+import { roleLabContent } from './role-lab-content.mjs'
+import { compileSite, resolveRoleLabContent } from './site-model.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
@@ -32,14 +33,17 @@ function renderRoutes() {
     '# Choose a contributor route',
     '',
     'Choose by the **first edit seam and smallest falsifying gate**, not by a reading list. ' +
-      'These are starting routes; the full role labs intentionally wait until the common ' +
-      'journey passes its stranger-test gate.',
+      'The frontend route now has a complete role lab; the remaining routes start at their ' +
+      'existing references.',
     '',
   ]
+  const pagesById = new Map(site.pages.map((page) => [page.id, page]))
   for (const choice of site.routeChoices) {
+    const targetKind = pagesById.get(choice.targetPage)?.target.kind
+    const startLabel = targetKind === 'onboarding-page' ? 'role lab' : 'existing reference'
     lines.push(`## ${escapeProse(choice.title)}`, '')
     lines.push(escapeProse(choice.summary), '')
-    lines.push(`**Start:** [existing reference](${choice.target})`, '')
+    lines.push(`**Start:** [${startLabel}](${choice.target})`, '')
     lines.push('**First seams:**', '')
     for (const seam of choice.seams) {
       lines.push(`- [\`${seam}\`](${repositoryLink(seam)})`)
@@ -123,11 +127,118 @@ function renderEvidence() {
   return lines.join('\n')
 }
 
+function pageLink(page) {
+  if (page.target.kind !== 'repository-link') return page.target.route
+  return `${site.repository.url}/${page.target.view}/${site.repository.branch}/${page.target.path}`
+}
+
+function appendChecks(lines, checks) {
+  for (const check of checks) lines.push(`- ${escapeProse(check)}`)
+  lines.push('')
+}
+
+function renderRoleLab(lab) {
+  const [retrieve, trace, practice, inspect] = lab.stages
+  const lines = [
+    `# ${escapeProse(lab.page.title)}`,
+    '',
+    'This role lab is generated from the shared four-stage contract. Page identity, ' +
+      'prerequisites, seams, and gates remain manifest-owned.',
+    '',
+    '## Prerequisites',
+    '',
+  ]
+  for (const prerequisite of lab.prerequisites) {
+    lines.push(`- [${escapeProse(prerequisite.title)}](${pageLink(prerequisite)})`)
+  }
+  lines.push(
+    '',
+    '## 1. Retrieve and predict',
+    '',
+    escapeProse(retrieve.prose.trim()),
+    '',
+    '**Retrieve:**',
+    '',
+  )
+  appendChecks(lines, retrieve.retrievalChecks)
+  lines.push('**Predict before running:**', '')
+  appendChecks(lines, retrieve.predictionChecks)
+  lines.push('## 2. Trace the seam', '', escapeProse(trace.prose.trim()), '', '**Checks:**', '')
+  appendChecks(lines, trace.checks)
+  lines.push('**Tracked seams:**', '')
+  for (const seam of lab.seams) lines.push(`- [\`${seam}\`](${repositoryLink(seam)})`)
+  lines.push(
+    '',
+    '## 3. Practise in isolation',
+    '',
+    escapeProse(practice.prose.trim()),
+    '',
+    'Start from the clean, ready checkout used for the common journey. The project helper ' +
+      'creates an independent full clone at its exact commit; all writes and gates below happen there.',
+    '',
+    '```bash',
+    'set -euo pipefail',
+    'root="$(git rev-parse --show-toplevel)"',
+    'test -z "$(git -C "$root" status --porcelain)"',
+    'base="$(git -C "$root" rev-parse HEAD)"',
+    'parent="$(mktemp -d)"',
+    'lane="$parent/repo"',
+    `branch="practice/${lab.routeChoice.id}-$(date +%s)-$$"`,
+    '"$root/tools/new-worktree.sh" "$lane" "$branch" "$base"',
+    'cd "$lane"',
+    `practice="$lane/${practice.fixture.path}"`,
+    'bang="$root/.lake/build/bin/bang"',
+    'cat > "$practice" <<\'BANG\'',
+    practice.fixture.source.trimEnd(),
+    'BANG',
+    '```',
+    '',
+    '**Run every step in order:**',
+    '',
+    '```bash',
+    ...practice.commands,
+    '```',
+    '',
+  )
+  lines.push(
+    `**Bounded outcome:** ${escapeProse(practice.boundedOutcome)}`,
+    '',
+    '## 4. Inspect evidence and select live work',
+    '',
+    escapeProse(inspect.prose.trim()),
+    '',
+    '**Evidence checks:**',
+    '',
+  )
+  appendChecks(lines, inspect.evidenceChecks)
+  lines.push(
+    '**Narrow gate:**',
+    '',
+    '```bash',
+    lab.narrowGate,
+    '```',
+    '',
+    '**Full gate:**',
+    '',
+    '```bash',
+    lab.fullGate,
+    '```',
+    '',
+    '**Read-only issue selection:**',
+    '',
+    escapeProse(inspect.issueSelection),
+    '',
+  )
+  return lines.join('\n')
+}
+
 const onboardingPages = site.pages.filter((page) => page.target.kind === 'onboarding-page')
+const roleLabs = resolveRoleLabContent(site, roleLabContent)
 const renderers = new Map([
   ['contributor-routes', renderRoutes],
   ['common-journey-evidence', renderEvidence],
 ])
+for (const lab of roleLabs) renderers.set(lab.page.target.contentKey, () => renderRoleLab(lab))
 if (onboardingPages.length !== renderers.size) {
   throw new Error(
     `gen-onboarding: expected ${renderers.size} onboarding pages, found ${onboardingPages.length}`,

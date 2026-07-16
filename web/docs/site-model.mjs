@@ -478,6 +478,7 @@ export function compileSite({ manifestPath, repoRoot }) {
   }))
 
   return {
+    repoRoot,
     basePath: manifest.basePath,
     repository: manifest.repository,
     publications: manifest.publications,
@@ -525,6 +526,139 @@ export function rewriteMarkdownLinks({ line, site, repoRoot, sourcePath }) {
       return `](${link}${anchor})`
     },
   )
+}
+
+const roleLabStageIds = ['retrieve-predict', 'trace-seam', 'isolated-practice', 'inspect-select']
+
+function requireNonemptyText(value, label) {
+  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(label)
+}
+
+function requireNonemptyTextList(value, label) {
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) =>
+    typeof item !== 'string' || item.trim().length === 0)) {
+    throw new Error(label)
+  }
+}
+
+function rejectUnexpectedFields(value, allowedFields, label) {
+  const unexpected = Object.keys(value).filter((key) => !allowedFields.has(key))
+  if (unexpected.length > 0) {
+    throw new Error(`${label} fields are owned by the page manifest: ${unexpected.join(', ')}`)
+  }
+}
+
+export function resolveRoleLabContent(site, contentRecords) {
+  const contentByKey = new Map()
+  for (const content of contentRecords) {
+    rejectUnexpectedFields(content, new Set(['key', 'stages']), 'role lab content')
+    requireNonemptyText(content.key, 'role lab content requires a key')
+    if (contentByKey.has(content.key)) {
+      throw new Error(`duplicate role lab content key '${content.key}'`)
+    }
+    contentByKey.set(content.key, content)
+  }
+
+  const pagesById = new Map(site.pages.map((page) => [page.id, page]))
+  const roleLabs = site.routeChoices.flatMap((routeChoice) => {
+    const page = pagesById.get(routeChoice.targetPage)
+    if (page?.target.kind !== 'onboarding-page') return []
+    if (page.target.contentKey !== routeChoice.id) {
+      throw new Error(
+        `role lab page ${page.id} content key ${page.target.contentKey} must equal route choice ${routeChoice.id}`,
+      )
+    }
+    const content = contentByKey.get(routeChoice.id)
+    if (!content) throw new Error(`manifest role lab '${routeChoice.id}' has no role lab content`)
+
+    const stageIds = Array.isArray(content.stages) ? content.stages.map((stage) => stage.id) : []
+    if (stageIds.join('\0') !== roleLabStageIds.join('\0')) {
+      throw new Error(
+        `role lab ${routeChoice.id} stages must be exactly ${roleLabStageIds.join(', ')} in order`,
+      )
+    }
+    const [retrieve, trace, practice, inspect] = content.stages
+    rejectUnexpectedFields(
+      retrieve,
+      new Set(['id', 'prose', 'retrievalChecks', 'predictionChecks']),
+      'role lab retrieve-predict',
+    )
+    rejectUnexpectedFields(trace, new Set(['id', 'prose', 'checks', 'seams']), 'role lab trace-seam')
+    rejectUnexpectedFields(
+      practice,
+      new Set(['id', 'prose', 'fixture', 'commands', 'boundedOutcome']),
+      'role lab isolated-practice',
+    )
+    rejectUnexpectedFields(
+      inspect,
+      new Set(['id', 'prose', 'evidenceChecks', 'issueSelection']),
+      'role lab inspect-select',
+    )
+    for (const stage of content.stages) requireNonemptyText(stage.prose, `role lab ${stage.id} requires prose`)
+    requireNonemptyTextList(
+      retrieve.retrievalChecks,
+      'role lab retrieve-predict requires nonempty retrievalChecks',
+    )
+    requireNonemptyTextList(
+      retrieve.predictionChecks,
+      'role lab retrieve-predict requires nonempty predictionChecks',
+    )
+    requireNonemptyTextList(trace.checks, 'role lab trace-seam requires nonempty checks')
+    requireNonemptyTextList(trace.seams, 'role lab trace-seam requires nonempty seams')
+    if (!practice.fixture || typeof practice.fixture !== 'object') {
+      throw new Error('role lab isolated-practice requires a fixture')
+    }
+    rejectUnexpectedFields(practice.fixture, new Set(['path', 'source']), 'role lab practice fixture')
+    requireNonemptyText(practice.fixture.path, 'role lab isolated-practice fixture requires a path')
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(practice.fixture.path)) {
+      throw new Error('role lab isolated-practice fixture path must be one safe filename')
+    }
+    requireNonemptyText(practice.fixture.source, 'role lab isolated-practice fixture requires source')
+    if (/^BANG$/m.test(practice.fixture.source)) {
+      throw new Error('role lab isolated-practice fixture source must not terminate the generated heredoc')
+    }
+    requireNonemptyTextList(practice.commands, 'role lab isolated-practice requires nonempty commands')
+    requireNonemptyText(
+      practice.boundedOutcome,
+      'role lab isolated-practice requires a boundedOutcome',
+    )
+    requireNonemptyTextList(
+      inspect.evidenceChecks,
+      'role lab inspect-select requires nonempty evidenceChecks',
+    )
+    requireNonemptyText(inspect.issueSelection, 'role lab inspect-select requires an issueSelection')
+    if (/(?:#\d+|issues\/\d+|\bissue\s+\d+\b)/i.test(JSON.stringify(content))) {
+      throw new Error(`role lab ${routeChoice.id} must not contain a fixed issue number`)
+    }
+
+    const prerequisiteIds = new Set(page.prerequisites)
+    for (const required of ['common-journey-evidence', 'contributor-routes', 'language-and-cli']) {
+      if (!prerequisiteIds.has(required)) {
+        throw new Error(`role lab ${routeChoice.id} requires prerequisite ${required}`)
+      }
+    }
+    const prerequisites = page.prerequisites.map((id) => pagesById.get(id))
+    const seams = [...routeChoice.seams, ...trace.seams]
+    rejectDuplicate(seams.map((seam) => [seam, routeChoice.id]), 'role lab seam')
+    for (const seam of seams) requireTrackedSource(site.repoRoot, seam)
+
+    return [{
+      page,
+      routeChoice,
+      prerequisites,
+      seams,
+      stages: content.stages,
+      narrowGate: routeChoice.narrowGate,
+      fullGate: routeChoice.fullGate,
+    }]
+  })
+
+  const manifestKeys = new Set(roleLabs.map((lab) => lab.routeChoice.id))
+  const extra = contentRecords.filter((content) => !manifestKeys.has(content.key))
+  if (extra.length > 0) {
+    throw new Error(`role lab content has no manifest route choice: ${extra.map((item) => item.key).join(', ')}`)
+  }
+  return roleLabs
 }
 
 export function resolveTourContent(site, contentRecords) {

@@ -68,7 +68,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (35)
+## test (36)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -108,6 +108,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-release-version.sh`](test-release-version.sh) | `verify` | `check-release-version.sh` | Known-good/known-bad poles for the exact release identity gate |
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
+| [`test-role-lab-frontend.sh`](test-role-lab-frontend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `web/docs/page-manifest.json` | Executable agreement between the generated frontend lab and its content-owned practice fixture |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 
 ## workflow (8)
