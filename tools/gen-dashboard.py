@@ -198,11 +198,13 @@ def checkpoint_pips(cps):
 
 def pulse_rows(pulse):
     out = []
-    for scope, summary, change_id in pulse:
+    for scope, summary, identity in pulse:
+        shown = identity.removeprefix("change:")
+        shown = shown[:12] if identity.startswith("change:") else shown
         out.append(
             f'<li><span class="scope">{e(scope)}</span>'
             f'<span class="summary">{e(summary)}</span>'
-            f'<span class="sha">{e(change_id[:12])}</span></li>'
+            f'<span class="sha">{e(shown)}</span></li>'
         )
     return "\n".join(out)
 

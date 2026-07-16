@@ -5,9 +5,9 @@
 Commit ids identify history topology, so a squash necessarily replaces them.  The
 identities here describe the facts that survive that rewrite:
 
-* a change id binds the canonical parent, normalized product subject, and the
-  complete before/after Git manifests (normalizing only CHANGELOG.md's recursive
-  generated block);
+* a change id binds the canonical parent, normalized product subject, and complete
+  before/after records for every changed path (normalizing only CHANGELOG.md's
+  recursive generated block);
 * proof state binds both the exact Git tree object for ``Bang/`` and a SHA-256
   manifest of every repository input that can change the rendered census.
 
@@ -195,6 +195,7 @@ def change_id(root: str, base: str, after: str, subject: str) -> str:
             "diff-tree",
             "--no-commit-id",
             "--name-only",
+            "--no-renames",
             "-r",
             "-z",
             base_tree,

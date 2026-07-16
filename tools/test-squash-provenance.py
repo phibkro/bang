@@ -286,6 +286,18 @@ def main() -> int:
             virtual_id
             == change_id(str(root), base, landed, "fix(core): durable landing (#190)"),
         )
+        git(root, "config", "diff.renames", "true")
+        with_renames = change_id(
+            str(root), base, landed, "fix(core): durable landing (#190)"
+        )
+        git(root, "config", "diff.renames", "false")
+        without_renames = change_id(
+            str(root), base, landed, "fix(core): durable landing (#190)"
+        )
+        check(
+            "change identity ignores ambient rename configuration",
+            with_renames == without_renames == virtual_id,
+        )
         check(
             "canonical squash preserves CHANGELOG bytes",
             (root / "CHANGELOG.md").read_bytes() == pr_changelog,
@@ -618,6 +630,8 @@ def main() -> int:
             "dashboard accepts mixed legacy/v2 identities",
             len(dashboard.parse_pulse(mixed)) == 2,
         )
+        pulse_html = dashboard.pulse_rows(dashboard.parse_pulse(mixed))
+        check("dashboard shows 12 v2 hex digits", "a" * 12 in pulse_html)
 
     print(f"PASS: {passed}/{passed} squash-provenance checks.")
     return 0
