@@ -44,7 +44,8 @@ contains() {
 help_out="$("$bang" --help 2>/dev/null)" && help_exit=0 || help_exit=$?
 check "help-long-exit" "$help_exit" "0"
 contains "help-long-stdout-usage" "$help_out" "USAGE:"
-help_stderr="$("$bang" --help 2>&1 >/dev/null)" || true
+help_stderr="$("$bang" --help 2>&1 >/dev/null)" && help_stderr_exit=0 || help_stderr_exit=$?
+check "help-long-stderr-invocation-exit" "$help_stderr_exit" "0"
 check "help-long-stderr-empty" "$help_stderr" ""
 
 got_h_exit=0

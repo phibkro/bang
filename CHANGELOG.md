@@ -274,6 +274,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **onboarding** — bind artifacts and public routes (`425656c1`)
 - **cli** — validate host replay traces strictly (#174) (`38a38d5e`)
 - **cli** — contain new scaffolds within examples (#181) (`312f14b9`)
-- **test** — reject failed example runners (`3e4985c1`)
+- **test** — reject failed example runners (#175) (`7870e029`)
+- **test** — assert success-path CLI exit status (`25555bab`)
 
 <!-- END GENERATED changelog -->

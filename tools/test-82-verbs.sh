@@ -72,7 +72,8 @@ check "holes-has-a-marker" "$(printf '%s' "$got_out" | grep -qE '"#1[0-9]{6,}"' 
 check "holes-main-absent" "$(printf '%s' "$got_out" | grep -o '"name":"main"' || true)" ''
 
 # stdin agrees with file.
-got_stdin="$(cat "$tmpdir/holes.bang" | "$bang" holes 2>/dev/null)" || true
+got_stdin="$("$bang" holes 2>/dev/null < "$tmpdir/holes.bang")" && got_stdin_exit=0 || got_stdin_exit=$?
+check "holes-stdin-exit" "$got_stdin_exit" "0"
 check "holes-stdin-eq-file" "$got_stdin" "$got_out"
 
 # a fully-pinned program: EMPTY holes array, still ok:true / exit 0 (the caller inspects the array).
@@ -98,11 +99,15 @@ for dir in examples/*/; do
   main="$dir/main.bang"
   name="$(basename "$dir")"
   [ -f "$main" ] || continue
-  out="$("$bang" holes "$main" 2>/dev/null)" || true
-  if printf '%s' "$out" | grep -q '"ok":true'; then
+  if out="$("$bang" holes "$main" 2>/dev/null)"; then
+    out_exit=0
+  else
+    out_exit=$?
+  fi
+  if [ "$out_exit" -eq 0 ] && printf '%s' "$out" | grep -q '"ok":true'; then
     examples_pass=$((examples_pass + 1))
   else
-    echo "✗ holes-examples-corpus — $name did not report ok:true: $out"
+    echo "✗ holes-examples-corpus — $name exited $out_exit or did not report ok:true: $out"
     examples_fail=$((examples_fail + 1))
   fi
 done
@@ -196,12 +201,12 @@ check "semver-tool-error-exit" "$got_exit" "2"
 # ── jq-parseability: every verb's output is valid JSON, not just byte-matching our expectation.
 if command -v jq >/dev/null 2>&1; then
   jq_ok=0
-  jq_h="$("$bang" holes "$tmpdir/holes.bang" 2>/dev/null)" || true
-  printf '%s' "$jq_h" | jq -e '.ok == true and (.holes | type == "array")' >/dev/null 2>&1 && jq_ok=$((jq_ok+1)) || echo "✗ jq holes: $jq_h"
-  jq_i="$("$bang" impact "$tmpdir/chain.bang" double 2>/dev/null)" || true
-  printf '%s' "$jq_i" | jq -e '.ok == true and (.dependents | type == "array")' >/dev/null 2>&1 && jq_ok=$((jq_ok+1)) || echo "✗ jq impact: $jq_i"
-  jq_s="$("$bang" semver-diff "$tmpdir/v1.bang" "$tmpdir/v2.bang" 2>/dev/null)" || true
-  printf '%s' "$jq_s" | jq -e '.ok == true and (.bump | type == "string")' >/dev/null 2>&1 && jq_ok=$((jq_ok+1)) || echo "✗ jq semver: $jq_s"
+  jq_h="$("$bang" holes "$tmpdir/holes.bang" 2>/dev/null)" && jq_h_exit=0 || jq_h_exit=$?
+  [ "$jq_h_exit" -eq 0 ] && printf '%s' "$jq_h" | jq -e '.ok == true and (.holes | type == "array")' >/dev/null 2>&1 && jq_ok=$((jq_ok+1)) || echo "✗ jq holes: exit=$jq_h_exit $jq_h"
+  jq_i="$("$bang" impact "$tmpdir/chain.bang" double 2>/dev/null)" && jq_i_exit=0 || jq_i_exit=$?
+  [ "$jq_i_exit" -eq 0 ] && printf '%s' "$jq_i" | jq -e '.ok == true and (.dependents | type == "array")' >/dev/null 2>&1 && jq_ok=$((jq_ok+1)) || echo "✗ jq impact: exit=$jq_i_exit $jq_i"
+  jq_s="$("$bang" semver-diff "$tmpdir/v1.bang" "$tmpdir/v2.bang" 2>/dev/null)" && jq_s_exit=0 || jq_s_exit=$?
+  [ "$jq_s_exit" -eq 0 ] && printf '%s' "$jq_s" | jq -e '.ok == true and (.bump | type == "string")' >/dev/null 2>&1 && jq_ok=$((jq_ok+1)) || echo "✗ jq semver: exit=$jq_s_exit $jq_s"
   check "jq-parseable-all-verbs" "$jq_ok" "3"
 else
   echo "· jq-parseable-all-verbs — SKIPPED (jq not in dev shell; not adding it for this check)"
@@ -213,7 +218,7 @@ echo "82-verbs: $pass passed, $fail failed"
 # always runs; jq's ONE guarded block contributes exactly one more `check()` call when jq is
 # present (jq IS in the standard `nix develop` shell, so this is the steady-state path). The total
 # tracks WHICH optional tools ran, so a genuinely truncated run is caught regardless of PATH.
-want_total=35
+want_total=36
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 1)); fi
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then

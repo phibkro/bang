@@ -11,7 +11,7 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-bang=".lake/build/bin/bang"
+bang="${BANG_BIN:-.lake/build/bin/bang}"
 
 if [ -z "${BANG_BIN_FRESH:-}" ]; then
   echo "building bang runner…" >&2
@@ -32,6 +32,16 @@ check() {
   fi
 }
 
+# Capture stdout and producer status separately so expected bytes cannot mask a failed formatter.
+capture() {
+  local out_var="$1" status_var="$2"
+  shift 2
+  local captured status
+  if captured="$("$@")"; then status=0; else status=$?; fi
+  printf -v "$out_var" '%s' "$captured"
+  printf -v "$status_var" '%s' "$status"
+}
+
 # ── happy path: a known corpus file → its exact canonical form ──
 # (examples/state/main.bang is a small fixed program; pin the LITERAL expected output so a printer
 # regression shows as a diff here, not just "still parses". Canonical form since issue #71:
@@ -43,11 +53,13 @@ check "happy-path-stdout" "$got_out" "$want_out"
 check "happy-path-exit" "$got_exit" "0"
 
 # ── file-arg and stdin agree on the SAME input (the two entry points must be one code path) ──
-got_stdin="$(cat examples/state/main.bang | "$bang" fmt 2>/dev/null)" || true
+capture got_stdin got_stdin_exit "$bang" fmt 2>/dev/null < examples/state/main.bang
+check "file-and-stdin-exit" "$got_stdin_exit" "0"
 check "file-and-stdin-agree" "$got_stdin" "$got_out"
 
 # ── idempotency AT THE CLI: piping fmt's own output back through fmt is byte-identical ──
-got_twice="$(printf '%s' "$got_out" | "$bang" fmt 2>/dev/null)" || true
+capture got_twice got_twice_exit "$bang" fmt 2>/dev/null <<< "$got_out"
+check "idempotent-second-pass-exit" "$got_twice_exit" "0"
 check "idempotent-via-cli" "$got_twice" "$got_out"
 
 # ── idempotency swept over every examples/*/main.bang (the corpus, not just one file) ──
@@ -58,11 +70,15 @@ for dir in examples/*/; do
   name="$(basename "$dir")"
   [ -f "$main" ] || continue
   once="$("$bang" fmt "$main" 2>/dev/null)" || { echo "✗ idempotent-sweep-$name — fmt itself failed"; idempotent_fail=$((idempotent_fail + 1)); continue; }
-  twice="$(printf '%s' "$once" | "$bang" fmt 2>/dev/null)" || true
-  if [ "$once" = "$twice" ]; then
+  if twice="$(printf '%s' "$once" | "$bang" fmt 2>/dev/null)"; then
+    twice_exit=0
+  else
+    twice_exit=$?
+  fi
+  if [ "$twice_exit" -eq 0 ] && [ "$once" = "$twice" ]; then
     idempotent_pass=$((idempotent_pass + 1))
   else
-    echo "✗ idempotent-sweep-$name — fmt(fmt(x)) != fmt(x)"; idempotent_fail=$((idempotent_fail + 1))
+    echo "✗ idempotent-sweep-$name — second fmt exited $twice_exit or fmt(fmt(x)) != fmt(x)"; idempotent_fail=$((idempotent_fail + 1))
   fi
 done
 if [ "$idempotent_fail" -eq 0 ]; then
@@ -93,8 +109,10 @@ check "too-many-args-exit" "$got_argerr_exit" "1"
 # byte-identical to its uncommented twin's — the comment can never leak into the printed output.
 commented=$'-- leading whole-line comment\nlet x = 3 -- trailing on the binding\nin\n  -- indented whole-line comment\n  let y = 4 -- trailing again\n  in x + y -- final trailing, no newline after'
 uncommented=$'\nlet x = 3 \nin\n  \n  let y = 4 \n  in x + y '
-got_commented="$(printf '%s' "$commented" | "$bang" fmt 2>/dev/null)" || true
-got_uncommented="$(printf '%s' "$uncommented" | "$bang" fmt 2>/dev/null)" || true
+capture got_commented got_commented_exit "$bang" fmt 2>/dev/null <<< "$commented"
+capture got_uncommented got_uncommented_exit "$bang" fmt 2>/dev/null <<< "$uncommented"
+check "commented-fmt-exit" "$got_commented_exit" "0"
+check "uncommented-fmt-exit" "$got_uncommented_exit" "0"
 check "comment-metamorphic-fmt" "$got_commented" "$got_uncommented"
 # and the commented program still RUNS to the same value the uncommented twin does (`run`
 # takes a FILE arg, unlike `fmt`/`check` — no stdin form — so write it out first).
@@ -128,7 +146,8 @@ BANGEOF
 got_96_orig="$("$bang" run "$fmt96_dir/main.bang" 2>/dev/null)" && got_96_orig_exit=0 || got_96_orig_exit=$?
 check "issue96-original-runs" "$got_96_orig" "6"
 check "issue96-original-exit" "$got_96_orig_exit" "0"
-got_96_fmt="$("$bang" fmt "$fmt96_dir/main.bang" 2>/dev/null)" || true
+capture got_96_fmt got_96_fmt_exit "$bang" fmt "$fmt96_dir/main.bang" 2>/dev/null
+check "issue96-fmt-exit" "$got_96_fmt_exit" "0"
 printf '%s\n' "$got_96_fmt" > "$fmt96_dir/main_fmt.bang"
 got_96_fmt_run="$("$bang" run "$fmt96_dir/main_fmt.bang" 2>/dev/null)" && got_96_fmt_run_exit=0 || got_96_fmt_run_exit=$?
 check "issue96-fmt-output-still-runs" "$got_96_fmt_run" "6"
@@ -155,10 +174,12 @@ import g2
 let main =
   let ast = $(g2.mk) ($(g2.mk2) 5) in ast
 BANGEOF
-got_96b_once="$("$bang" fmt "$fmt96_dir/main2.bang" 2>/dev/null)" || true
+capture got_96b_once got_96b_once_exit "$bang" fmt "$fmt96_dir/main2.bang" 2>/dev/null
+check "issue96-first-fmt-exit" "$got_96b_once_exit" "0"
 mkdir -p "$fmt96_dir/pass2" && cp "$fmt96_dir/g2.bang" "$fmt96_dir/pass2/"
 printf '%s\n' "$got_96b_once" > "$fmt96_dir/pass2/main.bang"
-got_96b_twice="$("$bang" fmt "$fmt96_dir/pass2/main.bang" 2>/dev/null)" || true
+capture got_96b_twice got_96b_twice_exit "$bang" fmt "$fmt96_dir/pass2/main.bang" 2>/dev/null
+check "issue96-second-fmt-exit" "$got_96b_twice_exit" "0"
 check "issue96-spaced-arg-idempotent" "$got_96b_twice" "$got_96b_once"
 got_96b_run="$("$bang" run "$fmt96_dir/main2.bang" 2>/dev/null)" && got_96b_run_exit=0 || got_96b_run_exit=$?
 check "issue96-spaced-arg-original-runs" "$got_96b_run" "8"

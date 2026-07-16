@@ -21,7 +21,7 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-bang=".lake/build/bin/bang"
+bang="${BANG_BIN:-.lake/build/bin/bang}"
 
 if [ -z "${BANG_BIN_FRESH:-}" ]; then
   echo "building bang runner…" >&2
@@ -38,6 +38,18 @@ check() {
   else
     echo "✗ $name — expected [$want], got [$got]"; fail=$((fail + 1))
   fi
+}
+
+# Capture stdout and the producer's status separately. Callers must assert the status; this avoids
+# a matching JSON payload masking a nonzero CLI exit (and avoids a following grep/jq becoming the
+# only status that survives a pipeline).
+capture() {
+  local out_var="$1" status_var="$2"
+  shift 2
+  local captured status
+  if captured="$("$@")"; then status=0; else status=$?; fi
+  printf -v "$out_var" '%s' "$captured"
+  printf -v "$status_var" '%s' "$status"
 }
 
 tmpdir="$(mktemp -d)"
@@ -74,13 +86,16 @@ check "dump-exit" "$got_exit" "0"
 check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
-got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query dump 2>/dev/null)" || true
+capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
+check "dump-stdin-exit" "$got_stdin_exit" "0"
 check "dump-stdin-eq-file" "$got_stdin" "$got_out"
 
 # EVERY curated verb's answer is a PROJECTION of `dump` — the layering claim, checked directly:
 # `symbols`'s "decls" entries equal `dump`'s "decls" entries byte-for-byte (same DeclFact.toJson).
-got_symbols="$("$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null)" || true
-got_dump_decls="$(printf '%s' "$got_out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"ok":True,"symbols":d["decls"]}, separators=(",",":")))' 2>/dev/null)" || true
+capture got_symbols got_symbols_exit "$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null
+capture got_dump_decls got_dump_decls_exit python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"ok":True,"symbols":d["decls"]}, separators=(",",":")))' 2>/dev/null <<< "$got_out"
+check "symbols-projection-exit" "$got_symbols_exit" "0"
+check "dump-decls-extractor-exit" "$got_dump_decls_exit" "0"
 check "symbols-is-dump-decls-projection" "$got_symbols" "$got_dump_decls"
 
 # a parse failure is an OP-LEVEL answer (exit 1, ok:false on stdout — NOT a tool error).
@@ -102,11 +117,15 @@ for dir in examples/*/; do
   main="$dir/main.bang"
   name="$(basename "$dir")"
   [ -f "$main" ] || continue
-  out="$("$bang" query dump "$main" 2>/dev/null)" || true
-  if printf '%s' "$out" | grep -q '"ok":true'; then
+  if out="$("$bang" query dump "$main" 2>/dev/null)"; then
+    out_exit=0
+  else
+    out_exit=$?
+  fi
+  if [ "$out_exit" -eq 0 ] && printf '%s' "$out" | grep -q '"ok":true'; then
     examples_pass=$((examples_pass + 1))
   else
-    echo "✗ dump-examples-corpus — $name did not report ok:true: $out"
+    echo "✗ dump-examples-corpus — $name exited $out_exit or did not report ok:true: $out"
     examples_fail=$((examples_fail + 1))
   fi
 done
@@ -163,7 +182,8 @@ fi
 # SAME jq-optionality precedent this file already follows. ──
 duckdb_ran=0
 if command -v duckdb >/dev/null 2>&1; then
-  duckdb_rows="$(duckdb -csv -noheader -c "SELECT count(*) FROM (SELECT unnest(decls) AS d FROM read_json('tools/golden-dump-caesar.json'))" 2>/dev/null)" || true
+  capture duckdb_rows duckdb_exit duckdb -csv -noheader -c "SELECT count(*) FROM (SELECT unnest(decls) AS d FROM read_json('tools/golden-dump-caesar.json'))" 2>/dev/null
+  check "golden-dump-duckdb-exit" "$duckdb_exit" "0"
   check "golden-dump-duckdb-loadable" "$duckdb_rows" "7"
   duckdb_ran=1
 else
@@ -175,8 +195,10 @@ fi
 # over `dump`'s own output, ~5 lines, zero new Lean code. Skipped (not failed) if jq is absent from
 # the dev shell, matching test-check-json.sh's own jq-optionality precedent. ──
 if command -v jq >/dev/null 2>&1; then
-  composed="$("$bang" query dump "$tmpdir/pubdemo.bang" 2>/dev/null | \
-    jq -c '[.decls[] | select(.pub and ((.type // "") | contains("Div"))) | .name]')" || true
+  capture composed_dump composed_dump_exit "$bang" query dump "$tmpdir/pubdemo.bang" 2>/dev/null
+  capture composed composed_jq_exit jq -c '[.decls[] | select(.pub and ((.type // "") | contains("Div"))) | .name]' <<< "$composed_dump"
+  check "composed-query-dump-exit" "$composed_dump_exit" "0"
+  check "composed-query-filter-exit" "$composed_jq_exit" "0"
   check "composed-query-pub-divergent" "$composed" '["fib"]'
 else
   echo "· composed-query-pub-divergent — SKIPPED (jq not in dev shell; not adding it for this check)"
@@ -188,7 +210,8 @@ got_out="$("$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null)" && got_exit
 check "symbols-exit" "$got_exit" "0"
 check "symbols-shape" "$got_out" '{"ok":true,"symbols":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}]}'
 
-got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query symbols 2>/dev/null)" || true
+capture got_stdin got_stdin_exit "$bang" query symbols 2>/dev/null < "$tmpdir/simple.bang"
+check "symbols-stdin-exit" "$got_stdin_exit" "0"
 check "symbols-stdin-eq-file" "$got_stdin" "$got_out"
 
 got_out="$(printf 'let x 3 in x' | "$bang" query symbols 2>/dev/null)" && got_exit=0 || got_exit=$?
@@ -222,7 +245,8 @@ got_out="$("$bang" query laws "$tmpdir/laws.bang" 2>/dev/null)" && got_exit=0 ||
 check "laws-exit" "$got_exit" "0"
 check "laws-shape" "$got_out" '{"ok":true,"laws":[{"trait":"Eq","law":"refl","params":["x"],"body":"eq(x, x) == 1"}]}'
 
-got_stdin="$(cat "$tmpdir/laws.bang" | "$bang" query laws 2>/dev/null)" || true
+capture got_stdin got_stdin_exit "$bang" query laws 2>/dev/null < "$tmpdir/laws.bang"
+check "laws-stdin-exit" "$got_stdin_exit" "0"
 check "laws-stdin-eq-file" "$got_stdin" "$got_out"
 
 got_out="$(printf 'let x = 3 in x' | "$bang" query laws 2>/dev/null)" && got_exit=0 || got_exit=$?
@@ -266,8 +290,10 @@ check "hover-miss-exit" "$got_exit" "0"
 check "hover-miss-shape" "$got_out" '{"ok":false,"error":"no decl at 1:1"}'
 
 # stdin agrees with file.
-got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query hover 2 5 2>/dev/null)" || true
-got_file="$("$bang" query hover "$tmpdir/simple.bang" 2 5 2>/dev/null)" || true
+capture got_stdin got_stdin_exit "$bang" query hover 2 5 2>/dev/null < "$tmpdir/simple.bang"
+capture got_file got_file_exit "$bang" query hover "$tmpdir/simple.bang" 2 5 2>/dev/null
+check "hover-stdin-exit" "$got_stdin_exit" "0"
+check "hover-file-exit" "$got_file_exit" "0"
 check "hover-stdin-eq-file" "$got_stdin" "$got_file"
 
 # MULTI-FILE — a position inside the ENTRY file (main.bang) of a multi-file (import-resolved)
@@ -317,8 +343,12 @@ if command -v jq >/dev/null 2>&1; then
                  "effects double $tmpdir/simple.bang" "laws $tmpdir/laws.bang" \
                  "def double $tmpdir/simple.bang" "refs double $tmpdir/simple.bang"; do
     jq_total=$((jq_total + 1))
-    jq_in="$("$bang" query $op_args 2>/dev/null)" || true
-    if printf '%s' "$jq_in" | jq -e '.ok == true' >/dev/null 2>&1; then
+    if jq_in="$("$bang" query $op_args 2>/dev/null)"; then
+      jq_in_exit=0
+    else
+      jq_in_exit=$?
+    fi
+    if [ "$jq_in_exit" -eq 0 ] && printf '%s' "$jq_in" | jq -e '.ok == true' >/dev/null 2>&1; then
       jq_ok=$((jq_ok + 1))
     else
       echo "✗ jq-parseable — 'query $op_args' did not parse as expected JSON shape: $jq_in"
@@ -332,16 +362,17 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (64 — 54 pre-#52-slice-5 + 10 `hover` checks, §6b); jq's THREE guarded blocks
-# (ignore-unknown-fields-contract, composed-query-pub-divergent, jq-parseable-all-ops) each
-# contribute exactly ONE `check()` call when jq is present (jq IS in the standard `nix develop`
-# shell, so this is the steady-state path); duckdb's ONE guarded check contributes one more when
+# always runs (71 — the former 64 plus seven producer-status checks); jq's three guarded blocks
+# contribute five `check()` calls in total when jq is present (the composed query checks both
+# producers in addition to its output;
+# jq IS in the standard `nix develop` shell, so this is the steady-state path); duckdb's guarded
+# block contributes two checks when
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=64
-if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 3)); fi
-if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 1)); fi
+want_total=71
+if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
+if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

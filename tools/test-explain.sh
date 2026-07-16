@@ -68,7 +68,8 @@ let main = 0
 # ── B011 RETIRED (#144): its FORMER trigger now type-checks CLEAN, no diagnostic at all — the
 # positive regression for the payload-arity-≤2 cap being lifted (a ≥3-ary ctor constructs/matches
 # fine end-to-end, not just "some other code fires now"). ──
-b011_former_trigger="$(printf 'data T = C(Int, Int, Int)\nlet main = 3' | "$bang" check --json 2>/dev/null)" || true
+b011_former_trigger="$(printf 'data T = C(Int, Int, Int)\nlet main = 3' | "$bang" check --json 2>/dev/null)" && b011_exit=0 || b011_exit=$?
+check "b011-retired-former-trigger-exit" "$b011_exit" "0"
 check "b011-retired-former-trigger-now-clean" "$b011_former_trigger" '{"ok":true,"diagnostics":[]}'
 
 # ── the HUMAN path prefixes the stable code (rustc `error[B004]:` shape) ──
@@ -113,7 +114,9 @@ else
 fi
 
 # ── explain is CASE-INSENSITIVE on the code ──
-exp_lower="$("$bang" explain b004 2>/dev/null | head -1)" || true
+exp_lower_out="$("$bang" explain b004 2>/dev/null)" && exp_lower_exit=0 || exp_lower_exit=$?
+exp_lower="${exp_lower_out%%$'\n'*}"
+check "explain-case-insensitive-exit" "$exp_lower_exit" "0"
 check "explain-case-insensitive" "$exp_lower" "B004: forcing (\`\$\`) a value that is not a thunk"
 
 # ── `bang explain BOGUS` is a LOUD unknown-code error on stderr, exit 1 (never silent) ──
@@ -134,7 +137,7 @@ check "explain-no-arg-exit-1" "$noarg_exit" "1"
 
 echo "──────────────────────────────"
 echo "explain: $pass passed, $fail failed"
-want_total=23
+want_total=25
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"
