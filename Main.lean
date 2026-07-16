@@ -1034,9 +1034,9 @@ def validateHostServiceDeclarations (prog : Prog) (trustedNames : List String) :
         throw s!"trusted bundled host effect '{name}' has unexpected operations/signatures: {repr actual}; expected {repr expected}"
     | _ => throw s!"trusted bundled host effect provenance for '{name}' did not resolve to exactly one declaration"
 
-/-- Linux-path containment after `realPath`: the separator guard keeps `/grant/root2` outside
-`/grant/root`. The release target is Linux; the limitation is recorded in ADR-0104 rather than
-claiming a platform-independent component API Lean does not expose here. -/
+/-- Separator-bounded POSIX-path containment after `realPath`: the guard keeps `/grant/root2`
+outside `/grant/root` on the current Linux/macOS targets. Windows behavior is neither claimed nor
+tested until this check is replaced by a component-based implementation; see ADR-0104. -/
 def fsPathInRoot (path root : System.FilePath) : Bool :=
   if root.toString == "/" then path.toString.startsWith "/"
   else path == root || path.toString.startsWith (root.toString ++ "/")
@@ -1081,22 +1081,14 @@ def authorizeFsPath (option op raw : String) (roots : List System.FilePath) :
   if roots.isEmpty then
     return .error s!"Fs.{op} has no path authority; add '{option} ROOT' alongside '--allow=Fs'"
   let path : System.FilePath := ⟨raw⟩
-  let parent := path.parent.getD ⟨"."⟩
-  let parentReal? : Except String System.FilePath ← try
-    let real ← IO.FS.realPath parent
-    pure (Except.ok real)
-  catch e =>
-    pure (Except.error s!"Fs.{op} path '{raw}' has no resolvable existing parent '{parent}': {e}")
-  let parentReal ← match parentReal? with
-    | Except.ok p => pure p
-    | Except.error e => return Except.error e
-  if !fsPathInRoots parentReal roots then
-    return Except.error s!"Fs.{op} path '{raw}' resolves through parent '{parentReal}', outside its granted roots"
-  let metadata? : Option IO.FS.Metadata ← try
-    pure (some (← path.symlinkMetadata))
-  catch _ => pure none
+  let metadata? : Except String (Option IO.FS.Metadata) ← try
+    pure (Except.ok (some (← path.symlinkMetadata)))
+  catch
+    | .noFileOrDirectory .. => pure (Except.ok none)
+    | e => pure (Except.error s!"Fs.{op} could not inspect path '{raw}' without following its final component: {e}")
   match metadata? with
-  | some metadata =>
+  | Except.error e => return Except.error e
+  | Except.ok (some metadata) =>
     if metadata.type == .symlink then
       return Except.error s!"Fs.{op} refuses final symlink path '{raw}' (live and dangling symlinks are not followed)"
     let pathReal? : Except String System.FilePath ← try
@@ -1108,7 +1100,18 @@ def authorizeFsPath (option op raw : String) (roots : List System.FilePath) :
     | Except.ok pathReal =>
       if fsPathInRoots pathReal roots then return Except.ok pathReal
       return Except.error s!"Fs.{op} path '{raw}' resolves to '{pathReal}', outside its granted roots"
-  | none =>
+  | Except.ok none =>
+    let parent := path.parent.getD ⟨"."⟩
+    let parentReal? : Except String System.FilePath ← try
+      let real ← IO.FS.realPath parent
+      pure (Except.ok real)
+    catch e =>
+      pure (Except.error s!"Fs.{op} path '{raw}' has no resolvable existing parent '{parent}': {e}")
+    let parentReal ← match parentReal? with
+      | Except.ok p => pure p
+      | Except.error e => return Except.error e
+    if !fsPathInRoots parentReal roots then
+      return Except.error s!"Fs.{op} path '{raw}' resolves through parent '{parentReal}', outside its granted roots"
     -- The parent is already canonical and contained; spelling the missing child under it avoids
     -- preserving unchecked `..` components in the pathname passed to the operation.
     match path.fileName with

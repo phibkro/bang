@@ -110,6 +110,10 @@ resolved physically once. Existing final symlinks are refused; existing targets 
 of missing targets are `realPath`-checked under a separator-bounded root. Missing parents are not
 created. Absolute paths are accepted only inside a named root, except under explicit `all`.
 
+The containment comparison is separator-bounded POSIX-path behavior for the current Linux/macOS
+targets. Windows behavior is neither claimed nor tested until the implementation compares canonical
+path components instead of path strings.
+
 This is accident and symlink containment, not descriptor-enforced same-UID isolation. Lean exposes pathname
 IO rather than descriptor-relative `openat`; a trusted concurrent actor can mutate a checked component
 between validation and the later operation. The implementation states this TOCTOU boundary directly.

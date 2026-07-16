@@ -127,6 +127,16 @@ make_write_prog "root/cwd-bound.txt"
 eq relative-root-binds-cwd-exit "$status" 0
 eq relative-root-binds-cwd "$(cat "$tmp/root/cwd-bound.txt")" changed
 
+make_exists_prog "$tmp/root"
+run_capture "$bang" run --env=real --allow=Fs --allow-fs-read "$tmp/root" "$exists_prog"
+eq absolute-root-self-exists-exit "$status" 0
+eq absolute-root-self-exists "$stdout" 1
+make_exists_prog "."
+(cd "$tmp/root" && "$bang" run --env=real --allow=Fs --allow-fs-read . "$exists_prog" \
+  >"$tmp/stdout" 2>"$tmp/stderr") && status=0 || status=$?
+eq relative-root-self-exists-exit "$status" 0
+eq relative-root-self-exists "$(cat "$tmp/stdout")" 1
+
 # Canonical containment: parent traversal, absolute/prefix escapes, final and intermediate links,
 # and missing parents are denied without modifying targets or manufacturing directories.
 make_write_prog "../outside/traversal.txt"
@@ -247,7 +257,7 @@ contains successful-record-complete "$(cat "$record")" '"op":"writeFile"'
 eq successful-record-no-temp "$(find "$tmp/outside" -maxdepth 1 -name '.*.bang-record-*' -print -quit)" ""
 
 echo "──────────────────────────────"
-expected=76
+expected=80
 if [ "$pass" -ne "$expected" ]; then bad host-authority-check-count "expected $expected completed checks, got $pass"; fi
 echo "host-authority: $pass passed, $fail failed"
 [ "$pass" -eq "$expected" ] && [ "$fail" -eq 0 ]
