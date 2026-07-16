@@ -283,5 +283,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **cli** — reject unknown and malformed options (`change:25fbfc7982a2acf968e208dd083d7e9d4ea2c5fb376b930f5d164a1b3bcba456`)
 - **cli** — require explicit real-host authority (`change:462bc2b51dcd1026cb3e7fffcb1dd335008b41577d15167b4e55f9078303f130`)
 - **proof** — align public claims with semantic strength (`change:f9b062a481c262e3ee7abf8d40252c20dcf29d952756c1540ae989651be8cefa`)
+- **docs** — align proof dashboard with semantic claim state (`change:79d064ff00a84fb883e9f55dcb37f0ed53ad8b54cc493725579b6f931b41c08f`)
 
 <!-- END GENERATED changelog -->
