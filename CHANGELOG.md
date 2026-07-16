@@ -290,5 +290,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **lean** — remove dead and unreachable tactics (`change:0d6b379349ea17916b155728d7fccb0338d2afbbe3954577dc0bad42207d7d09`)
 - **wasm-model** — decouple target runner from source Result (`change:023c57727162d0a8871f8617236c83250ad64279ec030ba895078b3e8c783a6c`)
 - **lean** — cover native runner warnings (`change:24b4c0ec7f37ee8d234c118ee53e88939f6cf238a962e419d56ac6cb2b1ba60c`)
+- **core** — distinguish fuel exhaustion from out-of-memory (`change:0a29d3d55516becac67fb36829c7fcc92a987dc5eab2db11a3ea2909afc20b2a`)
 
 <!-- END GENERATED changelog -->

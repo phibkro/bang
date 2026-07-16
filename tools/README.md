@@ -69,7 +69,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (40)
+## test (41)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -106,6 +106,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
 | [`test-onboarding-journey.sh`](test-onboarding-journey.sh) | `verify` | `onboarding_journey.py` | Public verify battery for the common contributor journey |
 | [`test-onboarding-preflight.sh`](test-onboarding-preflight.sh) | `fitness` | `onboarding-preflight.sh` | Known-good/known-bad poles for the read-only newcomer preflight |
+| [`test-out-of-fuel-naming.sh`](test-out-of-fuel-naming.sh) | `verify` | `Bang/Core/Semantics/Eval.lean`, `Bang/Core/IR.lean`, `Bang/Frontend/Surface.lean`, `Bang/Frontend/NamedCore.lean`, `Bang/Witness/ProofExport.lean`, `web/run-service/README.md`, `docs/notes/questions/Q32-memoization-combinator.md` | Falsification poles for #172's semantic rename. The fuel-bounded Result/Outcome |
 | [`test-query.sh`](test-query.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
 | [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
 | [`test-release-integrity.sh`](test-release-integrity.sh) | `verify` | `tools/install.sh`, `tools/release-manifest.sh`, `.github/workflows/release.yml` | Local, network-free falsification poles for release manifest generation and atomic, |

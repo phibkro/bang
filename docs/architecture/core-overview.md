@@ -161,8 +161,8 @@ A C4 [component](https://c4model.com/abstractions/component) is related function
 flowchart LR
   subgraph system_BANG["Software system: BANG implementation"]
     subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
-      component_Frontend["Frontend<br/>12 modules · 17266 LOC"]
-      component_Core["Core<br/>12 modules · 8155 LOC"]
+      component_Frontend["Frontend<br/>12 modules · 17278 LOC"]
+      component_Core["Core<br/>12 modules · 8162 LOC"]
       component_Backend["Backend<br/>6 modules · 16995 LOC"]
       component_Meta["Meta<br/>2 modules · 3852 LOC"]
       component_Witness["Witness<br/>19 modules · 3685 LOC"]
@@ -186,8 +186,8 @@ flowchart LR
 
 | Component (repository tier) | Responsibility | Modules | LOC | Depends on |
 |---|---|---:|---:|---|
-| `Frontend` | text → typed core | 12 | 17266 | `Core` (4) |
-| `Core` | IR · typing · semantics · soundness | 12 | 8155 | — |
+| `Frontend` | text → typed core | 12 | 17278 | `Core` (4) |
+| `Core` | IR · typing · semantics · soundness | 12 | 8162 | — |
 | `Backend` | calculated + abstract target machines · separate WasmGC emitter | 6 | 16995 | `Core` (8) |
 | `Meta` | contextual-equivalence metatheory | 2 | 3852 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3685 | `Frontend` (5), `Core` (27), `Backend` (4) |
