@@ -6590,10 +6590,14 @@ failure (the fake `param.set(x)` write-attempt guard) surfaces at elaboration. -
 def assertParseErrorOrTypeError (fuel : Nat) (src : String) : Bool :=
   match runOutcome fuel src with | .parseErr _ _ => true | .typeErr _ => true | _ => false
 
-/-- Does the typed run exhaust fuel (`oom`)? Reachable through the type gate (a well-typed diverging
+/-- Does the typed run exhaust its evaluation fuel? Reachable through the type gate (a well-typed diverging
 program). -/
-def assertTypedOom (fuel : Nat) (src : String) : Bool :=
-  match runOutcome fuel src with | .oom => true | _ => false
+public def assertTypedOutOfFuel (fuel : Nat) (src : String) : Bool :=
+  match runOutcome fuel src with | .outOfFuel => true | _ => false
+
+/-- Temporary source-compatibility alias; new code should use `assertTypedOutOfFuel`. -/
+@[deprecated assertTypedOutOfFuel (since := "2026-07-16")]
+public def assertTypedOom (fuel : Nat) (src : String) : Bool := assertTypedOutOfFuel fuel src
 
 /-- Parse + elaborate + CHECK + lower + RUN through `Source.eval`, expecting `vint n` — the typed
 sibling of `Surface.runYieldsInt` (which stays untyped and decl-free). The typed path checks BEFORE
@@ -6613,8 +6617,8 @@ def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
 #guard assertTypeError 20 "1 + Left(0)"
 -- a located PARSE error: `let x 3 in x` — the missing `=` (the `3` sits where `=` was wanted) at 1:7.
 #guard assertParseErrorAt 20 "let x 3 in x" 1 7
--- an OOM: an unbounded recursion (types fine ⇒ the typed path reaches it) under bounded fuel.
-#guard assertTypedOom 60 "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0"
+-- fuel exhaustion: an unbounded recursion (types fine ⇒ the typed path reaches it) under bounded fuel.
+#guard assertTypedOutOfFuel 60 "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0"
 -- a STUCK: force a NON-thunk (`$3`) — rejected by the type gate, so run RAW (`--no-typecheck`).
 #guard (match runOutcomeRaw 20 "$3" with | .stuck => true | _ => false)
 -- the typed projection is STRICTLY MORE INFORMATIVE than `runTypedYieldsInt`: where the bespoke
@@ -9486,4 +9490,3 @@ context-threading (Γ / effects-table) in clause elaboration, not a semantics sp
 -- axis is documented N/A above (not v1-expressible), per the plan's own contingency.
 
 end Bang.TypeCheck
-

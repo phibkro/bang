@@ -268,6 +268,6 @@ default so real programs hit the fast engine (Option **A1**).
   because memoized force breaks step-monotonicity, so it is small–medium, not small.
 
 **Supersedes framing:** this refines ADR-0073 §5 ("TCO deferred / slow-correct first"),
-which anticipated deep-recursion `oom` but not the per-*shallow*-step O(body) cost that
-#61 measured. The perf concern is no longer "deep recursion ooms" but "every step is
+which anticipated deep-recursion `outOfFuel` but not the per-*shallow*-step O(body) cost that
+#61 measured. The perf concern is no longer "deep recursion exhausts fuel" but "every step is
 O(body)"; the fix is env-in-the-machine, not TCO.

@@ -812,7 +812,7 @@ else about a run is observable:
 | Outcome | Meaning |
 |---|---|
 | `done v` | terminated with value `v` — at ground type, the observed answer |
-| `oom` | fuel exhausted — the v1 stand-in for divergence (the fuel-bounded `Div` fragment) |
+| `outOfFuel` | evaluation fuel exhausted — the v1 stand-in for divergence (the fuel-bounded `Div` fragment) |
 | `escapedCap` | a capability escaped its handler — a defined fail-loud terminal (ADR-0063) |
 | `stuck` | genuine stuck — a well-typed `⊥`-row program NEVER reaches it (`type_safety`) |
 
@@ -849,7 +849,7 @@ reachable failure is a *defined, fail-loud* outcome. Against the C-standard tric
 |---|---|
 | undefined behavior | **∅** — every reachable failure is a defined terminal |
 | unspecified behavior | **∅** — the reference semantics is deterministic |
-| implementation-defined | the **fuel bound** only (when `oom` is reported); integer width is *not* one — `Int` is unbounded ℤ, overflow never UB (ADR-0067) |
+| implementation-defined | the **fuel bound** only (when `outOfFuel` is reported); integer width is *not* one — `Int` is unbounded ℤ, overflow never UB (ADR-0067) |
 
 **Static errors** reject a term before it is a program: parse errors, type errors, and
 effect-signature violations (an `! {ρ}` annotation that under-declares the inferred row).
@@ -861,7 +861,7 @@ constructors (`Bang/Core/Semantics/Eval.lean`) plus the IR's explicit fail-loud 
 
 | Terminal | When it arises | Corpus example / definition |
 |---|---|---|
-| `oom` | fuel exhausted before the program returned — the v1 divergence proxy | `Config.run` fuel-0 arm (`Bang/Core/Semantics/Eval.lean`) |
+| `outOfFuel` | evaluation fuel exhausted before the program returned — the v1 divergence proxy | `Config.run` fuel-0 arm (`Bang/Core/Semantics/Eval.lean`) |
 | `escapedCap` | a first-class capability is forced after its handler has popped; dispatch finds no frame (ADR-0063) | `capEscape` `#guard` (`Bang/Examples.lean`) |
 | `wrong s` | an explicit IR abort — e.g. `wrong "elab-failed"` when elaboration fails (`Bang/Frontend/NamedCore.lean`) | `Comp.wrong` (`Bang/Core/IR.lean`) |
 
@@ -1295,10 +1295,10 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 |---|---:|---|
 | `run` | 0 | done — value printed to stdout |
 | `run` | 1 | usage / parse / elaboration / TYPE error |
-| `run` | 2 | out of fuel (oom)              [oracle engine] |
+| `run` | 2 | out of fuel                    [oracle engine] |
 | `run` | 3 | capability escaped its handler [oracle engine] |
 | `run` | 4 | stuck (ill-formed program)     [oracle engine, --no-typecheck] |
-| `run` | 5 | compiled machine produced no value (oom / escaped cap / stuck) [--compiled] |
+| `run` | 5 | compiled machine produced no value (out of fuel / escaped cap / stuck) [--compiled] |
 | `check --json` | 0 | ok:true  — the program type-checks |
 | `check --json` | 1 | ok:false — diagnostics present (see the JSON on stdout) |
 | `check --json` | 2 | tool error (e.g. unreadable file) — reported on stderr, never folded into the JSON |

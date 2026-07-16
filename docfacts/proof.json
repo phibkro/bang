@@ -641,7 +641,7 @@
       "guarantee": "A fully handled well-typed source program cannot produce the unclassified stuck result.",
       "id": "bang-type-safety",
       "limitations": [
-        "Defined capability escape and fuel-exhaustion oom remain allowed.",
+        "Defined capability escape and the `outOfFuel` outcome remain allowed.",
         "Does not prove termination."
       ],
       "premiseUsage": {
@@ -745,7 +745,7 @@
       "guarantee": "Every closed, fully handled, well-typed program avoids the unclassified stuck result.",
       "id": "bang-closed-fully-handled-program-no-unclassified-stuck",
       "limitations": [
-        "Defined capability escape and fuel-exhaustion oom remain allowed.",
+        "Defined capability escape and the `outOfFuel` outcome remain allowed.",
         "Does not identify or isolate a custom-handler fragment."
       ],
       "premiseUsage": {
@@ -942,7 +942,7 @@
       "claimRole": "supporting",
       "claimStrength": "bounded",
       "definitionSource": {
-        "line": 2828,
+        "line": 2837,
         "path": "Bang/Frontend/Surface.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "ef29460784a6d60ec5be847c0d5deed7f08ec91014cdc823f8890b8f47626e09",
+    "digest": "c1b4d34e9c9a914d6e3acd1f5bb4dcf662b833cf5770fb0418583874a431ffda",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

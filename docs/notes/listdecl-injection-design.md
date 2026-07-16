@@ -204,7 +204,7 @@ that **`progUsesVar "length"` is a syntactic over-approximation with no way to k
 qualified decl and wraps the body in its `letC`, even though the merged decl is dead (shadowed,
 never referenced). Every corpus `#guard` with its own `length` pays one extra fuel step it doesn't
 need — at the corpus's TIGHTEST budgets (ADR-0103 cites "fuel=20... fuel=60"), one step is enough
-to flip a `#guard`'s expected outcome from `.done v` to `.oom`.
+to flip a `#guard`'s expected outcome from `.done v` to `.outOfFuel`.
 
 Two independent fixes, NOT mutually exclusive:
 1. **Rename the prelude entry** (`length` → e.g. `listLength`, mirroring how `Str`'s own length

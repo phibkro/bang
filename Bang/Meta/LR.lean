@@ -111,7 +111,7 @@ The fix is Biernacki's `Obs` (popl18 Fig 7), whose left term is STEP-BOUNDED (`�
 left-reduction): we METER THE LEFT term's machine steps while leaving the right UNBOUNDED ("e₂ may
 use any number of steps"). The bound IS the step index. Two facts make this discharge the μ-floor
 WITHOUT touching `Krel_mono` (ADR-0041's `Krel 0`-inhabitation argument is sidestepped):
-  • `ConvergesC_le 0 cfg = ∃ v, run 0 cfg = done v` — but `run 0 = oom` (Operational.lean), so this is
+  • `ConvergesC_le 0 cfg = ∃ v, run 0 cfg = done v` — but `run 0 = outOfFuel` (Operational.lean), so this is
     FALSE, so `CoApprox_le 0` is VACUOUSLY TRUE ⇒ `Crel 0` is vacuous (the floor discharges, no payload).
   • the bound is downward-closed (`∀ j ≤ n` in `Krel`), so `Krel_mono` is still free.
 
@@ -123,12 +123,12 @@ config `(K, c)`, not `plug K c`. The bridge to the frozen index-free `Converges`
 ONCE at the `lr_sound` adequacy boundary (`converges_iff_exists_ConvergesC_le`). -/
 
 /-- Step-bounded convergence of a CONFIG within `n` machine steps. Monotone in `n` (`run_done_add`).
-`ConvergesC_le 0 _` is `False` (`run 0 = oom`), the fact that vacates the μ-floor. -/
+`ConvergesC_le 0 _` is `False` (`run 0 = outOfFuel`), the fact that vacates the μ-floor. -/
 def ConvergesC_le (n : Nat) (cfg : Config) : Prop := ∃ v, Config.run n cfg = Result.done v
 
-/-- `run 0 = oom`, so 0-step convergence is empty — the floor-vacuity fact. -/
+/-- `run 0 = outOfFuel`, so 0-step convergence is empty — the floor-vacuity fact. -/
 theorem not_convergesC_le_zero (cfg : Config) : ¬ ConvergesC_le 0 cfg := by
-  rintro ⟨v, h⟩; rw [show Config.run 0 cfg = Result.oom from rfl] at h; exact absurd h (by simp)
+  rintro ⟨v, h⟩; rw [show Config.run 0 cfg = Result.outOfFuel from rfl] at h; exact absurd h (by simp)
 
 /-- Monotone: convergence within `n` steps persists within any `m ≥ n` (`run_done_add`). -/
 theorem ConvergesC_le.mono {n m : Nat} (hnm : n ≤ m) {cfg : Config}
@@ -1750,7 +1750,7 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
     ¬ ConvergesC_le n cfg := by
   rintro ⟨v, hrun⟩
   cases n with
-  | zero => rw [show Config.run 0 cfg = Result.oom from rfl] at hrun; exact absurd hrun (by simp)
+  | zero => rw [show Config.run 0 cfg = Result.outOfFuel from rfl] at hrun; exact absurd hrun (by simp)
   | succ k =>
     -- ADR-0063: `step = none` ⟹ `Config.run` yields `escapedCap`/`stuck` (per the focus), never `done`.
     rw [Config.run_step k cfg hne, hstep] at hrun
@@ -1976,7 +1976,7 @@ theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemi
     [DecidableEq Mult] [EffSig Eff Mult] {c₁ c₂ : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult}
     (h : ∀ n, Crel n (CTy.F q A) e c₁ c₂) : Converges c₁ → Converges c₂ := by
   rintro ⟨fuel, v, hfuel⟩
-  -- `Source.eval fuel c₁ = Config.run fuel ([], c₁) = done v` ⇒ fuel ≥ 1 (run 0 = oom).
+  -- `Source.eval fuel c₁ = Config.run fuel ([], c₁) = done v` ⇒ fuel ≥ 1 (run 0 = outOfFuel).
   cases fuel with
   | zero => simp [Source.eval, Config.run] at hfuel
   | succ f =>

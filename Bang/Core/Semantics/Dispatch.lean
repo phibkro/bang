@@ -113,7 +113,7 @@ resumptive handlers). Split the stack at the nearest catching frame, then:
   - `transaction ℓ Θ`: ONE-SHOT RESUME threading the list-heap (ADR-0030) — `state` generalized to a
     list. `newTVar`/`readTVar`/`writeTVar` reinstall a deep `transaction ℓ Θ'` frame with the heap
     grown/read/updated. Rollback is FREE: abort is a foreign `throws` escaping this frame, so `Θ'`
-    is discarded with the frame (never commits). A malformed/out-of-range TVar payload yields `oom`.
+    is discarded with the frame (never commits). The total store avoids the legacy `Comp.oom` sentinel.
 
 Reaching `[]` (no catching frame) = unhandled = stuck (`none`). The CK focus stays CLOSED: the stored
 `s`/payload `w`/heap cells are closed values (the focus is always closed), so resumption threads no
@@ -143,15 +143,15 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) :
             some (Kᵢ ++ Frame.handleF n (.transaction ℓ' (Θ ++ [v])) :: Kₒ, .ret (.vint Θ.length))
           else if op == "readTVar" then
             -- read (ADR-0030 amendment, TVarRef = int, TOTAL store): payload `vint i`; return cell `i`,
-            -- or the DEFAULT `vint 0` if out of range. NEVER ooms — `oom` is the fuel sentinel, so a
-            -- bad read producing it would be untypable (preservation gap). The store is conceptually a
+            -- or the DEFAULT `vint 0` if out of range. NEVER produces `Comp.oom`: that legacy sentinel
+            -- is untypable, so returning it for a bad read would create a preservation gap. The store is a
             -- total `Loc → Val` map (`getD` with `vint 0`); source refs come only from `newTVar`, so
             -- the default path is source-unreachable but kernel-total. Heap unchanged on read.
             some (Kᵢ ++ Frame.handleF n (.transaction ℓ' Θ) :: Kₒ,
                   .ret (Θ.getD ((tvarIdx v).getD 0) (.vint 0)))
           else
             -- writeTVar (ADR-0030, total store): payload `pair (vint i) w`; store `w` at cell `i`, return
-            -- unit. `storeSet`/`List.set` is a no-op out of range, so this is TOTAL and never ooms. A
+            -- unit. `storeSet`/`List.set` is a no-op out of range, so this is TOTAL and never traps. A
             -- malformed payload (not `pair (vint _) _`) is a type-safe no-op resume (source-unreachable
             -- since the payload type is `prod int S`).
             match v with

@@ -2618,7 +2618,7 @@ def runFrom (fuel : Nat) (src : String) : Result Val :=
 /-! ### The `Outcome` assertion layer (issue #54).
 
 The bespoke `runYieldsInt` PROJECTS the pipeline result onto ONE outcome and collapses everything
-else to `false`, so a failure shows "not `n`" but never WHICH terminal (a wrong value / `oom` /
+else to `false`, so a failure shows "not `n`" but never WHICH terminal (a wrong value / `outOfFuel` /
 `stuck` / `escapedCap` are indistinguishable) and the exceptional terminals have no systematic
 assertion. `Outcome` models the FULL pipeline result space as one total sum; the bespoke helpers are
 re-derived as thin projections of it (`runYieldsInt` below; `runTypedYieldsInt` in `TypeCheck`), so
@@ -2627,10 +2627,10 @@ the whole `#guard` corpus rides ONE assertion construct. It REUSES the productio
 pipeline.
 
 The REAL terminals, grounded in the source (NOT invented):
-  · `Source.eval : … → Result Val`  where  `Result = done Val | oom | escapedCap | stuck` (Eval.lean).
+  · `Source.eval : … → Result Val`  where  `Result = done Val | outOfFuel | escapedCap | stuck` (Eval.lean).
   · two PRE-eval stage failures on the typed path: a located PARSE error (with a `Span`) and an
     elaboration/TYPE error. The untyped `runFrom` collapses both to `.stuck`, so `runOutcomeFrom`
-    only ever produces `yields | oom | escaped | stuck`; `parseErr`/`typeErr` are reachable only
+    only ever produces `yields | outOfFuel | escaped | stuck`; `parseErr`/`typeErr` are reachable only
     through the typed runners in `TypeCheck`. -/
 /-- Every terminal a program run can reach — the corpus-oracle assertion vocabulary this section's
 own doc comment names, unioning the untyped pipeline's `.stuck`-collapsed failures with the typed
@@ -2639,9 +2639,14 @@ inductive Outcome where
   | parseErr : Option Span → String → Outcome   -- located parse error (span from `parseProgLocated`)
   | typeErr  : String → Outcome                 -- elaboration or type error (un-located in v1 ⇒ no span)
   | yields   : Val → Outcome                    -- `Result.done v`
-  | oom      : Outcome                           -- `Result.oom`   (fuel exhausted / divergence)
+  | outOfFuel : Outcome                          -- `Result.outOfFuel` (fuel bound exhausted)
   | escaped  : Outcome                           -- `Result.escapedCap` (ADR-0063 capability-escape)
   | stuck    : Outcome                           -- `Result.stuck` (genuine stuck)
+
+/-- Temporary source-compatibility alias for the pre-#172 outcome name.
+Construction and exhaustive patterns remain supported; declaration-name reflection is not promised. -/
+@[match_pattern, deprecated Outcome.outOfFuel (since := "2026-07-16")]
+def Outcome.oom : Outcome := .outOfFuel
 
 -- (`Outcome.beq` / `BEq Outcome` / `outcomeIs` need `BEq Val`, defined later in this file; they
 -- follow the `BEq Val` instance below.)
@@ -2649,7 +2654,7 @@ inductive Outcome where
 /-- The kernel `Result` → `Outcome` (the eval-terminal half; total over all four `Result` ctors). -/
 def evalToOutcome : Result Val → Outcome
   | .done v     => .yields v
-  | .oom        => .oom
+  | .outOfFuel  => .outOfFuel
   | .escapedCap => .escaped
   | .stuck      => .stuck
 
@@ -2672,9 +2677,13 @@ def assertStuck (fuel : Nat) (src : String) : Bool :=
 def assertEscaped (fuel : Nat) (src : String) : Bool :=
   match runOutcomeFrom fuel src with | .escaped => true | _ => false
 
-/-- Does the untyped run exhaust fuel (`oom`)? -/
-def assertOom (fuel : Nat) (src : String) : Bool :=
-  match runOutcomeFrom fuel src with | .oom => true | _ => false
+/-- Does the untyped run exhaust its evaluation fuel? -/
+def assertOutOfFuel (fuel : Nat) (src : String) : Bool :=
+  match runOutcomeFrom fuel src with | .outOfFuel => true | _ => false
+
+/-- Temporary source-compatibility alias; new code should use `assertOutOfFuel`. -/
+@[deprecated assertOutOfFuel (since := "2026-07-16")]
+def assertOom (fuel : Nat) (src : String) : Bool := assertOutOfFuel fuel src
 
 /-- Does running `src` yield exactly `done (vint n)`? A `Bool` so `#guard` can check string-driven
 runs without a `BEq` on kernel types. Now a thin PROJECTION of the `Outcome` layer (issue #54):
@@ -2897,7 +2906,7 @@ def Outcome.beq : Outcome → Outcome → Bool
        | _,      _      => false) && m1 == m2
   | .typeErr m1, .typeErr m2 => m1 == m2
   | .yields v1,  .yields v2  => v1 == v2
-  | .oom,        .oom        => true
+  | .outOfFuel,  .outOfFuel  => true
   | .escaped,    .escaped    => true
   | .stuck,      .stuck      => true
   | _,           _           => false

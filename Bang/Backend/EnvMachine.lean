@@ -327,7 +327,7 @@ def evalE : Nat → Nat → ESStore → ETHeap → ECStore → MEnv → Comp →
       match evalV ρ v, evalV ρ w with
       | .mvint a, .mvint b => some (.mterm (.mret (evalVOfBinop (op.eval a b))), g, σ, τ, κ)
       | _,        _        => none
-  | _,          _, _, _, _, _, _          => none              -- oom/wrong/ill-formed scrutinee
+  | _,          _, _, _, _, _, _          => none              -- Comp.oom/wrong/ill-formed scrutinee
 where
   /-- `BinOp.eval` yields a kernel `Val` (`vint`/`boolVal`); lift it into `MVal` (closed, ρ-free —
   the δ-result is always a ground first-order value: `mvint` or a `bool` = `minl/minr mvunit`). -/
@@ -3435,20 +3435,20 @@ or it collapsed to a non-first-order / fail-loud terminal (`hstuck`). The driver
 inductive HostStep where
   | hdone  : Val → HostStep            -- a first-order returner: readback value
   | hreq   : HostReq → HostStep        -- an unserviced host perform: the next request
-  | hstuck : HostStep                  -- function-terminal / non-host raise / oom / stuck
+  | hstuck : HostStep                  -- function-terminal / non-host raise / Comp.oom / stuck
   deriving Inhabited
 
 /-- Run `M` under `evalEHost` with a FIXED response prefix `rs` and granted host labels, classifying
 the terminal (`HostStep`). PURE — the driver (Main.lean) supplies `rs` and interprets `hreq`. The
 pending-request slot (last tuple component) DISTINGUISHES a granted host perform (a `HostReq`, carrying
 the escaped cap's LABEL — the driver services it and re-runs with `rs ++ [answer]`) from a genuine
-`escapedCap`/non-host raise (`none` there) — which, like a function terminal or oom, is `hstuck` (the
+`escapedCap`/non-host raise (`none` there) — which, like a function terminal or `Comp.oom`, is `hstuck` (the
 driver's fail-loud, mirroring `runE`). -/
 def stepHost (hostLabels : List Nat) (fuel : Nat) (rs : List MVal) (M : Comp) : HostStep :=
   match evalEHost hostLabels fuel 0 [] [] [] .nil rs M with
   | some (.mterm (.mret mv), _, _, _, _, _, _)  => .hdone (readback mv)
   | some (_, _, _, _, _, _, some req)           => .hreq req    -- a granted host perform: the label rides `req`
-  | _                                           => .hstuck      -- escapedCap / non-host raise / fn-terminal / oom
+  | _                                           => .hstuck      -- escapedCap / non-host raise / fn-terminal / Comp.oom
 
 /-- `runE` and `Source.eval` agree on a pure program (the mini-Agree). -/
 def MiniAgree (fuel : Nat) (M : Comp) (v : Val) : Prop :=

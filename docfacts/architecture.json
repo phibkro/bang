@@ -1056,7 +1056,7 @@
         "resolves": "Q28 (the recursion marker)"
       },
       "status": "Accepted",
-      "summary": "Recursion enters as a surface `let rec` construct that the checker recognizes and types with `Div` in the effect row (the stratification seam made real — general recursion is the descent into the fuel-bounded fragment). MECHANISM: prefer a μ-types LIBRARY ENCODING of the fixpoint (no new kernel primitive — invariant #5 holds; the recursion spike #42 confirmed the kernel has the pieces: iso-recursive μ + thunks + arrows), gated on checker completeness (#45) which currently blocks the higher-order payload the encoding needs; a minimal `fix` kernel primitive is the FALLBACK if the encoding proves too fiddly to type/lower. v1 recursion runs under `Source.eval`'s existing fuel (deep recursion → `oom`); TCO is a DEFERRED verified machine optimization (invariant #7), unified with resumption grades (Q27/#17). Resolves Q28.",
+      "summary": "Recursion enters as a surface `let rec` construct that the checker recognizes and types with `Div` in the effect row (the stratification seam made real — general recursion is the descent into the fuel-bounded fragment). MECHANISM: prefer a μ-types LIBRARY ENCODING of the fixpoint (no new kernel primitive — invariant #5 holds; the recursion spike #42 confirmed the kernel has the pieces: iso-recursive μ + thunks + arrows), gated on checker completeness (#45) which currently blocks the higher-order payload the encoding needs; a minimal `fix` kernel primitive is the FALLBACK if the encoding proves too fiddly to type/lower. v1 recursion runs under `Source.eval`'s existing fuel (deep recursion → `outOfFuel`); TCO is a DEFERRED verified machine optimization (invariant #7), unified with resumption grades (Q27/#17). Resolves Q28.",
       "title": "Recursion: `let rec` surface + `Div`-row typing; μ-encoding preferred (no new primitive), fix-primitive fallback; TCO deferred"
     },
     {
@@ -6337,7 +6337,7 @@
       "directImports": [
         "Bang.Core.Semantics.Dispatch"
       ],
-      "loc": 621,
+      "loc": 628,
       "name": "Bang.Core.Semantics.Eval",
       "path": "Bang/Core/Semantics/Eval.lean",
       "publicSymbols": [
@@ -6349,211 +6349,217 @@
         },
         {
           "kind": "def",
-          "line": 82,
+          "line": 56,
+          "name": "Result.oom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 89,
           "name": "Source.step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 114,
+          "line": 121,
           "name": "StepStar",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 120,
+          "line": 127,
           "name": "StepStar.head",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 135,
+          "line": 142,
           "name": "NonEscape",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 144,
+          "line": 151,
           "name": "FocusResolves'",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 149,
+          "line": 156,
           "name": "capResolves_of_idDispatch",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 163,
+          "line": 170,
           "name": "focusResolves'_all",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 178,
+          "line": 185,
           "name": "NonEscape'",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 181,
+          "line": 188,
           "name": "nonEscape'_all",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 187,
+          "line": 194,
           "name": "HasConfig",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 196,
+          "line": 203,
           "name": "HasConfig'",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 201,
+          "line": 208,
           "name": "Frame.wrapStep",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 207,
+          "line": 214,
           "name": "plug",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 214,
+          "line": 221,
           "name": "plug_cons",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 221,
+          "line": 228,
           "name": "Config.run",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 234,
+          "line": 241,
           "name": "Source.eval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 241,
+          "line": 248,
           "name": "IsDefinedEscape",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 257,
+          "line": 264,
           "name": "run_escapedCap_of_definedEscape",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 274,
+          "line": 281,
           "name": "preservation_returnEscape",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 357,
+          "line": 364,
           "name": "Config.run_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 373,
+          "line": 380,
           "name": "Config.run_done_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 424,
+          "line": 431,
           "name": "Trace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 429,
+          "line": 436,
           "name": "liveBound",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 441,
+          "line": 448,
           "name": "Config.runTrace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 461,
+          "line": 468,
           "name": "Result.eraseTrace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 473,
+          "line": 480,
           "name": "runTrace_erase_eq_run",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 494,
+          "line": 501,
           "name": "Source.evalTrace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 500,
+          "line": 507,
           "name": "evalTrace_erase_eq_eval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 508,
+          "line": 515,
           "name": "traceWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 520,
+          "line": 527,
           "name": "traceWithin_nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 525,
+          "line": 532,
           "name": "liveBound_splitAtId",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 558,
+          "line": 565,
           "name": "labelEff_le_liveBound_of_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 571,
+          "line": 578,
           "name": "traceWithin_append",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 584,
+          "line": 591,
           "name": "runTrace_traceWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 609,
+          "line": 616,
           "name": "isReturn",
           "visibilityBasis": "public-section"
         }
@@ -8030,7 +8036,7 @@
       "directImports": [
         "Bang.Core.Semantics"
       ],
-      "loc": 3406,
+      "loc": 3415,
       "name": "Bang.Frontend.Surface",
       "path": "Bang/Frontend/Surface.lean",
       "publicSymbols": [
@@ -8828,193 +8834,205 @@
         },
         {
           "kind": "def",
-          "line": 2650,
+          "line": 2649,
+          "name": "Outcome.oom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 2655,
           "name": "evalToOutcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2659,
+          "line": 2664,
           "name": "runOutcomeFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2664,
+          "line": 2669,
           "name": "assertYieldsInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2668,
+          "line": 2673,
           "name": "assertStuck",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2672,
+          "line": 2677,
           "name": "assertEscaped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2676,
+          "line": 2681,
+          "name": "assertOutOfFuel",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 2686,
           "name": "assertOom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2682,
+          "line": 2691,
           "name": "runYieldsInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2688,
+          "line": 2697,
           "name": "pureComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2693,
+          "line": 2702,
           "name": "throwsComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2699,
+          "line": 2708,
           "name": "deepComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2707,
+          "line": 2716,
           "name": "stateCellComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2713,
+          "line": 2722,
           "name": "stateGetComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2734,
+          "line": 2743,
           "name": "stmNew",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2736,
+          "line": 2745,
           "name": "stmRead",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2738,
+          "line": 2747,
           "name": "stmWrite",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2745,
+          "line": 2754,
           "name": "ledgerCommit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2766,
+          "line": 2775,
           "name": "ledgerAbort",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2816,
+          "line": 2825,
           "name": "cellComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2828,
+          "line": 2837,
           "name": "cell_reflects_latest",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2843,
+          "line": 2852,
           "name": "beqVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2854,
+          "line": 2863,
           "name": "beqComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2871,
+          "line": 2880,
           "name": "beqHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2877,
+          "line": 2886,
           "name": "beqStore",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2891,
+          "line": 2900,
           "name": "Outcome.beq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2908,
+          "line": 2917,
           "name": "outcomeIs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2930,
+          "line": 2939,
           "name": "empty",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2933,
+          "line": 2942,
           "name": "push",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2940,
+          "line": 2949,
           "name": "pop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2951,
+          "line": 2960,
           "name": "stackTopComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2957,
+          "line": 2966,
           "name": "stackTop2Comp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3021,
+          "line": 3030,
           "name": "parsesTo",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3264,
+          "line": 3273,
           "name": "progParsesTo",
           "visibilityBasis": "public-section"
         }
@@ -9048,7 +9066,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Surface"
       ],
-      "loc": 9490,
+      "loc": 9493,
       "name": "Bang.Frontend.TypeCheck",
       "path": "Bang/Frontend/TypeCheck.lean",
       "publicSymbols": [
@@ -9210,31 +9228,43 @@
         },
         {
           "kind": "def",
-          "line": 6722,
+          "line": 6595,
+          "name": "assertTypedOutOfFuel",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 6600,
+          "name": "assertTypedOom",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 6726,
           "name": "sampleVT",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6745,
+          "line": 6749,
           "name": "checkLawOn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6877,
+          "line": 6881,
           "name": "lawInstancesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6901,
+          "line": 6905,
           "name": "lawInstanceOpCallDiagnostics",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6937,
+          "line": 6941,
           "name": "unreachableIntImplDiagnostics",
           "visibilityBasis": "public-modifier"
         }
@@ -10929,31 +10959,31 @@
       "directImports": [
         "Bang.Backend.AbstractMachine"
       ],
-      "loc": 236,
+      "loc": 237,
       "name": "Bang.Witness.AgreeOutcome",
       "path": "Bang/Witness/AgreeOutcome.lean",
       "publicSymbols": [
         {
           "kind": "def",
-          "line": 70,
+          "line": 71,
           "name": "slack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 77,
+          "line": 78,
           "name": "machineOutcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 107,
+          "line": 108,
           "name": "valEq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 120,
+          "line": 121,
           "name": "agreeOutcome",
           "visibilityBasis": "public-section"
         }
@@ -11399,7 +11429,7 @@
         "Bang.Frontend.TypeCheck",
         "Bang.Witness.Fuzz"
       ],
-      "loc": 693,
+      "loc": 692,
       "name": "Bang.Witness.LawTest",
       "path": "Bang/Witness/LawTest.lean",
       "publicSymbols": [
@@ -12129,12 +12159,12 @@
       "name": "Backend"
     },
     {
-      "loc": 8155,
+      "loc": 8162,
       "moduleCount": 12,
       "name": "Core"
     },
     {
-      "loc": 17266,
+      "loc": 17278,
       "moduleCount": 12,
       "name": "Frontend"
     },

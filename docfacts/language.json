@@ -363,7 +363,7 @@
       },
       {
         "code": 2,
-        "meaning": "out of fuel (oom)              [oracle engine]",
+        "meaning": "out of fuel                    [oracle engine]",
         "scope": "run"
       },
       {
@@ -378,7 +378,7 @@
       },
       {
         "code": 5,
-        "meaning": "compiled machine produced no value (oom / escaped cap / stuck) [--compiled]",
+        "meaning": "compiled machine produced no value (out of fuel / escaped cap / stuck) [--compiled]",
         "scope": "run"
       },
       {

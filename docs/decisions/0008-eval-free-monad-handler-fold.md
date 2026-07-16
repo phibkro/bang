@@ -9,6 +9,10 @@
 - **Date:** 2026-05-31
 - **Related:** 0004 (the VM is *calculated from* this `eval`; this ADR fixes the shape it calculates against), 0001 (effect labels reuse the `Finset` row model), 0006 (capture scoping note), 0007 (`$` force / parens group drive the AST shape)
 
+> **Naming amendment (#172):** bounded evaluation now reports `Result.outOfFuel`.
+> The `Comp.oom` syntax shown in this historical design remains the separate legacy
+> untypable stuck sentinel tracked by #196; it is not an allocation failure or the fuel result.
+
 ## Context
 
 K2 calculates a VM from the Lean `eval` (Bahr–Hutton). A calculation needs an
@@ -40,7 +44,7 @@ handle : Nat → Handler → Comp α → Comp α    -- deep handler = fold over 
   handler); on an `op` it does not own, it **forwards** the node outward so an
   enclosing handler catches it.
 - Both `eval` and `handle` are **fuel-bounded total `def`s** (`termination_by fuel`),
-  decaying to the explicit `oom` constructor; never `partial def`.
+  decaying to the explicit `Comp.oom` constructor; never `partial def`.
 - The `op` node's `Label` **is** `Bang.EffectRow.Label`; a program's effect row is
   the `Finset` of labels it can emit. "All handlers installed ⇒ row empty ⇒ `run`
   succeeds" is the dynamic shadow of ADR-0001's subset/union.
@@ -61,7 +65,7 @@ handle : Nat → Handler → Comp α → Comp α    -- deep handler = fold over 
   *from* a CBPV/free-monad source — the same starting point.
 - **Totality buys equational lemmas for K2.** A `partial def` is opaque (no
   defining equations), which would starve the equational reasoning the calculation
-  runs on. Fuel + an explicit `oom` keeps `eval` total while staying honest about
+  runs on. Fuel + the historical explicit `Comp.oom` kept `eval` total while staying honest about
   divergence-beyond-fuel (a documented DEFER, not a faked answer).
 - **The row invariant stays literal, not parallel** (ADR-0001). Reusing
   `EffectRow.Label` means the interpreter and the verified unifier speak about the

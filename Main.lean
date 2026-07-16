@@ -57,7 +57,7 @@ def bangVersion : String := "0.1.1"
 
 /-- Default fuel for `Source.eval`. The kernel has no primitive arithmetic, so
 programs are small; the in-repo `#guard` demos top out around 200. 100000 is a
-generous ceiling that still terminates a genuinely-looping program as `oom`. -/
+generous ceiling that still terminates a genuinely-looping program as `outOfFuel`. -/
 def defaultFuel : Nat := 100000
 
 /-- Fuel for the compiled engine `exec`. `exec` counts MACHINE-INSTRUCTION steps
@@ -439,7 +439,7 @@ it reports one honest fail-loud non-value (exit 5). A successful value prints
 identically to the interpreted path (same `valPretty`).
 
 The MESSAGE (issue #67) names what collapsed even though `exec` itself can't
-distinguish the three — the oracle engine (`runComp`'s `.oom`/`.escapedCap`/`.stuck`
+distinguish the three — the oracle engine (`runComp`'s `.outOfFuel`/`.escapedCap`/`.stuck`
 arms below) already sub-classifies the SAME program, so the message directs the
 reader there for the specific cause rather than pretending `--compiled` can say more
 than its own return type allows.
@@ -462,7 +462,7 @@ def runCompiled (srcFuel : Nat) (c : Comp) : IO UInt32 := do
 /-- Run a lowered `Comp` on the EXPERIMENTAL environment machine (`--engine=env`, ADR-0094): `evalE`/
 `readback` at empty stores — exactly the premise shape of the proven headline `evalE_agrees_evalD`
 (elaborator output is `WF`/`WFClos`/`HandlerWF`/`ScopedC` by the CK contract). Returns the value on a
-first-order returner; every other terminal (`raise`/function-terminal/oom/stuck) collapses to a single
+first-order returner; every other terminal (`raise`/function-terminal/out-of-fuel/stuck) collapses to a single
 fail-loud line — the experimental engine does NOT sub-classify (that is what the oracle is for).
 
 `fuel` is the USER-facing fuel (issue #103(a), `--fuel N`; `defaultFuel` when not given) — `runE`
@@ -501,7 +501,7 @@ def runComp (engine : Engine) (fuel : Nat) (c : Comp) : IO UInt32 := do
   | .oracle   =>
   match Bang.Source.eval fuel c with
   | .done v      => IO.println (valPretty v); pure 0
-  | .oom         =>
+  | .outOfFuel   =>
     IO.eprintln <|
       s!"error: out of fuel (ceiling {fuel} steps) — the program may diverge, or hit " ++
       "the recursion-cost cliff (issue #61); a well-typed program that should terminate is " ++
@@ -1939,7 +1939,7 @@ def preservationCheck (orig rewritten : Bang.Surface.Prog) : IO (Option String) 
   | .ok c1, .ok c2 =>
       let outcomeTag (r : Result Val) : String := match r with
         | .done v     => s!"done:{valPretty v}"
-        | .oom        => "oom"
+        | .outOfFuel  => "outOfFuel"
         | .escapedCap => "escapedCap"
         | .stuck      => "stuck"
       let o1 := outcomeTag (Bang.Source.eval defaultFuel c1)
@@ -2602,7 +2602,7 @@ def usage : String :=
   "               (evalE_agrees_evalD, axiom-clean) + differentially gated; the FAST engine\n" ++
   "               (#61's substitution cost eliminated, ~300x on examples/json)\n" ++
   "  --engine=oracle    kernel oracle Source.eval — the verified reference; slower, but its\n" ++
-  "               failures carry the SPECIFIC outcome (oom/escaped-cap/stuck); the arbiter\n" ++
+  "               failures carry the SPECIFIC outcome (out-of-fuel/escaped-cap/stuck); the arbiter\n" ++
   "  --engine=compiled  the calculated machine exec∘compile (verified compiler output, ADR-0016)\n" ++
   "  --compiled         alias for --engine=compiled\n" ++
   "               — env/compiled failures collapse to exit 5; re-run with --engine=oracle\n" ++
@@ -2610,10 +2610,10 @@ def usage : String :=
   "EXIT CODES:\n" ++
   "  0  done — value printed to stdout\n" ++
   "  1  usage / parse / elaboration / TYPE error\n" ++
-  "  2  out of fuel (oom)              [oracle engine]\n" ++
+  "  2  out of fuel                    [oracle engine]\n" ++
   "  3  capability escaped its handler [oracle engine]\n" ++
   "  4  stuck (ill-formed program)     [oracle engine, --no-typecheck]\n" ++
-  "  5  compiled machine produced no value (oom / escaped cap / stuck) [--compiled]\n\n" ++
+  "  5  compiled machine produced no value (out of fuel / escaped cap / stuck) [--compiled]\n\n" ++
   "EXIT CODES [bang check --json]:\n" ++
   "  0  ok:true  — the program type-checks\n" ++
   "  1  ok:false — diagnostics present (see the JSON on stdout)\n" ++

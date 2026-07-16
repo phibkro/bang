@@ -3,7 +3,7 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Accepted — MECHANISM CONFIRMED (μ-encoding, no new primitive; re-spike POSITIVE 2026-07-05 after #45)
-- **Summary**: Recursion enters as a surface `let rec` construct that the checker recognizes and types with `Div` in the effect row (the stratification seam made real — general recursion is the descent into the fuel-bounded fragment). MECHANISM: prefer a μ-types LIBRARY ENCODING of the fixpoint (no new kernel primitive — invariant #5 holds; the recursion spike #42 confirmed the kernel has the pieces: iso-recursive μ + thunks + arrows), gated on checker completeness (#45) which currently blocks the higher-order payload the encoding needs; a minimal `fix` kernel primitive is the FALLBACK if the encoding proves too fiddly to type/lower. v1 recursion runs under `Source.eval`'s existing fuel (deep recursion → `oom`); TCO is a DEFERRED verified machine optimization (invariant #7), unified with resumption grades (Q27/#17). Resolves Q28.
+- **Summary**: Recursion enters as a surface `let rec` construct that the checker recognizes and types with `Div` in the effect row (the stratification seam made real — general recursion is the descent into the fuel-bounded fragment). MECHANISM: prefer a μ-types LIBRARY ENCODING of the fixpoint (no new kernel primitive — invariant #5 holds; the recursion spike #42 confirmed the kernel has the pieces: iso-recursive μ + thunks + arrows), gated on checker completeness (#45) which currently blocks the higher-order payload the encoding needs; a minimal `fix` kernel primitive is the FALLBACK if the encoding proves too fiddly to type/lower. v1 recursion runs under `Source.eval`'s existing fuel (deep recursion → `outOfFuel`); TCO is a DEFERRED verified machine optimization (invariant #7), unified with resumption grades (Q27/#17). Resolves Q28.
 - **Resolves**: Q28 (the recursion marker)
 - **Depends-on**: 0029, 0028, 0065
 
@@ -44,7 +44,7 @@ the raw μ-knot or a construct.
    lower, the fallback is a minimal `fix` computation form in the kernel (a spec change — ADR + ripples
    to the calculated machine + soundness; strictly more than the encoding, hence the fallback).
 4. **Runtime: recursion runs under `Source.eval`'s existing fuel.** Deep/non-terminating recursion →
-   `oom` (the reference is fuel-bounded; it has no stack-space model). This is the total prover
+   `outOfFuel` (the reference is fuel-bounded; it has no stack-space model). This is the total prover
    interpreting the `Div` fragment — already how the stratification works.
 5. **TCO deferred.** Tail-call optimization is a MACHINE concern (the calculated `exec`'s explicit
    stack), not a reference-semantics one (`Source.eval` is step-fuel-bounded — TCO is invisible to
@@ -67,7 +67,7 @@ the raw μ-knot or a construct.
 
 The re-spike is **positive**: μ-encoded recursion (Landin's knot — `data Rec = Rec(Thunk (Rec -> Int
 -> Int))` + self-application) TYPES and RUNS end-to-end on the kernel's existing μ + `U` + arrows, with
-**NO new primitive** — bounded countdown-sum `5+4+3+2+1+0` → 15, unbounded → `oom` (build-gated
+**NO new primitive** — bounded countdown-sum `5+4+3+2+1+0` → 15, unbounded → `outOfFuel` (build-gated
 `#guard`s in `TypeCheck.lean`). So the mechanism is **FINAL: μ-encoding, invariant #5 preserved**; the
 fix-primitive fallback does NOT fire. Prerequisite #45 (checker check-mode completeness — push expected
 types into thunks) landed to unblock the higher-order payload.
@@ -79,7 +79,7 @@ types into thunks) landed to unblock the higher-order payload.
   `tMu`/`tVar` (NOT a `data` decl — `let rec` is expression-level), `f : Thunk T` in scope in its own
   body, called `($f) arg`. Emits only ordinary `Surf` — existing checker + kernel run it (invariant #5
   preserved). Recursion is USER-FACING + natural: factorial 5 → 120, countdown-sum → 15, nested rec fns
-  → 16, unbounded → `oom` (CLI + `⑨e` guards). Enabled by extending #41's value-position A-norm to APP
+  → 16, unbounded → `outOfFuel` (CLI + `⑨e` guards). Enabled by extending #41's value-position A-norm to APP
   ARGUMENTS (so `($sum)(n-1)` reads naturally). v1 choices: monomorphic + annotation-required
   (`let rec f : T = …`), bare-`fun` RHS, `f : Thunk T`.
 - **§2 `Div`-row typing — LANDED (`0397adc`, #46, Option A).** `let rec`'s call-site result carries

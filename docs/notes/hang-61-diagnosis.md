@@ -153,7 +153,7 @@ The elaborator is correct; the encoding is correct; the reduction *strategy* is 
 cost. This is a design decision (substitution vs environment reference semantics)
 that reverses a load-bearing simplicity assumption, so it warrants an **ADR**
 (supersedes the "TCO deferred / slow-correct-first" framing of ADR-0073 §5, which
-anticipated deep-recursion `oom` but not per-shallow-step O(body) cost).
+anticipated deep-recursion `outOfFuel` but not per-shallow-step O(body) cost).
 
 ## Reproduce
 

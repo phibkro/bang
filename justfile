@@ -124,11 +124,16 @@ test-82-verbs:
     bash tools/test-82-verbs.sh
 
 # Gate for the TOP-LEVEL CLI hygiene (#66/#67): `--help`/`--version` exit 0
-# with text on stdout, and every non-zero RUNTIME outcome (oom/escapedCap/
+# with text on stdout, and every non-zero RUNTIME outcome (outOfFuel/escapedCap/
 # stuck/compiled-collapse) prints a human-readable stderr message alongside
 # its exit code. Part of the default `verify` chain.
 test-cli:
     bash tools/test-cli.sh
+
+# Result/Surface fuel-exhaustion naming, compatibility aliases, and explicit
+# preservation of the unrelated Comp/NComp sentinel + allocation terminology (#172).
+test-out-of-fuel-naming:
+    bash tools/test-out-of-fuel-naming.sh
 
 # Fail-closed, command-scoped option grammar (#178): unknown/inappropriate flags, malformed or
 # duplicate values, host-authority parsing, mixed-order compatibility, and pre-effect validation.

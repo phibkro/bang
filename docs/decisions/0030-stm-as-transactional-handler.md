@@ -118,9 +118,9 @@ unpinned. Resolved:
    index, `read`/`write` take one) type cleanly against the single `vint : int` rule. Leaving `TVarRef`
    existential made `vint i : int` un-typeable at the result type.
 2. **The store is TOTAL / default-initialized, with monomorphic `int` cells in v1.** `readTVar` on an
-   out-of-range index returns a **default of the cell type** rather than producing `oom`. (K1 used `oom`,
-   the *fuel-exhaustion* sentinel, for a bad read — a category error: `oom` is untypable, so a well-typed
-   `readTVar (vint 999)` stepping to `oom` falsifies preservation.) A total store is the standard
+   out-of-range index returns a **default of the cell type** rather than producing `Comp.oom`. (K1 used
+   that legacy untypable sentinel for a bad read — a category error: a well-typed
+   `readTVar (vint 999)` stepping to `Comp.oom` falsifies preservation.) A total store is the standard
    finite-representation of a total `Loc → Val` map; it makes `readTVar` total, so preservation closes
    with **no change to the frozen `type_safety` statement** (◊2). `writeTVar` out-of-range is a type-safe
    no-op (source programs never hold an invalid ref — refs come only from `newTVar` — so the default/no-op
@@ -138,7 +138,7 @@ unpinned. Resolved:
 **Rejected for the OOB-read case:**
 - *Bounds invariant `i < |Θ|` in `HasConfig`.* Needs a non-trivial reachability invariant (the index is a
   raw int flowing through the program) — heavy, the wrong tool monomorphically.
-- *Typed trap / generalize `oom` to be typable-at-any-`F`-type (WASM-style).* Cleanest long-term and
+- *Typed trap / generalize `Comp.oom` to be typable-at-any-`F`-type (WASM-style).* Cleanest long-term and
   aligns with the WasmFX backend (which traps on OOB), but it touches the **frozen** `type_safety`
   statement ("well-typed ⇒ value **or trap**"). Deferred — a deliberate later change, not a rung-3 detour.
 - *Abstract capability `TVarRef` (a distinct value type, only `newTVar` introduces it).* "More correct"
@@ -160,5 +160,5 @@ These are **v1 simplifications**, recorded so they are not mistaken for the fina
   to wait on its own future write, which is a deadlock) → revisit, but that is a concurrency need wearing
   a single-threaded mask.
 - **OOB-read should TRAP, not default** (aligning with the WasmFX backend, which traps) → generalize
-  `oom`/add a typed `trap` terminal and amend `type_safety` to "value or trap". Deferred from v1 (touches
+  `Comp.oom`/add a typed `trap` terminal and amend `type_safety` to "value or trap". Deferred from v1 (touches
   the frozen safety statement); the total/default store (above) is the v1 stand-in.

@@ -375,7 +375,7 @@ above never reach it (reaching `letRecS` on that path is itself a checker error:
 desugared away by the elaborator"). `compiledAgreesTyped` mirrors `compiledAgreesInt` but routes
 through `TypeCheck.checkAndLower` (the production `bang run`/`bang check` pipeline) so recursion's
 μ-knot IS exercised. This is the compiled-path companion to `runTypedYieldsInt`'s kernel-only
-`let rec` guards (`Bang/Frontend/TypeCheck.lean`'s `recProg`/`assertTypedOom` corpus, e.g. the
+`let rec` guards (`Bang/Frontend/TypeCheck.lean`'s `recProg`/`assertTypedOutOfFuel` corpus, e.g. the
 countdown-sum `#guard`s near `recProg`). -/
 
 /-- Typed-pipeline compiled-path differential check: `checkAndLower src` then BOTH the calculated

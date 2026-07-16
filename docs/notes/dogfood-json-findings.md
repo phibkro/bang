@@ -40,7 +40,7 @@ per ADR-0088 (a body calling the outer knot has a latent effect the knot's
 row must cover).
 
 **What happened**: both `bang run` and `bang run --compiled` hang — CPU-bound,
-no output, no `oom`, past 590 real seconds (I killed it with `timeout`; the
+no output, no `outOfFuel`, past 590 real seconds (I killed it with `timeout`; the
 default fuel is 100000, documented as "generous... top out around 200" for
 the existing corpus). I isolated this extensively:
 
@@ -65,8 +65,8 @@ the existing corpus). I isolated this extensively:
   smells like an accumulating cost (each `let`/closure widening some
   per-step re-traversal) rather than a single bad transition — but from the
   outside it is indistinguishable from true non-termination: no partial
-  output, no `oom`, CPU pegged, unresponsive to the 100000 default fuel
-  bound that should make it fail fast if it really were "just" `oom`-bound.
+  output, no `outOfFuel`, CPU pegged, unresponsive to the 100000 default fuel
+  bound that should make it fail fast if it really were "just" fuel-bound.
 
 **What I expected**: `bang run` to either produce `163`-style correct output
 in well under a second (matching every other example project's runtime), or

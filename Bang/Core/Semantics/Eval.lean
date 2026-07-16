@@ -36,17 +36,24 @@ variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 /-! ## 2. Operational semantics (small-step + fuel-iterated) -/
 
 /-- The outcome of a fuel-bounded evaluation: a completed value (`done`), fuel
-exhaustion (`oom`), a capability escaping its handler (`escapedCap`, ADR-0063),
+exhaustion (`outOfFuel`), a capability escaping its handler (`escapedCap`, ADR-0063),
 or a stuck configuration (`stuck`, never reached by a well-typed program). -/
 inductive Result (α : Type) where
   | done : α → Result α
-  | oom : Result α
+  | outOfFuel : Result α
   -- ADR-0063: a capability that escapes its handler (forced after the handler pops ⇒ `idDispatch`
   -- finds no frame) is a DEFINED fail-loud terminal, DISTINCT from `.stuck` — the kernel already
   -- produces it (global-fresh minting), we name it. A well-typed `⊥` program never reaches `.stuck`;
-  -- it returns, diverges (`.oom`), or hits this defined capability-escape (OCaml-effects `Unhandled`).
+  -- it returns, exhausts its bound (`.outOfFuel`), or hits this defined capability-escape
+  -- (OCaml-effects `Unhandled`).
   | escapedCap : Result α
   | stuck : Result α
+
+/-- Temporary source-compatibility alias for the pre-#172 constructor name.
+This preserves construction and pattern matching; it does not make the old and
+new names identical under declaration-name reflection. -/
+@[match_pattern, deprecated Result.outOfFuel (since := "2026-07-16")]
+def Result.oom { α : Type } : Result α := .outOfFuel
 
 /-! ### CK machine (ADR-0023) — deep handlers over `EvalCtx × Comp`.
 
@@ -219,7 +226,7 @@ a focus `perform (vcap n ℓ) op v` whose `idDispatch` finds NO frame is the DEF
 (ADR-0063) ⟹ `.escapedCap`; every other `step = none` is genuine `.stuck`. (For that focus,
 `Source.step = (idDispatch …).map …`, so `step = none ⟺ idDispatch = none ⟺ the cap escaped.) -/
 def Config.run : Nat → Config → Result Val
-  | 0, _              => .oom
+  | 0, _              => .outOfFuel
   | _ + 1, (_, [], .ret v) => .done v
   | n + 1, cfg        =>
       match Source.step cfg with
@@ -375,7 +382,7 @@ theorem Config.run_done_add (k : Nat) :
       Config.run n cfg = Result.done w → Config.run (n + k) cfg = Result.done w := by
   intro n
   induction n with
-  | zero => intro cfg w h; rw [show Config.run 0 cfg = Result.oom from rfl] at h; exact absurd h (by simp)
+  | zero => intro cfg w h; rw [show Config.run 0 cfg = Result.outOfFuel from rfl] at h; exact absurd h (by simp)
   | succ m ih =>
     intro cfg w h
     by_cases hret : ∃ g v, cfg = (g, [], Comp.ret v)
@@ -440,7 +447,7 @@ same terminals) — the accumulator is a passenger. The bound is recomputed from
 DISPATCH (runtime-present handler labels), so `e` is the fixed top-level row (never re-threaded). -/
 def Config.runTrace {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult] :
     Nat → Config → Eff → Trace Eff → Result (Val × Trace Eff)
-  | 0, _, _, _                    => .oom
+  | 0, _, _, _                    => .outOfFuel
   | _ + 1, (_, [], .ret v), _, t  => .done (v, t)
   | n + 1, cfg, e, t              =>
       match cfg.2.2 with
@@ -460,7 +467,7 @@ def Config.runTrace {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig
 /-- Project a traced result to its value component (Trace-erasing) — the bridge to the oracle. -/
 def Result.eraseTrace : Result (Val × Trace Eff) → Result Val
   | .done (v, _) => .done v
-  | .oom         => .oom
+  | .outOfFuel   => .outOfFuel
   | .escapedCap  => .escapedCap
   | .stuck       => .stuck
 

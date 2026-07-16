@@ -207,9 +207,9 @@ def genClosed (depth seed : Nat) : Comp := (genComp depth 0 [] seed).1
 /-! ## 4. The differential property.
 
 `fuzzAgree` is now a PROJECTION of `Bang.AgreeOutcome.agreeOutcome` (#54 outcome-differential):
-that module's TOTAL oracle distinguishes all four `Result` cases (`done`/`oom`/`escapedCap`/
+that module's TOTAL oracle distinguishes all four `Result` cases (`done`/`outOfFuel`/`escapedCap`/
 `stuck`) with no admitted "either side, whatever" disjunct — strictly STRONGER than this
-file's former hand-rolled `FuzzAgree` (which let `.oom` pass regardless of what the machine
+file's former hand-rolled `FuzzAgree` (which let `.outOfFuel` pass regardless of what the machine
 said, and folded `escapedCap`/`stuck` into one disjunct). Empirically confirmed a PURE
 strengthening before landing: every one of `fuzzSeeds`' 200 generated programs that passed
 the old `fuzzAgree` also passes `agreeOutcome` (`scratch/OutcomeFuzzProbe.lean`, not
@@ -255,7 +255,7 @@ def genDepth : Nat := 6
 
 /-- Eval fuel — generous relative to `genDepth` (each construct costs O(1) `Source.step`s
 and generation is depth-bounded, so this comfortably covers every generated sample; the
-`.oom` disjunct in `FuzzAgree` absorbs the (empirically unseen) case where it doesn't). -/
+`.outOfFuel` case in the outcome oracle covers the (empirically unseen) case where it doesn't). -/
 def evalFuel : Nat := 400
 
 /-- One sample's outcome, for the summary fold below. -/

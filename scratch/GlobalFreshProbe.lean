@@ -53,7 +53,7 @@ def cstep : CConfig → Option CConfig
   | _                       => none
 
 def crun : Nat → CConfig → Result Val
-  | 0, _              => .oom
+  | 0, _              => .outOfFuel
   | _ + 1, (_, [], .ret v) => .done v
   | n + 1, cfg        =>
       match cstep cfg with

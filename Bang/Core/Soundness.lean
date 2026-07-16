@@ -3272,7 +3272,7 @@ private theorem run_safe' {q : Mult} {A : VTy Eff Mult} :
 
 /-- **ADR-0063 — the v1 soundness theorem's PROOF content, reclassified.** Over `HasConfig'` (typing +
 the free `NonEscape'`), `Source.eval` never returns `.stuck`: a well-typed program either terminates, runs
-forever, OOMs, or hits the DEFINED `.escapedCap` capability-escape terminal — never genuine stuck. inc-6
+forever, exhausts evaluation fuel, or hits the DEFINED `.escapedCap` capability-escape terminal — never genuine stuck. inc-6
 swaps the frozen `Spec.lean` `type_safety` premise onto `HasConfig'` and re-proves the `progress`
 escape-disjunct there; this is that proof, reachable now in the green Metatheory module. -/
 theorem type_safety'_proof

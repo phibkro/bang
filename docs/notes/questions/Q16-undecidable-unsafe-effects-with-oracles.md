@@ -22,7 +22,7 @@ axiom-backed primitive):
 - **Undecidability = partiality as the `Div` effect** (Capretta's `Delay` monad; McBride,
   *Turing-Completeness Totally Free*, 2015). `⊥`-row = total (provable, foldable); `Div`-row = may
   diverge (only runnable). bang ALREADY embodies this: `Source.eval : Nat → Comp → Result Val` — fuel
-  is the partiality handler, `oom` the honest timeout. Rice/Halting forces the total-vs-partial
+  is the partiality handler, `outOfFuel` the honest bounded-evaluation outcome. Rice/Halting forces the total-vs-partial
   tiering (can't have Turing-completeness + a total static termination check). Third tier: *productive*
   non-termination (the xv6 event loop) = **coinduction**, which is the reactive model (rung 4).
 - **Unsafety = a privileged op named by an effect, backed by a differential-test oracle.**

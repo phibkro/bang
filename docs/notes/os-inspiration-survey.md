@@ -336,7 +336,7 @@ post-v1. Don't conflate them — pledge and unveil are *two* syscalls for a reas
 
 OS scheduling = a *quantum* (preemption granularity) + a *policy* (who runs next). bang already has
 the quantum: **fuel** bounds `Source.eval` (`Config.run`, Eval.lean), decrementing per `Source.step`;
-exhaustion → `.oom`. This is *cooperative-preemption's time-slice*, and the Div fragment (fuel-bounded)
+exhaustion → `.outOfFuel`. This is *cooperative-preemption's time-slice*, and the Div fragment (fuel-bounded)
 vs total fragment (⊥-row) split is the language-level stratification seam (CLAUDE.md).
 
 **The input is a non-action:** do **not** hand-design a scheduler primitive. Per the microkernel
