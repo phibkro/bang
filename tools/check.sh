@@ -27,16 +27,30 @@ if [ ! -f "$FILE" ]; then
 fi
 
 echo "→ checking $FILE"
-out=$(lake env lean "$FILE" 2>&1 || true)
+set +e
+out=$(lake env lean "$FILE" 2>&1)
+rc=$?
+set -e
 # `lake env lean <file>` prints diagnostics as either
 #   error: ...            (bare, e.g. from the elaborator front-end), or
 #   <file>:<line>:<col>: error: ...   (the common per-declaration form).
-# The previous `^(error|warning):` anchor only matched the FIRST form, so any
-# file whose only errors were path-prefixed reported a FALSE green. Match both.
-errs=$(echo "$out" | grep -E '(^|: )(error|warning):' | head -40 || true)
+# Some Lean versions also print category-tagged forms such as
+# `error(lean.unknownIdentifier):`. Match every form for the terse display, but
+# use Lean's exit status as the format-independent pass/fail signal.
+errs=$(printf '%s\n' "$out" \
+  | grep -E '(^|: )(error|warning)(\([^)]*\))?:' \
+  | head -40 || true)
 
-if [ -z "$errs" ]; then
+if [ "$rc" -eq 0 ] && [ -z "$errs" ]; then
   echo "✓ no errors or warnings"
-else
+elif [ -n "$errs" ]; then
   echo "$errs"
+else
+  # A failing Lean invocation with an unfamiliar diagnostic format must still
+  # be visible, never converted into a false green by the display filter.
+  # `sed` reads the complete stream; `head` would close early and, under
+  # pipefail, could replace Lean's status with printf's SIGPIPE status 141.
+  printf '%s\n' "$out" | sed -n '1,40p'
 fi
+
+exit "$rc"

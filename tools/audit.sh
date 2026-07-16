@@ -35,5 +35,5 @@ echo "── the full just-fitness bundle (SSoT, #114) ──"
 ( cd "$ROOT" && just fitness )
 echo "── end fitness ──"
 
-echo "Static guards passed. Now run:  lake env lean Bang/Audit.lean"
-echo "and confirm every axiom set ⊆ { propext, Classical.choice, Quot.sound }."
+echo "Static guards passed. The audit recipe's live proof-fact comparison already"
+echo "enforced the fail-closed axiom baseline. Run 'just axioms' to inspect it again."
