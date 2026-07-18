@@ -1,0 +1,18 @@
+-- Stable spreadsheet formula identities. `bang query dump Formulas.bang` exposes the dependency
+-- edges between these declarations through the compiler's existing reference fact base.
+
+pub let price : Thunk (Int -> Int) = {fun observed => observed}
+
+pub let quantity : Thunk (Int -> Int) = {fun observed => observed}
+
+pub let subtotal =
+  {fun priceValue => fun quantityValue =>
+    ($price priceValue) * ($quantity quantityValue)}
+
+pub let tax =
+  {fun priceValue => fun quantityValue =>
+    ($subtotal priceValue quantityValue) / 10}
+
+pub let total =
+  {fun priceValue => fun quantityValue =>
+    ($subtotal priceValue quantityValue) + ($tax priceValue quantityValue)}

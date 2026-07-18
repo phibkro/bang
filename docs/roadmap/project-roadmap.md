@@ -38,8 +38,8 @@ AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
                                  B018 parity/location, quiet route, and frozen-packet replay are green.
    ↷ ORGANIC CORRECTION          DEFERRED BY OPERATOR 2026-07-18, not completed: one unfamiliar developer
      still must run the repaired public journey before ◊6/release (`PATH-organic-resource-validation`).
-0  ▸ SPREADSHEET (reactivity)     ← LIVE EDGE: the first live/stale tracer lights up the distinctive
-     DORMANT feature. NB the
+0  ▸ SPREADSHEET (reactivity)     ← LIVE EDGE: live/stale behavior and the stable formula DAG are now
+     observable; repeated evaluation is not yet measured. NB the
      reactive MECHANISM is already proven (`reactiveCell` runs + a liveness law in the Audit gate,
      ADR-0005); the project EXTENDS it to a reactive-programming surface (not build-from-scratch).
      Rehearses incremental compilation (same hash-staleness shape, ADR-0076).
@@ -140,13 +140,13 @@ when the project at its left produces evidence for the feature work at its right
 |---|---|---|---|
 | **paved** | tokenizer, parser combinators, semantic contracts, one-shot permit, compiled examples | real surface; polymorphism; laws and swappable realizations; local quantities; verified/tested execution chain to Wasm | preserve these as the stable semantic-description substrate |
 | **deferred pre-◊6 loop** | first unassisted outsider run against repaired contract evidence | external correction loop over a trustworthy machine view | consciously deferred, not complete; prevent leakage/overclaiming and adjudicate observed friction before release claims |
-| **now** | spreadsheet live/stale tracer, then reactive dataflow increments | static formula DAG and pull recomputation first; dependency observation and measured incremental recomputation next | extend the proven reactive mechanism; do not invent a second reactivity core or call pull recomputation incremental |
+| **now** | spreadsheet live/stale tracer plus queryable formula module | static declaration DAG and pull recomputation are observable; measure repeated evaluation next, before choosing any cache | reuse the compiler fact graph; do not invent local ordinal identities, a second reactivity core, or call pull recomputation incremental |
 | **toolchain project** | BANG tools consume the compiler fact graph | incremental/content-addressed compilation, module graph, LSP/MCP/CLI as views | preserve schema evolution and observation points now; build the scheduler when this consumer measures it |
 | **systems wedge** | allocator → cooperative scheduler → filesystem → driver | resource protocols, one-shot scheduling, persistence/location, least-authority IO | scope each rung only when reached; local quantities preserve the allocator door without pre-building ownership |
 | **distributed branch** | actor/chat system → replicated log/Raft | sendability, message passing, network capability security, deterministic replay | stays beside the cooperative-OS path until a project requires actor transfer or multi-shot behavior |
 | **north star** | verified xv6/unikernel running real workloads | the description/realization thesis at OS scale: effects as syscalls, handlers as runtimes/drivers, grades as resource/capability boundaries | success is an evidence chain, not feature count |
 
-The operator consciously changed the immediate ordering to **spreadsheet tracer now**, while retaining
+The operator consciously changed the immediate ordering to **spreadsheet evidence now**, while retaining
 external correction as an open pre-◊6/release obligation rather than pretending it happened. Evidence
 repair is paved. The systems ladder is the destination-bearing branch; the toolchain and distributed projects are
 rehearsals for its dependency, authority, observability, and concurrency problems rather than a

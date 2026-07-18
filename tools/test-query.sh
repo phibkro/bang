@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=examples/*/main.bang runs-in=verify
+# tool: role=test couples=examples/*/main.bang,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -78,6 +78,15 @@ cat > "$tmpdir/pubdemo.bang" <<'BANG'
 pub let rec fib : Int -> Int = fun n => if n < 2 then n else $fib (n - 1) + $fib (n - 2)
 let helper = {fun n => $fib n + 1}
 pub let pure_add = {fun a => fun b => a + b}
+BANG
+
+# Negative control for the spreadsheet dependency tracer: expression-local binders are not stable
+# declaration facts, so the declaration-granular reference graph is intentionally empty. The
+# recovery is the real `examples/reactive-spreadsheet/Formulas.bang` module gated below.
+cat > "$tmpdir/local-formulas.bang" <<'BANG'
+let input = {1} in
+let formula = {$input} in
+$formula
 BANG
 
 # Contract identity fixtures differ ONLY in the selected handler. Resolver-stable IDs must not
@@ -234,6 +243,31 @@ if command -v jq >/dev/null 2>&1; then
 else
   echo "· composed-query-pub-divergent — SKIPPED (jq not in dev shell; not adding it for this check)"
 fi
+
+# ══ 2b. REACTIVE FORMULA DAG — dependency observation reuses dump's existing refs ══
+
+capture reactive_dump reactive_dump_exit "$bang" query dump examples/reactive-spreadsheet/Formulas.bang 2>/dev/null
+capture reactive_edges reactive_edges_exit python3 -c \
+  'import json,sys; print(json.dumps(json.load(sys.stdin)["refs"],separators=(",",":")))' \
+  <<< "$reactive_dump"
+reactive_edges_want="$(cat examples/reactive-spreadsheet/expected-dependencies.json)"
+check "reactive-deps-dump-exit" "$reactive_dump_exit" "0"
+check "reactive-deps-extractor-exit" "$reactive_edges_exit" "0"
+check "reactive-deps-exact-graph" "$reactive_edges" "$reactive_edges_want"
+
+capture reactive_impact reactive_impact_exit "$bang" impact \
+  examples/reactive-spreadsheet/Formulas.bang subtotal 2>/dev/null
+check "reactive-deps-impact-exit" "$reactive_impact_exit" "0"
+check "reactive-deps-impact-subtotal" "$reactive_impact" \
+  '{"ok":true,"decl":"subtotal","dependents":[{"name":"total","kind":"let"},{"name":"tax","kind":"let"}]}'
+
+capture local_dump local_dump_exit "$bang" query dump "$tmpdir/local-formulas.bang" 2>/dev/null
+capture local_edges local_edges_exit python3 -c \
+  'import json,sys; print(json.dumps(json.load(sys.stdin)["refs"],separators=(",",":")))' \
+  <<< "$local_dump"
+check "reactive-deps-local-negative-dump-exit" "$local_dump_exit" "0"
+check "reactive-deps-local-negative-extractor-exit" "$local_edges_exit" "0"
+check "reactive-deps-local-negative-empty" "$local_edges" "[]"
 
 # ══ 3. `symbols` (thin projection of dump's "decls") ══
 
@@ -424,7 +458,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (86 — the former 75 plus eleven contract-evidence-integrity checks);
+# always runs (94 — the former 86 plus eight reactive dependency-observation checks);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -433,7 +467,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=86
+want_total=94
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))
