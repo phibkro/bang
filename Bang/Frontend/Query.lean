@@ -379,6 +379,46 @@ def lawInstanceJson (inst : String × String × List String × String) : String 
 #guard lawInstanceJson ("Codec@Shift7", "roundtrip", ["x"], "handle body with Shift7 as codec") ==
   "{\"trait\":\"Codec@Shift7\",\"contract\":\"Codec\",\"realization\":\"Shift7\",\"law\":\"roundtrip\",\"params\":[\"x\"],\"body\":\"handle body with Shift7 as codec\"}"
 
+/-- A resolver-stable declaration identity. `mergeModules` intentionally keeps a selected `use`
+name bare for source readability, while qualifying its siblings. The resolver-supplied module map
+lets the contract card restore one identity without changing those presentation names. -/
+def stableDeclId (declModule : List (String × String)) (name : String) : String :=
+  match declModule.lookup name with
+  | none => name
+  | some modName =>
+      let modulePrefix := modName ++ "_"
+      if name.startsWith modulePrefix then name else modulePrefix ++ name
+
+/-- The concise source-level spelling paired with `stableDeclId`. Existing `name` fields remain
+unchanged compatibility/presentation data; `displayName` is the explicitly local label. -/
+def displayDeclName (declModule : List (String × String)) (name : String) : String :=
+  match declModule.lookup name with
+  | none => name
+  | some modName =>
+      let modulePrefix := modName ++ "_"
+      if name.startsWith modulePrefix then (name.drop modulePrefix.length).toString else name
+
+/-- Contract-card law evidence with stable relation keys. The historical fields remain byte-for-
+byte in meaning; machines join on `id`/`contractId`/`realizationId`. -/
+def contractLawJson (declModule : List (String × String))
+    (inst : String × String × List String × String) : String :=
+  let (trait, law, params, body) := inst
+  let parts := trait.splitOn "@"
+  let contract := parts.head?.getD trait
+  let realization := if parts.length == 2 then parts[1]? else none
+  let contractId := stableDeclId declModule contract
+  let realizationId := realization.map (stableDeclId declModule)
+  let id := match realizationId with
+    | some rid => contractId ++ "@" ++ rid ++ ":" ++ law
+    | none => contractId ++ ":" ++ law
+  jsonObj [jsonStrField "id" id,
+           jsonStrField "trait" trait, jsonStrField "contract" contract,
+           jsonStrField "contractId" contractId,
+           jsonOptStrField "realization" realization,
+           jsonField "realizationId" (realizationId.map Bang.Diagnostics.jsonStr |>.getD "null"),
+           jsonStrField "law" law, jsonField "params" (jsonStrArr params),
+           jsonStrField "body" body]
+
 /-! ## Semantic contract cards
 
 The ordinary dump remains the complete relational fact base. A contract card is its focused
@@ -447,33 +487,41 @@ public def quantityFactsOf (p : Prog) : List QuantityFact :=
   p.decls.flatMap (fun d => (declBodies d).flatMap (quantityFactsSurf d.name)) ++
     quantityFactsSurf "<body>" p.body
 
-def contractDeclJson : Decl → Option String
+def contractDeclJson (declModule : List (String × String)) : Decl → Option String
   | .effectD name ops laws =>
-      some <| jsonObj [jsonStrField "name" name,
+      some <| jsonObj [jsonStrField "id" (stableDeclId declModule name),
+        jsonStrField "name" name, jsonStrField "displayName" (displayDeclName declModule name),
         jsonField "operations" (jsonStrArr (ops.map (·.1))),
         jsonField "laws" (jsonStrArr (laws.map (·.name)))]
   | _ => none
 
-def realizationDeclJson : Decl → Option String
+def realizationDeclJson (declModule : List (String × String)) : Decl → Option String
   | .handlerD name eff clauses =>
-      some <| jsonObj [jsonStrField "name" name, jsonStrField "contract" eff,
+      some <| jsonObj [jsonStrField "id" (stableDeclId declModule name),
+        jsonStrField "name" name, jsonStrField "displayName" (displayDeclName declModule name),
+        jsonStrField "contract" eff, jsonStrField "contractId" (stableDeclId declModule eff),
         jsonField "operations" (jsonStrArr ((Bang.Surface.hClausesToList clauses).map (·.1)))]
   | _ => none
 
-/-- **PUBLIC entry, `Prog`-taking:** the focused semantic-description read model. -/
-public def contractJsonP (p : Prog) : String :=
+/-- **PUBLIC entry, `Prog`-taking:** the focused semantic-description read model. `ok` says the
+query operation ran; `subjectValid` independently says the described program passed the compiler
+pipeline. Resolver callers should supply `declModule` so identities survive `use` selection. -/
+public def contractJsonP (p : Prog) (declModule : List (String × String) := []) : String :=
   let laws := match Bang.TypeCheck.lawInstancesOfProg p with
-    | .ok xs => xs.map lawInstanceJson
+    | .ok xs => xs.map (contractLawJson declModule)
     | .error _ => []
-  let evidence := match Bang.TypeCheck.checkAndLowerProg p with
+  let checked := Bang.TypeCheck.checkAndLowerProg p
+  let subjectValid := match checked with | .ok _ => true | .error _ => false
+  let evidence := match checked with
     | .ok _ => jsonObj [jsonField "typeChecked" "true",
         jsonStrField "quantityChecking" "exact-local",
         jsonStrField "quantityErasure" "before-lowering",
         jsonStrField "backendErasure" "manifest-unused-let-result"]
     | .error e => jsonObj [jsonField "typeChecked" "false", jsonStrField "error" e]
-  jsonObj [jsonField "ok" "true", jsonField "schemaVersion" "1",
-    jsonField "contracts" (jsonArr (p.decls.filterMap contractDeclJson)),
-    jsonField "realizations" (jsonArr (p.decls.filterMap realizationDeclJson)),
+  jsonObj [jsonField "ok" "true", jsonField "subjectValid" (if subjectValid then "true" else "false"),
+    jsonField "schemaVersion" "1",
+    jsonField "contracts" (jsonArr (p.decls.filterMap (contractDeclJson declModule))),
+    jsonField "realizations" (jsonArr (p.decls.filterMap (realizationDeclJson declModule))),
     jsonField "quantities" (jsonArr ((quantityFactsOf p).map QuantityFact.toJson)),
     jsonField "laws" (jsonArr laws), jsonField "evidence" evidence]
 

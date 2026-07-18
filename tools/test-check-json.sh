@@ -85,15 +85,39 @@ check "75-single-file-parse-error-span-present" "$(printf '%s' "$got_file_parse"
 got_stdin_parse="$(printf 'let x 3 in x' | "$bang" check --json 2>/dev/null)" || true
 check "75-single-file-parse-error-file-eq-stdin" "$got_file_parse" "$got_stdin_parse"
 
-# ── genuine MULTI-file program: the documented v1 grant (span:null, code:"type") must stay INTACT
-# — the #75 fix only widens the single-file fast path, never narrows the resolver path's own
-# (still-honest) limitation. ──
+# ── genuine MULTI-file imported failure: without an entry-file token to locate, span:null remains
+# the honest answer. The best-effort entry-source repair below must not invent an imported span. ──
 mkdir -p "$tmpdir/mf"
 printf 'pub let x = 3' > "$tmpdir/mf/Lib.bang"
 printf 'import Lib\nlet main = $Lib.x + "a"' > "$tmpdir/mf/main.bang"
 got_mf="$("$bang" check --json "$tmpdir/mf/main.bang" 2>/dev/null)" || true
 check "75-multi-file-grant-intact-code-type" "$(printf '%s' "$got_mf" | grep -o '"code":"type"' || true)" '"code":"type"'
 check "75-multi-file-grant-intact-span-null" "$(printf '%s' "$got_mf" | grep -o '"span":null' || true)" '"span":null'
+
+# ── Resolved ENTRY-file B018: human and JSON retain the same stable identity, and the quantity
+# binder named by the checker gives an honest entry-source location. This is intentionally NOT a
+# general imported-file source map; the imported-only fixture above pins that boundary. ──
+mkdir -p "$tmpdir/b018"
+cp examples/resource-contract/Permit.bang "$tmpdir/b018/Permit.bang"
+cat > "$tmpdir/b018/main.bang" <<'BANG'
+use Permit (Identity)
+
+let main =
+  handle
+    use [1] permit in
+      let first = permit.spend(7) in permit.spend(first)
+  with Identity as permit
+BANG
+got_b018_json="$("$bang" check --json "$tmpdir/b018/main.bang" 2>/dev/null)" && got_b018_json_exit=0 || got_b018_json_exit=$?
+check "b018-resolved-json-exit" "$got_b018_json_exit" "1"
+check "b018-resolved-json-code" "$(printf '%s' "$got_b018_json" | grep -o '"explainCode":"B018"' || true)" '"explainCode":"B018"'
+check "b018-resolved-json-span-present" "$(printf '%s' "$got_b018_json" | grep -o '"span":null' || true)" ""
+check "b018-resolved-json-location" "$(printf '%s' "$got_b018_json" | grep -o '"line":5,"col":13' || true)" '"line":5,"col":13'
+
+got_b018_human="$("$bang" check "$tmpdir/b018/main.bang" 2>&1 >/dev/null)" && got_b018_human_exit=0 || got_b018_human_exit=$?
+check "b018-resolved-human-exit" "$got_b018_human_exit" "1"
+check "b018-resolved-human-code" "$(printf '%s' "$got_b018_human" | grep -o 'error\[B018\]' || true)" 'error[B018]'
+check "b018-resolved-human-location" "$(printf '%s' "$got_b018_human" | grep -o 'at 5:13' || true)" 'at 5:13'
 
 # ── ADR-0112: `pledge` is a checked row ceiling. Pin both the admitted plugin and the exact
 # rejected class through the public JSON/exit-code surface (not only Lean-level checker guards). ──
@@ -205,7 +229,7 @@ echo "────────────────────────�
 echo "check-json: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run (the gotcha the mission
 # brief calls out) even if every individual `check` that DID run happened to pass.
-want_total=40
+want_total=47
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

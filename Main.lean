@@ -686,6 +686,8 @@ can enter this list. -/
 structure ResolvedFile where
   prog : Prog
   trustedHostNames : List String := []
+  /-- Final merged declaration name → owning source module. Entry declarations have no entry. -/
+  declModules : List (String × String) := []
 
 def resolveEntryFileRawWithProvenance (path : String) : IO (Except String ResolvedFile) := do
   let entryPath : System.FilePath := ⟨path⟩
@@ -746,7 +748,21 @@ def resolveEntryFileRawWithProvenance (path : String) : IO (Except String Resolv
           ["Console", "Clock", "Fs"].map (fun name =>
             if usedNames.contains name then name else "Io_" ++ name)
         else []
-        return .ok { prog := merged, trustedHostNames }
+        -- Reify `qualifyDeclName`'s declaration-name rule for provenance. This cannot be recovered
+        -- by slicing `merged.decls`: a transitively imported module may inject its own `use` aliases,
+        -- changing segment lengths. Value/data declarations always qualify; selected effect,
+        -- handler, and trait names deliberately stay bare; an impl retains its trait key.
+        let selectedNames := entryProg.uses.flatMap (·.names)
+        let declModules := st.resolved.flatMap (fun (modName, modP) =>
+          modP.decls.map (fun d =>
+            let sourceName := Bang.Surface.Decl.name d
+            let finalName := match d with
+              | .effectD .. | .handlerD .. | .traitD .. =>
+                  if selectedNames.contains sourceName then sourceName else modName ++ "_" ++ sourceName
+              | .implD .. => sourceName
+              | _ => modName ++ "_" ++ sourceName
+            (finalName, modName)))
+        return .ok { prog := merged, trustedHostNames, declModules }
 
 /-- Compatibility projection for non-host commands: provenance is retained only by the host route. -/
 def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
@@ -1515,18 +1531,11 @@ def runExplain (code : String) : IO UInt32 := do
     | none => pure ()
     pure 0
 
-/-- One `ok:false` diagnostic JSON object for the `Prog`-taking check path (`code` always `"type"`,
-`span` always `null` — see `runCheck`'s doc comment for why: no stage split, no source text to
-locate into). Built with `++` (not `s!"..."`), matching `Diagnostics.spanJson`/`Diagnostic.toJson`'s
-own convention — Lean's string interpolation escapes a literal `{` as `\{`, not `{{`, which makes a
-hand-written JSON-brace literal read backwards; plain concatenation sidesteps the ambiguity entirely
-(the SAME reason those two functions avoid `s!`). -/
-def checkFailJson (msg : String) : String :=
-  let explainStr := match Bang.DiagCodes.codeForMsg msg with
-    | some c => Bang.Diagnostics.jsonStr c
-    | none   => "null"
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"explainCode\":" ++
-    explainStr ++ ",\"msg\":" ++ Bang.Diagnostics.jsonStr msg ++ ",\"span\":null}]}"
+/-- One `ok:false` type diagnostic for the `Prog`-taking check path. `span` is an optional honest
+entry-source location supplied by the resolver-aware caller; rendering remains centralized in
+`Bang.Diagnostics` rather than hand-assembling a parallel JSON shape here. -/
+def checkFailJson (msg : String) (span : Option Bang.Surface.Span := none) : String :=
+  Bang.Diagnostics.typeFailJson msg span
 
 /-- `bang check [FLAGS] [<file.bang>]` (issue #59): type-check ONLY (no run), human-readable by
 default or `--json` for the agent-facing structured schema (`Bang.Diagnostics`). Reads a file if
@@ -1547,14 +1556,11 @@ shape no hand-authored file has, and one the grammar cannot always tell apart fr
 per the SAME literal-adjacency class `Prog.isLibrary` already guards elsewhere — `#guard`ed below as
 a regression). Calling `checkAndLowerProg` on the in-memory `Prog` sidesteps the round-trip
 entirely — exactly the trade `checkAndLowerProg`'s own doc comment already recommends over
-print-then-reparse. The cost: no `Diagnostics`-schema `Diagnostic`/`span` structure for this path (a
-merged multi-file `Prog` has no contiguous source `checkAndLowerProg` could span into either — see
-its doc comment), so the JSON here is hand-assembled to the SAME schema `checkJson` emits (`code`
-always `"type"`, `span` always `null` — `checkAndLowerProg` gives no stage/location split), reusing
-`Bang.Diagnostics.jsonStr` for the one string that needs JSON-escaping (the error message) rather
-than a second hand-rolled escaper. `Bang.Frontend.Diagnostics` needed no NEW entry point — `jsonStr`
-was already there, just previously private; see its doc comment for why marking it `public` was the
-minimal correct move over a second implementation. STDIN input is NOT resolver-aware (no file path
+print-then-reparse. The merged `Prog` still has no general per-file span map, but the caller retains
+the entry source: after a failure it applies `Surface.locateInMsg` to that source and renders the
+result through `Diagnostics.typeFailJson`. Diagnostics naming an entry token therefore carry a
+best-effort entry span; diagnostics originating only in imported source stay honestly `null`.
+STDIN input is NOT resolver-aware (no file path
 to resolve relative to, matching `eval`'s same limitation on `bang run`) and stays on the ORIGINAL
 string-based `checkJson`/`checkAndLower` path (full span support, unaffected by any of the above).
 
@@ -1573,12 +1579,10 @@ resolver's own internal parse used the un-located `parseProg`); a successful par
 type errors too); only a header that NAMES an import/use falls through to `resolveEntryFile` below
 — the genuine multi-file case the documented limitation covers.
 
-KNOWN v1 LIMITATION (documented here + the usage text, follow-up tracked under this ADR's own
-issue): a resolved multi-file program's diagnostic never carries a `span` (`null` always) — no
-line/col at all, not even a merged-source coordinate, since the `Prog`-taking pipeline has no source
-text to index into. File-aware span mapping (spans that name which file, with per-file coordinates)
-is a named follow-up, not solved by this ruling. This grant covers ONLY programs that actually pull
-in `import`/`use` content — see the single-file fast path above for why a lone file doesn't need it.
+KNOWN v1 LIMITATION: resolver-aware checking can locate only a named token in the ENTRY source.
+Imported-file diagnostics and messages without a locatable token still carry `span:null`; full
+file-aware spans (file identity plus per-file coordinates) require resolver source maps and remain a
+named follow-up. Single-file checking continues to use the fully located string pipeline above.
 
 EXIT CODES (the `--json` contract; the human path reuses 0/1 and never emits 2 — a human already
 sees the read failure as the SAME uncaught-IO-exception report every other subcommand gives): `0`
@@ -1611,15 +1615,23 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
           if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
             if json then runCheckJson src else runCheckHuman src
           else
-            -- genuine multi-file program: resolver + `Prog`-taking pipeline, `span:null` grant intact.
+            -- Genuine multi-file program: resolver + `Prog`-taking pipeline. A diagnostic that
+            -- names an entry-file token receives that best-effort span; imported-only locations
+            -- remain honestly null until the resolver carries per-file source maps.
             match ← resolveEntryFile path with
             | .error e   =>
-                if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
+                let sp := Bang.Surface.locateInMsg src e
+                if json then IO.println (checkFailJson e sp) else match sp with
+                  | some s => IO.eprintln s!"{errWord e} at {s.loc}: {e}"
+                  | none => IO.eprintln s!"{errWord e}: {e}"
                 pure 1
             | .ok merged =>
                 match Bang.TypeCheck.checkAndLowerProg merged with
                 | .error e =>
-                    if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
+                    let sp := Bang.Surface.locateInMsg src e
+                    if json then IO.println (checkFailJson e sp) else match sp with
+                      | some s => IO.eprintln s!"{errWord e} at {s.loc}: {e}"
+                      | none => IO.eprintln s!"{errWord e}: {e}"
                     pure 1
                 | .ok _ =>
                     if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
@@ -1675,21 +1687,28 @@ already-expanded string entry, so this is the ONE place that needs the fix for t
 verbs to see a `deriving`-generated `trait`/`impl`). A `expandDerives` failure falls back to the
 un-expanded `Prog` (same isolation rule as `Query.lean`'s `dumpJson`/`symbolsJson`) rather than
 failing the whole query. -/
-def resolveQueryProg (src : String) (headerProg : Bang.Surface.Prog) (file : Option String) :
-    IO (Except UInt32 Bang.Surface.Prog) := do
+def resolveQueryProgWithProvenance (src : String) (headerProg : Bang.Surface.Prog)
+    (file : Option String) : IO (Except UInt32 ResolvedFile) := do
   let withDerives (p : Bang.Surface.Prog) : Bang.Surface.Prog :=
     (Bang.TypeCheck.expandDerives p).toOption.getD p
   if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
     match Bang.Surface.parseProgLocated src with
-    | .ok p         => pure (.ok (withDerives p))
+    | .ok p         => pure (.ok { prog := withDerives p })
     | .error (m, _) => IO.println (Bang.Query.errorJsonOk m); pure (.error 1)
   else
     match file with
-    | none      => pure (.ok (withDerives headerProg))   -- stdin, no path to resolve relative to (same as `eval`'s limitation)
+    | none      => pure (.ok { prog := withDerives headerProg })   -- stdin, no path to resolve relative to (same as `eval`'s limitation)
     | some path =>
-        match ← resolveEntryFile path with
+        match ← resolveEntryFileWithProvenance path with
         | .error e   => IO.println (Bang.Query.errorJsonOk e); pure (.error 1)
-        | .ok merged => pure (.ok (withDerives merged))
+        | .ok resolved => pure (.ok { resolved with prog := withDerives resolved.prog })
+
+/-- Compatibility projection for query verbs that do not consume declaration provenance. -/
+def resolveQueryProg (src : String) (headerProg : Bang.Surface.Prog) (file : Option String) :
+    IO (Except UInt32 Bang.Surface.Prog) := do
+  match ← resolveQueryProgWithProvenance src headerProg file with
+  | .error code => pure (.error code)
+  | .ok resolved => pure (.ok resolved.prog)
 
 /-- Print `json` and return `0` — the uniform success tail every `runQuery*` arm shares (an op's
 OWN `errorJsonOk`/`ok:false` embeds its failure in the JSON body already; exit is still `0` at
@@ -1775,9 +1794,9 @@ def runQueryContract (file : Option String) : IO UInt32 := do
   match ← readQuerySrc file with
   | .error code => pure code
   | .ok (src, headerProg) =>
-      match ← resolveQueryProg src headerProg file with
+      match ← resolveQueryProgWithProvenance src headerProg file with
       | .error code => pure code
-      | .ok p       => printQueryOk (Bang.Query.contractJsonP p)
+      | .ok resolved => printQueryOk (Bang.Query.contractJsonP resolved.prog resolved.declModules)
 
 /-- `bang query def <name> <file>` — the decl defining `name`. -/
 def runQueryDef (file : Option String) (name : String) : IO UInt32 := do
@@ -2637,9 +2656,9 @@ def usage : String :=
   "  1  ok:false — diagnostics present (see the JSON on stdout)\n" ++
   "  2  tool error (e.g. unreadable file) — reported on stderr, never folded into the JSON\n\n" ++
   "  NOTE: a <file.bang> with imports/uses is resolved the SAME way `bang run` resolves it, before\n" ++
-  "  type-checking, so a multi-file project's imports are visible to `check`. KNOWN v1 LIMITATION:\n" ++
-  "  a diagnostic from a resolved multi-file program always has \"span\":null — no line/col — since\n" ++
-  "  the resolved program has no single source text to locate into (follow-up: file-aware spans).\n\n" ++
+  "  type-checking, so a multi-file project's imports are visible to `check`. Entry-file diagnostics\n" ++
+  "  get a best-effort span when their message names an entry token; imported/non-locatable failures\n" ++
+  "  retain \"span\":null (follow-up: resolver-wide file-aware spans).\n\n" ++
   "EXIT CODES [bang query <op>]:\n" ++
   "  0  the op ran and produced a JSON answer on stdout — INCLUDING an op-level \"ok\":false\n" ++
   "     (e.g. `def` naming a decl that doesn't exist): the tool succeeded, the ANSWER is negative\n" ++

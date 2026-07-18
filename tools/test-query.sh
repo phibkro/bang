@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
 # tool: role=test couples=examples/*/main.bang runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
@@ -77,6 +78,25 @@ cat > "$tmpdir/pubdemo.bang" <<'BANG'
 pub let rec fib : Int -> Int = fun n => if n < 2 then n else $fib (n - 1) + $fib (n - 2)
 let helper = {fun n => $fib n + 1}
 pub let pure_add = {fun a => fun b => a + b}
+BANG
+
+# Contract identity fixtures differ ONLY in the selected handler. Resolver-stable IDs must not
+# churn merely because `use` deliberately keeps the selected source spelling bare.
+mkdir -p "$tmpdir/resource-contract"
+cp examples/resource-contract/Permit.bang "$tmpdir/resource-contract/Permit.bang"
+cat > "$tmpdir/resource-contract/identity.bang" <<'BANG'
+use Permit (Identity)
+
+handle
+  use [1] permit in permit.spend(7)
+with Identity as permit
+BANG
+cat > "$tmpdir/resource-contract/negate.bang" <<'BANG'
+use Permit (Negate)
+
+handle
+  use [1] permit in permit.spend(7)
+with Negate as permit
 BANG
 
 # ══ 1. `dump` — THE key operation: the complete fact base ══
@@ -264,6 +284,37 @@ got_out="$(printf 'let x = 3 in x' | "$bang" query laws 2>/dev/null)" && got_exi
 check "laws-empty-exit" "$got_exit" "0"
 check "laws-empty-shape" "$got_out" '{"ok":true,"laws":[]}'
 
+# ══ 5b. `contract` evidence integrity ══
+
+identity_card="$("$bang" query contract "$tmpdir/resource-contract/identity.bang" 2>/dev/null)" && identity_exit=0 || identity_exit=$?
+negate_card="$("$bang" query contract "$tmpdir/resource-contract/negate.bang" 2>/dev/null)" && negate_exit=0 || negate_exit=$?
+refused_card="$("$bang" query contract scratch/resource-contract/reject-duplicate.bang 2>/dev/null)" && refused_exit=0 || refused_exit=$?
+check "contract-identity-exit" "$identity_exit" "0"
+check "contract-negate-exit" "$negate_exit" "0"
+check "contract-accepted-subject-valid" "$(printf '%s' "$identity_card" | grep -o '"subjectValid":true' || true)" '"subjectValid":true'
+check "contract-refused-exit" "$refused_exit" "0"
+check "contract-refused-operation-ok" "$(printf '%s' "$refused_card" | grep -o '"ok":true' || true)" '"ok":true'
+check "contract-refused-subject-invalid" "$(printf '%s' "$refused_card" | grep -o '"subjectValid":false' || true)" '"subjectValid":false'
+check "contract-refused-evidence-invalid" "$(printf '%s' "$refused_card" | grep -o '"typeChecked":false' || true)" '"typeChecked":false'
+
+contract_ids() {
+  local field="$1"
+  python3 -c 'import json,sys; field=sys.argv[1]; d=json.load(sys.stdin); print(",".join(sorted(x["id"] for x in d[field])))' "$field"
+}
+identity_contract_ids="$(printf '%s' "$identity_card" | contract_ids contracts)"
+negate_contract_ids="$(printf '%s' "$negate_card" | contract_ids contracts)"
+identity_realization_ids="$(printf '%s' "$identity_card" | contract_ids realizations)"
+negate_realization_ids="$(printf '%s' "$negate_card" | contract_ids realizations)"
+identity_law_ids="$(printf '%s' "$identity_card" | contract_ids laws)"
+negate_law_ids="$(printf '%s' "$negate_card" | contract_ids laws)"
+check "contract-selection-stable-contract-ids" "$negate_contract_ids" "$identity_contract_ids"
+check "contract-selection-stable-realization-ids" "$negate_realization_ids" "$identity_realization_ids"
+check "contract-selection-stable-law-ids" "$negate_law_ids" "$identity_law_ids"
+
+identity_selected="$(printf '%s' "$identity_card" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["displayName"] for x in d["realizations"] if x["name"] == x["displayName"]))')"
+negate_selected="$(printf '%s' "$negate_card" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["displayName"] for x in d["realizations"] if x["name"] == x["displayName"]))')"
+check "contract-selection-display-remains-local" "$identity_selected:$negate_selected" "Identity:Negate"
+
 # ══ 6. `def` / `refs` (thin filters over dump's "decls"/"refs") ══
 
 got_out="$("$bang" query def double "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
@@ -373,7 +424,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (75 — the former 64 plus seven producer-status checks and four resolver-law checks);
+# always runs (86 — the former 75 plus eleven contract-evidence-integrity checks);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -382,7 +433,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=75
+want_total=86
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

@@ -7962,7 +7962,7 @@
         "Bang.Frontend.DiagCodes",
         "Bang.Frontend.TypeCheck"
       ],
-      "loc": 227,
+      "loc": 236,
       "name": "Bang.Frontend.Diagnostics",
       "path": "Bang/Frontend/Diagnostics.lean",
       "publicSymbols": [
@@ -7988,6 +7988,12 @@
           "kind": "def",
           "line": 187,
           "name": "parseFailJson",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 193,
+          "name": "typeFailJson",
           "visibilityBasis": "public-modifier"
         }
       ],
@@ -8114,7 +8120,7 @@
       "directImports": [
         "Bang.Frontend.Diagnostics"
       ],
-      "loc": 1026,
+      "loc": 1074,
       "name": "Bang.Frontend.Query",
       "path": "Bang/Frontend/Query.lean",
       "publicSymbols": [
@@ -8216,199 +8222,199 @@
         },
         {
           "kind": "structure",
-          "line": 388,
+          "line": 428,
           "name": "QuantityFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 446,
+          "line": 486,
           "name": "quantityFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 464,
+          "line": 509,
           "name": "contractJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 481,
+          "line": 529,
           "name": "contractJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 535,
+          "line": 583,
           "name": "schemaVersion",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 550,
+          "line": 598,
           "name": "dumpJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 578,
+          "line": 626,
           "name": "dumpJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 607,
+          "line": 655,
           "name": "symbolsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 613,
+          "line": 661,
           "name": "symbolsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 626,
+          "line": 674,
           "name": "typeJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 637,
+          "line": 685,
           "name": "typeJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 645,
+          "line": 693,
           "name": "effectsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 656,
+          "line": 704,
           "name": "effectsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 664,
+          "line": 712,
           "name": "lawsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 672,
+          "line": 720,
           "name": "lawsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 689,
+          "line": 737,
           "name": "defJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 696,
+          "line": 744,
           "name": "defJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 709,
+          "line": 757,
           "name": "refsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 717,
+          "line": 765,
           "name": "refsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 746,
+          "line": 794,
           "name": "HoverFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 767,
+          "line": 815,
           "name": "hoverAtP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 787,
+          "line": 835,
           "name": "hoverJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 794,
+          "line": 842,
           "name": "hoverJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 853,
+          "line": 901,
           "name": "holeMarkersIn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 882,
+          "line": 930,
           "name": "holesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 899,
+          "line": 947,
           "name": "holesJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 904,
+          "line": 952,
           "name": "holesJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 928,
+          "line": 976,
           "name": "dependentsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 945,
+          "line": 993,
           "name": "impactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 956,
+          "line": 1004,
           "name": "impactJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 986,
+          "line": 1034,
           "name": "semverDiff",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1009,
+          "line": 1057,
           "name": "semverDiffJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1017,
+          "line": 1065,
           "name": "semverDiffJson",
           "visibilityBasis": "public-modifier"
         }
@@ -8445,7 +8451,7 @@
         "Bang.Core.Grade",
         "Bang.Core.Semantics"
       ],
-      "loc": 3520,
+      "loc": 3529,
       "name": "Bang.Frontend.Surface",
       "path": "Bang/Frontend/Surface.lean",
       "publicSymbols": [
@@ -8997,451 +9003,451 @@
         },
         {
           "kind": "def",
-          "line": 1934,
+          "line": 1943,
           "name": "spanOfRest",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1945,
+          "line": 1954,
           "name": "parseLocated",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2015,
+          "line": 2024,
           "name": "OpSig",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2029,
+          "line": 2038,
           "name": "selfArrows",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2034,
+          "line": 2043,
           "name": "peelArrows",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2041,
+          "line": 2050,
           "name": "LawDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2051,
+          "line": 2060,
           "name": "OpDef",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 2064,
+          "line": 2073,
           "name": "Decl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2105,
+          "line": 2114,
           "name": "Decl.name",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2121,
+          "line": 2130,
           "name": "ImportDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2130,
+          "line": 2139,
           "name": "UseDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2143,
+          "line": 2152,
           "name": "Prog",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2176,
+          "line": 2185,
           "name": "pParamsLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2187,
+          "line": 2196,
           "name": "pParams",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2197,
+          "line": 2206,
           "name": "pTraitMembers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2226,
+          "line": 2235,
           "name": "pImplMembers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2249,
+          "line": 2258,
           "name": "pEffectMembers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2275,
+          "line": 2284,
           "name": "pCtorTysLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2287,
+          "line": 2296,
           "name": "pCtor",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2296,
+          "line": 2305,
           "name": "pCtors",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2306,
+          "line": 2315,
           "name": "pDataParams",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2315,
+          "line": 2324,
           "name": "pTraitParams",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2325,
+          "line": 2334,
           "name": "pDerivingNamesLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2337,
+          "line": 2346,
           "name": "pDerivingClause",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2350,
+          "line": 2359,
           "name": "pDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2422,
+          "line": 2431,
           "name": "isDeclStart",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2447,
+          "line": 2456,
           "name": "isLetDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2485,
+          "line": 2494,
           "name": "pDeclPub",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2502,
+          "line": 2511,
           "name": "pDecls",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2530,
+          "line": 2539,
           "name": "pImport",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2536,
+          "line": 2545,
           "name": "pUseNamesLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2551,
+          "line": 2560,
           "name": "pUse",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2562,
+          "line": 2571,
           "name": "pHeader",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2584,
+          "line": 2593,
           "name": "parseProgE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2596,
+          "line": 2605,
           "name": "parseProg",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2603,
+          "line": 2612,
           "name": "eraseLettMultiDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2618,
+          "line": 2627,
           "name": "eraseLettMultiProg",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2629,
+          "line": 2638,
           "name": "parseProgLocated",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 2649,
+          "line": 2658,
           "name": "parseTy",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 2696,
+          "line": 2705,
           "name": "runFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 2721,
+          "line": 2730,
           "name": "Outcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2732,
+          "line": 2741,
           "name": "Outcome.oom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2738,
+          "line": 2747,
           "name": "evalToOutcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2747,
+          "line": 2756,
           "name": "runOutcomeFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2752,
+          "line": 2761,
           "name": "assertYieldsInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2756,
+          "line": 2765,
           "name": "assertStuck",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2760,
+          "line": 2769,
           "name": "assertEscaped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2764,
+          "line": 2773,
           "name": "assertOutOfFuel",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2769,
+          "line": 2778,
           "name": "assertOom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2774,
+          "line": 2783,
           "name": "runYieldsInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2780,
+          "line": 2789,
           "name": "pureComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2785,
+          "line": 2794,
           "name": "throwsComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2791,
+          "line": 2800,
           "name": "deepComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2799,
+          "line": 2808,
           "name": "stateCellComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2805,
+          "line": 2814,
           "name": "stateGetComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2826,
+          "line": 2835,
           "name": "stmNew",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2828,
+          "line": 2837,
           "name": "stmRead",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2830,
+          "line": 2839,
           "name": "stmWrite",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2837,
+          "line": 2846,
           "name": "ledgerCommit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2858,
+          "line": 2867,
           "name": "ledgerAbort",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2908,
+          "line": 2917,
           "name": "cellComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2920,
+          "line": 2929,
           "name": "cell_reflects_latest",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2935,
+          "line": 2944,
           "name": "beqVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2946,
+          "line": 2955,
           "name": "beqComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2963,
+          "line": 2972,
           "name": "beqHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2969,
+          "line": 2978,
           "name": "beqStore",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2983,
+          "line": 2992,
           "name": "Outcome.beq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3000,
+          "line": 3009,
           "name": "outcomeIs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3022,
+          "line": 3031,
           "name": "empty",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3025,
+          "line": 3034,
           "name": "push",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3032,
+          "line": 3041,
           "name": "pop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3043,
+          "line": 3052,
           "name": "stackTopComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3049,
+          "line": 3058,
           "name": "stackTop2Comp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3113,
+          "line": 3122,
           "name": "parsesTo",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3378,
+          "line": 3387,
           "name": "progParsesTo",
           "visibilityBasis": "public-section"
         }
@@ -12663,7 +12669,7 @@
       "name": "Core"
     },
     {
-      "loc": 17934,
+      "loc": 18000,
       "moduleCount": 12,
       "name": "Frontend"
     },

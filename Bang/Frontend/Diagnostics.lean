@@ -187,8 +187,17 @@ than a second escaper. -/
 public def parseFailJson (msg : String) (span : Option Bang.Surface.Span) : String :=
   renderDiagnostics false [{ severity := .error, code := .parse, msg := msg, span := span }]
 
+/-- PUBLIC: one type/resolution failure rendered through the same diagnostic schema as
+`checkJson`. Resolver callers may attach an honest best-effort entry-source span; failures whose
+named token belongs only to an imported file retain `null`. -/
+public def typeFailJson (msg : String) (span : Option Bang.Surface.Span) : String :=
+  renderDiagnostics false [{ severity := .error, code := .type, msg := msg, span := span }]
+
 #guard parseFailJson "expected '='" none ==
   "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"explainCode\":null,\"msg\":\"expected '='\",\"span\":null}]}"
+
+#guard typeFailJson "quantity mismatch: use [1] 'permit' requires [1], but the body has [ω]" none ==
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"explainCode\":\"B018\",\"msg\":\"quantity mismatch: use [1] 'permit' requires [1], but the body has [ω]\",\"span\":null}]}"
 
 /-! ## 4. Schema `#guard`s — byte-exact expected strings (the schema IS the contract). Each
 expected string was COMPUTED via a compiled `#eval IO.println (checkJson …)` (a `lake build` run,

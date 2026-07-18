@@ -57,6 +57,22 @@ All three fresh participants completed all six tasks with no moderator intervent
 
 Raw denominators matter: this is three fresh runs, not “three representative users.”
 
+## Follow-through (2026-07-18)
+
+The evidence-integrity slice prompted by this study has repaired F1–F4 without rewriting the
+historical observations below:
+
+- contract cards now separate operation success (`ok`) from program validity (`subjectValid`);
+- resolver provenance supplies stable contract, realization, and law-instance IDs while local
+  display labels remain concise;
+- resolved human and JSON B018 diagnostics retain the code and locate an entry-file quantity
+  annotation when available, while imported-only failures remain honestly unlocated;
+- the example now uses the already-built binary for quiet repeated runs.
+
+F5 remains an explicit option-preserving follow-up: the law renderer does not currently receive an
+observed result, so enriching it here would widen the witness pipeline rather than repair a local
+presentation seam. The frozen tasks and new regression gates are replayed before this path closes.
+
 ## Findings
 
 ### F1 — The contract card can report `ok:true` for an invalid program. **[high · A · 3/3]**

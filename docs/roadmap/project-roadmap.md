@@ -34,10 +34,10 @@ AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
                                  stateful quota policy run across the execution routes.
 ✓  ▸ ONE-SHOT PERMIT             one opt-in value quantity rejects duplicate/forgotten consumption;
                                  grade-0 erasure and the joined evidence card are concrete on Wasm.
-0  ▸ EVIDENCE-SEAM INTEGRITY     ← LIVE EDGE, before another feature: unambiguous subject validity,
-     stable declaration IDs, and B018 identity/location across human + JSON routes; then replay the
-     frozen agentic packet and expose the repaired slice to an unassisted outsider. This is bounded
-     seam hardening (`PATH-contract-query-integrity`), not a product checkpoint invented to house fixes.
+✓  ▸ EVIDENCE-SEAM INTEGRITY     operation/subject validity split, stable declaration IDs, resolved
+                                 B018 parity/location, quiet route, and frozen-packet replay are green.
+0  ▸ ORGANIC CORRECTION          ← LIVE EDGE: one unfamiliar developer runs the repaired public journey
+     unassisted; route evidence is adjudicated before feature work (`PATH-organic-resource-validation`).
 1  ▸ SPREADSHEET (reactivity)     next project — lights up the distinctive DORMANT feature. NB the
      reactive MECHANISM is already proven (`reactiveCell` runs + a liveness law in the Audit gate,
      ADR-0005); the project EXTENDS it to a reactive-programming surface (not build-from-scratch).
@@ -93,9 +93,13 @@ DONE ─────────────────────────
                                                                                 stage-swap/, stateful-quota/)
   ✓ one-shot permit     local 0/1/omega · refusal · erased Wasm · evidence  (examples/resource-contract/)
 
-LIVE SEAM — make the completed resource description safe to consume (PATH-contract-query-integrity)
+COMPLETED SEAM — the resource description is safe to consume (PATH-contract-query-integrity)
   evidence integrity    subject validity · stable qualified IDs · B018       automation + outsider recovery;
-                        parity/location · quiet documented route              fix before compatibility hardens
+                        parity/location · quiet documented route              fixed before compatibility hardened
+
+LIVE LOOP — let real unfamiliar use correct the next move (PATH-organic-resource-validation)
+  organic validation    goal-only public journey · chronological trace ·      external correction before another
+                        consent · adjudicated findings                         internally selected feature slice
 
 FRONTIER — next projects that pull new capability
   JSON codec             recursive ADTs · Outcome/error handling · strings    grounds the SCHEMA/contract story (Q37)
@@ -134,14 +138,14 @@ when the project at its left produces evidence for the feature work at its right
 | horizon | project evidence | capability it earns | systemic-review posture |
 |---|---|---|---|
 | **paved** | tokenizer, parser combinators, semantic contracts, one-shot permit, compiled examples | real surface; polymorphism; laws and swappable realizations; local quantities; verified/tested execution chain to Wasm | preserve these as the stable semantic-description substrate |
-| **now** | repaired contract evidence + first unassisted outsider run | trustworthy machine view, stable identities, recoverable diagnostics, external correction loop | implement F1–F3 before compatibility hardens; organic exposure is the weakest loop |
+| **now** | first unassisted outsider run against repaired contract evidence | external correction loop over a trustworthy machine view | prevent leakage/overclaiming; adjudicate observed friction before feature work |
 | **next project** | spreadsheet/reactive dataflow | dependency DAG, incremental recomputation, stage-policy UX | extend the proven reactive mechanism; do not invent a second reactivity core |
 | **toolchain project** | BANG tools consume the compiler fact graph | incremental/content-addressed compilation, module graph, LSP/MCP/CLI as views | preserve schema evolution and observation points now; build the scheduler when this consumer measures it |
 | **systems wedge** | allocator → cooperative scheduler → filesystem → driver | resource protocols, one-shot scheduling, persistence/location, least-authority IO | scope each rung only when reached; local quantities preserve the allocator door without pre-building ownership |
 | **distributed branch** | actor/chat system → replicated log/Raft | sendability, message passing, network capability security, deterministic replay | stays beside the cooperative-OS path until a project requires actor transfer or multi-shot behavior |
 | **north star** | verified xv6/unikernel running real workloads | the description/realization thesis at OS scale: effects as syscalls, handlers as runtimes/drivers, grades as resource/capability boundaries | success is an evidence chain, not feature count |
 
-The immediate ordering is therefore **repair evidence → external correction → spreadsheet**. The
+The immediate ordering is therefore **external correction → spreadsheet**; evidence repair is paved. The
 systems ladder is the destination-bearing branch; the toolchain and distributed projects are
 rehearsals for its dependency, authority, observability, and concurrency problems rather than a
 detour into completeness.

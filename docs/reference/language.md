@@ -1059,6 +1059,19 @@ description and its interchangeable implementations together; `evidence` records
 the merged program type-checks and names the quantity/lowering/backend erasure stages.
 This is the queryable compiler view used by `examples/resource-contract/`.
 
+The top-level booleans are deliberately separate: `ok` means the query operation ran and
+produced a card, while `subjectValid` means the described program passed the compiler
+pipeline. A machine consumer must gate semantic evidence on `subjectValid`, not infer
+validity from `ok` or from the presence of arrays. A refused program therefore reports
+`ok:true`, `subjectValid:false`, and `evidence.typeChecked:false` in one inspectable answer.
+
+Contract and realization records carry a resolver-stable `id`; law records carry `id`,
+`contractId`, and nullable `realizationId`. These IDs restore the owning module prefix even
+when `use Module (Name)` deliberately keeps the selected name bare, so changing only the
+selected realization cannot churn identity sets. Existing `name`/`contract`/`realization`
+fields remain compatibility labels, and `displayName` is the concise local presentation
+label. Machines should join on IDs and render `displayName`.
+
 ### `hover` — decl-granularity position query (issue #52 slice 5)
 
 `bang query hover [<file.bang>] <line> <col>` answers "what decl is at this cursor, and

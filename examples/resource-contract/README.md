@@ -9,13 +9,19 @@ The entry program then declares two local resource obligations:
   backend evaluates the binding expression but omits its dead environment cell.
 
 ```sh
-lake exe bang check examples/resource-contract/main.bang
-lake exe bang run examples/resource-contract/main.bang
-lake exe bang test examples/resource-contract/Permit.bang
-lake exe bang query contract examples/resource-contract/main.bang
-lake exe bang emit examples/resource-contract/main.bang -o /tmp/resource-contract.wat
+.lake/build/bin/bang check examples/resource-contract/main.bang
+.lake/build/bin/bang run examples/resource-contract/main.bang
+.lake/build/bin/bang test examples/resource-contract/Permit.bang
+.lake/build/bin/bang query contract examples/resource-contract/main.bang
+.lake/build/bin/bang emit examples/resource-contract/main.bang -o /tmp/resource-contract.wat
 ```
+
+Run these from the repository root after the normal `nix develop` and build/bootstrap step. Using
+the already-built binary keeps repeated example runs focused on their result instead of replaying
+Lake's repository-wide warning backlog.
 
 The program prints `7`; both handler realizations satisfy `preserves_zero`. The contract query
 returns contracts, realizations, quantities, laws, and compiler evidence in one JSON document.
+Its `ok` field reports query execution; consumers use `subjectValid` for program validity and the
+`id` fields for stable joins across realization selection.
 The refusal fixtures in `scratch/resource-contract/` pin duplicate and forgotten permit errors.

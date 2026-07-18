@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: the resource-contract tracer is complete and its first fresh-context agentic inspection has exposed three evidence-seam integrity defects; the active arc repairs those seams before organic outsider exposure._
+_Position: the first fresh-context agentic inspection's evidence-seam defects are repaired and under frozen-packet replay; the next edge move is organic outsider exposure, not another internal simulation._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
@@ -39,7 +39,6 @@ _Position: the resource-contract tracer is complete and its first fresh-context 
    next arc feed it? (If three ◊ in a row answer "the same outer loop", that's the escalation.)
 
 **2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk.
-The agentic inspection found evidence-contract defects that would contaminate that outer loop, so the
-next bounded arc repairs F1–F3 and replays the frozen packet; immediately after, publish the repaired
-slice, invite an unassisted run, and capture outsider-filed feedback instead of adding another internal
-simulation.
+The agentic inspection's F1–F4 evidence defects are repaired; after the frozen packet and standing
+gates pass, publish the slice, invite an unassisted run, and capture outsider-filed feedback instead
+of adding another internal simulation.

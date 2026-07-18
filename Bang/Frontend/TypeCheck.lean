@@ -1196,7 +1196,7 @@ def enforceUse (Γ : NCtx) (q : QTT) (name : String) (body : Surf) : Infer Unit 
   let _ ← lookupInst Γ name
   let actual := surfaceUsage name body
   if q == .omega || q == actual then return ()
-  throw s!"quantity mismatch: 'use {Bang.Format.quantityTok q} {name}' requires {Bang.Format.quantityTok q}, but the body has {Bang.Format.quantityTok actual}"
+  throw s!"quantity mismatch: use {Bang.Format.quantityTok q} '{name}' requires {Bang.Format.quantityTok q}, but the body has {Bang.Format.quantityTok actual}"
 
 /-- The first operation implemented more than once in a custom clause list. Dispatch is
 first-match, but the typed surface must not let textual order choose between two implementations;

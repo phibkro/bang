@@ -49,21 +49,23 @@
 
 ## Plan
 
-1. [ ] Freeze additive schema and stable-ID expectations with accepted/refused and selection-swap tests.
-2. [ ] Separate query execution success from subject validity in the contract card and reference docs.
-3. [ ] Add qualified declaration IDs while retaining display names as presentation.
-4. [ ] Preserve B018 and the quantity source span through resolved human and JSON rendering.
-5. [ ] Make the documented example route quiet; enrich the zero-parameter law witness if it remains local.
-6. [ ] Replay the frozen agentic packet, run the standing gates, and prepare the repaired slice for an
+1. [x] Freeze additive schema and stable-ID expectations with accepted/refused and selection-swap tests.
+2. [x] Separate query execution success from subject validity in the contract card and reference docs.
+3. [x] Add qualified declaration IDs while retaining display names as presentation.
+4. [x] Preserve B018 and the quantity source span through resolved human and JSON rendering.
+5. [x] Make the documented example route quiet; preserve the zero-parameter witness enrichment door
+   because the observed outcome is not already present at this renderer seam.
+6. [x] Replay the frozen agentic packet, run the standing gates, and prepare the repaired slice for an
    unassisted outsider run.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [ ] In flight: schema and identity tests first
-- [ ] Blockers: none known; source-span propagation may split into an option-preserving follow-up if it
-  requires a general resolver source-map redesign
-- [ ] Completed YYYY-MM-DD
+- [x] In flight: closed after the frozen packet, focused regressions, `just fitness`, and `just verify`
+  all passed
+- [x] Blockers: none; entry-source spans landed locally, while general imported-file source maps remain
+  explicitly deferred
+- [x] Completed 2026-07-18
 
 ## Owner
 

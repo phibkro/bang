@@ -1910,8 +1910,15 @@ nested `let-binding 'f': <inner>` points at the outer binding `f`. Returns `none
 message) when the message names no locatable token (e.g. `value type mismatch`) — those are the deferred
 per-node tier. -/
 public def locateInMsg (src msg : String) : Option Span :=
+  -- A declaration checker may wrap the quantity diagnostic as `let-binding 'main': quantity
+  -- mismatch: … 'permit' …`. For this coded family the useful recovery site is the quantity
+  -- binder, not the outer declaration. Narrow only that message before applying the shared quoted-
+  -- token heuristic; every other family retains the historical first-quoted-name behavior.
+  let locationMsg := match msg.splitOn "quantity mismatch:" with
+    | _ :: detail :: _ => "quantity mismatch:" ++ detail
+    | _ => msg
   let candidate : Option String :=
-    match msg.splitOn "'" with
+    match locationMsg.splitOn "'" with
     | _ :: name :: _ :: _ => some name                       -- first single-quoted token
     | _ => if "unbound variable ".isPrefixOf msg
            then some (msg.drop "unbound variable ".length).toString   -- the bare unbound identifier
@@ -1924,6 +1931,8 @@ public def locateInMsg (src msg : String) : Option Span :=
 #guard (locateInMsg "1 + Left(0)" "no impl provides '+' for Left").map (·.loc) == some "1:3"
 -- a nested let-binding error points at the OUTER binding (the first quoted name).
 #guard (locateInMsg "let f = g in f" "let-binding 'f': unbound variable g").map (·.loc) == some "1:5"
+#guard (locateInMsg "let main = use [1] permit in permit"
+  "let-binding 'main': quantity mismatch: use [1] 'permit' requires [1], but the body has [omega]").map (·.loc) == some "1:20"
 -- a message naming NO locatable token stays un-located (→ a plain message; the deferred per-node tier).
 #guard (locateInMsg "let x = 3 in $x" "value type mismatch") == none
 

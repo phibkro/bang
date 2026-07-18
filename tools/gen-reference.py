@@ -1682,6 +1682,39 @@ def render():
         "This is the queryable compiler view used by `examples/resource-contract/`."
     )
     L.append("")
+    L.append(
+        "The top-level booleans are deliberately separate: `ok` means the query operation ran and"
+    )
+    L.append(
+        "produced a card, while `subjectValid` means the described program passed the compiler"
+    )
+    L.append(
+        "pipeline. A machine consumer must gate semantic evidence on `subjectValid`, not infer"
+    )
+    L.append(
+        "validity from `ok` or from the presence of arrays. A refused program therefore reports"
+    )
+    L.append(
+        "`ok:true`, `subjectValid:false`, and `evidence.typeChecked:false` in one inspectable answer."
+    )
+    L.append("")
+    L.append(
+        "Contract and realization records carry a resolver-stable `id`; law records carry `id`,"
+    )
+    L.append(
+        "`contractId`, and nullable `realizationId`. These IDs restore the owning module prefix even"
+    )
+    L.append(
+        "when `use Module (Name)` deliberately keeps the selected name bare, so changing only the"
+    )
+    L.append(
+        "selected realization cannot churn identity sets. Existing `name`/`contract`/`realization`"
+    )
+    L.append(
+        "fields remain compatibility labels, and `displayName` is the concise local presentation"
+    )
+    L.append("label. Machines should join on IDs and render `displayName`.")
+    L.append("")
     L.append("### `hover` — decl-granularity position query (issue #52 slice 5)")
     L.append("")
     L.append(
