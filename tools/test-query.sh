@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py runs-in=verify
+# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,Main.lean,examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -90,6 +90,73 @@ cat > "$tmpdir/fingerprint-invalid.bang" <<'BANG'
 let main = 1 + Left(0)
 BANG
 
+# Resolved-module interface variants. The public implementation body and a private binding may move
+# the whole-program core while preserving the exported interface; a public type change must move it.
+for variant in interface-base interface-public-body interface-private-body interface-signature; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+0
+BANG
+done
+cat > "$tmpdir/interface-base/Lib.bang" <<'BANG'
+let hidden = 1
+pub let answer : Int = 41
+BANG
+cat > "$tmpdir/interface-public-body/Lib.bang" <<'BANG'
+let hidden = 1
+pub let answer : Int = 42
+BANG
+cat > "$tmpdir/interface-private-body/Lib.bang" <<'BANG'
+let hidden = 2
+pub let answer : Int = 41
+BANG
+cat > "$tmpdir/interface-signature/Lib.bang" <<'BANG'
+let hidden = 1
+pub let answer : Int * Int = (41, 0)
+BANG
+
+# Structural declarations carry checked shapes rather than value types; retain a separate pole so
+# the public firewall is gated for both sides of ModuleExportFact's type-or-shape contract.
+for variant in interface-shape-base interface-shape-changed; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+0
+BANG
+done
+cat > "$tmpdir/interface-shape-base/Lib.bang" <<'BANG'
+pub data Signal = One(Int)
+BANG
+cat > "$tmpdir/interface-shape-changed/Lib.bang" <<'BANG'
+pub data Signal = One(Int) | Pair(Int, Int)
+BANG
+
+# Whole-program effect-label allocation is an intentional falsifier for independent artifacts:
+# adding an unrelated earlier effect shifts Lib's rendered `Cap` label even though Lib is unchanged.
+for variant in interface-label-base interface-label-shifted; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/Lib.bang" <<'BANG'
+pub effect Trace { log : Int -> Int }
+pub let rec identity : Cap Trace -> Int -> Int ! {Trace} =
+  fun tr => fun x => tr.log(x)
+BANG
+done
+cat > "$tmpdir/interface-label-base/main.bang" <<'BANG'
+import Lib
+use Lib (Trace)
+0
+BANG
+cat > "$tmpdir/interface-label-shifted/Noise.bang" <<'BANG'
+pub effect Noise { ping : Int -> Int }
+BANG
+cat > "$tmpdir/interface-label-shifted/main.bang" <<'BANG'
+import Noise
+import Lib
+use Lib (Trace)
+0
+BANG
+
 # `pub`/divergence-tainted fixture — the composed-query demo's own corpus: ONE decl is both `pub`
 # AND recursive (its type carries `Thunk!{Div}`, the ONLY place a v1 program's decl-level effect
 # taint is visible — a top-level decl's OUTER `row` cannot yet carry a genuine user/custom label,
@@ -133,7 +200,7 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v1-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
@@ -163,6 +230,75 @@ capture fp_invalid_value fp_invalid_value_exit python3 -c 'import json,sys; prin
 check "core-fingerprint-invalid-dump-exit" "$fp_invalid_exit" "0"
 check "core-fingerprint-invalid-extractor-exit" "$fp_invalid_value_exit" "0"
 check "core-fingerprint-invalid-null" "$fp_invalid_value" "null"
+capture iface_invalid_value iface_invalid_value_exit python3 -c 'import json,sys; print("null" if json.load(sys.stdin)["moduleInterfaces"] is None else "present")' 2>/dev/null <<< "$fp_invalid_dump"
+check "module-interface-invalid-extractor-exit" "$iface_invalid_value_exit" "0"
+check "module-interface-invalid-null" "$iface_invalid_value" "null"
+
+# Interface and implementation are distinct invalidation boundaries. All four projects type-check;
+# body/private changes move the current flat core but not Lib's checked public interface, while a
+# signature change moves both. Metadata stays explicit that these facts are whole-program-derived,
+# 64-bit, and not an independently compiled artifact.
+capture iface_base_dump iface_base_exit "$bang" query dump "$tmpdir/interface-base/main.bang" 2>/dev/null
+capture iface_public_dump iface_public_exit "$bang" query dump "$tmpdir/interface-public-body/main.bang" 2>/dev/null
+capture iface_private_dump iface_private_exit "$bang" query dump "$tmpdir/interface-private-body/main.bang" 2>/dev/null
+capture iface_signature_dump iface_signature_exit "$bang" query dump "$tmpdir/interface-signature/main.bang" 2>/dev/null
+check "module-interface-base-exit" "$iface_base_exit" "0"
+check "module-interface-public-body-exit" "$iface_public_exit" "0"
+check "module-interface-private-body-exit" "$iface_private_exit" "0"
+check "module-interface-signature-exit" "$iface_signature_exit" "0"
+capture iface_rows iface_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+cores=[d["coreFingerprint"]["digest"] for d in ds]
+libs=[next(x for x in d["moduleInterfaces"] if x["module"]=="Lib") for d in ds]
+meta=libs[0]
+export=meta["exports"]
+print("|".join([
+  meta["scope"],meta["algorithm"],str(meta["cacheKeySafe"]).lower(),
+  str(meta["separateCompilationReady"]).lower(),str(len(meta["digest"])),
+  str(export==[{"id":"Lib::answer","name":"answer","kind":"let","type":"Int","row":"{}","typeError":None,"shape":None}]),
+  str(libs[0]["digest"]==libs[1]["digest"]==libs[2]["digest"]),
+  str(libs[0]["digest"]!=libs[3]["digest"]),
+  str(cores[0]!=cores[1] and cores[0]!=cores[2] and cores[0]!=cores[3])]))
+' 2>/dev/null <<< "$iface_base_dump
+$iface_public_dump
+$iface_private_dump
+$iface_signature_dump"
+check "module-interface-extractor-exit" "$iface_rows_exit" "0"
+check "module-interface-boundary-discrimination" "$iface_rows" "resolved-program-module-interface|bang-module-interface-json-v1-uint64|false|false|16|True|True|True|True"
+
+capture iface_shape_base_dump iface_shape_base_exit "$bang" query dump "$tmpdir/interface-shape-base/main.bang" 2>/dev/null
+capture iface_shape_changed_dump iface_shape_changed_exit "$bang" query dump "$tmpdir/interface-shape-changed/main.bang" 2>/dev/null
+check "module-interface-shape-base-exit" "$iface_shape_base_exit" "0"
+check "module-interface-shape-changed-exit" "$iface_shape_changed_exit" "0"
+capture iface_shape_rows iface_shape_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+libs=[next(x for x in d["moduleInterfaces"] if x["module"]=="Lib") for d in ds]
+exports=[lib["exports"][0] for lib in libs]
+print("|".join([str(libs[0]["digest"]!=libs[1]["digest"]),str(exports[0]["shape"]!=exports[1]["shape"]),str(exports[0]["type"] is None and exports[1]["type"] is None)]))
+' 2>/dev/null <<< "$iface_shape_base_dump
+$iface_shape_changed_dump"
+check "module-interface-shape-extractor-exit" "$iface_shape_rows_exit" "0"
+check "module-interface-shape-discrimination" "$iface_shape_rows" "True|True|True"
+
+# An unchanged module's interface still moves when an unrelated earlier effect shifts its global
+# label. This is a retained negative pole: the view is module-grouped but not separate-compilation
+# ready, exactly as its machine-readable metadata says.
+capture iface_label_base_dump iface_label_base_exit "$bang" query dump "$tmpdir/interface-label-base/main.bang" 2>/dev/null
+capture iface_label_shifted_dump iface_label_shifted_exit "$bang" query dump "$tmpdir/interface-label-shifted/main.bang" 2>/dev/null
+check "module-interface-label-base-exit" "$iface_label_base_exit" "0"
+check "module-interface-label-shifted-exit" "$iface_label_shifted_exit" "0"
+capture iface_label_rows iface_label_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+libs=[next(x for x in d["moduleInterfaces"] if x["module"]=="Lib") for d in ds]
+types=[next(x for x in lib["exports"] if x["name"]=="identity")["type"] for lib in libs]
+print("|".join([str(libs[0]["digest"]!=libs[1]["digest"]),str(types[0]!=types[1]),types[0],types[1]]))
+' 2>/dev/null <<< "$iface_label_base_dump
+$iface_label_shifted_dump"
+check "module-interface-label-extractor-exit" "$iface_label_rows_exit" "0"
+check "module-interface-global-label-coupling" "$iface_label_rows" "True|True|Thunk Cap 4 -> Int -> Int|Thunk Cap 5 -> Int -> Int"
 
 # EVERY curated verb's answer is a PROJECTION of `dump` — the layering claim, checked directly:
 # `symbols`'s "decls" entries equal `dump`'s "decls" entries byte-for-byte (same DeclFact.toJson).
@@ -208,11 +344,14 @@ echo "  (dump examples corpus: $examples_pass/$((examples_pass + examples_fail))
 
 # ── MULTI-FILE dump: imports field must reflect the ENTRY file's OWN header (a real fidelity gap
 # found+fixed this slice — `mergeModules` clears `imports`/`uses` on its merged output, so `dump`
-# must splice the pre-merge header back on; falsify by requiring the field is NONEMPTY). ──
+# must thread the pre-merge header as presentation data without mutating the semantic `Prog`;
+# falsify by requiring both a NONEMPTY header and a non-null resolved core/interface). ──
 got_out4="$("$bang" query dump examples/json/main.bang 2>/dev/null)" && got_exit4=0 || got_exit4=$?
 check "dump-multifile-exit" "$got_exit4" "0"
 check "dump-multifile-imports-present" "$(printf '%s' "$got_out4" | grep -o '"imports":\[{"module":"Json"}' || true)" '"imports":[{"module":"Json"}'
 check "dump-multifile-qualified-present" "$(printf '%s' "$got_out4" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
+check "dump-multifile-core-present" "$(printf '%s' "$got_out4" | grep -o '"coreFingerprint":{"scope":"resolved-program"' || true)" '"coreFingerprint":{"scope":"resolved-program"'
+check "dump-multifile-interfaces-present" "$(printf '%s' "$got_out4" | grep -o '"moduleInterfaces":\[{"module":"@entry"' || true)" '"moduleInterfaces":[{"module":"@entry"'
 
 # The resolver's completed dependency-first walk is the SSoT for topology: JSON is a diamond, so
 # the public facts must contain four logical nodes and five direct edges exactly once. The facts
@@ -598,8 +737,8 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (130 — dependency observation, recomputation, reuse, module graph, structural
-# invalidation-fanout, and resolved-core fingerprint checks included);
+# always runs (148 — dependency observation, recomputation, reuse, module graph, structural
+# invalidation-fanout, resolved-core fingerprint, and resolved-module-interface checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -608,7 +747,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=130
+want_total=148
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

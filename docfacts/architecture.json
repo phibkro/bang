@@ -8234,7 +8234,7 @@
         "Bang.Core.Fingerprint",
         "Bang.Frontend.Diagnostics"
       ],
-      "loc": 1180,
+      "loc": 1293,
       "name": "Bang.Frontend.Query",
       "path": "Bang/Frontend/Query.lean",
       "publicSymbols": [
@@ -8426,169 +8426,205 @@
         },
         {
           "kind": "def",
-          "line": 697,
-          "name": "dumpJsonP",
+          "line": 711,
+          "name": "moduleInterfaceAlgorithm",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "structure",
+          "line": 715,
+          "name": "ModuleExportFact",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "structure",
+          "line": 726,
+          "name": "ModuleInterfaceFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 729,
-          "name": "dumpJson",
+          "line": 740,
+          "name": "ModuleExportFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 761,
-          "name": "symbolsJsonP",
+          "line": 747,
+          "name": "ModuleInterfaceFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 767,
-          "name": "symbolsJson",
-          "visibilityBasis": "public-modifier"
-        },
-        {
-          "kind": "def",
-          "line": 780,
-          "name": "typeJsonP",
-          "visibilityBasis": "public-modifier"
-        },
-        {
-          "kind": "def",
-          "line": 791,
-          "name": "typeJson",
+          "line": 766,
+          "name": "moduleInterfaceFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
           "line": 799,
+          "name": "dumpJsonP",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 839,
+          "name": "dumpJson",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 874,
+          "name": "symbolsJsonP",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 880,
+          "name": "symbolsJson",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 893,
+          "name": "typeJsonP",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 904,
+          "name": "typeJson",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 912,
           "name": "effectsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 810,
+          "line": 923,
           "name": "effectsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 818,
+          "line": 931,
           "name": "lawsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 826,
+          "line": 939,
           "name": "lawsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 843,
+          "line": 956,
           "name": "defJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 850,
+          "line": 963,
           "name": "defJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 863,
+          "line": 976,
           "name": "refsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 871,
+          "line": 984,
           "name": "refsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 900,
+          "line": 1013,
           "name": "HoverFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 921,
+          "line": 1034,
           "name": "hoverAtP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 941,
+          "line": 1054,
           "name": "hoverJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 948,
+          "line": 1061,
           "name": "hoverJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1007,
+          "line": 1120,
           "name": "holeMarkersIn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1036,
+          "line": 1149,
           "name": "holesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1053,
+          "line": 1166,
           "name": "holesJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1058,
+          "line": 1171,
           "name": "holesJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1082,
+          "line": 1195,
           "name": "dependentsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1099,
+          "line": 1212,
           "name": "impactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1110,
+          "line": 1223,
           "name": "impactJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1140,
+          "line": 1253,
           "name": "semverDiff",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1163,
+          "line": 1276,
           "name": "semverDiffJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1171,
+          "line": 1284,
           "name": "semverDiffJson",
           "visibilityBasis": "public-modifier"
         }
@@ -12778,7 +12814,7 @@
       "name": "Core"
     },
     {
-      "loc": 18106,
+      "loc": 18219,
       "moduleCount": 12,
       "name": "Frontend"
     },

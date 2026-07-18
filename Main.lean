@@ -692,6 +692,19 @@ structure ResolvedFile where
   modules : List Bang.Query.ModuleFact := [Bang.Query.entryModuleFact]
   /-- Direct dependency edges projected from the parsed headers the resolver actually consumed. -/
   moduleDeps : List Bang.Query.ModuleDepFact := []
+  /-- Resolver-owned module name → final merged names of that module's public declarations. -/
+  moduleExports : List (String × List String) := []
+
+/-- Reify `TypeCheck.qualifyDeclName`'s declaration-name rule for resolver provenance. The pure
+merger remains authoritative; this projection only tells query facts which final name corresponds
+to an original module declaration. -/
+def mergedDeclName (selectedNames : List String) (modName : String) (d : Bang.Surface.Decl) : String :=
+  let sourceName := Bang.Surface.Decl.name d
+  match d with
+  | .effectD .. | .handlerD .. | .traitD .. =>
+      if selectedNames.contains sourceName then sourceName else modName ++ "_" ++ sourceName
+  | .implD .. => sourceName
+  | _ => modName ++ "_" ++ sourceName
 
 def resolveEntryFileRawWithProvenance (path : String) : IO (Except String ResolvedFile) := do
   let entryPath : System.FilePath := ⟨path⟩
@@ -758,14 +771,7 @@ def resolveEntryFileRawWithProvenance (path : String) : IO (Except String Resolv
         -- handler, and trait names deliberately stay bare; an impl retains its trait key.
         let selectedNames := entryProg.uses.flatMap (·.names)
         let declModules := st.resolved.flatMap (fun (modName, modP) =>
-          modP.decls.map (fun d =>
-            let sourceName := Bang.Surface.Decl.name d
-            let finalName := match d with
-              | .effectD .. | .handlerD .. | .traitD .. =>
-                  if selectedNames.contains sourceName then sourceName else modName ++ "_" ++ sourceName
-              | .implD .. => sourceName
-              | _ => modName ++ "_" ++ sourceName
-            (finalName, modName)))
+          modP.decls.map (fun d => (mergedDeclName selectedNames modName d, modName)))
         -- Project the resolver's completed walk instead of performing a second filesystem scan.
         -- Names are language-level identities only: no absolute/real path reaches the public dump.
         let modules := Bang.Query.entryModuleFact :: st.resolved.map (fun (modName, _) =>
@@ -778,7 +784,20 @@ def resolveEntryFileRawWithProvenance (path : String) : IO (Except String Resolv
             if names.contains name then names else names ++ [name]) []
         let moduleDeps := (("@entry", entryProg) :: st.resolved).flatMap (fun (modName, modP) =>
           (dependencyNames modP).map (Bang.Query.ModuleDepFact.mk modName))
-        return .ok { prog := merged, trustedHostNames, declModules, modules, moduleDeps }
+        let publicDeclNames (modName : String) (modP : Prog) : List String :=
+          modP.decls.filterMap (fun d =>
+            -- An `impl` is keyed by its trait name for lookup, but it is not an independently
+            -- exported declaration (Decl's public contract). Projecting it here could alias the
+            -- trait fact or invent an interface row with no source-level export identity.
+            match d with
+            | .implD .. => none
+            | _ =>
+              if modP.pubNames.contains d.name then
+                some (if modName == "@entry" then d.name else mergedDeclName selectedNames modName d)
+              else none) |>.eraseDups
+        let moduleExports := ("@entry", publicDeclNames "@entry" entryProg) ::
+          st.resolved.map (fun (modName, modP) => (modName, publicDeclNames modName modP))
+        return .ok { prog := merged, trustedHostNames, declModules, modules, moduleDeps, moduleExports }
 
 /-- Compatibility projection for non-host commands: provenance is retained only by the host route. -/
 def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
@@ -1756,14 +1775,13 @@ def runQueryDump (file : Option String) : IO UInt32 := do
             match ← resolveEntryFileWithProvenance path with
             | .error e   => IO.println (Bang.Query.errorJsonOk e); pure 1
             | .ok resolved =>
-                -- `mergeModules` clears `imports`/`uses` on its OWN merged output (D1-D4's flat
-                -- decl-list convention) — splice the ENTRY file's own header back on so `dump`'s
-                -- `"imports"`/`"uses"` fields report what the program's source ACTUALLY declares,
-                -- not an artifact of the merge (a real fidelity gap `dumpJsonP` alone can't see,
-                -- since it only ever receives the merged `Prog`).
-                let p := { resolved.prog with imports := headerProg.imports, uses := headerProg.uses }
-                printQueryOk (Bang.Query.dumpJsonP p bangVersion resolved.declModules
-                  resolved.modules resolved.moduleDeps)
+                -- `mergeModules` clears `imports`/`uses` on its semantic output. Thread the ENTRY
+                -- source headers as PRESENTATION facts instead of splicing them back into the
+                -- already-merged `Prog`: semantic projections (core/interface fingerprints) must
+                -- check the exact resolver result, not an unresolvable hybrid AST.
+                printQueryOk (Bang.Query.dumpJsonP resolved.prog bangVersion resolved.declModules
+                  resolved.modules resolved.moduleDeps resolved.moduleExports
+                  (some headerProg.imports) (some headerProg.uses))
 
 /-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
 def runQuerySymbols (file : Option String) : IO UInt32 := do
@@ -2569,7 +2587,8 @@ def usage : String :=
   "                                     PROJECTION of the same facts `dump` exports (schema in\n" ++
   "                                     docs/reference/language.md's `bang query` section).\n" ++
   "    bang query dump [<file.bang>]           THE complete fact base: resolved-core fingerprint,\n" ++
-  "                                             every decl (name/kind/type/row/visibility), every\n" ++
+  "                                             checked public interfaces per resolved module, every\n" ++
+  "                                             decl (name/kind/type/row/visibility), every\n" ++
   "                                             name-ref edge/law, import/use — one JSON object\n" ++
   "    bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row\n" ++
   "                                             (dump's own \"decls\" field, narrowed)\n" ++

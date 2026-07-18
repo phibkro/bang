@@ -963,6 +963,16 @@ not six independent implementations.
     "digest": "16 lowercase hex digits",
     "cacheKeySafe": false
   } | null,
+  "moduleInterfaces": [ {
+    "module": "@entry|logical module name",
+    "scope": "resolved-program-module-interface",
+    "algorithm": "bang-module-interface-json-v1-uint64",
+    "digest": "16 lowercase hex digits",
+    "cacheKeySafe": false, "separateCompilationReady": false,
+    "exports": [ { "id": "Module::localName", "name": "localName",
+                   "kind": "..", "type": "T"|null, "row": "{..}"|null,
+                   "typeError": "msg"|null, "shape": {..}|null } ]
+  } ] | null,
   "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
   "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",
@@ -1006,6 +1016,20 @@ Equal digests are therefore useful evidence about the chosen semantic boundary b
 used to accept an unchecked persistent cache hit. A future safe store key may change `algorithm` and
 set `cacheKeySafe` only after collision resistance, version domains, and the artifact boundary are
 concretely gated.
+
+`moduleInterfaces` is the **checked public-interface view**, grouped by the resolver's logical
+modules. Each export projects the same checked `DeclFact` already present in `decls`: value
+types/rows or structural shapes are included, while declaration bodies and private declarations
+are absent. Therefore an implementation-only edit can move `coreFingerprint` while preserving a
+module interface; changing a public signature or shape moves that interface. Invalid typed input
+reports `null`, as the view is checked rather than a parse-only export inventory.
+
+This is deliberately **not** a separately compiled artifact. Its scope says
+`resolved-program-module-interface`, and both `cacheKeySafe` and `separateCompilationReady` are
+`false`: types are produced after whole-program module merge, top-level values still lower into one
+lexical chain, and user-effect labels are allocated in global declaration order. An unrelated earlier
+effect can therefore move an otherwise unchanged module's rendered interface. Treat the digest as an
+invalidation-analysis probe, not permission to skip lowering, linking, or unchecked cache validation.
 
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on

@@ -680,38 +680,148 @@ public def coreFingerprintOf (p : Prog) : Option CoreFingerprintFact :=
       cacheKeySafe := false
     }
 
-/-- JSON value for the optional fingerprint fact (`null` when typed lowering fails). -/
-def coreFingerprintJson (p : Prog) : String :=
-  match coreFingerprintOf p with
+/-- JSON value for an already-computed optional fingerprint fact. -/
+def coreFingerprintJson (fact : Option CoreFingerprintFact) : String :=
+  match fact with
   | none => "null"
   | some fact => fact.toJson
+
+/-! ### Resolved-module public-interface probe
+
+The whole-program `Comp` fingerprint above is an implementation-result observation. A module's
+PUBLIC INTERFACE is a different boundary: it contains the checked type/row or structural shape of
+each exported declaration, but deliberately excludes implementation bodies. Consequently a body
+edit may change `coreFingerprint` while leaving this interface unchanged. That is useful evidence
+for future analysis/type-check invalidation, but it is not a separately compiled code artifact and
+cannot by itself justify skipping link/code-generation work.
+
+The resolver supplies the exact final declaration spellings exported by each original module.
+`Query` then projects those names onto the same `DeclFact`s already emitted by `dump`; there is no
+second declaration checker or reconstruction from source text.
+
+`scope=resolved-program-module-interface` and `separateCompilationReady=false` are load-bearing.
+The facts are grouped per source module, but their checked types still come from whole-program
+elaboration; user-effect labels, for example, are allocated by global declaration order. This view
+can measure an interface firewall, while explicitly exposing why it is not yet an independent
+module artifact.
+-/
+
+/-- Stable algorithm name for the canonical interface-record fold. The digest remains an
+experimental 64-bit change detector, not a persistent cache key. -/
+public def moduleInterfaceAlgorithm : String := "bang-module-interface-json-v1-uint64"
+
+/-- **PUBLIC (TIER 1):** one exported declaration in a resolved module interface. `id` is path-free
+and presentation-independent (`Module::localName`); implementation bodies are intentionally absent. -/
+public structure ModuleExportFact where
+  id        : String
+  name      : String
+  kind      : DeclKind
+  type      : Option String
+  row       : Option String
+  typeError : Option String
+  shape     : Option String
+  deriving Repr
+
+/-- **PUBLIC (TIER 1):** one resolved module's public interface and its experimental digest. -/
+public structure ModuleInterfaceFact where
+  module       : String
+  scope        : String
+  algorithm    : String
+  digest       : String
+  cacheKeySafe : Bool
+  separateCompilationReady : Bool
+  exports      : List ModuleExportFact
+  deriving Repr
+
+-- Generated `Repr` code ignores its precedence argument.
+attribute [nolint unusedArguments] instReprModuleExportFact.repr instReprModuleInterfaceFact.repr
+
+/-- One module-export record → its canonical JSON object. -/
+public def ModuleExportFact.toJson (f : ModuleExportFact) : String :=
+  jsonObj [jsonStrField "id" f.id, jsonStrField "name" f.name,
+    jsonField "kind" f.kind.toJson, jsonOptStrField "type" f.type,
+    jsonOptStrField "row" f.row, jsonOptStrField "typeError" f.typeError,
+    jsonField "shape" (f.shape.getD "null")]
+
+/-- One module-interface record → its public JSON object. -/
+public def ModuleInterfaceFact.toJson (f : ModuleInterfaceFact) : String :=
+  jsonObj [jsonStrField "module" f.module, jsonStrField "scope" f.scope,
+    jsonStrField "algorithm" f.algorithm,
+    jsonStrField "digest" f.digest,
+    jsonField "cacheKeySafe" (if f.cacheKeySafe then "true" else "false"),
+    jsonField "separateCompilationReady" (if f.separateCompilationReady then "true" else "false"),
+    jsonField "exports" (jsonArr (f.exports.map ModuleExportFact.toJson))]
+
+/-- Convert one resolver-owned exported declaration name into the interface projection of the
+already-computed `DeclFact`. -/
+def moduleExportFactOf (declModule : List (String × String)) (moduleName : String)
+    (f : DeclFact) : ModuleExportFact :=
+  let localName := if moduleName == "@entry" then f.name else displayDeclName declModule f.name
+  { id := moduleName ++ "::" ++ localName, name := localName, kind := f.kind,
+    type := f.type, row := f.row, typeError := f.typeError, shape := f.shape }
+
+/-- **PUBLIC (TIER 1):** project resolver-owned `(module, final exported declaration names)` onto
+the dump's existing declaration facts. Missing names fail loudly at this pure seam; the JSON layer
+isolates that inconsistency as `null` rather than emitting a silently incomplete interface. -/
+public def moduleInterfaceFactsOf (facts : List DeclFact) (declModule : List (String × String))
+    (moduleExports : List (String × List String)) : Except String (List ModuleInterfaceFact) :=
+  moduleExports.mapM fun (moduleName, names) => do
+    let exports ← names.eraseDups.mapM fun name => do
+      let f ← match facts.find? (·.name == name) with
+        | some f => pure f
+        | none => throw s!"module interface '{moduleName}': exported declaration '{name}' is absent from the merged fact base"
+      pure (moduleExportFactOf declModule moduleName f)
+    let payload := jsonObj [jsonStrField "module" moduleName,
+      jsonField "exports" (jsonArr (exports.map ModuleExportFact.toJson))]
+    let digest := Bang.CoreFingerprint.toHex16
+      (Bang.CoreFingerprint.hashTextWith (Bang.CoreFingerprint.tag 70) payload)
+    pure (ModuleInterfaceFact.mk moduleName "resolved-program-module-interface"
+      moduleInterfaceAlgorithm digest false false exports)
+
+/-- JSON value for checked module interfaces. Whole-program lowering must succeed because this is a
+checked-interface view, not a best-effort parse inventory. -/
+def moduleInterfacesJson (core : Option CoreFingerprintFact) (facts : List DeclFact)
+    (declModule : List (String × String)) (moduleExports : List (String × List String)) : String :=
+  if core.isNone then "null" else
+    match moduleInterfaceFactsOf facts declModule moduleExports with
+    | .ok interfaces => jsonArr (interfaces.map ModuleInterfaceFact.toJson)
+    | .error _ => "null"
 
 /-- **PUBLIC entry, `Prog`-taking** (the RESOLVER-AWARE route — `Main.lean`'s multi-file path hands
 an already-resolved-and-merged `Prog` here, optionally with a `declModule` provenance map from ITS
 OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the single-file/stdin
 route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this module never
 hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1",
-   "coreFingerprint":{...},"modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
+   "coreFingerprint":{...},"moduleInterfaces":[ModuleInterfaceFact,...],
+   "modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
 "refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
 schema documented in `docs/reference/language.md`. -/
 public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := [])
     (modules : List ModuleFact := [entryModuleFact])
-    (moduleDeps : List ModuleDepFact := []) : String :=
+    (moduleDeps : List ModuleDepFact := [])
+    (moduleExports : List (String × List String) := [])
+    (sourceImports : Option (List Bang.Surface.ImportDecl) := none)
+    (sourceUses : Option (List Bang.Surface.UseDecl) := none) : String :=
   let facts := (declFactsOf p).map (fun f => f.withModule (declModule.lookup f.name))
+  let core := coreFingerprintOf p
+  let exports := if moduleExports.isEmpty then [("@entry", p.pubNames)] else moduleExports
+  let imports := sourceImports.getD p.imports
+  let uses := sourceUses.getD p.uses
   let lawsJ := match Bang.TypeCheck.lawInstancesOfProg p with
     | .ok insts => insts.map lawInstanceJson
     | .error _  => []   -- same per-seam failure isolation as `dumpJson`: law discovery cannot hide
                          -- otherwise valid declaration/reference/header facts.
   jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
            jsonStrField "bangVersion" bangVersion,
-           jsonField "coreFingerprint" (coreFingerprintJson p),
+           jsonField "coreFingerprint" (coreFingerprintJson core),
+           jsonField "moduleInterfaces" (moduleInterfacesJson core facts declModule exports),
            jsonField "modules" (jsonArr (modules.map ModuleFact.toJson)),
            jsonField "moduleDeps" (jsonArr (moduleDeps.map ModuleDepFact.toJson)),
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
            jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
            jsonField "laws" (jsonArr lawsJ),
-           jsonField "imports" (jsonArr (p.imports.map importJson)),
-           jsonField "uses" (jsonArr (p.uses.map useJson))]
+           jsonField "imports" (jsonArr (imports.map importJson)),
+           jsonField "uses" (jsonArr (uses.map useJson))]
 
 /-- **PUBLIC entry**: `bang query dump <file>` — the single-file/stdin route: parse `src`, assemble
 the full fact base INCLUDING law instances (this route has real source text `lawInstancesOf` can
@@ -732,6 +842,7 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
   | .ok p0 =>
       let p := (Bang.TypeCheck.expandDerives p0).toOption.getD p0
       let facts := declFactsOf p
+      let core := coreFingerprintOf p
       let lawsJ := match Bang.TypeCheck.lawInstancesOf src with
         | .ok insts => insts.map lawInstanceJson
         | .error _  => []   -- a law-discovery failure never blanks the REST of the dump (ADR-0046:
@@ -739,7 +850,9 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
                              -- per-decl `typeError` isolation, not an all-or-nothing gate).
       jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
                jsonStrField "bangVersion" bangVersion,
-               jsonField "coreFingerprint" (coreFingerprintJson p),
+               jsonField "coreFingerprint" (coreFingerprintJson core),
+               jsonField "moduleInterfaces"
+                 (moduleInterfacesJson core facts [] [("@entry", p.pubNames)]),
                jsonField "modules" (jsonArr [entryModuleFact.toJson]),
                jsonField "moduleDeps" (jsonArr []),
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),

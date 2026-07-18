@@ -110,3 +110,30 @@ centralized as `Bang.CoreFingerprint` rather than duplicated. The tracer establi
 but its useful granularity is still open. Before choosing SHA/BLAKE, a store, or a scheduler, identify
 the smallest sound module-result/interface boundary that preserves ADR-0093's flat kernel semantics.
 Cryptographic hashing is necessary for persistent keys but does not create that missing boundary.
+
+## Interface input (2026-07-18): the public firewall is real; the code artifact is still missing
+
+`PATH-module-interface-boundary-probe` preserved each resolved module's exact public-export provenance
+and projected it onto the checked declaration facts already returned by `bang query dump`. The tracer
+separates two boundaries that fork 5 previously bundled together:
+
+1. **A useful checked interface firewall exists.** Editing a public value's body or a private helper
+   changes the resolved core fingerprint but preserves the module-interface digest. Changing the
+   public signature/shape changes the interface. Bodies and private declarations are absent.
+2. **That interface is not a separately compiled code artifact.** Top-level values still lower into
+   one whole-program lexical chain, and type/trait/effect environments are global. There is no module
+   body that can be independently lowered, validated, stored, and linked behind the interface.
+3. **Current identities are not independently stable.** User-effect labels are allocated by global
+   declaration order. Adding an unrelated earlier effect changes an unchanged dependency's rendered
+   capability from `Cap 4` to `Cap 5`, moving its interface digest. The end-to-end suite retains this
+   as a falsifier instead of normalizing away the architectural coupling.
+4. **The schema prevents premature cache claims.** Each interface names
+   `scope=resolved-program-module-interface`, `cacheKeySafe=false`, and
+   `separateCompilationReady=false`; invalid typed subjects report `moduleInterfaces:null`.
+
+**Decision:** preserve the checked interface view as the analysis/type-check invalidation boundary,
+distinct from the resolved core implementation result. The next justified architecture work is stable
+symbolic cross-module type/effect identities, followed by an explicit independently lowerable body and
+link/validation contract. Continue to defer a persistent store, scheduler, cryptographic key choice,
+and cache-hit path: implementing those now would automate invalidation at a boundary the tracer has
+shown to be globally coupled and artifact-incomplete.

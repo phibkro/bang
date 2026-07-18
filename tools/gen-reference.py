@@ -1450,6 +1450,16 @@ def render():
     L.append('    "digest": "16 lowercase hex digits",')
     L.append('    "cacheKeySafe": false')
     L.append("  } | null,")
+    L.append('  "moduleInterfaces": [ {')
+    L.append('    "module": "@entry|logical module name",')
+    L.append('    "scope": "resolved-program-module-interface",')
+    L.append('    "algorithm": "bang-module-interface-json-v1-uint64",')
+    L.append('    "digest": "16 lowercase hex digits",')
+    L.append('    "cacheKeySafe": false, "separateCompilationReady": false,')
+    L.append('    "exports": [ { "id": "Module::localName", "name": "localName",')
+    L.append('                   "kind": "..", "type": "T"|null, "row": "{..}"|null,')
+    L.append('                   "typeError": "msg"|null, "shape": {..}|null } ]')
+    L.append("  } ] | null,")
     L.append(
         '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
     )
@@ -1547,6 +1557,44 @@ def render():
         "set `cacheKeySafe` only after collision resistance, version domains, and the artifact boundary are"
     )
     L.append("concretely gated.")
+    L.append("")
+    L.append(
+        "`moduleInterfaces` is the **checked public-interface view**, grouped by the resolver's logical"
+    )
+    L.append(
+        "modules. Each export projects the same checked `DeclFact` already present in `decls`: value"
+    )
+    L.append(
+        "types/rows or structural shapes are included, while declaration bodies and private declarations"
+    )
+    L.append(
+        "are absent. Therefore an implementation-only edit can move `coreFingerprint` while preserving a"
+    )
+    L.append(
+        "module interface; changing a public signature or shape moves that interface. Invalid typed input"
+    )
+    L.append(
+        "reports `null`, as the view is checked rather than a parse-only export inventory."
+    )
+    L.append("")
+    L.append(
+        "This is deliberately **not** a separately compiled artifact. Its scope says"
+    )
+    L.append(
+        "`resolved-program-module-interface`, and both `cacheKeySafe` and `separateCompilationReady` are"
+    )
+    L.append(
+        "`false`: types are produced after whole-program module merge, top-level values still lower into one"
+    )
+    L.append(
+        "lexical chain, and user-effect labels are allocated in global declaration order. An unrelated earlier"
+    )
+    L.append(
+        "effect can therefore move an otherwise unchanged module's rendered interface. Treat the digest as an"
+    )
+    L.append(
+        "invalidation-analysis probe, not permission to skip lowering, linking, or unchecked cache validation."
+    )
     L.append("")
     L.append(
         "Every `DeclFact` key is **always present** — `null` means absent, never a missing key —"
