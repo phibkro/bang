@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=examples/*/main.bang,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json runs-in=verify
+# tool: role=test couples=examples/*/main.bang,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -246,6 +246,9 @@ fi
 
 # ══ 2b. REACTIVE FORMULA DAG — dependency observation reuses dump's existing refs ══
 
+if python3 tools/gen-reactive-workload.py --check; then workload_fresh=0; else workload_fresh=$?; fi
+check "reactive-measure-generated-fixture-fresh" "$workload_fresh" "0"
+
 capture reactive_dump reactive_dump_exit "$bang" query dump examples/reactive-spreadsheet/Formulas.bang 2>/dev/null
 capture reactive_edges reactive_edges_exit python3 -c \
   'import json,sys; print(json.dumps(json.load(sys.stdin)["refs"],separators=(",",":")))' \
@@ -268,6 +271,33 @@ capture local_edges local_edges_exit python3 -c \
 check "reactive-deps-local-negative-dump-exit" "$local_dump_exit" "0"
 check "reactive-deps-local-negative-extractor-exit" "$local_edges_exit" "0"
 check "reactive-deps-local-negative-empty" "$local_edges" "[]"
+
+# The representative measurement workload keeps graph shape separate from the in-band runtime count.
+# This summary catches a shortened workload, direct line→input bypass, or fan-in drift without checking
+# in a second 202-edge fixture.
+capture measured_dump measured_dump_exit "$bang" query dump \
+  examples/reactive-recomputation/Workload.bang 2>/dev/null
+capture measured_shape measured_shape_exit python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+refs = d["refs"]
+decls = d["decls"]
+summary = {
+    "decls": len(decls),
+    "refs": len(refs),
+    "lines": sum(x["name"].startswith("line") for x in decls),
+    "priceRefs": sum(x["to"] == "price" for x in refs),
+    "quantityRefs": sum(x["to"] == "quantity" for x in refs),
+    "unitAmountRefs": sum(x["to"] == "unitAmount" for x in refs),
+    "totalRefs": sum(x["from"] == "total" for x in refs),
+    "lineInputBypasses": sum(x["from"].startswith("line") and x["to"] in {"price", "quantity"} for x in refs),
+}
+print(json.dumps(summary, separators=(",", ":")))
+' <<< "$measured_dump"
+check "reactive-measure-dump-exit" "$measured_dump_exit" "0"
+check "reactive-measure-shape-extractor-exit" "$measured_shape_exit" "0"
+check "reactive-measure-exact-shape" "$measured_shape" \
+  '{"decls":104,"refs":202,"lines":100,"priceRefs":1,"quantityRefs":1,"unitAmountRefs":100,"totalRefs":100,"lineInputBypasses":0}'
 
 # ══ 3. `symbols` (thin projection of dump's "decls") ══
 
@@ -458,7 +488,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (94 — the former 86 plus eight reactive dependency-observation checks);
+# always runs (98 — the former 86 plus eight dependency-observation and four recomputation checks);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -467,7 +497,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=94
+want_total=98
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

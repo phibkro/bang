@@ -1,0 +1,14 @@
+-- Measured full-DAG pull recomputation over a representative 100-line spreadsheet.
+use Workload (total)
+
+state 10 as price in
+state 2 as quantity in
+let liveTotal =
+  {let p = price.get in
+   let q = quantity.get in
+   $total p q}
+in
+let before = $liveTotal in
+let updated = price.put(12) in
+let after = $liveTotal in
+(before, after)

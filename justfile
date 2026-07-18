@@ -319,6 +319,7 @@ fitness:
     python3 tools/gen-notes-index.py --check
     python3 tools/gen-agent-pack.py --check
     python3 tools/gen-tools-index.py --check
+    python3 tools/gen-reactive-workload.py --check
     python3 tools/gen-questions-index.py --check
     python3 tools/gen-llms-txt.py --check
     python3 tools/refs.py check

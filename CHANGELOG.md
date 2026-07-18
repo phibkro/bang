@@ -213,6 +213,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - make handler policies executable (`change:0ffaae90bc300a034cda01876ad411d92320280c3f594aee4328c2e266e9f2f8`)
 - add resource contract tracer (`change:79903d7299bac954a296f128078ef07b7db6f25b804650e03161549608068865`)
 - add reactive spreadsheet tracer (`change:cac4547e0e2206f91c0cb14d762f02146f8b299c36bd4d8f706acdb4e785e171`)
+- expose reactive formula dependencies (`change:fb3d94b054e92d338208ef4126a14f73342c0abad475408588e5fbe12fa5d8f1`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

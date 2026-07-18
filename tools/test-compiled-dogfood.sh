@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=examples/calc,examples/json,examples/reactive-spreadsheet runs-in=verify
+# tool: role=test couples=examples/calc,examples/json,examples/reactive-spreadsheet,examples/reactive-recomputation runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-compiled-dogfood.sh — the --compiled DIFFERENTIAL gate for the dogfood programs (#135).
 #
@@ -17,7 +17,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # Calc and JSON retain the original diagnosis contract (recursive first-class-cap traversal and pure
 # multi-module parse). The reactive spreadsheet additionally keeps the first actor-visible reactivity
 # tracer honest on the compiled route: named State inputs, thunk recomputation, and early sampling must
-# agree with the same oracle.
+# agree with the same oracle. Reactive recomputation makes the 100-line in-band call count part of that
+# oracle, so the compiled route cannot silently erase or duplicate the measurement.
 #
 # GOTCHA (set -euo pipefail): an unguarded `$(cmd)` capture dies SILENTLY on a nonzero exit (a
 # truncated false-green). Every run below captures standalone with `&& … || …` around the exit, and
@@ -42,7 +43,7 @@ TIMEOUT="${COMPILED_DOGFOOD_TIMEOUT:-90}"
 # The dogfood programs the diagnosis proved pass --compiled. calc's first-class-cap EFFECT and
 # json's pure parse are BOTH covered; hostio-echo is excluded (host-IO needs the driver, not a
 # pure compiled run — ADR-0104).
-PROGRAMS=(calc json reactive-spreadsheet)
+PROGRAMS=(calc json reactive-spreadsheet reactive-recomputation)
 
 pass=0
 fail=0

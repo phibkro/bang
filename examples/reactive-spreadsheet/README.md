@@ -85,3 +85,6 @@ formula executed. It does **not** expose anonymous local subexpressions, maintai
 graph, cache formula values, invalidate only affected cells, schedule push propagation, diagnose
 general formula cycles, or prove glitch freedom. Those features need an observable workload and a
 subsequent PATH; calling this “incremental recomputation” would overstate the implementation.
+
+The successor workload in `../reactive-recomputation/` supplies that runtime observation separately:
+it profiles a 100-line fan-out/fan-in DAG without changing this small teaching example or adding a cache.
