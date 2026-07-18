@@ -1,0 +1,23 @@
+import Json
+import Parse
+import Io
+
+let dumpRootTag = {fun root =>
+    match (root : Json_Json) {
+      JNull -> 0,
+      JBool(x) -> 1,
+      JInt(x) -> 2,
+      JStr(x) -> 3,
+      JArr(x) -> 4,
+      JObj(x) -> 5,
+      JCons(x, y) -> 6,
+      JNilL -> 7,
+      JField(x, y) -> 8
+    }}
+
+let main =
+  let line = Io.readLine(()) in
+  match ($(Parse.parseComplete) line) {
+    None -> 0 - 1,
+    Some(root) -> $dumpRootTag root
+  }

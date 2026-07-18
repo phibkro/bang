@@ -20,7 +20,9 @@ ADR-0093 D5's operator ruling — every export here is a `pub let`/`pub let rec`
   (Json_Json * Str) ! {Div}`, the recursive-descent parser (array/object/string
   sub-parsers are nested `let rec`s inside `parseValue`'s body, closing over the
   outer name — bang has no mutual `let rec`), plus its `pub let` helpers
-  (`isDigit`/`isWs`/`dropWs`/`litMatch`/`parseTop`).
+  (`isDigit`/`isWs`/`dropWs`/`litMatch`/`parseTop`/`parseComplete`). `parseComplete`
+  rejects a valid prefix with trailing input and is the protocol-facing entry used by the compiler-fact
+  witnesses below.
   Its `data`-ctor and value references to `Json`'s constructors read `Json.JNull`
   (bare-import qualified access, rewritten to `Json_JNull` at merge time); its
   TYPE ascriptions spell the qualified name directly (`Json_Json` — `pTy` has no
@@ -33,14 +35,30 @@ ADR-0093 D5's operator ruling — every export here is a `pub let`/`pub let rec`
   calls `$(Parse.parseTop)`/`$(Print.printJson)` (the `$(mod.op) arg` calling
   convention for a bare-imported function — `$mod.op arg` does NOT parse the way
   you'd expect, since `$` forces only an ATOM and `mod.op` isn't one), parses a
-  flat array, a flat object, and a nested array/object — verifying constructor
+  flat array, a flat object, a nested array/object, and empty/nested containers — verifying constructor
   tags via `tagOf`/`tagAt` — then separately prints a hand-built `Json` value and
   checks the output against the expected canonical string.
 
 ```
-lake exe bang run examples/json/main.bang              # -> 163 (kernel oracle)
-lake exe bang run --compiled examples/json/main.bang    # -> 163 (verified machine, agrees)
+lake exe bang run examples/json/main.bang              # -> 30163 (kernel oracle)
+lake exe bang run --compiled examples/json/main.bang    # -> 30163 (verified machine, agrees)
 ```
+
+## Compiler-fact dogfood witnesses
+
+- `query-dump.bang` reads one live dump through `Console`, requires a complete JSON parse, and returns
+  the top-level object tag (`5`).
+- `interface-moved.bang` reads two dump lines and reports ordered
+  `preserved|moved|added|removed <module>` rows as a deliberately digest-level view.
+  `tools/test-query.sh` generates the dumps live and compares the result with
+  `tools/interface-diff.py`; Python remains the canonical consumer. Protocol input requires the
+  nonempty `moduleInterfaces` array supplied by current dumps (`@entry` is always present).
+
+The first live 6,249-byte dump uncovered a real parser bug: the immediate `[]`/`{}` branches returned
+their empty list without consuming `]`/`}`. Parent containers then failed. The library-only repair
+recognizes an immediate close only at container entry (not after a comma), and is gated by `[]`,
+`[ ]`, `{}`, `{\"x\":[]}`, `[{}]`, `[[],[]]`, refusal of `[1,]`/`{\"a\":1,}`, and fresh
+compiler-dump ingestion.
 
 `bang check` DOES resolve imports (resolver-aware, matching `bang run`) —
 `bang check --json examples/json/main.bang` ⟹ `{"ok":true,...}`, seeing every name

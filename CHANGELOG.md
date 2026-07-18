@@ -222,7 +222,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **query** — probe resolved core fingerprints (`change:765e34dbf85f68fe0eb4d512b0e71e70cc88e966de79aa46035a86253d7b69da`)
 - **query** — expose resolved module interfaces (`change:84792faf2dad25870c8d61c33cca91bf7b2885362f0edc15d2af06cee81bf445`)
 - **tools** — add scoped interface diff consumer (`change:a11442b6c6f3edf882cc44193657bf5aa9cd477ced558ca0071ffa47186b988b`)
-- **query** — expose declared laws in module interfaces (`change:dd2643813bc708b91e630b632b36e1398889cb9a2942c9a1eddb5e626618997e`)
+- **query** — expose declared laws in module interfaces (`change:663018b69237ed4a5325ae86806c352708d0301346797922658fc5188a5a53d0`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

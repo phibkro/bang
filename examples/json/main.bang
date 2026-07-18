@@ -50,5 +50,26 @@ let main =
     in
   let printedArrOk = $eq printedArr "[1,2,3]"
     in
+  let emptyArrayTag = ($tagOf) ($(Parse.parseTop) "[]")
+    in
+  let spacedEmptyArrayTag = ($tagOf) ($(Parse.parseTop) "[ ]")
+    in
+  let emptyObjectTag = ($tagOf) ($(Parse.parseTop) "{}")
+    in
+  let objectWithEmptyArrayTag = ($tagOf) ($(Parse.parseTop) "{\"x\": []}")
+    in
+  let arrayWithEmptyObjectTag = ($tagOf) ($(Parse.parseTop) "[{}]")
+    in
+  let nestedEmptyArrays = $(Parse.parseTop) "[[], []]"
+    in
+  let trailingCommaArrayTag = ($tagOf) ($(Parse.parseTop) "[1,]")
+    in
+  let trailingCommaObjectTag = ($tagOf) ($(Parse.parseTop) "{\"a\":1,}")
+    in
+  let emptyContainerTags = emptyArrayTag + spacedEmptyArrayTag + emptyObjectTag +
+    objectWithEmptyArrayTag + arrayWithEmptyObjectTag +
+    ($tagAt) 0 nestedEmptyArrays + ($tagAt) 1 nestedEmptyArrays
+    in
   arrTag0 * 1 + objTag * 10 + nestedTag0 * 1 + nestedTag1 * 1 + nestedTag2 * 1 +
-  ($boolToBit) printedArrOk * 100
+  ($boolToBit) printedArrOk * 100 + emptyContainerTags * 1000 +
+  trailingCommaArrayTag * 100000 + trailingCommaObjectTag * 1000000

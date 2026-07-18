@@ -1,0 +1,179 @@
+import Json
+import Parse
+import Io
+
+let rec fieldOrNull : Str -> Json_Json -> Json_Json ! {Div} = fun wanted =>
+  fun fields =>
+    match (fields : Json_Json) {
+      JCons(head, tail) -> match (head : Json_Json) {
+        JField(key, value) -> if $eq key wanted then value else ($fieldOrNull) wanted tail,
+        JNull -> Json.JNull,
+        JBool(x) -> Json.JNull,
+        JInt(x) -> Json.JNull,
+        JStr(x) -> Json.JNull,
+        JArr(x) -> Json.JNull,
+        JObj(x) -> Json.JNull,
+        JCons(x, y) -> Json.JNull,
+        JNilL -> Json.JNull
+      },
+      JNilL -> Json.JNull,
+      JNull -> Json.JNull,
+      JBool(x) -> Json.JNull,
+      JInt(x) -> Json.JNull,
+      JStr(x) -> Json.JNull,
+      JArr(x) -> Json.JNull,
+      JObj(x) -> Json.JNull,
+      JField(x, y) -> Json.JNull
+    }
+
+let fieldValue = {fun wanted => fun object =>
+    match (object : Json_Json) {
+      JObj(fields) -> ($fieldOrNull) wanted fields,
+      JNull -> Json.JNull,
+      JBool(x) -> Json.JNull,
+      JInt(x) -> Json.JNull,
+      JStr(x) -> Json.JNull,
+      JArr(x) -> Json.JNull,
+      JCons(x, y) -> Json.JNull,
+      JNilL -> Json.JNull,
+      JField(x, y) -> Json.JNull
+    }}
+
+let textField = {fun wanted => fun object =>
+    match ($fieldValue) wanted object {
+      JStr(text) -> text,
+      JNull -> SNil,
+      JBool(x) -> SNil,
+      JInt(x) -> SNil,
+      JArr(x) -> SNil,
+      JObj(x) -> SNil,
+      JCons(x, y) -> SNil,
+      JNilL -> SNil,
+      JField(x, y) -> SNil
+    }}
+
+let interfaceRows = {fun dump =>
+    match ($fieldValue) "moduleInterfaces" dump {
+      JArr(rows) -> match (rows : Json_Json) {
+        JCons(row, rest) -> Some(rows),
+        JNilL -> None,
+        JNull -> None,
+        JBool(x) -> None,
+        JInt(x) -> None,
+        JStr(x) -> None,
+        JArr(x) -> None,
+        JObj(x) -> None,
+        JField(x, y) -> None
+      },
+      JNull -> None,
+      JBool(x) -> None,
+      JInt(x) -> None,
+      JStr(x) -> None,
+      JObj(x) -> None,
+      JCons(x, y) -> None,
+      JNilL -> None,
+      JField(x, y) -> None
+    }}
+
+let rec digestFor : Str -> Json_Json -> Str ! {Div} = fun wanted =>
+  fun rows =>
+    match (rows : Json_Json) {
+      JCons(row, rest) ->
+        let name = ($textField) "module" row in
+        if $eq name wanted then ($textField) "digest" row else ($digestFor) wanted rest,
+      JNilL -> SNil,
+      JNull -> SNil,
+      JBool(x) -> SNil,
+      JInt(x) -> SNil,
+      JStr(x) -> SNil,
+      JArr(x) -> SNil,
+      JObj(x) -> SNil,
+      JField(x, y) -> SNil
+    }
+
+let rec rowsValid : Json_Json -> Unit + Unit ! {Div} = fun rows =>
+  match (rows : Json_Json) {
+    JCons(row, rest) ->
+      let name = ($textField) "module" row in
+      let digest = ($textField) "digest" row in
+      if $eq name "" then 0 == 1 else
+        if $eq digest "" then 0 == 1 else
+          if $eq (($digestFor) name rest) "" then $rowsValid rest else 0 == 1,
+    JNilL -> 0 == 0,
+    JNull -> 0 == 1,
+    JBool(x) -> 0 == 1,
+    JInt(x) -> 0 == 1,
+    JStr(x) -> 0 == 1,
+    JArr(x) -> 0 == 1,
+    JObj(x) -> 0 == 1,
+    JField(x, y) -> 0 == 1
+  }
+
+let joinLines = {fun left => fun right =>
+    if $eq left "" then right else
+      if $eq right "" then left else $concat left ($concat "\n" right)}
+
+let rec renderCurrent : Json_Json -> Json_Json -> Str ! {Div} = fun beforeRows =>
+  fun afterRows =>
+    match (afterRows : Json_Json) {
+      JCons(row, rest) ->
+        let name = ($textField) "module" row in
+        let afterDigest = ($textField) "digest" row in
+        let beforeDigest = ($digestFor) name beforeRows in
+        let status = {if $eq beforeDigest ""
+          then $concat "added " name
+          else if $eq beforeDigest afterDigest
+            then $concat "preserved " name
+            else $concat "moved " name}
+          in
+        ($joinLines) $status (($renderCurrent) beforeRows rest),
+      JNilL -> SNil,
+      JNull -> SNil,
+      JBool(x) -> SNil,
+      JInt(x) -> SNil,
+      JStr(x) -> SNil,
+      JArr(x) -> SNil,
+      JObj(x) -> SNil,
+      JField(x, y) -> SNil
+    }
+
+let rec renderRemoved : Json_Json -> Json_Json -> Str ! {Div} = fun afterRows =>
+  fun beforeRows =>
+    match (beforeRows : Json_Json) {
+      JCons(row, rest) ->
+        let name = ($textField) "module" row in
+        let removed = {if $eq (($digestFor) name afterRows) ""
+          then $concat "removed " name
+          else ""}
+          in
+        ($joinLines) $removed (($renderRemoved) afterRows rest),
+      JNilL -> SNil,
+      JNull -> SNil,
+      JBool(x) -> SNil,
+      JInt(x) -> SNil,
+      JStr(x) -> SNil,
+      JArr(x) -> SNil,
+      JObj(x) -> SNil,
+      JField(x, y) -> SNil
+    }
+
+let main =
+  let beforeLine = Io.readLine(()) in
+  let afterLine = Io.readLine(()) in
+  match ($(Parse.parseComplete) beforeLine) {
+    None -> "invalid dump",
+    Some(before) -> match ($(Parse.parseComplete) afterLine) {
+      None -> "invalid dump",
+      Some(after) -> match ($interfaceRows before) {
+        None -> "invalid dump",
+        Some(beforeRows) -> match ($interfaceRows after) {
+          None -> "invalid dump",
+          Some(afterRows) -> if $rowsValid beforeRows then
+            if $rowsValid afterRows then
+              ($joinLines) (($renderCurrent) beforeRows afterRows) (($renderRemoved) afterRows beforeRows)
+            else "invalid dump"
+          else "invalid dump"
+        }
+      }
+    }
+  }

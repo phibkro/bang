@@ -93,36 +93,44 @@ pub let rec parseValue : Str -> Option (Json_Json * Str) ! {Div} = fun s0 =>
                           in
                         match (t : Str) {
                           SNil -> None,
-                          SCons(cc, _) -> match cc {
-                            Char(ccode) -> if ccode == 93
-                              then Some(Json.JNilL, t)
-                              else match ($parseValue
-                              t) {
-                                None -> None,
-                                Some(p) -> let (v, r1) = p
-                                  in
-                                let r1w = $dropWs r1
-                                  in
-                                match (r1w : Str) {
-                                  SNil -> None,
-                                  SCons(sep, r2) -> match sep {
-                                    Char(sn) -> if sn == 44
-                                      then match ($parseElems
-                                      r2) {
-                                        None -> None,
-                                        Some(pp) -> let (tailJ, r3) = pp
-                                          in
-                                        Some(Json.JCons(v, tailJ), r3)
-                                      }
-                                      else if sn == 93 then Some(Json.JCons(v, Json.JNilL), r2) else None
+                          SCons(cc, closeRest) -> match ($parseValue
+                          t) {
+                            None -> None,
+                            Some(p) -> let (v, r1) = p
+                              in
+                            let r1w = $dropWs r1
+                              in
+                            match (r1w : Str) {
+                              SNil -> None,
+                              SCons(sep, r2) -> match sep {
+                                Char(sn) -> if sn == 44
+                                  then match ($parseElems
+                                  r2) {
+                                    None -> None,
+                                    Some(pp) -> let (tailJ, r3) = pp
+                                      in
+                                    Some(Json.JCons(v, tailJ), r3)
                                   }
-                                }
+                                  else if sn == 93 then Some(Json.JCons(v, Json.JNilL), r2) else None
                               }
+                            }
                           }
                         }
                       in
-                    match ($parseElems
-                    restA) { None -> None, Some(p) -> let (elems, r) = p in Some(Json.JArr elems, r) }
+                    let start = $dropWs restA
+                      in
+                    match (start : Str) {
+                      SNil -> None,
+                      SCons(close, closeRest) -> match close {
+                        Char(closeCode) -> if closeCode == 93
+                          then Some(Json.JArr Json.JNilL, closeRest)
+                          else match ($parseElems
+                          start) {
+                            None -> None,
+                            Some(p) -> let (elems, r) = p in Some(Json.JArr elems, r)
+                          }
+                      }
+                    }
                     else if code == 123
                       then let keyOf = {fun kj =>
                           match (kj : Json_Json) {
@@ -142,62 +150,74 @@ pub let rec parseValue : Str -> Option (Json_Json * Str) ! {Div} = fun s0 =>
                             in
                           match (t : Str) {
                             SNil -> None,
-                            SCons(cc, _) -> match cc {
-                              Char(ccode) -> if ccode == 125
-                                then Some(Json.JNilL, t)
-                                else match ($parseValue
-                                t) {
-                                  None -> None,
-                                  Some(kp) -> let (keyJ, rk) = kp
-                                    in
-                                  match ($keyOf
-                                  keyJ) {
-                                    None -> None,
-                                    Some(key) -> let rkw = $dropWs rk
-                                      in
-                                    match (rkw : Str) {
-                                      SNil -> None,
-                                      SCons(colonC, rk2) -> match colonC {
-                                        Char(cn) -> if cn == 58
-                                          then match ($parseValue
-                                          rk2) {
-                                            None -> None,
-                                            Some(vp) -> let (valJ, rf) = vp
-                                              in
-                                            let fieldJ = {Json.JField(key, valJ)}
-                                              in
-                                            let rfw = $dropWs rf
-                                              in
-                                            match (rfw : Str) {
-                                              SNil -> None,
-                                              SCons(sep, rf2) -> match sep {
-                                                Char(sn) -> if sn == 44
-                                                  then match ($parseFields
-                                                  rf2) {
-                                                    None -> None,
-                                                    Some(pp) -> let (tailJ, r3) = pp
-                                                      in
-                                                    Some(Json.JCons($fieldJ, tailJ), r3)
-                                                  }
-                                                  else if sn == 125
-                                                    then Some(Json.JCons($fieldJ, Json.JNilL), rf2)
-                                                    else None
+                            SCons(cc, closeRest) -> match ($parseValue
+                            t) {
+                              None -> None,
+                              Some(kp) -> let (keyJ, rk) = kp
+                                in
+                              match ($keyOf
+                              keyJ) {
+                                None -> None,
+                                Some(key) -> let rkw = $dropWs rk
+                                  in
+                                match (rkw : Str) {
+                                  SNil -> None,
+                                  SCons(colonC, rk2) -> match colonC {
+                                    Char(cn) -> if cn == 58
+                                      then match ($parseValue
+                                      rk2) {
+                                        None -> None,
+                                        Some(vp) -> let (valJ, rf) = vp
+                                          in
+                                        let fieldJ = {Json.JField(key, valJ)}
+                                          in
+                                        let rfw = $dropWs rf
+                                          in
+                                        match (rfw : Str) {
+                                          SNil -> None,
+                                          SCons(sep, rf2) -> match sep {
+                                            Char(sn) -> if sn == 44
+                                              then match ($parseFields
+                                              rf2) {
+                                                None -> None,
+                                                Some(pp) -> let (tailJ, r3) = pp
+                                                  in
+                                                Some(Json.JCons($fieldJ, tailJ), r3)
                                               }
-                                            }
+                                              else if sn == 125
+                                                then Some(Json.JCons($fieldJ, Json.JNilL), rf2)
+                                                else None
                                           }
-                                          else None
+                                        }
                                       }
-                                    }
+                                      else None
                                   }
                                 }
+                              }
                             }
                           }
                         in
-                      match ($parseFields
-                      restA) {
-                        None -> None, Some(p) -> let (fields, r) = p in Some(Json.JObj fields, r)
+                      let start = $dropWs restA
+                        in
+                      match (start : Str) {
+                        SNil -> None,
+                        SCons(close, closeRest) -> match close {
+                          Char(closeCode) -> if closeCode == 125
+                            then Some(Json.JObj Json.JNilL, closeRest)
+                            else match ($parseFields
+                            start) {
+                              None -> None,
+                              Some(p) -> let (fields, r) = p in Some(Json.JObj fields, r)
+                            }
+                        }
                       }
                       else None
       }
     }
 pub let parseTop = {fun s => match ($parseValue s) { None -> Json.JNull, Some(p) -> let (v, rest) = p in v }}
+pub let parseComplete = {fun s =>
+    match ($parseValue s) {
+      None -> None,
+      Some(parsed) -> let (value, rest) = parsed in
+        match (rest : Str) { SNil -> Some(value), SCons(c, tail) -> None }
+    }}

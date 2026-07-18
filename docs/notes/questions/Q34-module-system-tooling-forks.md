@@ -211,3 +211,25 @@ compilation, or cache authority. Keep `cacheKeySafe=false` and `separateCompilat
 export-order and global type-hole churn as known false-invalidation sources. Fork 5's next justified
 tracer is now the independently lowerable module identity/body/link seam. A store, scheduler,
 cryptographic key, or cache-hit path still arrives only after that artifact exists and is validated.
+
+## BANG-consumer input (2026-07-18): the compiler fact graph has its first language-level reader
+
+`PATH-bang-interface-consumer` inserts one dogfood tracer before the independently lowerable artifact
+seam. The pre-scope probe passed the transport/performance question—a 6,249-byte live dump crossed
+`Console.readLine` intact in about 0.54 seconds—but exposed a real library defect: empty arrays and
+objects returned `JNilL` without consuming their closing delimiter. The two symmetric leaf repairs plus
+`Parse.parseComplete` now let a freshly generated dump cross the full query → host effect → BANG JSON
+path. That is the first actual yield of the “BANG tools consume compiler facts” project, not speculative
+parser hardening.
+
+The BANG witness reads two dumps and renders ordered preserved/moved/added/removed interface rows. Its
+output is differentially checked against `tools/interface-diff.py` on the same moved, added, and removed
+fixtures; malformed JSON, missing/wrong `moduleInterfaces`, invalid rows, and duplicate module identities
+produce one `invalid dump` line before any partial result. It deliberately does **not** reproduce the
+canonical consumer's topology validation, export/digest consistency check, law attribution, fanout, or
+exit-code contract and authorizes no skipped work or artifact reuse.
+
+**Decision:** retain the Python consumer as canonical and the BANG program as a dogfood witness. This
+realizes the first half of ADR-0076's toolchain project without pretending a separately validated module
+artifact exists. After convergence, return to the independently lowerable identity/body/link seam; a
+store, scheduler, cryptographic key, and cache-hit path remain downstream of that artifact.

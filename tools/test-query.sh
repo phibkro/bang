@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,Main.lean,examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py,tools/interface-diff.py runs-in=verify
+# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,Main.lean,examples/*/main.bang,examples/json/Parse.bang,examples/json/query-dump.bang,examples/json/interface-moved.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py,tools/interface-diff.py runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -659,6 +659,76 @@ print(json.dumps({"moved":d["interfaceInvalidation"]["moved"],"candidates":d["in
 check "interface-diff-signature-extractor-exit" "$iface_signature_view_exit" "0"
 check "interface-diff-signature-fanout" "$iface_signature_view" '{"moved":["Lib"],"candidates":["@entry","Lib","Mid"],"modules":[{"module":"@entry","interface":"preserved","recheckCandidate":true,"invalidatedBy":["Lib"]},{"module":"Lib","interface":"moved","recheckCandidate":true,"invalidatedBy":["Lib"]},{"module":"Mid","interface":"preserved","recheckCandidate":true,"invalidatedBy":["Lib"]}]}'
 
+# First BANG-written fact consumer: read the same two dumps through Console, parse them with the
+# example JSON library, and render interface movement. The canonical Python consumer remains the
+# oracle; this is a dogfood witness, not a replacement or an authorization to skip/reuse artifacts.
+capture iface_signature_lines iface_signature_lines_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print("\n".join("{} {}".format(row["interface"],row["module"]) for row in d["modules"]))
+' 2>/dev/null <<< "$iface_signature_diff"
+check "bang-interface-consumer-oracle-exit" "$iface_signature_lines_exit" "0"
+capture bang_iface_signature bang_iface_signature_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "$3" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump" "$iface_diff_signature_dump"
+check "bang-interface-consumer-exit" "$bang_iface_signature_exit" "0"
+check "bang-interface-consumer-matches-oracle" "$bang_iface_signature" "$iface_signature_lines"
+capture bang_iface_malformed bang_iface_malformed_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "{" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump"
+check "bang-interface-consumer-malformed-exit" "$bang_iface_malformed_exit" "0"
+check "bang-interface-consumer-malformed-refusal" "$bang_iface_malformed" "invalid dump"
+capture bang_iface_wrong_shape bang_iface_wrong_shape_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "{\"ok\":true}" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump"
+check "bang-interface-consumer-wrong-shape-exit" "$bang_iface_wrong_shape_exit" "0"
+check "bang-interface-consumer-wrong-shape-refusal" "$bang_iface_wrong_shape" "invalid dump"
+capture bang_iface_bad_row_dump bang_iface_bad_row_dump_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+d["moduleInterfaces"][0].pop("digest")
+print(json.dumps(d,separators=(",",":")))
+' 2>/dev/null <<< "$iface_diff_base_dump"
+check "bang-interface-consumer-bad-row-fixture-exit" "$bang_iface_bad_row_dump_exit" "0"
+capture bang_iface_bad_row bang_iface_bad_row_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "$3" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump" "$bang_iface_bad_row_dump"
+check "bang-interface-consumer-bad-row-exit" "$bang_iface_bad_row_exit" "0"
+check "bang-interface-consumer-bad-row-refusal" "$bang_iface_bad_row" "invalid dump"
+capture bang_iface_duplicate_dump bang_iface_duplicate_dump_exit python3 -c '
+import json,copy,sys
+d=json.load(sys.stdin)
+d["moduleInterfaces"].append(copy.deepcopy(d["moduleInterfaces"][0]))
+print(json.dumps(d,separators=(",",":")))
+' 2>/dev/null <<< "$iface_diff_base_dump"
+check "bang-interface-consumer-duplicate-fixture-exit" "$bang_iface_duplicate_dump_exit" "0"
+capture bang_iface_duplicate bang_iface_duplicate_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "$3" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump" "$bang_iface_duplicate_dump"
+check "bang-interface-consumer-duplicate-exit" "$bang_iface_duplicate_exit" "0"
+check "bang-interface-consumer-duplicate-refusal" "$bang_iface_duplicate" "invalid dump"
+
+# Topology validation is deliberately outside this digest-level witness, but a current dump always
+# contains at least @entry. Refuse empty interface sets and a missing second line rather than emitting
+# an ambiguous non-status value.
+capture bang_iface_empty_dump bang_iface_empty_dump_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+d["moduleInterfaces"]=[]
+print(json.dumps(d,separators=(",",":")))
+' 2>/dev/null <<< "$iface_diff_base_dump"
+check "bang-interface-consumer-empty-fixture-exit" "$bang_iface_empty_dump_exit" "0"
+capture bang_iface_empty bang_iface_empty_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "$2" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$bang_iface_empty_dump"
+check "bang-interface-consumer-empty-exit" "$bang_iface_empty_exit" "0"
+check "bang-interface-consumer-empty-refusal" "$bang_iface_empty" "invalid dump"
+capture bang_iface_eof bang_iface_eof_exit bash -o pipefail -c \
+  'printf "%s\n" "$2" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump"
+check "bang-interface-consumer-eof-exit" "$bang_iface_eof_exit" "0"
+check "bang-interface-consumer-eof-refusal" "$bang_iface_eof" "invalid dump"
+
 # Added/removed modules and dependency-edge movement are ordinary diff inputs, not a reason to make
 # the consumer unusable. Added Side invalidates itself and @entry; removing it leaves only the
 # surviving @entry as a recheck candidate.
@@ -685,6 +755,31 @@ print(json.dumps({"added":d["added"],"removed":d["removed"],"topology":d["topolo
 ' 2>/dev/null <<< "$iface_removed_diff"
 check "interface-diff-removed-extractor-exit" "$iface_removed_view_exit" "0"
 check "interface-diff-removed-fanout" "$iface_removed_view" '{"added":[],"removed":["Side"],"topology":["@entry"],"candidates":["@entry"]}'
+
+# Added/removed rows ride the same differential oracle, keeping the BANG witness honest across the
+# topology cases the canonical consumer already supports.
+capture iface_added_lines iface_added_lines_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print("\n".join("{} {}".format(row["interface"],row["module"]) for row in d["modules"]))
+' 2>/dev/null <<< "$iface_added_diff"
+check "bang-interface-consumer-added-oracle-exit" "$iface_added_lines_exit" "0"
+capture bang_iface_added bang_iface_added_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "$3" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_base_dump" "$iface_diff_added_dump"
+check "bang-interface-consumer-added-exit" "$bang_iface_added_exit" "0"
+check "bang-interface-consumer-added-matches-oracle" "$bang_iface_added" "$iface_added_lines"
+capture iface_removed_lines iface_removed_lines_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print("\n".join("{} {}".format(row["interface"],row["module"]) for row in d["modules"]))
+' 2>/dev/null <<< "$iface_removed_diff"
+check "bang-interface-consumer-removed-oracle-exit" "$iface_removed_lines_exit" "0"
+capture bang_iface_removed bang_iface_removed_exit bash -o pipefail -c \
+  'printf "%s\n%s\n" "$2" "$3" | "$1" run --env=real --allow=Console examples/json/interface-moved.bang' \
+  _ "$bang" "$iface_diff_added_dump" "$iface_diff_base_dump"
+check "bang-interface-consumer-removed-exit" "$bang_iface_removed_exit" "0"
+check "bang-interface-consumer-removed-matches-oracle" "$bang_iface_removed" "$iface_removed_lines"
 
 # The previous tracer's strongest adverse case now becomes the positive owner-attribution journey:
 # the public law body moves Lib's declared-law export fact, ordinary interface fanout reaches Mid and
@@ -933,6 +1028,16 @@ check "dump-multifile-imports-present" "$(printf '%s' "$got_out4" | grep -o '"im
 check "dump-multifile-qualified-present" "$(printf '%s' "$got_out4" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
 check "dump-multifile-core-present" "$(printf '%s' "$got_out4" | grep -o '"coreFingerprint":{"scope":"resolved-program"' || true)" '"coreFingerprint":{"scope":"resolved-program"'
 check "dump-multifile-interfaces-present" "$(printf '%s' "$got_out4" | grep -o '"moduleInterfaces":\[{"module":"@entry"' || true)" '"moduleInterfaces":[{"module":"@entry"'
+
+# First BANG-written compiler-fact ingestion journey: feed the freshly generated dump through the
+# shipped Console boundary and the example JSON parser. The observable is the top-level object tag,
+# not a bare parse-success bit. This deliberately
+# reads the live schema instead of pinning a copied dump that would go stale as query facts evolve.
+capture bang_dump_header bang_dump_header_exit bash -o pipefail -c \
+  '"$1" query dump examples/json/main.bang | "$1" run --env=real --allow=Console examples/json/query-dump.bang' \
+  _ "$bang"
+check "bang-consumes-live-dump-exit" "$bang_dump_header_exit" "0"
+check "bang-consumes-live-dump-object" "$bang_dump_header" "5"
 
 # The resolver's completed dependency-first walk is the SSoT for topology: JSON is a diamond, so
 # the public facts must contain four logical nodes and five direct edges exactly once. The facts
@@ -1329,7 +1434,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=218
+want_total=244
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))
