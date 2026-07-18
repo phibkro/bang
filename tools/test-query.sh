@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=examples/*/main.bang,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang runs-in=verify
+# tool: role=test couples=examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -184,6 +184,42 @@ capture bundled_graph bundled_graph_exit python3 -c 'import json,sys; d=json.loa
 check "dump-module-graph-bundled-exit" "$bundled_dump_exit" "0"
 check "dump-module-graph-bundled-extractor-exit" "$bundled_graph_exit" "0"
 check "dump-module-graph-bundled-origin" "$bundled_graph" '{"modules":[{"name":"@entry","origin":"entry"},{"name":"Io","origin":"bundled"}],"moduleDeps":[{"from":"@entry","to":"Io"}]}'
+
+# ── REUSABLE INVALIDATION-FANOUT CONSUMER: this is the product proof that flat resolver facts are
+# sufficient for a build-tool question without adding another fixed compiler verb. The measurement
+# is deliberately module/change PAIRS, never latency or cache hits. Calc's shared Ast graph avoids
+# 21 of 36 whole-program pairs while making the common-dependency worst case explicit. ──
+capture calc_dump calc_dump_exit "$bang" query dump examples/calc/main.bang 2>/dev/null
+capture calc_impact calc_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$calc_dump"
+check "module-impact-calc-dump-exit" "$calc_dump_exit" "0"
+check "module-impact-calc-exit" "$calc_impact_exit" "0"
+check "module-impact-calc-exact" "$calc_impact" '{"ok":true,"schemaVersion":1,"moduleCount":6,"impacts":[{"changed":"@entry","affected":["@entry"],"affectedCount":1},{"changed":"Ast","affected":["@entry","Ast","Lexer","Parser","Eval","Print"],"affectedCount":6},{"changed":"Lexer","affected":["@entry","Lexer"],"affectedCount":2},{"changed":"Parser","affected":["@entry","Parser"],"affectedCount":2},{"changed":"Eval","affected":["@entry","Eval"],"affectedCount":2},{"changed":"Print","affected":["@entry","Print"],"affectedCount":2}],"structuralWork":{"wholeProgramPairs":36,"dependencyPairs":15,"avoidedPairs":21}}'
+
+capture json_impact json_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$got_out4"
+check "module-impact-json-exit" "$json_impact_exit" "0"
+check "module-impact-json-exact" "$json_impact" '{"ok":true,"schemaVersion":1,"moduleCount":4,"impacts":[{"changed":"@entry","affected":["@entry"],"affectedCount":1},{"changed":"Json","affected":["@entry","Json","Parse","Print"],"affectedCount":4},{"changed":"Parse","affected":["@entry","Parse"],"affectedCount":2},{"changed":"Print","affected":["@entry","Print"],"affectedCount":2}],"structuralWork":{"wholeProgramPairs":16,"dependencyPairs":9,"avoidedPairs":7}}'
+
+capture single_impact single_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$got_out"
+check "module-impact-single-exit" "$single_impact_exit" "0"
+check "module-impact-single-exact" "$single_impact" '{"ok":true,"schemaVersion":1,"moduleCount":1,"impacts":[{"changed":"@entry","affected":["@entry"],"affectedCount":1}],"structuralWork":{"wholeProgramPairs":1,"dependencyPairs":1,"avoidedPairs":0}}'
+
+# Consumer-side half of additive schema evolution: inject an unknown nested field and require the
+# analysis to remain byte-identical. Corrupt topology, by contrast, must fail loudly.
+capture synthetic_module_extra synthetic_module_extra_exit python3 -c 'import json,sys; d=json.load(sys.stdin); d["futureField"]={"nested":[1,2,3]}; print(json.dumps(d,separators=(",",":")))' 2>/dev/null <<< "$calc_dump"
+capture future_impact future_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$synthetic_module_extra"
+check "module-impact-additive-fixture-exit" "$synthetic_module_extra_exit" "0"
+check "module-impact-ignore-unknown-exit" "$future_impact_exit" "0"
+check "module-impact-ignore-unknown-equal" "$future_impact" "$calc_impact"
+
+dangling_graph='{"ok":true,"schemaVersion":1,"modules":[{"name":"@entry"}],"moduleDeps":[{"from":"@entry","to":"Ghost"}]}'
+duplicate_graph='{"ok":true,"schemaVersion":1,"modules":[{"name":"@entry"},{"name":"A"}],"moduleDeps":[{"from":"@entry","to":"A"},{"from":"@entry","to":"A"}]}'
+cycle_graph='{"ok":true,"schemaVersion":1,"modules":[{"name":"@entry"},{"name":"A"}],"moduleDeps":[{"from":"@entry","to":"A"},{"from":"A","to":"@entry"}]}'
+capture dangling_impact dangling_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$dangling_graph"
+capture duplicate_impact duplicate_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$duplicate_graph"
+capture cycle_impact cycle_impact_exit python3 tools/module-impact.py 2>/dev/null <<< "$cycle_graph"
+check "module-impact-dangling-refused" "$dangling_impact_exit" "1"
+check "module-impact-duplicate-refused" "$duplicate_impact_exit" "1"
+check "module-impact-cycle-refused" "$cycle_impact_exit" "1"
 
 # ── Resolver-aware LAW FACTS: the Codec entry imports its effect contract + two named handler
 # realizations. `dump` and the curated `laws` view must expose the SAME qualified effect×handler
@@ -518,7 +554,8 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (108 — dependency observation, recomputation, reuse, and module-graph checks included);
+# always runs (121 — dependency observation, recomputation, reuse, module graph, and structural
+# invalidation-fanout checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -527,7 +564,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=108
+want_total=121
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

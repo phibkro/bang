@@ -67,3 +67,22 @@ hashed inputs) IS bang's language guarantee — so post-modules+IO the engine is
 program: the ADR-0076 generative-constraints thesis applied one level up, and the strongest
 dogfood available. Sequencing unchanged (build when compile times / Q43 / #60 bite first);
 this note pins the SHAPE the eventual unit must take.
+
+## Measurement input (2026-07-18): topology pays, but cannot provide the result-hash firewall
+
+`PATH-queryable-module-graph` exposed the resolver's actual path-free DAG; its successor consumes
+that public dump with `tools/module-impact.py`. On the existing six-module Calc project, one
+hypothetical equal-weighted change to each module produces **15 dependency-aware module/change pairs
+instead of 36 whole-program pairs**. A shared `Ast` change still affects all six modules; each leaf
+change affects only that leaf plus `@entry`. JSON's four-node diamond measures 9 instead of 16.
+
+This is structural reachability, not timing or a cache benchmark. It establishes two decisions:
+
+1. **Keep the resolver DAG as the scheduler's coarse invalidation skeleton** — independent leaves
+   are observably prunable without any new compiler graph.
+2. **Do not mistake topology for staleness.** A comment/format-only edit is structurally upstream of
+   every dependent even when its elaborated result is unchanged. Stopping that cascade requires the
+   result-hash firewall described in the compiler-as-DBMS survey. This evidence therefore preserves
+   the already-recommended **elaborated-core hash** direction and makes a canonical-core fingerprint
+   probe the smallest justified successor; it does not yet justify a store, scheduler, persistence
+   format, definition granularity, or compile-time claim.
