@@ -184,3 +184,30 @@ artifact. The successor must cover **declared** public laws, not only realized i
 handler, a declaration-law edit is absent even from the global `laws` table. Separately, source-order
 permutation of public exports still moves the ordered interface payload; that safe false invalidation
 is recorded rather than locally canonicalized away from the producer's digest semantics.
+
+## Declared-law input (2026-07-18): semantic contracts now cross the checked interface boundary
+
+`PATH-module-law-contracts` follows the consumer's demonstrated gap rather than adding another probe.
+Every exported trait/effect now carries owner-local declared laws as `{name, params, body}` records;
+the body uses the existing canonical `showSurf` path. The interface algorithm is explicitly v2 because
+the digest payload changed. The top-level `laws` table keeps its distinct instance/realization meaning.
+
+The prior red journey is now ordinary fanout: editing `Lib.Gate.preserves` moves `Lib` and marks
+`Lib`, `Mid`, and `@entry`. The stronger no-handler variant also moves `Lib`, even though both global
+instance tables are empty. Private law declarations remain outside `moduleInterfaces`. The pre-scope
+kill shot and committed gates show that an unrelated earlier effect and reversed entry import order
+around two selected cross-module values preserve the declared law text and digest. A synthetic global
+realization-law delta without any public declared-law movement still returns exit 2, so unexplained
+evidence is not silently laundered into a complete answer.
+
+Attribution is deliberately per contract rather than per edit cause. If a public law and a new private
+realization for that same contract arrive together, the realization row is covered by the moved contract;
+the owner and its dependents are already candidates and no work is skipped. A row for any other contract
+remains unexplained, as the compound `Lib_Gate`/`Side_Other` falsifier requires.
+
+**Decision:** checked module interfaces cover public types, shapes, and canonical-text law statements.
+That is a law-aware invalidation boundary, not law enforcement, semantic equivalence, separate
+compilation, or cache authority. Keep `cacheKeySafe=false` and `separateCompilationReady=false`; retain
+export-order and global type-hole churn as known false-invalidation sources. Fork 5's next justified
+tracer is now the independently lowerable module identity/body/link seam. A store, scheduler,
+cryptographic key, or cache-hit path still arrives only after that artifact exists and is validated.

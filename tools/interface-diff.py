@@ -2,13 +2,14 @@
 # tool: role=analysis couples=tools/module-impact.py,Bang/Frontend/Query.lean,Main.lean runs-in=manual
 """Compare two BANG dump files without pretending that an artifact can be reused.
 
-The view compares complete checked module-interface exports, uses ``module-impact.py`` for the
-validated reverse-dependency closure, and reports type/shape recheck candidates. It never skips a
-compiler phase: current interface facts are neither cache-key-safe nor separate-compilation-ready.
+The view compares complete checked module-interface exports—including declared public-law
+contracts—uses ``module-impact.py`` for the validated reverse-dependency closure, and reports
+interface recheck candidates. It never skips a compiler phase: current interface facts are neither
+cache-key-safe nor separate-compilation-ready.
 
 Exit status 2 is a successful comparison whose complete invalidation decision is indeterminate.
-Today that fires when declaration-law evidence moves outside the module-interface records: dump v1
-does not carry a module-owned public-law contract fingerprint.
+That remains a fail-loud residue when global realization-law evidence moves without any owning
+public declared-law contract movement in the module-interface records.
 """
 
 from __future__ import annotations
@@ -17,11 +18,13 @@ import argparse
 import json
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MODULE_IMPACT = ROOT / "tools" / "module-impact.py"
+EXPECTED_INTERFACE_ALGORITHM = "bang-module-interface-json-v2-uint64"
 
 
 class DiffError(ValueError):
@@ -110,6 +113,34 @@ def export_projection(row: Mapping, context: str) -> dict:
     if shape is not None and not isinstance(shape, Mapping):
         raise DiffError(f"{context} field 'shape' must be an object or null")
     projected["shape"] = shape
+    laws = row.get("laws")
+    if not isinstance(laws, list):
+        raise DiffError(f"{context} requires a declared-law 'laws' array")
+    projected_laws = []
+    for index, law in enumerate(laws):
+        law_context = f"{context}.laws[{index}]"
+        if not isinstance(law, Mapping):
+            raise DiffError(f"{law_context} must be an object")
+        params = law.get("params")
+        if not isinstance(params, list) or not all(
+            isinstance(value, str) for value in params
+        ):
+            raise DiffError(f"{law_context} field 'params' must be an array of strings")
+        law_id = require_string(law, "id", law_context)
+        contract_id = require_string(law, "contractId", law_context)
+        name = require_string(law, "name", law_context)
+        if law_id != f"{contract_id}:{name}":
+            raise DiffError(f"{law_context} id does not agree with contractId/name")
+        projected_laws.append(
+            {
+                "id": law_id,
+                "contractId": contract_id,
+                "name": name,
+                "params": params,
+                "body": require_string(law, "body", law_context),
+            }
+        )
+    projected["laws"] = projected_laws
     return projected
 
 
@@ -131,6 +162,12 @@ def interfaces(document: object, names: tuple[str, ...], label: str) -> dict[str
         module = require_string(row, "module", context)
         if module in result:
             raise DiffError(f"{label}: duplicate module interface {module!r}")
+        algorithm = require_string(row, "algorithm", context)
+        if algorithm != EXPECTED_INTERFACE_ALGORITHM:
+            raise DiffError(
+                f"{context} requires interface algorithm {EXPECTED_INTERFACE_ALGORITHM!r}; "
+                f"got {algorithm!r}"
+            )
         exports = row.get("exports")
         if not isinstance(exports, list):
             raise DiffError(f"{context} requires an exports array")
@@ -146,7 +183,7 @@ def interfaces(document: object, names: tuple[str, ...], label: str) -> dict[str
                 raise DiffError(f"{context} requires a boolean {key!r}")
         result[module] = {
             "scope": require_string(row, "scope", context),
-            "algorithm": require_string(row, "algorithm", context),
+            "algorithm": algorithm,
             "digest": require_string(row, "digest", context),
             "cacheKeySafe": row["cacheKeySafe"],
             "separateCompilationReady": row["separateCompilationReady"],
@@ -159,7 +196,7 @@ def interfaces(document: object, names: tuple[str, ...], label: str) -> dict[str
     return result
 
 
-def law_projection(document: object, label: str) -> tuple[str, ...]:
+def law_projection(document: object, label: str) -> tuple[tuple[str, str], ...]:
     if not isinstance(document, Mapping):
         raise DiffError(f"{label}: dump must be a JSON object")
     rows = document.get("laws")
@@ -179,15 +216,68 @@ def law_projection(document: object, label: str) -> tuple[str, ...]:
         ):
             raise DiffError(f"{context} field 'params' must be an array of strings")
         fact = {
+            "id": require_string(row, "id", context),
             "trait": require_string(row, "trait", context),
             "contract": require_string(row, "contract", context),
+            "contractId": require_string(row, "contractId", context),
             "realization": realization,
+            "realizationId": row.get("realizationId"),
             "law": require_string(row, "law", context),
             "params": params,
             "body": require_string(row, "body", context),
         }
-        projected.append(json.dumps(fact, sort_keys=True, separators=(",", ":")))
+        if fact["realizationId"] is not None and not isinstance(
+            fact["realizationId"], str
+        ):
+            raise DiffError(f"{context} field 'realizationId' must be a string or null")
+        relation = fact["contractId"]
+        if fact["realizationId"] is not None:
+            relation += f"@{fact['realizationId']}"
+        if fact["id"] != f"{relation}:{fact['law']}":
+            raise DiffError(
+                f"{context} id does not agree with contractId/realizationId/law"
+            )
+        projected.append(
+            (
+                json.dumps(fact, sort_keys=True, separators=(",", ":")),
+                fact["contractId"],
+            )
+        )
     return tuple(sorted(projected))
+
+
+def public_law_contract_projection(interface: Mapping) -> tuple[str, ...]:
+    projected = []
+    for export in interface["exports"]:
+        for law in export["laws"]:
+            fact = {"owner": export["id"], **law}
+            projected.append(json.dumps(fact, sort_keys=True, separators=(",", ":")))
+    return tuple(projected)
+
+
+def public_law_contracts_by_id(interfaces: Mapping) -> dict[str, tuple[str, ...]]:
+    grouped: dict[str, list[str]] = {}
+    for interface in interfaces.values():
+        for export in interface["exports"]:
+            for law in export["laws"]:
+                contract_id = law["contractId"]
+                grouped.setdefault(contract_id, []).append(
+                    json.dumps(law, sort_keys=True, separators=(",", ":"))
+                )
+    return {contract_id: tuple(rows) for contract_id, rows in grouped.items()}
+
+
+def changed_law_contract_ids(
+    before_rows: tuple[tuple[str, str], ...],
+    after_rows: tuple[tuple[str, str], ...],
+) -> set[str]:
+    before_counts = Counter(before_rows)
+    after_counts = Counter(after_rows)
+    return {
+        contract_id
+        for row, contract_id in set(before_counts) | set(after_counts)
+        if before_counts[(row, contract_id)] != after_counts[(row, contract_id)]
+    }
 
 
 def affected_map(result: Mapping, label: str) -> dict[str, list[str]]:
@@ -263,6 +353,21 @@ def compare(before: object, after: object) -> tuple[dict, int]:
     for name in added:
         interface_status[name] = "added"
 
+    public_law_contracts_moved = [
+        name
+        for name in names
+        if public_law_contract_projection(before_interfaces.get(name, {"exports": []}))
+        != public_law_contract_projection(after_interfaces.get(name, {"exports": []}))
+    ]
+    before_public_contracts = public_law_contracts_by_id(before_interfaces)
+    after_public_contracts = public_law_contracts_by_id(after_interfaces)
+    public_law_contract_ids_moved = {
+        contract_id
+        for contract_id in set(before_public_contracts) | set(after_public_contracts)
+        if before_public_contracts.get(contract_id)
+        != after_public_contracts.get(contract_id)
+    }
+
     topology_changed = [
         name
         for name in names
@@ -291,17 +396,23 @@ def compare(before: object, after: object) -> tuple[dict, int]:
         for name in names
     ]
 
-    laws_moved = law_projection(before, "before") != law_projection(after, "after")
-    if laws_moved:
+    before_laws = law_projection(before, "before")
+    after_laws = law_projection(after, "after")
+    changed_instance_contract_ids = changed_law_contract_ids(before_laws, after_laws)
+    unexplained_contract_ids = sorted(
+        changed_instance_contract_ids - public_law_contract_ids_moved
+    )
+    laws_moved = before_laws != after_laws
+    if unexplained_contract_ids:
         decision = {
             "status": "indeterminate",
             "actualChecksSkipped": False,
             "artifactReuseAuthorized": False,
-            "reason": "law evidence moved outside module interface records",
+            "reason": "realization-law evidence moved without an owning public declared-law contract delta",
         }
         gap = {
-            "code": "module-owned-public-law-contract",
-            "need": "a stable per-module public-law contract fact before complete dependent-check invalidation is decidable",
+            "code": "unexplained-realization-law-movement",
+            "need": "an owner-stable explanation before this realization-law delta can participate in complete invalidation",
         }
         status = 2
     else:
@@ -309,24 +420,26 @@ def compare(before: object, after: object) -> tuple[dict, int]:
             "status": "measured",
             "actualChecksSkipped": False,
             "artifactReuseAuthorized": False,
-            "reason": "type/shape candidates are re-derivable in principle; no independent checked artifact exists",
+            "reason": "public interface candidates are re-derivable in principle; no independent checked artifact exists",
         }
         gap = None
         status = 0
 
     result = {
         "ok": True,
-        "schemaVersion": 1,
-        "comparisonBasis": "complete-module-interface-exports+validated-module-topology",
+        "schemaVersion": 2,
+        "comparisonBasis": "complete-module-interface-exports-including-declared-laws+validated-module-topology",
         "modules": module_rows,
-        "typeShapeInvalidation": {
+        "interfaceInvalidation": {
             "moved": moved,
             "added": added,
             "removed": removed,
             "topologyChanged": topology_changed,
             "recheckCandidates": ordered_candidates,
         },
+        "publicLawContractsMoved": public_law_contracts_moved,
         "lawFactsMoved": laws_moved,
+        "unexplainedLawContractIds": unexplained_contract_ids,
         "decision": decision,
         "gap": gap,
     }

@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "7e8780f610e34e7eea7af2851c2f6d2fd0dbfcedf72097941f59b38142c42376",
+    "digest": "08274c1e2fb3e86a5165d8ecb6beb5a1cf9530cc3d2116805ae187600f169168",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

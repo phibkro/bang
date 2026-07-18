@@ -966,12 +966,16 @@ not six independent implementations.
   "moduleInterfaces": [ {
     "module": "@entry|logical module name",
     "scope": "resolved-program-module-interface",
-    "algorithm": "bang-module-interface-json-v1-uint64",
+    "algorithm": "bang-module-interface-json-v2-uint64",
     "digest": "16 lowercase hex digits",
     "cacheKeySafe": false, "separateCompilationReady": false,
     "exports": [ { "id": "Module::localName", "name": "localName",
                    "kind": "..", "type": "T"|null, "row": "{..}"|null,
-                   "typeError": "msg"|null, "shape": {..}|null } ]
+                   "typeError": "msg"|null, "shape": {..}|null,
+                   "laws": [ { "id": "stable-contract:law",
+                               "contractId": "stable-contract",
+                               "name": "law", "params": ["x"],
+                               "body": "canonical surface text" } ] } ]
   } ] | null,
   "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
   "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
@@ -979,7 +983,8 @@ not six independent implementations.
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
   "refs": [ { "from": "declName", "to": "referencedName" } ],
-  "laws": [ { "trait": "compat-key", "contract": "..", "realization": ".."|null,
+  "laws": [ { "id": "stable relation", "trait": "compat-key", "contract": "..",
+                "contractId": "..", "realization": ".."|null, "realizationId": ".."|null,
                 "law": "..", "params": [".."], "body": "source text" } ],
   "imports": [ { "module": ".." } ],
   "uses":    [ { "module": "..", "names": [".."] } ]
@@ -1019,9 +1024,13 @@ concretely gated.
 
 `moduleInterfaces` is the **checked public-interface view**, grouped by the resolver's logical
 modules. Each export projects the same checked `DeclFact` already present in `decls`: value
-types/rows or structural shapes are included, while declaration bodies and private declarations
-are absent. Therefore an implementation-only edit can move `coreFingerprint` while preserving a
-module interface; changing a public signature or shape moves that interface. Invalid typed input
+types/rows, structural shapes, and owner-local public trait/effect law declarations are included,
+while implementation bodies and private declarations are absent. Each declared law carries its
+name, parameters, and canonical `showSurf` body text; this is a statement of the exported contract,
+not a discovered handler/impl instance and not evidence that the law was proved or tested. Therefore
+an implementation-only edit can move `coreFingerprint` while preserving a module interface; changing
+a public signature, shape, or declared law moves that interface even when no realization exists.
+The interface algorithm is explicitly v2 because declared laws joined its digest payload. Invalid typed input
 reports `null`, as the view is checked rather than a parse-only export inventory.
 
 This is deliberately **not** a separately compiled artifact. Its scope says
@@ -1038,14 +1047,26 @@ permission to skip lowering, linking, or unchecked cache validation.
 `python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external
 consumer of this view. It compares complete projected exports (using the digest only as a consistency
 check), joins moved/added/removed/topology-changed modules to the validated reverse dependency closure,
-and reports structural type/shape recheck candidates. Its JSON always says
+and reports checked-interface recheck candidates. Declared public-law deltas are attributed through
+their owning exports and fan out like other interface movement. Stable `contractId` relation keys on
+both declaration and instance rows make this attribution per-row; one explained delta cannot mask an
+unrelated realization delta. Attribution is contract-granular: a new private realization
+for the same contract as a public-law edit is covered because that owner and its dependents
+are already candidates; a row for any other contract remains unexplained and fail-loud.
+Its own result schema is version 2 and
+separately reports `publicLawContractsMoved` plus the diagnostic global `lawFactsMoved`. Its JSON always says
 `actualChecksSkipped:false` and `artifactReuseAuthorized:false`. Exit 2 means the comparison succeeded
-but a complete invalidation decision is indeterminate: currently a changed global law fact cannot be
-attributed through a stable module-owned public-law identity in dump v1. That gap is not permission to
+but a complete invalidation decision is indeterminate: a changed global realization-law fact has no
+corresponding public declared-law contract delta. That residue is not permission to
 infer ownership from qualified display names.
-The table contains discovered law **instances**, so a declared public law with no realization is
-currently invisible to this comparison. Public-export source order is also significant in the producer
+The top-level table continues to contain discovered law **instances**; it is not redefined by this
+addition. The export-local `laws` array contains declarations, including laws with no realization.
+Canonical text identity does not claim alpha-equivalence, normalization, proof, or behavioral truth.
+Public-export source order is also significant in the producer
 payload, so declaration reordering can conservatively invalidate an otherwise equal interface.
+These are three distinct version domains: dump `schemaVersion:1` governs additive JSON compatibility;
+the module-interface algorithm is v2 because its digest payload changed; interface-diff result
+`schemaVersion:2` governs the consumer's renamed/expanded answer. None substitutes for another.
 
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on

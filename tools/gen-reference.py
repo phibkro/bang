@@ -1453,12 +1453,16 @@ def render():
     L.append('  "moduleInterfaces": [ {')
     L.append('    "module": "@entry|logical module name",')
     L.append('    "scope": "resolved-program-module-interface",')
-    L.append('    "algorithm": "bang-module-interface-json-v1-uint64",')
+    L.append('    "algorithm": "bang-module-interface-json-v2-uint64",')
     L.append('    "digest": "16 lowercase hex digits",')
     L.append('    "cacheKeySafe": false, "separateCompilationReady": false,')
     L.append('    "exports": [ { "id": "Module::localName", "name": "localName",')
     L.append('                   "kind": "..", "type": "T"|null, "row": "{..}"|null,')
-    L.append('                   "typeError": "msg"|null, "shape": {..}|null } ]')
+    L.append('                   "typeError": "msg"|null, "shape": {..}|null,')
+    L.append('                   "laws": [ { "id": "stable-contract:law",')
+    L.append('                               "contractId": "stable-contract",')
+    L.append('                               "name": "law", "params": ["x"],')
+    L.append('                               "body": "canonical surface text" } ] } ]')
     L.append("  } ] | null,")
     L.append(
         '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
@@ -1475,7 +1479,10 @@ def render():
     )
     L.append('  "refs": [ { "from": "declName", "to": "referencedName" } ],')
     L.append(
-        '  "laws": [ { "trait": "compat-key", "contract": "..", "realization": ".."|null,'
+        '  "laws": [ { "id": "stable relation", "trait": "compat-key", "contract": "..",'
+    )
+    L.append(
+        '                "contractId": "..", "realization": ".."|null, "realizationId": ".."|null,'
     )
     L.append(
         '                "law": "..", "params": [".."], "body": "source text" } ],'
@@ -1565,13 +1572,25 @@ def render():
         "modules. Each export projects the same checked `DeclFact` already present in `decls`: value"
     )
     L.append(
-        "types/rows or structural shapes are included, while declaration bodies and private declarations"
+        "types/rows, structural shapes, and owner-local public trait/effect law declarations are included,"
     )
     L.append(
-        "are absent. Therefore an implementation-only edit can move `coreFingerprint` while preserving a"
+        "while implementation bodies and private declarations are absent. Each declared law carries its"
     )
     L.append(
-        "module interface; changing a public signature or shape moves that interface. Invalid typed input"
+        "name, parameters, and canonical `showSurf` body text; this is a statement of the exported contract,"
+    )
+    L.append(
+        "not a discovered handler/impl instance and not evidence that the law was proved or tested. Therefore"
+    )
+    L.append(
+        "an implementation-only edit can move `coreFingerprint` while preserving a module interface; changing"
+    )
+    L.append(
+        "a public signature, shape, or declared law moves that interface even when no realization exists."
+    )
+    L.append(
+        "The interface algorithm is explicitly v2 because declared laws joined its digest payload. Invalid typed input"
     )
     L.append(
         "reports `null`, as the view is checked rather than a parse-only export inventory."
@@ -1616,26 +1635,58 @@ def render():
         "check), joins moved/added/removed/topology-changed modules to the validated reverse dependency closure,"
     )
     L.append(
-        "and reports structural type/shape recheck candidates. Its JSON always says"
+        "and reports checked-interface recheck candidates. Declared public-law deltas are attributed through"
+    )
+    L.append(
+        "their owning exports and fan out like other interface movement. Stable `contractId` relation keys on"
+    )
+    L.append(
+        "both declaration and instance rows make this attribution per-row; one explained delta cannot mask an"
+    )
+    L.append(
+        "unrelated realization delta. Attribution is contract-granular: a new private realization"
+    )
+    L.append(
+        "for the same contract as a public-law edit is covered because that owner and its dependents"
+    )
+    L.append(
+        "are already candidates; a row for any other contract remains unexplained and fail-loud."
+    )
+    L.append("Its own result schema is version 2 and")
+    L.append(
+        "separately reports `publicLawContractsMoved` plus the diagnostic global `lawFactsMoved`. Its JSON always says"
     )
     L.append(
         "`actualChecksSkipped:false` and `artifactReuseAuthorized:false`. Exit 2 means the comparison succeeded"
     )
     L.append(
-        "but a complete invalidation decision is indeterminate: currently a changed global law fact cannot be"
+        "but a complete invalidation decision is indeterminate: a changed global realization-law fact has no"
     )
     L.append(
-        "attributed through a stable module-owned public-law identity in dump v1. That gap is not permission to"
+        "corresponding public declared-law contract delta. That residue is not permission to"
     )
     L.append("infer ownership from qualified display names.")
     L.append(
-        "The table contains discovered law **instances**, so a declared public law with no realization is"
+        "The top-level table continues to contain discovered law **instances**; it is not redefined by this"
     )
     L.append(
-        "currently invisible to this comparison. Public-export source order is also significant in the producer"
+        "addition. The export-local `laws` array contains declarations, including laws with no realization."
     )
+    L.append(
+        "Canonical text identity does not claim alpha-equivalence, normalization, proof, or behavioral truth."
+    )
+    L.append("Public-export source order is also significant in the producer")
     L.append(
         "payload, so declaration reordering can conservatively invalidate an otherwise equal interface."
+    )
+    L.append(
+        "These are three distinct version domains: dump `schemaVersion:1` governs additive JSON compatibility;"
+    )
+    L.append(
+        "the module-interface algorithm is v2 because its digest payload changed; interface-diff result"
+    )
+    L.append(
+        "`schemaVersion:2` governs the consumer's renamed/expanded answer. None substitutes for another."
     )
     L.append("")
     L.append(

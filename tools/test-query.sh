@@ -262,6 +262,145 @@ pub effect Gate {
 }
 BANG
 
+# Compound attribution falsifier: the same Lib public-law edit co-occurs with an unrelated private
+# handler addition for Side.Other. The explained Lib row must not mask Side's new realization row.
+for variant in interface-law-compound-base interface-law-compound-changed; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Mid
+0
+BANG
+  cat > "$tmpdir/$variant/Side.bang" <<'BANG'
+pub effect Other {
+  check : Int -> Int
+  law preserves(other): other.check(0) == 0
+}
+BANG
+done
+cat > "$tmpdir/interface-law-compound-base/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(0) == 0
+}
+BANG
+cat > "$tmpdir/interface-law-compound-changed/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(1) == 1
+}
+BANG
+cat > "$tmpdir/interface-law-compound-base/Mid.bang" <<'BANG'
+import Lib
+import Side
+pub handler Identity implements Lib_Gate { check(n) => n }
+BANG
+cat > "$tmpdir/interface-law-compound-changed/Mid.bang" <<'BANG'
+import Lib
+import Side
+pub handler Identity implements Lib_Gate { check(n) => n }
+handler OtherIdentity implements Side_Other { check(n) => n }
+BANG
+
+# A declared public law belongs to the interface even when no realization exists. This is the
+# successor's headline recovery of the instance-only dump blind spot.
+for variant in interface-law-no-handler-base interface-law-no-handler-changed; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+0
+BANG
+done
+cat > "$tmpdir/interface-law-no-handler-base/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(0) == 0
+}
+BANG
+cat > "$tmpdir/interface-law-no-handler-changed/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(1) == 1
+}
+BANG
+
+# Private declarations are not public interface contracts. A private law-body edit must preserve
+# the module interface; declaration text is not lowered into the whole-program core either.
+for variant in interface-law-private-base interface-law-private-changed; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+0
+BANG
+done
+cat > "$tmpdir/interface-law-private-base/Lib.bang" <<'BANG'
+effect Hidden {
+  check : Int -> Int
+  law preserves(hidden): hidden.check(0) == 0
+}
+pub let marker : Int = 0
+BANG
+cat > "$tmpdir/interface-law-private-changed/Lib.bang" <<'BANG'
+effect Hidden {
+  check : Int -> Int
+  law preserves(hidden): hidden.check(1) == 1
+}
+pub let marker : Int = 0
+BANG
+
+# Kill-shot stability fixtures. First, inserting an unrelated earlier effect must not move an
+# unchanged law contract. Second, reversing entry import order around a law body that uses selected
+# values from two modules must preserve its post-merge qualified text and interface digest.
+for variant in interface-law-stable-base interface-law-stable-noise; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(0) == 0
+}
+BANG
+done
+cat > "$tmpdir/interface-law-stable-base/main.bang" <<'BANG'
+import Lib
+0
+BANG
+cat > "$tmpdir/interface-law-stable-noise/Noise.bang" <<'BANG'
+pub effect Noise { ping : Int -> Int }
+BANG
+cat > "$tmpdir/interface-law-stable-noise/main.bang" <<'BANG'
+import Noise
+import Lib
+0
+BANG
+for variant in interface-law-order-ab interface-law-order-ba; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/HelperA.bang" <<'BANG'
+pub let zero : Int = 0
+BANG
+  cat > "$tmpdir/$variant/HelperB.bang" <<'BANG'
+pub let one : Int = 1
+BANG
+  cat > "$tmpdir/$variant/Lib.bang" <<'BANG'
+use HelperA (zero)
+use HelperB (one)
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): let ignored = one in gate.check(zero) == zero
+}
+BANG
+done
+cat > "$tmpdir/interface-law-order-ab/main.bang" <<'BANG'
+import HelperA
+import HelperB
+import Lib
+0
+BANG
+cat > "$tmpdir/interface-law-order-ba/main.bang" <<'BANG'
+import HelperB
+import HelperA
+import Lib
+0
+BANG
+
 # The positive consumer journey uses a real three-deep graph: entry -> Mid -> Lib. Mid imports Lib
 # without depending on its concrete export shape, isolating graph fanout from type-check failure when
 # Lib's public signature moves.
@@ -340,7 +479,7 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v1-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
@@ -396,7 +535,7 @@ export=meta["exports"]
 print("|".join([
   meta["scope"],meta["algorithm"],str(meta["cacheKeySafe"]).lower(),
   str(meta["separateCompilationReady"]).lower(),str(len(meta["digest"])),
-  str(export==[{"id":"Lib::answer","name":"answer","kind":"let","type":"Int","row":"{}","typeError":None,"shape":None}]),
+  str(export==[{"id":"Lib::answer","name":"answer","kind":"let","type":"Int","row":"{}","typeError":None,"shape":None,"laws":[]}]),
   str(libs[0]["digest"]==libs[1]["digest"]==libs[2]["digest"]),
   str(libs[0]["digest"]!=libs[3]["digest"]),
   str(cores[0]!=cores[1] and cores[0]!=cores[2] and cores[0]!=cores[3])]))
@@ -405,7 +544,7 @@ $iface_public_dump
 $iface_private_dump
 $iface_signature_dump"
 check "module-interface-extractor-exit" "$iface_rows_exit" "0"
-check "module-interface-boundary-discrimination" "$iface_rows" "resolved-program-module-interface|bang-module-interface-json-v1-uint64|false|false|16|True|True|True|True"
+check "module-interface-boundary-discrimination" "$iface_rows" "resolved-program-module-interface|bang-module-interface-json-v2-uint64|false|false|16|True|True|True|True"
 
 capture iface_shape_base_dump iface_shape_base_exit "$bang" query dump "$tmpdir/interface-shape-base/main.bang" 2>/dev/null
 capture iface_shape_changed_dump iface_shape_changed_exit "$bang" query dump "$tmpdir/interface-shape-changed/main.bang" 2>/dev/null
@@ -504,10 +643,10 @@ check "interface-diff-body-exit" "$iface_body_diff_exit" "0"
 capture iface_body_view iface_body_view_exit python3 -c '
 import json,sys
 d=json.load(sys.stdin)
-print(json.dumps({"status":d["decision"]["status"],"moved":d["typeShapeInvalidation"]["moved"],"candidates":d["typeShapeInvalidation"]["recheckCandidates"],"skipped":d["decision"]["actualChecksSkipped"],"authorized":d["decision"]["artifactReuseAuthorized"]},separators=(",",":")))
+print(json.dumps({"schema":d["schemaVersion"],"basis":d["comparisonBasis"],"status":d["decision"]["status"],"moved":d["interfaceInvalidation"]["moved"],"candidates":d["interfaceInvalidation"]["recheckCandidates"],"skipped":d["decision"]["actualChecksSkipped"],"authorized":d["decision"]["artifactReuseAuthorized"]},separators=(",",":")))
 ' 2>/dev/null <<< "$iface_body_diff"
 check "interface-diff-body-extractor-exit" "$iface_body_view_exit" "0"
-check "interface-diff-body-preserved" "$iface_body_view" '{"status":"measured","moved":[],"candidates":[],"skipped":false,"authorized":false}'
+check "interface-diff-body-preserved" "$iface_body_view" '{"schema":2,"basis":"complete-module-interface-exports-including-declared-laws+validated-module-topology","status":"measured","moved":[],"candidates":[],"skipped":false,"authorized":false}'
 
 capture iface_signature_diff iface_signature_diff_exit python3 tools/interface-diff.py \
   "$tmpdir/interface-base.json" "$tmpdir/interface-signature.json" 2>/dev/null
@@ -515,7 +654,7 @@ check "interface-diff-signature-exit" "$iface_signature_diff_exit" "0"
 capture iface_signature_view iface_signature_view_exit python3 -c '
 import json,sys
 d=json.load(sys.stdin)
-print(json.dumps({"moved":d["typeShapeInvalidation"]["moved"],"candidates":d["typeShapeInvalidation"]["recheckCandidates"],"modules":d["modules"]},separators=(",",":")))
+print(json.dumps({"moved":d["interfaceInvalidation"]["moved"],"candidates":d["interfaceInvalidation"]["recheckCandidates"],"modules":d["modules"]},separators=(",",":")))
 ' 2>/dev/null <<< "$iface_signature_diff"
 check "interface-diff-signature-extractor-exit" "$iface_signature_view_exit" "0"
 check "interface-diff-signature-fanout" "$iface_signature_view" '{"moved":["Lib"],"candidates":["@entry","Lib","Mid"],"modules":[{"module":"@entry","interface":"preserved","recheckCandidate":true,"invalidatedBy":["Lib"]},{"module":"Lib","interface":"moved","recheckCandidate":true,"invalidatedBy":["Lib"]},{"module":"Mid","interface":"preserved","recheckCandidate":true,"invalidatedBy":["Lib"]}]}'
@@ -531,7 +670,7 @@ capture iface_added_diff iface_added_diff_exit python3 tools/interface-diff.py \
 check "interface-diff-added-exit" "$iface_added_diff_exit" "0"
 capture iface_added_view iface_added_view_exit python3 -c '
 import json,sys
-d=json.load(sys.stdin)["typeShapeInvalidation"]
+d=json.load(sys.stdin)["interfaceInvalidation"]
 print(json.dumps({"added":d["added"],"removed":d["removed"],"topology":d["topologyChanged"],"candidates":d["recheckCandidates"]},separators=(",",":")))
 ' 2>/dev/null <<< "$iface_added_diff"
 check "interface-diff-added-extractor-exit" "$iface_added_view_exit" "0"
@@ -541,15 +680,15 @@ capture iface_removed_diff iface_removed_diff_exit python3 tools/interface-diff.
 check "interface-diff-removed-exit" "$iface_removed_diff_exit" "0"
 capture iface_removed_view iface_removed_view_exit python3 -c '
 import json,sys
-d=json.load(sys.stdin)["typeShapeInvalidation"]
+d=json.load(sys.stdin)["interfaceInvalidation"]
 print(json.dumps({"added":d["added"],"removed":d["removed"],"topology":d["topologyChanged"],"candidates":d["recheckCandidates"]},separators=(",",":")))
 ' 2>/dev/null <<< "$iface_removed_diff"
 check "interface-diff-removed-extractor-exit" "$iface_removed_view_exit" "0"
 check "interface-diff-removed-fanout" "$iface_removed_view" '{"added":[],"removed":["Side"],"topology":["@entry"],"candidates":["@entry"]}'
 
-# Strong adverse case: the public law body moves while Lib's name-only checked interface does not.
-# The consumer notices global law evidence but cannot soundly attribute a stable public-law contract
-# to a module in dump v1, so it exits 2 with a schema gap instead of saying the dependent can skip.
+# The previous tracer's strongest adverse case now becomes the positive owner-attribution journey:
+# the public law body moves Lib's declared-law export fact, ordinary interface fanout reaches Mid and
+# @entry, and the global realization-law movement is explained rather than guessed.
 capture iface_law_base_dump iface_law_base_exit "$bang" query dump "$tmpdir/interface-law-base/main.bang" 2>/dev/null
 capture iface_law_changed_dump iface_law_changed_exit "$bang" query dump "$tmpdir/interface-law-changed/main.bang" 2>/dev/null
 check "interface-diff-law-base-dump-exit" "$iface_law_base_exit" "0"
@@ -558,41 +697,169 @@ capture iface_law_premise iface_law_premise_exit python3 -c '
 import json,sys
 a,b=[json.loads(line) for line in sys.stdin if line.strip()]
 lib=lambda d: next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
-print("|".join([str(lib(a)["digest"]==lib(b)["digest"]),str(a["laws"]!=b["laws"])]))
+laws=lambda d: lib(d)["exports"][0]["laws"]
+print("|".join([str(lib(a)["digest"]!=lib(b)["digest"]),str(laws(a)!=laws(b)),laws(a)[0]["body"],str(a["laws"]!=b["laws"])]))
 ' 2>/dev/null <<< "$iface_law_base_dump
 $iface_law_changed_dump"
 check "interface-diff-law-premise-extractor-exit" "$iface_law_premise_exit" "0"
-check "interface-diff-law-falsifier-fires" "$iface_law_premise" "True|True"
+check "interface-diff-law-owner-contract-moves" "$iface_law_premise" "True|True|gate.check(0) == 0|True"
 printf '%s' "$iface_law_base_dump" > "$tmpdir/interface-law-base.json"
 printf '%s' "$iface_law_changed_dump" > "$tmpdir/interface-law-changed.json"
 capture iface_law_diff iface_law_diff_exit python3 tools/interface-diff.py \
   "$tmpdir/interface-law-base.json" "$tmpdir/interface-law-changed.json" 2>/dev/null
-check "interface-diff-law-indeterminate-exit" "$iface_law_diff_exit" "2"
+check "interface-diff-law-attributed-exit" "$iface_law_diff_exit" "0"
 capture iface_law_view iface_law_view_exit python3 -c '
 import json,sys
 d=json.load(sys.stdin)
-print(json.dumps({"moved":d["typeShapeInvalidation"]["moved"],"lawsMoved":d["lawFactsMoved"],"status":d["decision"]["status"],"skipped":d["decision"]["actualChecksSkipped"],"gap":d["gap"]["code"]},separators=(",",":")))
+print(json.dumps({"moved":d["interfaceInvalidation"]["moved"],"contracts":d["publicLawContractsMoved"],"candidates":d["interfaceInvalidation"]["recheckCandidates"],"lawsMoved":d["lawFactsMoved"],"status":d["decision"]["status"],"skipped":d["decision"]["actualChecksSkipped"],"gap":d["gap"]},separators=(",",":")))
 ' 2>/dev/null <<< "$iface_law_diff"
 check "interface-diff-law-extractor-exit" "$iface_law_view_exit" "0"
-check "interface-diff-law-refuses-false-skip" "$iface_law_view" '{"moved":[],"lawsMoved":true,"status":"indeterminate","skipped":false,"gap":"module-owned-public-law-contract"}'
+check "interface-diff-law-owner-fanout" "$iface_law_view" '{"moved":["Lib"],"contracts":["Lib"],"candidates":["@entry","Lib","Mid"],"lawsMoved":true,"status":"measured","skipped":false,"gap":null}'
 
-# Forward-compatibility belongs to the consumer too: additive unknown fields at dump, interface, and
-# export levels do not manufacture a change under schemaVersion 1.
+# Per-row attribution must be monotone under compound edits: Lib's explained public-law movement
+# cannot mask Side.Other's unrelated new private-handler realization row.
+capture iface_law_compound_base_dump iface_law_compound_base_exit "$bang" query dump "$tmpdir/interface-law-compound-base/main.bang" 2>/dev/null
+capture iface_law_compound_changed_dump iface_law_compound_changed_exit "$bang" query dump "$tmpdir/interface-law-compound-changed/main.bang" 2>/dev/null
+check "interface-law-compound-base-exit" "$iface_law_compound_base_exit" "0"
+check "interface-law-compound-changed-exit" "$iface_law_compound_changed_exit" "0"
+printf '%s' "$iface_law_compound_base_dump" > "$tmpdir/interface-law-compound-base.json"
+printf '%s' "$iface_law_compound_changed_dump" > "$tmpdir/interface-law-compound-changed.json"
+capture iface_law_compound_diff iface_law_compound_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-law-compound-base.json" "$tmpdir/interface-law-compound-changed.json" 2>/dev/null
+check "interface-law-compound-diff-exit" "$iface_law_compound_diff_exit" "2"
+capture iface_law_compound_view iface_law_compound_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({"moved":d["interfaceInvalidation"]["moved"],"contracts":d["publicLawContractsMoved"],"unexplained":d["unexplainedLawContractIds"],"status":d["decision"]["status"],"gap":d["gap"]["code"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_law_compound_diff"
+check "interface-law-compound-view-exit" "$iface_law_compound_view_exit" "0"
+check "interface-law-compound-unmasked" "$iface_law_compound_view" '{"moved":["Lib"],"contracts":["Lib"],"unexplained":["Side_Other"],"status":"indeterminate","gap":"unexplained-realization-law-movement"}'
+
+# A public law with no handler has no row in the realization-instance table. The declaration fact
+# must still move the owner and fan out; this flips the previously invisible case green.
+capture iface_law_no_handler_base_dump iface_law_no_handler_base_exit "$bang" query dump "$tmpdir/interface-law-no-handler-base/main.bang" 2>/dev/null
+capture iface_law_no_handler_changed_dump iface_law_no_handler_changed_exit "$bang" query dump "$tmpdir/interface-law-no-handler-changed/main.bang" 2>/dev/null
+check "interface-law-no-handler-base-exit" "$iface_law_no_handler_base_exit" "0"
+check "interface-law-no-handler-changed-exit" "$iface_law_no_handler_changed_exit" "0"
+capture iface_law_no_handler_premise iface_law_no_handler_premise_exit python3 -c '
+import json,sys
+a,b=[json.loads(line) for line in sys.stdin if line.strip()]
+lib=lambda d: next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
+print("|".join([str(a["laws"]==b["laws"]==[]),str(lib(a)["digest"]!=lib(b)["digest"]),str(lib(a)["exports"][0]["laws"]!=lib(b)["exports"][0]["laws"])]))
+' 2>/dev/null <<< "$iface_law_no_handler_base_dump
+$iface_law_no_handler_changed_dump"
+check "interface-law-no-handler-premise-exit" "$iface_law_no_handler_premise_exit" "0"
+check "interface-law-no-handler-visible" "$iface_law_no_handler_premise" "True|True|True"
+printf '%s' "$iface_law_no_handler_base_dump" > "$tmpdir/interface-law-no-handler-base.json"
+printf '%s' "$iface_law_no_handler_changed_dump" > "$tmpdir/interface-law-no-handler-changed.json"
+capture iface_law_no_handler_diff iface_law_no_handler_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-law-no-handler-base.json" "$tmpdir/interface-law-no-handler-changed.json" 2>/dev/null
+check "interface-law-no-handler-diff-exit" "$iface_law_no_handler_diff_exit" "0"
+capture iface_law_no_handler_view iface_law_no_handler_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({"moved":d["interfaceInvalidation"]["moved"],"contracts":d["publicLawContractsMoved"],"candidates":d["interfaceInvalidation"]["recheckCandidates"],"lawsMoved":d["lawFactsMoved"],"status":d["decision"]["status"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_law_no_handler_diff"
+check "interface-law-no-handler-view-exit" "$iface_law_no_handler_view_exit" "0"
+check "interface-law-no-handler-fanout" "$iface_law_no_handler_view" '{"moved":["Lib"],"contracts":["Lib"],"candidates":["@entry","Lib"],"lawsMoved":false,"status":"measured"}'
+
+# The public projection must not launder private declaration text into the interface.
+capture iface_law_private_base_dump iface_law_private_base_exit "$bang" query dump "$tmpdir/interface-law-private-base/main.bang" 2>/dev/null
+capture iface_law_private_changed_dump iface_law_private_changed_exit "$bang" query dump "$tmpdir/interface-law-private-changed/main.bang" 2>/dev/null
+check "interface-law-private-base-exit" "$iface_law_private_base_exit" "0"
+check "interface-law-private-changed-exit" "$iface_law_private_changed_exit" "0"
+capture iface_law_private_view iface_law_private_view_exit python3 -c '
+import json,sys
+a,b=[json.loads(line) for line in sys.stdin if line.strip()]
+lib=lambda d: next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
+print("|".join([str(a["coreFingerprint"]["digest"]==b["coreFingerprint"]["digest"]),str(lib(a)["digest"]==lib(b)["digest"]),str([x["name"] for x in lib(a)["exports"]]==["marker"]),str(lib(a)["exports"][0]["laws"]==[])]))
+' 2>/dev/null <<< "$iface_law_private_base_dump
+$iface_law_private_changed_dump"
+check "interface-law-private-view-exit" "$iface_law_private_view_exit" "0"
+check "interface-law-private-absent" "$iface_law_private_view" "True|True|True|True"
+
+# The rendering kill shot is now committed at the actual export boundary.
+capture iface_law_stable_base_dump iface_law_stable_base_exit "$bang" query dump "$tmpdir/interface-law-stable-base/main.bang" 2>/dev/null
+capture iface_law_stable_noise_dump iface_law_stable_noise_exit "$bang" query dump "$tmpdir/interface-law-stable-noise/main.bang" 2>/dev/null
+capture iface_law_order_ab_dump iface_law_order_ab_exit "$bang" query dump "$tmpdir/interface-law-order-ab/main.bang" 2>/dev/null
+capture iface_law_order_ba_dump iface_law_order_ba_exit "$bang" query dump "$tmpdir/interface-law-order-ba/main.bang" 2>/dev/null
+check "interface-law-stable-base-exit" "$iface_law_stable_base_exit" "0"
+check "interface-law-stable-noise-exit" "$iface_law_stable_noise_exit" "0"
+check "interface-law-order-ab-exit" "$iface_law_order_ab_exit" "0"
+check "interface-law-order-ba-exit" "$iface_law_order_ba_exit" "0"
+capture iface_law_stability_view iface_law_stability_view_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+lib=lambda d: next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
+body=lambda d: lib(d)["exports"][0]["laws"][0]["body"]
+print("|".join([str(lib(ds[0])["digest"]==lib(ds[1])["digest"]),body(ds[0]),str(lib(ds[2])["digest"]==lib(ds[3])["digest"]),body(ds[2]),str(body(ds[2])==body(ds[3]))]))
+' 2>/dev/null <<< "$iface_law_stable_base_dump
+$iface_law_stable_noise_dump
+$iface_law_order_ab_dump
+$iface_law_order_ba_dump"
+check "interface-law-stability-view-exit" "$iface_law_stability_view_exit" "0"
+check "interface-law-merge-context-invariant" "$iface_law_stability_view" "True|gate.check(0) == 0|True|let ignored = Lib_one in gate.check(Lib_zero) == Lib_zero|True"
+
+# Keep the fail-loud residue executable: realization-law evidence that moves without any public
+# declared contract explanation remains indeterminate instead of being silently ignored.
+capture iface_unexplained_law_fixture iface_unexplained_law_fixture_exit python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+d["laws"][0]["body"] += " -- unexplained"
+json.dump(d,open(sys.argv[2],"w"),separators=(",",":"))
+print("ok")
+' "$tmpdir/interface-law-base.json" "$tmpdir/interface-law-unexplained.json" 2>/dev/null
+check "interface-law-unexplained-fixture-exit" "$iface_unexplained_law_fixture_exit" "0"
+capture iface_unexplained_law_diff iface_unexplained_law_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-law-base.json" "$tmpdir/interface-law-unexplained.json" 2>/dev/null
+check "interface-law-unexplained-diff-exit" "$iface_unexplained_law_diff_exit" "2"
+capture iface_unexplained_law_view iface_unexplained_law_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({"moved":d["interfaceInvalidation"]["moved"],"contracts":d["publicLawContractsMoved"],"lawsMoved":d["lawFactsMoved"],"status":d["decision"]["status"],"gap":d["gap"]["code"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_unexplained_law_diff"
+check "interface-law-unexplained-view-exit" "$iface_unexplained_law_view_exit" "0"
+check "interface-law-unexplained-refused" "$iface_unexplained_law_view" '{"moved":[],"contracts":[],"lawsMoved":true,"status":"indeterminate","gap":"unexplained-realization-law-movement"}'
+
+# Forward-compatibility belongs to the consumer too: additive unknown fields at dump, interface,
+# export, and declared-law levels do not manufacture a change under dump schemaVersion 1.
 capture iface_future_fixture iface_future_fixture_exit python3 -c '
 import json,sys
 d=json.load(open(sys.argv[1]))
 d["futureTop"]={"ignored":True}
 d["moduleInterfaces"][0]["futureInterface"]=1
-if d["moduleInterfaces"][1]["exports"]: d["moduleInterfaces"][1]["exports"][0]["futureExport"]="ignored"
+lib=next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
+lib["exports"][0]["futureExport"]="ignored"
+lib["exports"][0]["laws"][0]["futureLaw"]="ignored"
 json.dump(d,open(sys.argv[2],"w"),separators=(",",":"))
 print("ok")
-' "$tmpdir/interface-base.json" "$tmpdir/interface-future.json" 2>/dev/null
+' "$tmpdir/interface-law-base.json" "$tmpdir/interface-future.json" 2>/dev/null
 check "interface-diff-additive-fixture-exit" "$iface_future_fixture_exit" "0"
 capture iface_future_diff iface_future_diff_exit python3 tools/interface-diff.py \
-  "$tmpdir/interface-base.json" "$tmpdir/interface-future.json" 2>/dev/null
+  "$tmpdir/interface-law-base.json" "$tmpdir/interface-future.json" 2>/dev/null
 check "interface-diff-ignore-unknown-exit" "$iface_future_diff_exit" "0"
-capture iface_future_view iface_future_view_exit python3 -c 'import json,sys; d=json.load(sys.stdin)["typeShapeInvalidation"]; print(str(d["moved"]==[] and d["recheckCandidates"]==[]))' 2>/dev/null <<< "$iface_future_diff"
+capture iface_future_view iface_future_view_exit python3 -c 'import json,sys; d=json.load(sys.stdin)["interfaceInvalidation"]; print(str(d["moved"]==[] and d["recheckCandidates"]==[]))' 2>/dev/null <<< "$iface_future_diff"
 check "interface-diff-ignore-unknown-fields" "$iface_future_view" "True"
+
+# A pre-v2 dump fails with the version-domain diagnosis before missing export fields are parsed.
+capture iface_v1_fixture iface_v1_fixture_exit python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+for interface in d["moduleInterfaces"]:
+  interface["algorithm"]="bang-module-interface-json-v1-uint64"
+  for export in interface["exports"]: export.pop("laws",None)
+json.dump(d,open(sys.argv[2],"w"),separators=(",",":"))
+print("ok")
+' "$tmpdir/interface-base.json" "$tmpdir/interface-v1.json" 2>/dev/null
+check "interface-diff-v1-fixture-exit" "$iface_v1_fixture_exit" "0"
+capture iface_v1_error iface_v1_exit python3 -c '
+import subprocess,sys
+p=subprocess.run([sys.executable,"tools/interface-diff.py",sys.argv[1],sys.argv[1]],text=True,capture_output=True)
+print(p.stderr.strip())
+raise SystemExit(p.returncode)
+' "$tmpdir/interface-v1.json"
+check "interface-diff-v1-refused-exit" "$iface_v1_exit" "1"
+check "interface-diff-v1-version-diagnosis" "$iface_v1_error" "interface-diff: before: moduleInterfaces[0] requires interface algorithm 'bang-module-interface-json-v2-uint64'; got 'bang-module-interface-json-v1-uint64'"
 
 # `cacheKeySafe:false` has executable teeth: if a digest and the complete exports disagree (collision,
 # corruption, or producer bug), refuse rather than choosing whichever signal is convenient.
@@ -630,7 +897,7 @@ check "dump-parse-error-exit" "$got_exit2" "1"
 # dump's law/impl/trait facts — a decls-only fixture with a trait+impl+law.
 got_out3="$("$bang" query dump "$tmpdir/laws.bang" 2>/dev/null)" && got_exit3=0 || got_exit3=$?
 check "dump-laws-exit" "$got_exit3" "0"
-check "dump-laws-present" "$(printf '%s' "$got_out3" | grep -o '"laws":\[{"trait":"Eq"' || true)" '"laws":[{"trait":"Eq"'
+check "dump-laws-present" "$(printf '%s' "$got_out3" | grep -o '"laws":\[{"id":"Eq:refl"' || true)" '"laws":[{"id":"Eq:refl"'
 check "dump-trait-shape-present" "$(printf '%s' "$got_out3" | grep -o '"kind":"trait"' || true)" '"kind":"trait"'
 check "dump-impl-shape-present" "$(printf '%s' "$got_out3" | grep -o '"kind":"impl"' || true)" '"kind":"impl"'
 
@@ -723,7 +990,7 @@ check "module-impact-cycle-refused" "$cycle_impact_exit" "1"
 # instances instead of the old multi-file `laws:[]` grant. ──
 codec_dump="$($bang query dump examples/codec-contract/main.bang 2>/dev/null)" && codec_dump_exit=0 || codec_dump_exit=$?
 check "dump-multifile-codec-exit" "$codec_dump_exit" "0"
-contains_codec='"contract":"Codec_Codec","realization":"Shift7","law":"decode_encode"'
+contains_codec='"contractId":"Codec_Codec","realization":"Shift7","realizationId":"Codec_Shift7","law":"decode_encode"'
 check "dump-multifile-codec-laws" "$(printf '%s' "$codec_dump" | grep -o "$contains_codec" || true)" "$contains_codec"
 codec_laws="$($bang query laws examples/codec-contract/main.bang 2>/dev/null)" && codec_laws_exit=0 || codec_laws_exit=$?
 check "laws-multifile-codec-exit" "$codec_laws_exit" "0"
@@ -901,7 +1168,7 @@ check "type-miss-exit" "$got_exit" "0"
 
 got_out="$("$bang" query laws "$tmpdir/laws.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "laws-exit" "$got_exit" "0"
-check "laws-shape" "$got_out" '{"ok":true,"laws":[{"trait":"Eq","contract":"Eq","realization":null,"law":"refl","params":["x"],"body":"eq(x, x) == 1"}]}'
+check "laws-shape" "$got_out" '{"ok":true,"laws":[{"id":"Eq:refl","trait":"Eq","contract":"Eq","contractId":"Eq","realization":null,"realizationId":null,"law":"refl","params":["x"],"body":"eq(x, x) == 1"}]}'
 
 capture got_stdin got_stdin_exit "$bang" query laws 2>/dev/null < "$tmpdir/laws.bang"
 check "laws-stdin-exit" "$got_stdin_exit" "0"
@@ -1051,8 +1318,9 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (189 — dependency observation, recomputation, reuse, module graph, structural
-# invalidation-fanout, resolved-core fingerprint, and resolved-module-interface checks included);
+# always runs (218 — dependency observation, recomputation, reuse, module graph, structural
+# invalidation-fanout, resolved-core fingerprint, law-aware interface, and resolved-module-interface
+# checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -1061,7 +1329,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=189
+want_total=218
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

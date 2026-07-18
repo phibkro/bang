@@ -1820,9 +1820,10 @@ def runQueryLaws (file : Option String) : IO UInt32 := do
       if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
         printQueryOk (Bang.Query.lawsJson src)
       else
-        match ← resolveQueryProg src headerProg file with
+        match ← resolveQueryProgWithProvenance src headerProg file with
         | .error code => pure code
-        | .ok p       => printQueryOk (Bang.Query.lawsJsonP p)
+        | .ok resolved =>
+            printQueryOk (Bang.Query.lawsJsonP resolved.prog resolved.declModules)
 
 /-- `bang query contract <file>` — the focused semantic-description card: effect contracts,
 handler realizations, quantities, laws, and compiler evidence in one JSON answer. -/

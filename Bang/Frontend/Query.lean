@@ -706,9 +706,36 @@ can measure an interface firewall, while explicitly exposing why it is not yet a
 module artifact.
 -/
 
-/-- Stable algorithm name for the canonical interface-record fold. The digest remains an
-experimental 64-bit change detector, not a persistent cache key. -/
-public def moduleInterfaceAlgorithm : String := "bang-module-interface-json-v1-uint64"
+/-- Stable algorithm name for the canonical interface-record fold. Version 2 adds owner-local
+declared public-law contracts to each export. The digest remains an experimental 64-bit change
+detector, not a persistent cache key. -/
+public def moduleInterfaceAlgorithm : String := "bang-module-interface-json-v2-uint64"
+
+/-- **PUBLIC (TIER 1):** one law statement declared by a trait/effect export. This is declaration
+text, not the realization cross-product returned by `lawInstancesOf` and not evidence that the law
+was proved or tested. -/
+public structure DeclaredLawFact where
+  id         : String
+  contractId : String
+  name   : String
+  params : List String
+  body   : String
+  deriving Repr
+
+/-- Project the owner-local law declarations from one surface declaration. `showSurf` is the same
+canonical surface renderer used by the existing instance-law seam; no second body printer exists. -/
+def declaredLawFactsOf (contractId : String) : Decl → List DeclaredLawFact
+  | .traitD _ _ _ laws | .effectD _ _ laws =>
+      laws.map (fun law =>
+        ⟨contractId ++ ":" ++ law.name, contractId, law.name, law.params,
+          Bang.Format.showSurf law.body⟩)
+  | _ => []
+
+/-- One declared public-law contract → its JSON object. -/
+public def DeclaredLawFact.toJson (f : DeclaredLawFact) : String :=
+  jsonObj [jsonStrField "id" f.id, jsonStrField "contractId" f.contractId,
+    jsonStrField "name" f.name, jsonField "params" (jsonStrArr f.params),
+    jsonStrField "body" f.body]
 
 /-- **PUBLIC (TIER 1):** one exported declaration in a resolved module interface. `id` is path-free
 and presentation-independent (`Module::localName`); implementation bodies are intentionally absent. -/
@@ -720,6 +747,7 @@ public structure ModuleExportFact where
   row       : Option String
   typeError : Option String
   shape     : Option String
+  laws      : List DeclaredLawFact
   deriving Repr
 
 /-- **PUBLIC (TIER 1):** one resolved module's public interface and its experimental digest. -/
@@ -734,14 +762,16 @@ public structure ModuleInterfaceFact where
   deriving Repr
 
 -- Generated `Repr` code ignores its precedence argument.
-attribute [nolint unusedArguments] instReprModuleExportFact.repr instReprModuleInterfaceFact.repr
+attribute [nolint unusedArguments] instReprDeclaredLawFact.repr instReprModuleExportFact.repr
+  instReprModuleInterfaceFact.repr
 
 /-- One module-export record → its canonical JSON object. -/
 public def ModuleExportFact.toJson (f : ModuleExportFact) : String :=
   jsonObj [jsonStrField "id" f.id, jsonStrField "name" f.name,
     jsonField "kind" f.kind.toJson, jsonOptStrField "type" f.type,
     jsonOptStrField "row" f.row, jsonOptStrField "typeError" f.typeError,
-    jsonField "shape" (f.shape.getD "null")]
+    jsonField "shape" (f.shape.getD "null"),
+    jsonField "laws" (jsonArr (f.laws.map DeclaredLawFact.toJson))]
 
 /-- One module-interface record → its public JSON object. -/
 public def ModuleInterfaceFact.toJson (f : ModuleInterfaceFact) : String :=
@@ -755,22 +785,27 @@ public def ModuleInterfaceFact.toJson (f : ModuleInterfaceFact) : String :=
 /-- Convert one resolver-owned exported declaration name into the interface projection of the
 already-computed `DeclFact`. -/
 def moduleExportFactOf (declModule : List (String × String)) (moduleName : String)
-    (f : DeclFact) : ModuleExportFact :=
+    (f : DeclFact) (laws : List DeclaredLawFact) : ModuleExportFact :=
   let localName := if moduleName == "@entry" then f.name else displayDeclName declModule f.name
   { id := moduleName ++ "::" ++ localName, name := localName, kind := f.kind,
-    type := f.type, row := f.row, typeError := f.typeError, shape := f.shape }
+    type := f.type, row := f.row, typeError := f.typeError, shape := f.shape, laws }
 
 /-- **PUBLIC (TIER 1):** project resolver-owned `(module, final exported declaration names)` onto
 the dump's existing declaration facts. Missing names fail loudly at this pure seam; the JSON layer
 isolates that inconsistency as `null` rather than emitting a silently incomplete interface. -/
-public def moduleInterfaceFactsOf (facts : List DeclFact) (declModule : List (String × String))
+public def moduleInterfaceFactsOf (decls : List Decl) (facts : List DeclFact)
+    (declModule : List (String × String))
     (moduleExports : List (String × List String)) : Except String (List ModuleInterfaceFact) :=
   moduleExports.mapM fun (moduleName, names) => do
     let exports ← names.eraseDups.mapM fun name => do
       let f ← match facts.find? (·.name == name) with
         | some f => pure f
         | none => throw s!"module interface '{moduleName}': exported declaration '{name}' is absent from the merged fact base"
-      pure (moduleExportFactOf declModule moduleName f)
+      let d ← match decls.find? (·.name == name) with
+        | some d => pure d
+        | none => throw s!"module interface '{moduleName}': exported declaration '{name}' is absent from the merged program"
+      pure (moduleExportFactOf declModule moduleName f
+        (declaredLawFactsOf (stableDeclId declModule f.name) d))
     let payload := jsonObj [jsonStrField "module" moduleName,
       jsonField "exports" (jsonArr (exports.map ModuleExportFact.toJson))]
     let digest := Bang.CoreFingerprint.toHex16
@@ -780,10 +815,11 @@ public def moduleInterfaceFactsOf (facts : List DeclFact) (declModule : List (St
 
 /-- JSON value for checked module interfaces. Whole-program lowering must succeed because this is a
 checked-interface view, not a best-effort parse inventory. -/
-def moduleInterfacesJson (core : Option CoreFingerprintFact) (facts : List DeclFact)
-    (declModule : List (String × String)) (moduleExports : List (String × List String)) : String :=
+def moduleInterfacesJson (core : Option CoreFingerprintFact) (decls : List Decl)
+    (facts : List DeclFact) (declModule : List (String × String))
+    (moduleExports : List (String × List String)) : String :=
   if core.isNone then "null" else
-    match moduleInterfaceFactsOf facts declModule moduleExports with
+    match moduleInterfaceFactsOf decls facts declModule moduleExports with
     | .ok interfaces => jsonArr (interfaces.map ModuleInterfaceFact.toJson)
     | .error _ => "null"
 
@@ -808,13 +844,13 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
   let imports := sourceImports.getD p.imports
   let uses := sourceUses.getD p.uses
   let lawsJ := match Bang.TypeCheck.lawInstancesOfProg p with
-    | .ok insts => insts.map lawInstanceJson
+    | .ok insts => insts.map (contractLawJson declModule)
     | .error _  => []   -- same per-seam failure isolation as `dumpJson`: law discovery cannot hide
                          -- otherwise valid declaration/reference/header facts.
   jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
            jsonStrField "bangVersion" bangVersion,
            jsonField "coreFingerprint" (coreFingerprintJson core),
-           jsonField "moduleInterfaces" (moduleInterfacesJson core facts declModule exports),
+           jsonField "moduleInterfaces" (moduleInterfacesJson core p.decls facts declModule exports),
            jsonField "modules" (jsonArr (modules.map ModuleFact.toJson)),
            jsonField "moduleDeps" (jsonArr (moduleDeps.map ModuleDepFact.toJson)),
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
@@ -844,7 +880,7 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
       let facts := declFactsOf p
       let core := coreFingerprintOf p
       let lawsJ := match Bang.TypeCheck.lawInstancesOf src with
-        | .ok insts => insts.map lawInstanceJson
+        | .ok insts => insts.map (contractLawJson [])
         | .error _  => []   -- a law-discovery failure never blanks the REST of the dump (ADR-0046:
                              -- one bad seam doesn't hide everything else — matches `symbols`'s own
                              -- per-decl `typeError` isolation, not an all-or-nothing gate).
@@ -852,7 +888,7 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
                jsonStrField "bangVersion" bangVersion,
                jsonField "coreFingerprint" (coreFingerprintJson core),
                jsonField "moduleInterfaces"
-                 (moduleInterfacesJson core facts [] [("@entry", p.pubNames)]),
+                 (moduleInterfacesJson core p.decls facts [] [("@entry", p.pubNames)]),
                jsonField "modules" (jsonArr [entryModuleFact.toJson]),
                jsonField "moduleDeps" (jsonArr []),
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
@@ -928,10 +964,11 @@ public def effectsJson (src name : String) : String :=
 /-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): every law instance retained by an
 already merged module graph. Thin rendering of `lawInstancesOfProg`; the same list `dumpJsonP`
 places in its `laws` table. -/
-public def lawsJsonP (p : Prog) : String :=
+public def lawsJsonP (p : Prog) (declModule : List (String × String) := []) : String :=
   match Bang.TypeCheck.lawInstancesOfProg p with
   | .error e  => errorJsonOk e
-  | .ok insts => jsonObj [jsonField "ok" "true", jsonField "laws" (jsonArr (insts.map lawInstanceJson))]
+  | .ok insts => jsonObj [jsonField "ok" "true",
+      jsonField "laws" (jsonArr (insts.map (contractLawJson declModule)))]
 
 /-- **PUBLIC entry**: `bang query laws <file>` — `{"ok":true,"laws":[... ]}` for every discovered
 law instance, or `{"ok":false,"error":"..."}` on a parse/elaboration failure. Source-taking twin
@@ -939,7 +976,8 @@ of resolver-aware `lawsJsonP`. -/
 public def lawsJson (src : String) : String :=
   match Bang.TypeCheck.lawInstancesOf src with
   | .error e  => errorJsonOk e
-  | .ok insts => jsonObj [jsonField "ok" "true", jsonField "laws" (jsonArr (insts.map lawInstanceJson))]
+  | .ok insts => jsonObj [jsonField "ok" "true",
+      jsonField "laws" (jsonArr (insts.map (contractLawJson [])))]
 
 /-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): the decl that DEFINES `name` (by
 `Decl.name` — for `traitD`/`implD` this is the trait's own name, ADR-0093's documented convention),
