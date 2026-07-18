@@ -221,6 +221,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **tooling** — measure module invalidation fanout (`change:7305be9fc17a86aa2df41b0a22ff9cfbfeb5a12dedc8c07b6dcf9f67e3a058f3`)
 - **query** — probe resolved core fingerprints (`change:765e34dbf85f68fe0eb4d512b0e71e70cc88e966de79aa46035a86253d7b69da`)
 - **query** — expose resolved module interfaces (`change:84792faf2dad25870c8d61c33cca91bf7b2885362f0edc15d2af06cee81bf445`)
+- **tools** — add scoped interface diff consumer (`change:a11442b6c6f3edf882cc44193657bf5aa9cd477ced558ca0071ffa47186b988b`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
