@@ -957,6 +957,12 @@ not six independent implementations.
   "ok": true,
   "schemaVersion": 1,
   "bangVersion": "0.1.1",
+  "coreFingerprint": {
+    "scope": "resolved-program",
+    "algorithm": "bang-comp-struct-v2-uint64",
+    "digest": "16 lowercase hex digits",
+    "cacheKeySafe": false
+  } | null,
   "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
   "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",
@@ -985,6 +991,21 @@ of `project` or `bundled`. Dependency rows collapse `import` and `use` into one 
 invalidation relation. Rows are deterministic, but their semantics are sets; no source
 path, content hash, cache policy, or dependency kind is implied. The source-taking stdin
 route has no resolver walk and therefore reports only `@entry` and zero edges.
+
+`coreFingerprint` is an **experimental result-hash observation** over the exact typed lowering path
+`bang run` uses. Its `scope` is `resolved-program`: the resolver merges all files and the frontend
+elaborates them to one flat de-Bruijn `Comp`, so this field does not claim separate compilation or
+per-module results. Formatting, comments, and source binder names are absent at that boundary;
+the end-to-end gate requires those edits to preserve the digest and a semantic literal edit to change
+it. An invalid program reports `null`, keeping the rest of the dump available with its existing type
+errors.
+
+`cacheKeySafe` is deliberately `false`. The current algorithm is a versioned 64-bit structural probe,
+not a collision-resistant content address, and it does not domain-separate compiler/kernel versions.
+Equal digests are therefore useful evidence about the chosen semantic boundary but **must not** be
+used to accept an unchecked persistent cache hit. A future safe store key may change `algorithm` and
+set `cacheKeySafe` only after collision resistance, version domains, and the artifact boundary are
+concretely gated.
 
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
@@ -1023,7 +1044,7 @@ this file in the same commit, so drift is always VISIBLE in the diff, never sile
 BREAKING change additionally requires the `schemaVersion` bump.
 
 `modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not
-computed from other facts); the curated verbs below are **intensional** — derived
+computed from other facts); `coreFingerprint` is derived result metadata; the curated verbs below are **intensional** — derived
 predicates (views) over this extensional base, kept few and stable per the Kythe/Glean
 small-core lesson (push richness into derived views, not the base schema).
 
@@ -1365,7 +1386,7 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 | `bang new` | `--module` | `bang new <NAME> [--module]         scaffold examples/<NAME>/ — a runnable starter main.bang, a` |
 | `bang test` | — | `bang test [<file.bang>]            discover + sample-check every contract law (issue #60);` |
 | `bang query` | — | `bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);` |
-| `bang query dump` | — | `bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/` |
+| `bang query dump` | — | `bang query dump [<file.bang>]           THE complete fact base: resolved-core fingerprint,` |
 | `bang query symbols` | — | `bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row` |
 | `bang query type` | — | `bang query type <file.bang> <name>      the checked type ! row of one top-level binding` |
 | `bang query effects` | — | `bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding` |

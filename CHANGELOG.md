@@ -218,6 +218,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - reuse reactive work within observations (`change:6af974dfd92397f950c8b60597629f70438357b30eddb6863bc6f3e4c916fe79`)
 - **wasm** — dispatch multi-operation capabilities (`change:dccfa970a35d35eefa34a04782f48ace997ac058f759da6738ba62e043b16b01`)
 - **query** — expose resolved module graph (`change:adad870396db8fa1f90fe3916b1450aa061c773c2995cf969b47168a2235e5ee`)
+- **tooling** — measure module invalidation fanout (`change:7305be9fc17a86aa2df41b0a22ff9cfbfeb5a12dedc8c07b6dcf9f67e3a058f3`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

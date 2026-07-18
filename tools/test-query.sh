@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py runs-in=verify
+# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -70,6 +70,26 @@ impl Eq for Int { fn eq(a, b) = a }
 0
 BANG
 
+# Resolved-program fingerprint variants. Each isolates one promised observation: formatting/comment
+# noise, alpha-renaming, and a semantic negative-literal change (the deterministic collision v1 had).
+cat > "$tmpdir/fingerprint-base.bang" <<'BANG'
+let main = let x = -1 in x + 2
+BANG
+cat > "$tmpdir/fingerprint-format.bang" <<'BANG'
+-- layout and comments disappear before the kernel boundary
+let   main =
+  let x=-1 in x+2
+BANG
+cat > "$tmpdir/fingerprint-alpha.bang" <<'BANG'
+let main = let renamed = -1 in renamed + 2
+BANG
+cat > "$tmpdir/fingerprint-semantic.bang" <<'BANG'
+let main = let x = -2 in x + 2
+BANG
+cat > "$tmpdir/fingerprint-invalid.bang" <<'BANG'
+let main = 1 + Left(0)
+BANG
+
 # `pub`/divergence-tainted fixture — the composed-query demo's own corpus: ONE decl is both `pub`
 # AND recursive (its type carries `Thunk!{Div}`, the ONLY place a v1 program's decl-level effect
 # taint is visible — a top-level decl's OUTER `row` cannot yet carry a genuine user/custom label,
@@ -113,12 +133,36 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
 check "dump-stdin-exit" "$got_stdin_exit" "0"
 check "dump-stdin-eq-file" "$got_stdin" "$got_out"
+
+# The result-hash firewall's smallest tracer: consume the compiler-emitted fact, not a parallel
+# source hash. Equal core means formatting/comment and binder-name edits do not propagate; a real
+# literal change does. The fact itself says it is NOT safe for persistent caching yet (64-bit and
+# not compiler-version-domain-separated), and invalid typed input reports null instead of a hash.
+capture fp_base_dump fp_base_exit "$bang" query dump "$tmpdir/fingerprint-base.bang" 2>/dev/null
+capture fp_format_dump fp_format_exit "$bang" query dump "$tmpdir/fingerprint-format.bang" 2>/dev/null
+capture fp_alpha_dump fp_alpha_exit "$bang" query dump "$tmpdir/fingerprint-alpha.bang" 2>/dev/null
+capture fp_semantic_dump fp_semantic_exit "$bang" query dump "$tmpdir/fingerprint-semantic.bang" 2>/dev/null
+check "core-fingerprint-base-exit" "$fp_base_exit" "0"
+check "core-fingerprint-format-exit" "$fp_format_exit" "0"
+check "core-fingerprint-alpha-exit" "$fp_alpha_exit" "0"
+check "core-fingerprint-semantic-exit" "$fp_semantic_exit" "0"
+capture fp_rows fp_rows_exit python3 -c 'import json,sys; ds=[json.loads(line) for line in sys.stdin if line.strip()]; fs=[d["coreFingerprint"] for d in ds]; print("|".join([fs[0]["scope"],fs[0]["algorithm"],str(fs[0]["cacheKeySafe"]).lower(),str(len(fs[0]["digest"])),str(fs[0]["digest"]==fs[1]["digest"]),str(fs[0]["digest"]==fs[2]["digest"]),str(fs[0]["digest"]!=fs[3]["digest"])]))' 2>/dev/null <<< "$fp_base_dump
+$fp_format_dump
+$fp_alpha_dump
+$fp_semantic_dump"
+check "core-fingerprint-extractor-exit" "$fp_rows_exit" "0"
+check "core-fingerprint-invariance-and-discrimination" "$fp_rows" "resolved-program|bang-comp-struct-v2-uint64|false|16|True|True|True"
+capture fp_invalid_dump fp_invalid_exit "$bang" query dump "$tmpdir/fingerprint-invalid.bang" 2>/dev/null
+capture fp_invalid_value fp_invalid_value_exit python3 -c 'import json,sys; print("null" if json.load(sys.stdin)["coreFingerprint"] is None else "present")' 2>/dev/null <<< "$fp_invalid_dump"
+check "core-fingerprint-invalid-dump-exit" "$fp_invalid_exit" "0"
+check "core-fingerprint-invalid-extractor-exit" "$fp_invalid_value_exit" "0"
+check "core-fingerprint-invalid-null" "$fp_invalid_value" "null"
 
 # EVERY curated verb's answer is a PROJECTION of `dump` — the layering claim, checked directly:
 # `symbols`'s "decls" entries equal `dump`'s "decls" entries byte-for-byte (same DeclFact.toJson).
@@ -554,8 +598,8 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (121 — dependency observation, recomputation, reuse, module graph, and structural
-# invalidation-fanout checks included);
+# always runs (130 — dependency observation, recomputation, reuse, module graph, structural
+# invalidation-fanout, and resolved-core fingerprint checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -564,7 +608,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=121
+want_total=130
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

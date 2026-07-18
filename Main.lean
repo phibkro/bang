@@ -2568,9 +2568,9 @@ def usage : String :=
   "                                     waiting on a new fixed verb; every verb below is a THIN\n" ++
   "                                     PROJECTION of the same facts `dump` exports (schema in\n" ++
   "                                     docs/reference/language.md's `bang query` section).\n" ++
-  "    bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/\n" ++
-  "                                             row/visibility), every name-ref edge, every law\n" ++
-  "                                             instance, the import/use header — one JSON object\n" ++
+  "    bang query dump [<file.bang>]           THE complete fact base: resolved-core fingerprint,\n" ++
+  "                                             every decl (name/kind/type/row/visibility), every\n" ++
+  "                                             name-ref edge/law, import/use — one JSON object\n" ++
   "    bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row\n" ++
   "                                             (dump's own \"decls\" field, narrowed)\n" ++
   "    bang query type <file.bang> <name>      the checked type ! row of one top-level binding\n" ++

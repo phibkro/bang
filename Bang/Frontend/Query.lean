@@ -1,7 +1,9 @@
 module
 
 meta import Bang.Frontend.Diagnostics
+meta import Bang.Core.Fingerprint
 public import Bang.Frontend.Diagnostics
+public import Bang.Core.Fingerprint
 
 /-!
   Bang/Frontend/Query.lean — the `bang query` fact base: a PUBLIC LIBRARY API + its CLI views (#80).
@@ -17,9 +19,10 @@ public import Bang.Frontend.Diagnostics
       functions `Main.lean`'s CLI dispatch calls.
 
     TIER 2 — THE KEY OPERATION, `bang query dump <file> --json`: the COMPLETE fact base in ONE
-      export — every resolved logical module and direct dependency edge, every decl (name · kind ·
-      type · effect ROW · visibility · module) as a `DeclFact`, every law instance, every name-
-      reference edge, and the program's own import/use header. A user
+      export — the resolved program's experimental elaborated-core fingerprint, every resolved
+      logical module and direct dependency edge, every decl (name · kind · type · effect ROW ·
+      visibility · module) as a `DeclFact`, every law instance, every name-reference edge, and the
+      program's own import/use header. A user
       or agent composes ARBITRARY queries over this in any scripting language (`jq`, `python`, a
       Lean script) — v1 stops trying to predict which fixed verb matters; `dump` is the one export
       that lets a caller ask a question no verb below anticipates (`tools/test-query.sh`'s composed-
@@ -637,12 +640,58 @@ def importJson (i : Bang.Surface.ImportDecl) : String := jsonObj [jsonStrField "
 def useJson (u : Bang.Surface.UseDecl) : String :=
   jsonObj [jsonStrField "module" u.modName, jsonField "names" (jsonStrArr u.names)]
 
+/-! ### Resolved-program core fingerprint probe
+
+This is the first RESULT-hash observation over the same typed lowering path `bang run` uses. Its
+scope is deliberately the WHOLE resolved/merged `Prog`: modules still elaborate together to one flat
+kernel `Comp`, so claiming per-module result hashes here would invent a separate-compilation boundary
+that does not exist. The 64-bit structural digest is also explicitly NOT cache-key-safe; it probes
+formatting/alpha invariance and semantic discrimination, while leaving collision resistance,
+compiler-version domain separation, storage, and scheduling to later evidence.
+-/
+
+/-- **PUBLIC (TIER 1):** metadata for one successfully lowered resolved-program fingerprint. -/
+public structure CoreFingerprintFact where
+  scope : String
+  algorithm : String
+  digest : String
+  cacheKeySafe : Bool
+  deriving Repr
+
+-- Generated `Repr` code ignores its precedence argument.
+attribute [nolint unusedArguments] instReprCoreFingerprintFact.repr
+
+/-- Flat JSON record for `CoreFingerprintFact`. -/
+public def CoreFingerprintFact.toJson (f : CoreFingerprintFact) : String :=
+  jsonObj [jsonStrField "scope" f.scope, jsonStrField "algorithm" f.algorithm,
+    jsonStrField "digest" f.digest,
+    jsonField "cacheKeySafe" (if f.cacheKeySafe then "true" else "false")]
+
+/-- **PUBLIC (TIER 1):** lower `p` through the production typed pipeline and fingerprint the exact
+flat kernel `Comp` it returns. `none` preserves dump's per-seam failure isolation: an invalid subject
+still exposes its declaration/reference facts and their existing type errors. -/
+public def coreFingerprintOf (p : Prog) : Option CoreFingerprintFact :=
+  match Bang.TypeCheck.checkAndLowerProg p with
+  | .error _ => none
+  | .ok comp => some {
+      scope := "resolved-program"
+      algorithm := Bang.CoreFingerprint.algorithm
+      digest := Bang.CoreFingerprint.fingerprint comp
+      cacheKeySafe := false
+    }
+
+/-- JSON value for the optional fingerprint fact (`null` when typed lowering fails). -/
+def coreFingerprintJson (p : Prog) : String :=
+  match coreFingerprintOf p with
+  | none => "null"
+  | some fact => fact.toJson
+
 /-- **PUBLIC entry, `Prog`-taking** (the RESOLVER-AWARE route — `Main.lean`'s multi-file path hands
 an already-resolved-and-merged `Prog` here, optionally with a `declModule` provenance map from ITS
 OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the single-file/stdin
 route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this module never
 hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1",
-"modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
+   "coreFingerprint":{...},"modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
 "refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
 schema documented in `docs/reference/language.md`. -/
 public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := [])
@@ -655,6 +704,7 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
                          -- otherwise valid declaration/reference/header facts.
   jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
            jsonStrField "bangVersion" bangVersion,
+           jsonField "coreFingerprint" (coreFingerprintJson p),
            jsonField "modules" (jsonArr (modules.map ModuleFact.toJson)),
            jsonField "moduleDeps" (jsonArr (moduleDeps.map ModuleDepFact.toJson)),
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
@@ -689,6 +739,7 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
                              -- per-decl `typeError` isolation, not an all-or-nothing gate).
       jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
                jsonStrField "bangVersion" bangVersion,
+               jsonField "coreFingerprint" (coreFingerprintJson p),
                jsonField "modules" (jsonArr [entryModuleFact.toJson]),
                jsonField "moduleDeps" (jsonArr []),
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),

@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "45787ec881848cb1f764f7e4077da6ee8fc5db7cea6e7badb3de9bf9ee4020b5",
+    "digest": "3f5faed3e1e94e8d392e3f7d8d980b1779bb88f8d5385bf1880926eec1f723d8",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",
@@ -1233,6 +1233,7 @@
       "Bang/Backend/WasmEmit.lean",
       "Bang/Core/CapCoh.lean",
       "Bang/Core/EffectRow.lean",
+      "Bang/Core/Fingerprint.lean",
       "Bang/Core/Freshness.lean",
       "Bang/Core/Grade.lean",
       "Bang/Core/IR.lean",

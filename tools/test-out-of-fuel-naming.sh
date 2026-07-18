@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=Bang/Core/Semantics/Eval.lean,Bang/Core/IR.lean,Bang/Frontend/Surface.lean,Bang/Frontend/NamedCore.lean,Bang/Witness/ProofExport.lean,web/run-service/README.md,docs/notes/questions/Q32-memoization-combinator.md runs-in=verify
+# tool: role=test couples=Bang/Core/Semantics/Eval.lean,Bang/Core/IR.lean,Bang/Core/Fingerprint.lean,Bang/Frontend/Surface.lean,Bang/Frontend/NamedCore.lean,Bang/Witness/ProofExport.lean,web/run-service/README.md,docs/notes/questions/Q32-memoization-combinator.md runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # Falsification poles for #172's semantic rename. The fuel-bounded Result/Outcome
 # constructors must stay distinct from the legacy Comp/NComp sentinel and real
@@ -74,11 +74,12 @@ print("  ✓ no repository consumer uses the compatibility constructor names")
 ir_text = read("Bang/Core/IR.lean")
 named_text = read("Bang/Frontend/NamedCore.lean")
 export_text = read("Bang/Witness/ProofExport.lean")
+fingerprint_text = read("Bang/Core/Fingerprint.lean")
 assert re.search(r"^\s*\| oom\s+: Comp$", ir_text, re.MULTILINE)
 assert re.search(r"^\s*\| oom\s+: NComp$", named_text, re.MULTILINE)
-assert re.search(r"\| \.oom\s+=> tag 21", export_text)
+assert re.search(r"\| \.oom\s+=> tag 21", fingerprint_text)
 assert '=> "Bang.Comp.oom"' in export_text
-print("  ✓ Comp.oom, NComp.oom, and proof-export tag 21 remain byte-stable")
+print("  ✓ Comp.oom, NComp.oom, and shared structural tag 21 remain byte-stable")
 
 assert "OOM-kill" in read("web/run-service/README.md")
 assert "surprising `oom`" in read("docs/notes/questions/Q32-memoization-combinator.md")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
+# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Fingerprint.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Frontend/Query.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
 """Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained.
 
 Sources of truth (the generate rung of the derivation ladder):
@@ -1444,6 +1444,12 @@ def render():
     L.append('  "ok": true,')
     L.append('  "schemaVersion": 1,')
     L.append('  "bangVersion": "0.1.1",')
+    L.append('  "coreFingerprint": {')
+    L.append('    "scope": "resolved-program",')
+    L.append('    "algorithm": "bang-comp-struct-v2-uint64",')
+    L.append('    "digest": "16 lowercase hex digits",')
+    L.append('    "cacheKeySafe": false')
+    L.append("  } | null,")
     L.append(
         '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
     )
@@ -1504,6 +1510,43 @@ def render():
     L.append(
         "route has no resolver walk and therefore reports only `@entry` and zero edges."
     )
+    L.append("")
+    L.append(
+        "`coreFingerprint` is an **experimental result-hash observation** over the exact typed lowering path"
+    )
+    L.append(
+        "`bang run` uses. Its `scope` is `resolved-program`: the resolver merges all files and the frontend"
+    )
+    L.append(
+        "elaborates them to one flat de-Bruijn `Comp`, so this field does not claim separate compilation or"
+    )
+    L.append(
+        "per-module results. Formatting, comments, and source binder names are absent at that boundary;"
+    )
+    L.append(
+        "the end-to-end gate requires those edits to preserve the digest and a semantic literal edit to change"
+    )
+    L.append(
+        "it. An invalid program reports `null`, keeping the rest of the dump available with its existing type"
+    )
+    L.append("errors.")
+    L.append("")
+    L.append(
+        "`cacheKeySafe` is deliberately `false`. The current algorithm is a versioned 64-bit structural probe,"
+    )
+    L.append(
+        "not a collision-resistant content address, and it does not domain-separate compiler/kernel versions."
+    )
+    L.append(
+        "Equal digests are therefore useful evidence about the chosen semantic boundary but **must not** be"
+    )
+    L.append(
+        "used to accept an unchecked persistent cache hit. A future safe store key may change `algorithm` and"
+    )
+    L.append(
+        "set `cacheKeySafe` only after collision resistance, version domains, and the artifact boundary are"
+    )
+    L.append("concretely gated.")
     L.append("")
     L.append(
         "Every `DeclFact` key is **always present** — `null` means absent, never a missing key —"
@@ -1597,7 +1640,7 @@ def render():
         "`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not"
     )
     L.append(
-        "computed from other facts); the curated verbs below are **intensional** — derived"
+        "computed from other facts); `coreFingerprint` is derived result metadata; the curated verbs below are **intensional** — derived"
     )
     L.append(
         "predicates (views) over this extensional base, kept few and stable per the Kythe/Glean"

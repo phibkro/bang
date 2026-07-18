@@ -155,7 +155,7 @@
           "dump"
         ],
         "principalFlags": [],
-        "synopsis": "bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/"
+        "synopsis": "bang query dump [<file.bang>]           THE complete fact base: resolved-core fingerprint,"
       },
       {
         "parserOptionFamilies": [],

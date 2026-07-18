@@ -6,9 +6,11 @@ module
 -- Same two-phase pattern as `ElabFuzz.lean`/`LawTest.lean` (a leaf over the public frontend).
 meta import Bang.Frontend.TypeCheck
 meta import Bang.Core.Semantics
+meta import Bang.Core.Fingerprint
 meta import Bang.Witness.LawTest
 public import Bang.Frontend.TypeCheck
 public import Bang.Core.Semantics
+public import Bang.Core.Fingerprint
 public import Bang.Witness.LawTest
 
 /-!
@@ -23,9 +25,10 @@ public import Bang.Witness.LawTest
       `bodyComp args` is `.app (.app … arg₁) … argₖ`.
     • TOTAL-ONLY: `#prove` on a non-⊥-row law is a TYPED REJECTION, not a goal (a `Div`-rowed law
       stays on the fuzzed rung, visibly). Proof-eligibility is TYPED — read off the row.
-    • CONTENT-ADDRESS = a structural hash of the ELABORATED `Comp` (de-Bruijn, so α/param-rename-
-      invariant; post-parse+`fmt`, so formatting-invariant) — NOT source text (§3.1). A simple
-      structural fold to UInt64/hex; no crypto at R1 (§3, ADR-0076's cache is the R2/R3 consumer).
+    • CONTENT-ADDRESS INDEX = the shared `Bang.CoreFingerprint` fold of the ELABORATED `Comp`
+      (de-Bruijn, so α/param-rename-invariant; post-parse+`fmt`, so formatting-invariant) — NOT
+      source text (§3.1). It is UInt64/hex and non-cryptographic at R1; the proof artifact is always
+      rechecked, while an unchecked R2/R3 cache must use a collision-safe, version-domain key.
 
   SCOPE / SEAM DISCIPLINE (this is a LEAF over the public frontend, exactly like `ElabFuzz.lean`/
   `LawTest.lean`): it CALLS only the public entries `TypeCheck.elaborateToComp`,
@@ -48,95 +51,15 @@ open Bang (Comp Val Handler BinOp)
 
 @[expose] public section
 
-/-! ## 1. Content-address — a structural fold of the elaborated `Comp` to a UInt64 (hex).
+/-! ## 1. Content-address compatibility wrapper
 
-`Comp`/`Val`/`Handler` derive only `Inhabited` (no `Repr`/`BEq`), so the address is a HAND-ROLLED
-structural traversal: a per-constructor tag mixed with the fold of the children. The kernel terms are
-already de-Bruijn (`vvar`/binders are positional — `Comp.subst`/`Val.shift`), so this fold is
-α-equivalence-invariant BY CONSTRUCTION — two α-renamed source laws elaborate to the SAME `Comp` and
-thus the same address. A splitmix-style mix keeps the tag/child combination order-sensitive (so
-`.app f x` and `.app x f`-shaped terms don't collide) without any crypto — R1 needs a stable index,
-not collision-resistance (the CI proof re-check is the soundness backstop, survey §4.3). -/
+The structural fold is owned by `Bang.CoreFingerprint`, where compiler-query and proof-export
+consumers share it. This wrapper preserves ProofExport's R1 API and artifact shape. It is still a
+64-bit experimental index whose proof consumer rechecks the emitted goal; it is not safe as the key
+of an unchecked persistent compiler cache. -/
 
-/-- splitmix64 finalizer — a good avalanche mix so structurally-distinct terms scatter. -/
-def mix (h : UInt64) : UInt64 :=
-  let z := h + 0x9e3779b97f4a7c15
-  let z := (z ^^^ (z >>> 30)) * 0xbf58476d1ce4e5b9
-  let z := (z ^^^ (z >>> 27)) * 0x94d049bb133111eb
-  z ^^^ (z >>> 31)
-
-/-- Fold a child hash `c` into the running accumulator `acc` (order-sensitive). -/
-def step (acc c : UInt64) : UInt64 := mix (acc * 0x100000001b3 ^^^ c)
-
-/-- Tag seeds — distinct per constructor so `.ret v` and `.force v` (same child shape) differ. -/
-def tag (n : Nat) : UInt64 := mix (UInt64.ofNat (n + 1))
-
-/-- Hash a `BinOp` to a distinct per-operator seed. -/
-def hashBinOp : BinOp → UInt64
-  | .add => tag 40 | .sub => tag 41 | .mul => tag 42
-  | .div => tag 43 | .lt => tag 44 | .eq => tag 45
-
-/-- Hash a `String` (op ids, `wrong` messages) by folding its bytes — total, order-sensitive. -/
-def hashStr (s : String) : UInt64 :=
-  s.toUTF8.foldl (fun acc b => step acc (UInt64.ofNat b.toNat)) (tag 60)
-
-/-- Structurally hash the operation name and update mode of a custom clause key. -/
-def hashClauseKey : ClauseKey → UInt64
-  | .plain op => step (tag 34) (hashStr op)
-  | .updating op => step (tag 35) (hashStr op)
-
-mutual
-/-- Structurally hash a value to a `UInt64` (order-sensitive, per-constructor tagged). -/
-partial def hashVal : Val → UInt64
-  | .vunit      => tag 0
-  | .vint n     => step (tag 1) (UInt64.ofNat n.toNat ^^^ (if n < 0 then 0x8000000000000000 else 0))
-  | .vvar i     => step (tag 2) (UInt64.ofNat i)
-  | .vcap n ℓ   => step (step (tag 3) (UInt64.ofNat n)) (UInt64.ofNat ℓ)
-  | .vthunk c   => step (tag 4) (hashComp c)
-  | .inl v      => step (tag 5) (hashVal v)
-  | .inr v      => step (tag 6) (hashVal v)
-  | .pair a b   => step (step (tag 7) (hashVal a)) (hashVal b)
-  | .fold v     => step (tag 8) (hashVal v)
-/-- Structurally hash a computation to a `UInt64`. -/
-partial def hashComp : Comp → UInt64
-  | .ret v         => step (tag 10) (hashVal v)
-  | .letC m n      => step (step (tag 11) (hashComp m)) (hashComp n)
-  | .force v       => step (tag 12) (hashVal v)
-  | .lam m         => step (tag 13) (hashComp m)
-  | .app m v       => step (step (tag 14) (hashComp m)) (hashVal v)
-  | .perform c op v => step (step (step (tag 15) (hashVal c)) (hashStr op)) (hashVal v)
-  | .handle h m    => step (step (tag 16) (hashHandler h)) (hashComp m)
-  | .case v n₁ n₂  => step (step (step (tag 17) (hashVal v)) (hashComp n₁)) (hashComp n₂)
-  | .split v n     => step (step (tag 18) (hashVal v)) (hashComp n)
-  | .unfold v      => step (tag 19) (hashVal v)
-  | .binop op v w  => step (step (step (tag 20) (hashBinOp op)) (hashVal v)) (hashVal w)
-  | .oom           => tag 21
-  | .wrong s       => step (tag 22) (hashStr s)
-/-- Structurally hash a handler to a `UInt64`. -/
-partial def hashHandler : Handler → UInt64
-  | .state ℓ v         => step (step (tag 30) (UInt64.ofNat ℓ)) (hashVal v)
-  | .throws ℓ          => step (tag 31) (UInt64.ofNat ℓ)
-  | .transaction ℓ vs  => vs.foldl (fun acc v => step acc (hashVal v)) (step (tag 32) (UInt64.ofNat ℓ))
-  | .custom ℓ p cls    =>
-      cls.foldl (fun acc (key, c) => step (step acc (hashClauseKey key)) (hashComp c))
-        (step (step (tag 33) (UInt64.ofNat ℓ)) (hashVal p))
-end
-
-/-- One lowercase hex digit for a nibble (`0..15`); out-of-range folds to `'0'` (unreachable — the
-caller masks with `&&& 0xf`). -/
-def hexDigit (n : Nat) : Char :=
-  "0123456789abcdef".toList.getD n '0'
-
-/-- Render a `UInt64` as a fixed-width 16-digit lowercase hex string (the content-address text). -/
-def toHex16 (u : UInt64) : String :=
-  let rec go (fuel : Nat) (u : UInt64) (acc : String) : String :=
-    match fuel with
-    | 0 => acc
-    | fuel + 1 => go fuel (u >>> 4) (String.singleton (hexDigit (u &&& 0xf).toNat) ++ acc)
-  go 16 u ""
-
-/-- The content-address of an elaborated law `Comp`: a structural UInt64 → hex (R1's cache-key). -/
-def contentAddress (c : Comp) : String := toHex16 (hashComp c)
+/-- ProofExport's compatibility name for the shared elaborated-`Comp` fingerprint. -/
+def contentAddress (c : Comp) : String := Bang.CoreFingerprint.fingerprint c
 
 /-! ## 2. Render an elaborated `Comp`/`Val`/`Handler` to LEAN-TERM SOURCE.
 

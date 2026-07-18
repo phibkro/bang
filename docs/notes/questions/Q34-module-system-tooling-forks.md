@@ -86,3 +86,27 @@ This is structural reachability, not timing or a cache benchmark. It establishes
    the already-recommended **elaborated-core hash** direction and makes a canonical-core fingerprint
    probe the smallest justified successor; it does not yet justify a store, scheduler, persistence
    format, definition granularity, or compile-time claim.
+
+## Fingerprint input (2026-07-18): the core boundary works; the module-result boundary does not exist yet
+
+`PATH-core-fingerprint-probe` followed that successor through the public `bang query dump` route. It
+also found that Q43 proof export already owned a hand-rolled `Comp` fold, so the implementation was
+centralized as `Bang.CoreFingerprint` rather than duplicated. The tracer establishes:
+
+1. **The elaborated `Comp` is observably canonical for the edits the firewall should ignore.** Through
+   the compiled CLI, comment/format-only and local binder alpha-renaming variants return the same
+   resolved-program digest, while a semantic `-1` → `-2` edit returns a different digest.
+2. **The audit caught a real deterministic collision in the old fold.** It used `Int.toNat` plus one
+   sign bit, collapsing every negative magnitude. v2 hashes canonical sign+magnitude spellings and
+   also avoids pre-truncating arbitrary `Nat`s to 64 bits; direct falsification poles retain both.
+3. **This remains a probe, not a cache key.** The public fact says `cacheKeySafe:false`: 64 bits is not
+   collision-resistant, and compiler/kernel versions are not domain-separated. Proof export can use
+   it only because its Lean goal is rechecked; an unchecked build cache cannot.
+4. **Most importantly, the current result scope is `resolved-program`.** Modules merge at `Surf`, then
+   elaborate together to one flat `Comp`. There is no per-module elaborated artifact to hash, so the
+   topology DAG plus this whole-program fingerprint cannot yet stop invalidation at each module edge.
+
+**Decision:** fork 5's semantic boundary is now evidence-backed—hash elaborated core, not source text—
+but its useful granularity is still open. Before choosing SHA/BLAKE, a store, or a scheduler, identify
+the smallest sound module-result/interface boundary that preserves ADR-0093's flat kernel semantics.
+Cryptographic hashing is necessary for persistent keys but does not create that missing boundary.
