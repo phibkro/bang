@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=examples/*/main.bang,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang runs-in=verify
+# tool: role=test couples=examples/*/main.bang,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -299,6 +299,20 @@ check "reactive-measure-shape-extractor-exit" "$measured_shape_exit" "0"
 check "reactive-measure-exact-shape" "$measured_shape" \
   '{"decls":104,"refs":202,"lines":100,"priceRefs":1,"quantityRefs":1,"unitAmountRefs":100,"totalRefs":100,"lineInputBypasses":0}'
 
+# The observation-scoped Memo capability must change runtime policy without changing formula edges.
+capture uncached_measured_refs uncached_measured_refs_exit python3 -c \
+  'import json,sys; print(json.dumps(json.load(sys.stdin)["refs"],separators=(",",":")))' \
+  <<< "$measured_dump"
+capture cached_measured_dump cached_measured_dump_exit "$bang" query dump \
+  examples/reactive-observation-reuse/CachedWorkload.bang 2>/dev/null
+capture cached_measured_refs cached_measured_refs_exit python3 -c \
+  'import json,sys; print(json.dumps(json.load(sys.stdin)["refs"],separators=(",",":")))' \
+  <<< "$cached_measured_dump"
+check "reactive-reuse-uncached-refs-extractor-exit" "$uncached_measured_refs_exit" "0"
+check "reactive-reuse-dump-exit" "$cached_measured_dump_exit" "0"
+check "reactive-reuse-refs-extractor-exit" "$cached_measured_refs_exit" "0"
+check "reactive-reuse-preserves-formula-graph" "$cached_measured_refs" "$uncached_measured_refs"
+
 # ══ 3. `symbols` (thin projection of dump's "decls") ══
 
 got_out="$("$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
@@ -488,7 +502,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (98 — the former 86 plus eight dependency-observation and four recomputation checks);
+# always runs (102 — dependency observation, recomputation, and reuse checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -497,7 +511,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=98
+want_total=102
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

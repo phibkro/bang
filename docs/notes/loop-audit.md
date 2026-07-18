@@ -40,7 +40,7 @@ _Position: the evidence seam is repaired; organic outsider exposure remains the 
 
 **2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk. The
 operator explicitly deferred it and released the spreadsheet sequence; queryable formula facts and the
-active recomputation measurement improve the internal product/performance loop but are not evidence that
+observation-scoped reuse tracer improves the internal product/performance loop but is not evidence that
 the outside loop ran. Keep the prepared packet reachable and reopen it before ◊6/release or when an
 unfamiliar participant becomes available. Do not describe agentic inspection, query gates, or spreadsheet
 journey gates as organic validation.

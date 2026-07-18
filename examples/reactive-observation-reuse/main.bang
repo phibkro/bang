@@ -1,0 +1,39 @@
+-- Compare observation-scoped reuse with the deliberately stale retained-cache adverse route.
+import CachedWorkload
+use CachedWorkload (Memo)
+
+let scoped =
+  state 10 as price in
+  state 2 as quantity in
+  let observe =
+    {let p = price.get in
+     let q = quantity.get in
+     handle
+       (($(CachedWorkload.total)) memo p q)
+     with (Memo 0) as memo {
+       update swap(value) => (param, value)
+     }}
+  in
+  let before = $observe in
+  let updated = price.put(12) in
+  let after = $observe in
+  (before, after)
+in
+let retained =
+  state 10 as price in
+  state 2 as quantity in
+  handle
+    (let observe =
+       {let p = price.get in
+        let q = quantity.get in
+        ($(CachedWorkload.total)) memo p q}
+     in
+     let before = $observe in
+     let updated = price.put(12) in
+     let after = $observe in
+     (before, after))
+  with (Memo 0) as memo {
+    update swap(value) => (param, value)
+  }
+in
+(scoped, retained)

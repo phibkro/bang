@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=examples/calc,examples/json,examples/reactive-spreadsheet,examples/reactive-recomputation runs-in=verify
+# tool: role=test couples=examples/calc,examples/json,examples/reactive-spreadsheet,examples/reactive-recomputation,examples/reactive-observation-reuse runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-compiled-dogfood.sh — the --compiled DIFFERENTIAL gate for the dogfood programs (#135).
 #
@@ -43,7 +43,7 @@ TIMEOUT="${COMPILED_DOGFOOD_TIMEOUT:-90}"
 # The dogfood programs the diagnosis proved pass --compiled. calc's first-class-cap EFFECT and
 # json's pure parse are BOTH covered; hostio-echo is excluded (host-IO needs the driver, not a
 # pure compiled run — ADR-0104).
-PROGRAMS=(calc json reactive-spreadsheet reactive-recomputation)
+PROGRAMS=(calc json reactive-spreadsheet reactive-recomputation reactive-observation-reuse)
 
 pass=0
 fail=0

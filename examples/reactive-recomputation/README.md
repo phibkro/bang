@@ -24,3 +24,6 @@ and invalidation semantics. The next decision must compare the measured redundan
 stable formulas) with the semantic and implementation cost of caching. The first discarded prototype
 reported 301 calls but repeated only trivial input-identity declarations; adding the shared derived
 node prevents representational overhead from masquerading as the optimization signal.
+
+The successor in `../reactive-observation-reuse/` keeps this baseline intact and demonstrates explicit
+handler-owned reuse scoped to one force, including the stale result produced by retaining that cache.
