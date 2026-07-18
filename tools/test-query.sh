@@ -9,7 +9,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # JSON-emitter internals (`jsonStr`/`jsonField`/`jsonObj` escaping, the schema's per-op byte-exact
 # shape on a fixed input) are already gated at the Lean `#guard` level (Bang/Frontend/Query.lean) —
 # this file gates the CLI SURFACE specifically: file-arg vs stdin, argument-order per op, the
-# resolver-aware multi-file path (imports/qualification), the 0/1/2 exit-code contract observed
+# resolver-aware multi-file path (imports/qualification plus its actual transitive module DAG),
+# the 0/1/2 exit-code contract observed
 # THROUGH the binary, AND — the operator's API-first refinement (2026-07-10) — that `dump` is a
 # genuine COMPLETE fact base (every curated verb's answer is provably a SUBSET/PROJECTION of what
 # `dump` exports) plus a demonstration that a caller can COMPOSE an arbitrary query over `dump`'s
@@ -112,7 +113,7 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
@@ -168,6 +169,21 @@ got_out4="$("$bang" query dump examples/json/main.bang 2>/dev/null)" && got_exit
 check "dump-multifile-exit" "$got_exit4" "0"
 check "dump-multifile-imports-present" "$(printf '%s' "$got_out4" | grep -o '"imports":\[{"module":"Json"}' || true)" '"imports":[{"module":"Json"}'
 check "dump-multifile-qualified-present" "$(printf '%s' "$got_out4" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
+
+# The resolver's completed dependency-first walk is the SSoT for topology: JSON is a diamond, so
+# the public facts must contain four logical nodes and five direct edges exactly once. The facts
+# deliberately expose language-level identities/origins, never host paths.
+capture json_graph json_graph_exit python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"modules":d["modules"],"moduleDeps":d["moduleDeps"]}, separators=(",",":")))' 2>/dev/null <<< "$got_out4"
+check "dump-module-graph-extractor-exit" "$json_graph_exit" "0"
+check "dump-module-graph-diamond" "$json_graph" '{"modules":[{"name":"@entry","origin":"entry"},{"name":"Json","origin":"project"},{"name":"Parse","origin":"project"},{"name":"Print","origin":"project"}],"moduleDeps":[{"from":"@entry","to":"Json"},{"from":"@entry","to":"Parse"},{"from":"@entry","to":"Print"},{"from":"Parse","to":"Json"},{"from":"Print","to":"Json"}]}'
+check "dump-module-graph-path-free" "$(printf '%s' "$json_graph" | grep -o '/' || true)" ""
+
+# Bundled compiler modules retain their distinct origin without exposing an implementation path.
+capture bundled_dump bundled_dump_exit "$bang" query dump examples/hostio-echo/main.bang 2>/dev/null
+capture bundled_graph bundled_graph_exit python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"modules":d["modules"],"moduleDeps":d["moduleDeps"]}, separators=(",",":")))' 2>/dev/null <<< "$bundled_dump"
+check "dump-module-graph-bundled-exit" "$bundled_dump_exit" "0"
+check "dump-module-graph-bundled-extractor-exit" "$bundled_graph_exit" "0"
+check "dump-module-graph-bundled-origin" "$bundled_graph" '{"modules":[{"name":"@entry","origin":"entry"},{"name":"Io","origin":"bundled"}],"moduleDeps":[{"from":"@entry","to":"Io"}]}'
 
 # ── Resolver-aware LAW FACTS: the Codec entry imports its effect contract + two named handler
 # realizations. `dump` and the curated `laws` view must expose the SAME qualified effect×handler
@@ -502,7 +518,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (102 — dependency observation, recomputation, and reuse checks included);
+# always runs (108 — dependency observation, recomputation, reuse, and module-graph checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
@@ -511,7 +527,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=102
+want_total=108
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

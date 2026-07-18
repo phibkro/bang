@@ -688,6 +688,10 @@ structure ResolvedFile where
   trustedHostNames : List String := []
   /-- Final merged declaration name → owning source module. Entry declarations have no entry. -/
   declModules : List (String × String) := []
+  /-- Path-free logical nodes of the resolver DAG: reserved entry first, then dependency-first. -/
+  modules : List Bang.Query.ModuleFact := [Bang.Query.entryModuleFact]
+  /-- Direct dependency edges projected from the parsed headers the resolver actually consumed. -/
+  moduleDeps : List Bang.Query.ModuleDepFact := []
 
 def resolveEntryFileRawWithProvenance (path : String) : IO (Except String ResolvedFile) := do
   let entryPath : System.FilePath := ⟨path⟩
@@ -762,7 +766,19 @@ def resolveEntryFileRawWithProvenance (path : String) : IO (Except String Resolv
               | .implD .. => sourceName
               | _ => modName ++ "_" ++ sourceName
             (finalName, modName)))
-        return .ok { prog := merged, trustedHostNames, declModules }
+        -- Project the resolver's completed walk instead of performing a second filesystem scan.
+        -- Names are language-level identities only: no absolute/real path reaches the public dump.
+        let modules := Bang.Query.entryModuleFact :: st.resolved.map (fun (modName, _) =>
+          let origin := if (stdModuleSrc modName).isSome then
+            Bang.Query.ModuleOrigin.bundled
+          else Bang.Query.ModuleOrigin.project
+          Bang.Query.ModuleFact.mk modName origin)
+        let dependencyNames (p : Prog) : List String :=
+          (p.imports.map (·.modName) ++ p.uses.map (·.modName)).foldl (fun names name =>
+            if names.contains name then names else names ++ [name]) []
+        let moduleDeps := (("@entry", entryProg) :: st.resolved).flatMap (fun (modName, modP) =>
+          (dependencyNames modP).map (Bang.Query.ModuleDepFact.mk modName))
+        return .ok { prog := merged, trustedHostNames, declModules, modules, moduleDeps }
 
 /-- Compatibility projection for non-host commands: provenance is retained only by the host route. -/
 def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
@@ -1737,15 +1753,17 @@ def runQueryDump (file : Option String) : IO UInt32 := do
         match file with
         | none      => printQueryOk (Bang.Query.dumpJsonP headerProg bangVersion)   -- stdin, no resolver path
         | some path =>
-            match ← resolveEntryFile path with
+            match ← resolveEntryFileWithProvenance path with
             | .error e   => IO.println (Bang.Query.errorJsonOk e); pure 1
-            | .ok merged =>
+            | .ok resolved =>
                 -- `mergeModules` clears `imports`/`uses` on its OWN merged output (D1-D4's flat
                 -- decl-list convention) — splice the ENTRY file's own header back on so `dump`'s
                 -- `"imports"`/`"uses"` fields report what the program's source ACTUALLY declares,
                 -- not an artifact of the merge (a real fidelity gap `dumpJsonP` alone can't see,
                 -- since it only ever receives the merged `Prog`).
-                printQueryOk (Bang.Query.dumpJsonP { merged with imports := headerProg.imports, uses := headerProg.uses } bangVersion)
+                let p := { resolved.prog with imports := headerProg.imports, uses := headerProg.uses }
+                printQueryOk (Bang.Query.dumpJsonP p bangVersion resolved.declModules
+                  resolved.modules resolved.moduleDeps)
 
 /-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
 def runQuerySymbols (file : Option String) : IO UInt32 := do

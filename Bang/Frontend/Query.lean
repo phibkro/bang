@@ -10,14 +10,16 @@ public import Bang.Frontend.Diagnostics
   menu of LSP-shaped operations; they need the FACTS, queryable however they like. This module is
   structured in three tiers, outward from the core:
 
-    TIER 1 — the PUBLIC LIBRARY API (`declFactsOf`/`nameRefEdgesOf`/`lawFactsOf` below): every
+    TIER 1 — the PUBLIC LIBRARY API (`declFactsOf`/`nameRefEdgesOf`/`lawFactsOf`, plus the resolver-
+      supplied `ModuleFact`/`ModuleDepFact` records below): every
       fact-producing function is `public` and documented as a REUSABLE Lean-side API, not merely CLI
       plumbing — a Lean script (or a future in-process consumer) composes these directly, the SAME
       functions `Main.lean`'s CLI dispatch calls.
 
     TIER 2 — THE KEY OPERATION, `bang query dump <file> --json`: the COMPLETE fact base in ONE
-      export — every decl (name · kind · type · effect ROW · visibility · module) as a `DeclFact`,
-      every law instance, every name-reference edge, and the program's own import/use header. A user
+      export — every resolved logical module and direct dependency edge, every decl (name · kind ·
+      type · effect ROW · visibility · module) as a `DeclFact`, every law instance, every name-
+      reference edge, and the program's own import/use header. A user
       or agent composes ARBITRARY queries over this in any scripting language (`jq`, `python`, a
       Lean script) — v1 stops trying to predict which fixed verb matters; `dump` is the one export
       that lets a caller ask a question no verb below anticipates (`tools/test-query.sh`'s composed-
@@ -52,8 +54,8 @@ public import Bang.Frontend.Diagnostics
   This is a LEAF module (`Bang/Frontend/*`, fan-in 0 — the arch-check invariant): it reads the
   ALREADY-PUBLIC `Prog`/`Decl`/`Surf` shapes (`Bang.Frontend.Surface`), `Bang.TypeCheck.
   lawInstancesOf`/`typeStringOfProgP`/`checkProgRow`, and `Bang.Format.showSurf`/`showTy`, and
-  produces only JSON strings (+ the plain `DeclFact`/`RefEdge` records Tier 1 exposes). No kernel/
-  typing-rule change, no new checking behavior.
+  produces only JSON strings (+ the plain module/decl/reference records Tier 1 exposes). No kernel/
+  typing-rule change, no new checking behavior or second resolver walk.
 -/
 
 open Bang
@@ -362,6 +364,51 @@ public def nameRefEdgesOf (p : Prog) : List RefEdge :=
 def RefEdge.toJson (e : RefEdge) : String :=
   jsonObj [jsonStrField "from" e.src, jsonStrField "to" e.tgt]
 
+/-- Stable origin vocabulary for one logical module discovered by the resolver. No filesystem path
+is part of this fact: `project` means resolver-owned source under an allowed project root, while
+`bundled` means compiler-baked source such as `Io`. -/
+public inductive ModuleOrigin where
+  | entry | project | bundled
+  deriving Repr, DecidableEq
+
+/-- Public JSON spelling for `ModuleOrigin`. -/
+public def ModuleOrigin.toJson : ModuleOrigin → String
+  | .entry   => "\"entry\""
+  | .project => "\"project\""
+  | .bundled => "\"bundled\""
+
+/-- **PUBLIC (TIER 1):** one logical node in the resolver's module DAG. `@entry` is a reserved,
+path-free identity for the queried entry file; imported modules retain their language-level names. -/
+public structure ModuleFact where
+  name : String
+  origin : ModuleOrigin
+  deriving Repr
+
+/-- **PUBLIC (TIER 1):** one logical module-dependency edge. `src` depends directly on `tgt`;
+`import` and `use` both induce this build/invalidation relation. -/
+public structure ModuleDepFact where
+  src : String
+  tgt : String
+  deriving Repr
+
+-- Generated `Repr` code ignores its precedence argument.
+attribute [nolint unusedArguments] instReprModuleOrigin.repr instReprModuleFact.repr
+  instReprModuleDepFact.repr
+
+/-- The path-free entry node used by every source- and `Prog`-taking dump route. -/
+public def entryModuleFact : ModuleFact := ⟨"@entry", .entry⟩
+
+/-- One `ModuleFact` → its flat JSON row. -/
+public def ModuleFact.toJson (f : ModuleFact) : String :=
+  jsonObj [jsonStrField "name" f.name, jsonField "origin" f.origin.toJson]
+
+/-- One `ModuleDepFact` → its flat JSON row. -/
+public def ModuleDepFact.toJson (e : ModuleDepFact) : String :=
+  jsonObj [jsonStrField "from" e.src, jsonStrField "to" e.tgt]
+
+#guard entryModuleFact.toJson == "{\"name\":\"@entry\",\"origin\":\"entry\"}"
+#guard (ModuleDepFact.mk "@entry" "Json").toJson == "{\"from\":\"@entry\",\"to\":\"Json\"}"
+
 /-- **PUBLIC (TIER 1):** one law instance `(contractKey, law, params, body)` → its `LawFact` JSON.
 For traits, `contractKey` is the historical trait name and `realization` is null. Effect-handler
 instances use `Effect@Handler`; `contract`/`realization` expose those components while the old
@@ -536,14 +583,16 @@ public def contractJson (src : String) : String :=
 
 /-! ## 2. TIER 2 — `bang query dump <file>`: the COMPLETE fact base in one export.
 
-Assembles `declFactsOf` + `nameRefEdgesOf` + `lawInstancesOf` + the program's own `import`/`use`
-header into ONE JSON object — the schema documented in `docs/reference/language.md`'s `bang query`
+Assembles resolver-supplied module topology + `declFactsOf` + `nameRefEdgesOf` + `lawInstancesOf` +
+the program's own `import`/`use` header into ONE JSON object — the schema documented in
+`docs/reference/language.md`'s `bang query`
 section. A caller composes ARBITRARY queries over this (a `jq`/`python`/Lean script) rather than
 waiting on a new fixed verb — `tools/test-query.sh`'s composed-query demo answers a question no
 verb below anticipates, over THIS export alone.
 
 SHAPE (operator-informed, the `compiler-as-dbms-survey.md` ruling): `dump` is a FLAT RELATIONAL
-fact base — `decls`/`refs`/`laws`/`imports`/`uses` are top-level ARRAYS OF FLAT RECORDS (Glean's
+fact base — `modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are top-level ARRAYS OF
+FLAT RECORDS (Glean's
 "predicates = tables, facts = rows" framing), never a nested tree; the concrete gate is that the
 golden `dump` output loads into DuckDB with ONE `read_json` call (`tools/test-query.sh`'s
 `golden-dump-duckdb-loadable` check) — no unnesting gymnastics. The curated verbs (`symbols`/
@@ -593,10 +642,12 @@ an already-resolved-and-merged `Prog` here, optionally with a `declModule` prove
 OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the single-file/stdin
 route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this module never
 hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1",
-"decls":[DeclFact,...],"refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
+"modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
+"refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
 schema documented in `docs/reference/language.md`. -/
-public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := []) :
-    String :=
+public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := [])
+    (modules : List ModuleFact := [entryModuleFact])
+    (moduleDeps : List ModuleDepFact := []) : String :=
   let facts := (declFactsOf p).map (fun f => f.withModule (declModule.lookup f.name))
   let lawsJ := match Bang.TypeCheck.lawInstancesOfProg p with
     | .ok insts => insts.map lawInstanceJson
@@ -604,6 +655,8 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
                          -- otherwise valid declaration/reference/header facts.
   jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
            jsonStrField "bangVersion" bangVersion,
+           jsonField "modules" (jsonArr (modules.map ModuleFact.toJson)),
+           jsonField "moduleDeps" (jsonArr (moduleDeps.map ModuleDepFact.toJson)),
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
            jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
            jsonField "laws" (jsonArr lawsJ),
@@ -636,6 +689,8 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
                              -- per-decl `typeError` isolation, not an all-or-nothing gate).
       jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
                jsonStrField "bangVersion" bangVersion,
+               jsonField "modules" (jsonArr [entryModuleFact.toJson]),
+               jsonField "moduleDeps" (jsonArr []),
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
                jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
                jsonField "laws" (jsonArr lawsJ),

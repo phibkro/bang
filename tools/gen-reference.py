@@ -1445,6 +1445,10 @@ def render():
     L.append('  "schemaVersion": 1,')
     L.append('  "bangVersion": "0.1.1",')
     L.append(
+        '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
+    )
+    L.append('  "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],')
+    L.append(
         '  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",'
     )
     L.append(
@@ -1466,7 +1470,7 @@ def render():
     L.append("```")
     L.append("")
     L.append(
-        "`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —"
+        "`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —"
     )
     L.append(
         'a relational fact base (Glean\'s "predicates = tables, facts = rows" framing), never a'
@@ -1481,6 +1485,25 @@ def render():
         "bang query dump myfile.bang | duckdb -c \"SELECT unnest(decls) FROM read_json('/dev/stdin')\""
     )
     L.append("```")
+    L.append("")
+    L.append(
+        "`modules` and `moduleDeps` project the resolver's actual transitive walk: `@entry` is the"
+    )
+    L.append(
+        "reserved path-free entry identity; imported modules retain logical names and an `origin`"
+    )
+    L.append(
+        "of `project` or `bundled`. Dependency rows collapse `import` and `use` into one direct"
+    )
+    L.append(
+        "invalidation relation. Rows are deterministic, but their semantics are sets; no source"
+    )
+    L.append(
+        "path, content hash, cache policy, or dependency kind is implied. The source-taking stdin"
+    )
+    L.append(
+        "route has no resolver walk and therefore reports only `@entry` and zero edges."
+    )
     L.append("")
     L.append(
         "Every `DeclFact` key is **always present** — `null` means absent, never a missing key —"
@@ -1571,7 +1594,7 @@ def render():
     L.append("BREAKING change additionally requires the `schemaVersion` bump.")
     L.append("")
     L.append(
-        "`decls`/`refs`/`laws`/`imports` are the **extensional** fact base (extracted, not"
+        "`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not"
     )
     L.append(
         "computed from other facts); the curated verbs below are **intensional** — derived"

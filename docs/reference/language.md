@@ -957,6 +957,8 @@ not six independent implementations.
   "ok": true,
   "schemaVersion": 1,
   "bangVersion": "0.1.1",
+  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
+  "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
@@ -968,7 +970,7 @@ not six independent implementations.
 }
 ```
 
-`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —
+`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —
 a relational fact base (Glean's "predicates = tables, facts = rows" framing), never a
 nested tree. The concrete test: `dump`'s output loads into DuckDB with ONE `read_json`
 call, no unnesting gymnastics —
@@ -976,6 +978,13 @@ call, no unnesting gymnastics —
 ```sh
 bang query dump myfile.bang | duckdb -c "SELECT unnest(decls) FROM read_json('/dev/stdin')"
 ```
+
+`modules` and `moduleDeps` project the resolver's actual transitive walk: `@entry` is the
+reserved path-free entry identity; imported modules retain logical names and an `origin`
+of `project` or `bundled`. Dependency rows collapse `import` and `use` into one direct
+invalidation relation. Rows are deterministic, but their semantics are sets; no source
+path, content hash, cache policy, or dependency kind is implied. The source-taking stdin
+route has no resolver walk and therefore reports only `@entry` and zero edges.
 
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
@@ -1013,7 +1022,7 @@ unrecognized key breaks that guarantee itself, regardless of what bang promises.
 this file in the same commit, so drift is always VISIBLE in the diff, never silent; a
 BREAKING change additionally requires the `schemaVersion` bump.
 
-`decls`/`refs`/`laws`/`imports` are the **extensional** fact base (extracted, not
+`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not
 computed from other facts); the curated verbs below are **intensional** — derived
 predicates (views) over this extensional base, kept few and stable per the Kythe/Glean
 small-core lesson (push richness into derived views, not the base schema).
