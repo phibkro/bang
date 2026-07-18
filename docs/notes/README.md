@@ -22,7 +22,6 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
 - [`copy-kit.md`](copy-kit.md) — Copy kit — pitching bang accurately and hook-worthily
 - [`ctr-design.md`](ctr-design.md) — Compute-then-return design map — lifting the ADR-0095 D4 ret-shape restriction (#44 exit gate)
-- [`d5-param-handlers-design.md`](d5-param-handlers-design.md) — D5 — parameterised handlers (handler memory): design probe with HOLD (#44 rung-2 face)
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
@@ -70,6 +69,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`stage5-lr-design.md`](stage5-lr-design.md) — Stage-5 LR design map — the user-effect binary LR (#44 Stage 5)
 - [`stage6-soundness-design.md`](stage6-soundness-design.md) — Stage 6 (soundness composition) — design map
 - [`stage7-elab-probe.md`](stage7-elab-probe.md) — Stage-7 `handle … with` elaboration mechanics probe (#21 s7probe)
+- [`stateful-handler-policy-probe.md`](stateful-handler-policy-probe.md) — Stateful handler policy probe — quotas expose the read-only parameter boundary
 - [`stdlib-map.md`](stdlib-map.md) — Standard-library map — the third stratum
 - [`stdlib-prelude-survey.md`](stdlib-prelude-survey.md) — Prelude / standard-library survey — the common core
 - [`stranger-test-1.md`](stranger-test-1.md) — Stranger test — round 1 (2026-07-09)
@@ -103,9 +103,10 @@ _Spike / experiment / pivot record — input to a specific ADR; preserved, not c
 - [`scoped-capabilities-for-vcapfree-drop.md`](scoped-capabilities-for-vcapfree-drop.md) — Scoped capabilities — the #18 (drop-VcapFree) design record
 - [`typed-static-pivot-scope.md`](typed-static-pivot-scope.md) — Scoping the typed + static-dispatch pivot
 
-## historical (2)
+## historical (3)
 
 _Pre-pivot narrative, honestly labelled; kept for the story, superseded by present docs._
 
+- [`d5-param-handlers-design.md`](d5-param-handlers-design.md) — D5 — parameterised handlers (handler memory): design probe with HOLD (#44 rung-2 face)
 - [`k2-calculation-playbook.md`](k2-calculation-playbook.md) — K2 calculation — proof playbook
 - [`k3-historical-status.md`](k3-historical-status.md) — K3 historical status (pre-ADR-0016 narrative)

@@ -317,7 +317,8 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- the CLAUSE LIST typing (`HasClauses` below, a mutual auxiliary — a clause LIST needs a variable
   -- number of clause sub-derivations, which a plain `∀…∃…` premise cannot express inside the inductive
   -- without tripping the nested-`Exists` positivity check; the mutual `nil`/`cons` inductive is the
-  -- standard resolution). ONE-SHOT TAIL-RESUMPTIVE, READ-ONLY param (D5 defers update).
+  -- standard resolution). ONE-SHOT TAIL-RESUMPTIVE; `HasClauses` distinguishes plain results from
+  -- ADR-0114 updating result/next-parameter envelopes per clause.
   --
   -- THE RET-SHAPE (ADR-0092 D4 grade wall + operator ruling): each v1 clause body is `ret w` — it resumes
   -- with the VALUE `w : opRes ℓ op` fed back to the captured continuation `Kᵢ`. This is NOT a free choice:
@@ -336,7 +337,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- term (contrast the general D3 sketch's `(φ \ ℓ) ⊔ φ'`). The carried param `p : P` is CLOSED (the grade
   -- discipline, like `state`'s `s₀`); each clause binds `param@1 : P, arg@0 : opArg ℓ op` (the landed
   -- binder discipline, `Dispatch.dispatchOn` custom arm).
-  | handleCustom : ∀ {γ Γ} {ℓ : Label} {p : Val} {clauses : List (OpId × Comp)} {M : Comp}
+  | handleCustom : ∀ {γ Γ} {ℓ : Label} {p : Val} {clauses : List (ClauseKey × Comp)} {M : Comp}
         {e φ : Eff} {q qc : Mult} {P A : VTy Eff Mult},
       HasClauses ℓ P clauses →
       -- INTERFACE COVERAGE (ADR-0092 D3, the custom analogue of the built-ins' `hiface` op-set pin):
@@ -344,7 +345,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       -- user label this holds by construction (D2: the program-derived `EffSig` makes `opArg ℓ op = some`
       -- iff `op` is a declared/clause op). This is the semantic half of custom PROGRESS.
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
-        (clauses.find? (·.1 == op)).isSome) →
+        (clauses.find? (fun clause => clause.1.op == op)).isSome) →
       -- THE GRADE DISCIPLINE: the carried param is a CLOSED value of type `P` (like `state`'s `s₀`).
       HasVTy [] [] p P →
       -- ADR-0054: `handle` binds the capability (`Cap ℓ` at index 0, multiplicity `qc`).
@@ -361,19 +362,25 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
 -- resume `ret <closed val>`), so the resume focus re-types at the PERFORM's free returner grade via
 -- `HasCTy.ret`'s grade-freedom — a general effectful body would pin the grade and the resume couldn't
 -- adapt (the answer-grade obligation the mono system can't source). φ ("does effectful work before
--- resuming") + param-mutation are the D5/first-class-k generalization, already deferred. Since `w` is a
--- VALUE (inert), no ambient-effect row is needed — `HasClauses` carries no `φ`/`e_op`.
+-- resuming") remains the first-class-k generalization. ADR-0114 parameter mutation stays inside a
+-- return-shaped VALUE envelope, so no ambient-effect row is needed — `HasClauses` carries no `φ`/`e_op`.
 /-- The clause-list typing for a custom handler (ADR-0092): `HasClauses ℓ P clauses`
-holds iff every `(op, body)` is a return-shaped clause `ret w` with `op` in `ℓ`'s
-interface and the resumed value typed under `[opArg, P]`. -/
-inductive HasClauses : Label → VTy Eff Mult → List (OpId × Comp) → Prop where
+holds iff every clause is return-shaped and names an operation in `ℓ`'s interface. A plain
+clause returns `opRes`; an ADR-0114 updating clause returns `opRes × P`. -/
+inductive HasClauses : Label → VTy Eff Mult → List (ClauseKey × Comp) → Prop where
   | nil : ∀ {ℓ P}, HasClauses ℓ P []
   | cons : ∀ {ℓ P op w rest} {opA opR : VTy Eff Mult} {qa qp : Mult},
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some opA →
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some opR →
       HasVTy (qa :: qp :: []) (opA :: P :: []) w opR →
       HasClauses ℓ P rest →
-      HasClauses ℓ P ((op, Comp.ret w) :: rest)
+      HasClauses ℓ P ((.plain op, Comp.ret w) :: rest)
+  | consUpdating : ∀ {ℓ P op resume next rest} {opA opR : VTy Eff Mult} {qa qp : Mult},
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some opA →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some opR →
+      HasVTy (qa :: qp :: []) (opA :: P :: []) (.pair resume next) (.prod opR P) →
+      HasClauses ℓ P rest →
+      HasClauses ℓ P ((.updating op, Comp.ret (.pair resume next)) :: rest)
 end
 
 
@@ -456,7 +463,7 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
   | customF : ∀ {K n ℓ p clauses e φ eo q} {P A : VTy Eff Mult} {Co},
       HasClauses ℓ P clauses →
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
-        (clauses.find? (·.1 == op)).isSome) →
+        (clauses.find? (fun clause => clause.1.op == op)).isSome) →
       HasVTy [] [] p P →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →

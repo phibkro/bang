@@ -69,7 +69,7 @@ theorem no_accidental_handling
 -- agnostic, already-clean) `no_accidental_handling` with `custom_handlesWithin`. This is the concrete
 -- "extend no accidental handling to user labels" property the moat needs stated.
 theorem no_accidental_handling_custom
-    {ℓ : EffectRow.Label} {p : Val} {cl : List (OpId × Comp)} {e : Eff} :
+    {ℓ : EffectRow.Label} {p : Val} {cl : List (ClauseKey × Comp)} {e : Eff} :
     Disjoint (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ) e →
     ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e →
       handlesOp (Handler.custom ℓ p cl) ℓ' op = false

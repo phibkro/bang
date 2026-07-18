@@ -1,0 +1,1 @@
+pub effect Net { connect : Int -> Int }

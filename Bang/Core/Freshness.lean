@@ -78,14 +78,14 @@ def capsH : Handler → List (Nat × Label)
   -- This is the D2 bet: with clauses enumerable, `CapLabelCoh`/`FreshCfg` bound custom's caps by the SAME
   -- per-step machinery as the built-ins — no threaded well-formedness premise (the ADR-0085 wall dissolved).
   -- The clause bodies are traversed via `capsCls` (a separate mutual member recursing on the list spine)
-  -- because `List (OpId × Comp)` is a nested-inductive occurrence of `Comp` the structural checker cannot
+  -- because `List (ClauseKey × Comp)` is a nested-inductive occurrence of `Comp` the structural checker cannot
   -- thread automatically; the `sizeOf` measure justifies the descent. Equation lemmas
   -- (`simp only [capsH]`/`[capsCls]`) are still generated.
   | .custom _ p cls => capsV p ++ capsCls cls
   termination_by h => sizeOf h
 /-- Caps of a custom handler's clause list — recurses on the list spine; each body `c.2` is a
 `sizeOf`-subterm of the clause list (ADR-0087). -/
-def capsCls : List (OpId × Comp) → List (Nat × Label)
+def capsCls : List (ClauseKey × Comp) → List (Nat × Label)
   | [] => []
   | c :: rest => capsC c.2 ++ capsCls rest
   termination_by cls => sizeOf cls
@@ -96,7 +96,7 @@ end
 
 /-- Every cap of a clause `c ∈ cls` is a cap of the whole clause list (ADR-0087: the enumerability that
 dissolves the clause-cap blocker — the gh44s2 `sorry` on `q ∈ capsC clause` closes through this). -/
-theorem capsCls_mem {cls : List (OpId × Comp)} {c : OpId × Comp} (hc : c ∈ cls) :
+theorem capsCls_mem {cls : List (ClauseKey × Comp)} {c : ClauseKey × Comp} (hc : c ∈ cls) :
     ∀ q ∈ capsC c.2, q ∈ capsCls cls := by
   induction cls with
   | nil => simp at hc
@@ -107,8 +107,8 @@ theorem capsCls_mem {cls : List (OpId × Comp)} {c : OpId × Comp} (hc : c ∈ c
     · exact (by simp only [capsCls]; exact List.mem_append_right _ (ih h' q hq))
 
 /-- A `find?`-matched clause's caps land in `capsCls` (the honest custom `capsH` bounds them). -/
-theorem capsCls_find? {cls : List (OpId × Comp)} {op : OpId} {c : OpId × Comp}
-    (hf : cls.find? (·.1 == op) = some c) : ∀ q ∈ capsC c.2, q ∈ capsCls cls :=
+theorem capsCls_find? {cls : List (ClauseKey × Comp)} {op : OpId} {c : ClauseKey × Comp}
+    (hf : cls.find? (fun clause => clause.1.op == op) = some c) : ∀ q ∈ capsC c.2, q ∈ capsCls cls :=
   capsCls_mem (List.mem_of_find?_eq_some hf)
 
 /-- Collect every `(identity, label)` of a `vcap` node in an evaluation context. -/
@@ -528,8 +528,8 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
                · exact hch p h'
                · exact hv p (by simp only [capsV, List.mem_append] at h' ⊢; tauto))
     | custom ℓ' pm cl =>
-      -- custom (ADR-0085 stage 2, ADR-0087 finite rep): ONE-SHOT resume (read-only param). Mirrors `state`
-      -- — the reassembled stack + the param/arg/CLAUSE focus caps stay `< g`. THE D2 PAYOFF: the resume
+      -- custom (ADR-0085 stage 2, ADR-0114): ONE-SHOT resume. Plain and updating reinstall paths both
+      -- preserve the `< g` bound for the rebuilt stack and param/arg/clause focus caps. THE D2 PAYOFF: the resume
       -- focus is the substituted user CLAUSE, whose OWN literal caps ARE now bounded — `capsH custom =
       -- capsV pm ++ capsCls cl` enumerates them, so the gh44s2 clause-cap `sorry` closes via `capsCls_find?`
       -- + `hch` (the enumerability the finite rep buys). No new premise, unlike the ADR-0085 threaded route.
@@ -537,18 +537,50 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
       simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
       obtain ⟨_, hsome⟩ := hk
       obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
-      simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
-      obtain ⟨rfl, rfl⟩ := hd2
-      refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
-        stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ ?_⟩
-      · intro q hq
+      have hbody : ∀ q ∈ capsC (Comp.subst pm (Comp.subst (Val.shift v) clause.2)), q.1 < g := by
+        intro q hq
         rcases capsC_substFrom 0 pm _ q hq with h' | h'
         · rcases capsC_substFrom 0 (Val.shift v) clause.2 q h' with h'' | h''
           · -- q ∈ capsC clause.2: the clause's OWN literal caps, now bounded (ADR-0087 enumerability).
             exact hch q (by simp only [capsH]; exact List.mem_append_right _ (capsCls_find? hcl q h''))
           · rw [capsV_shiftFrom] at h''; exact hv q h''
         · exact hch q (by simp only [capsH]; exact List.mem_append_left _ h')
-      · intro q hq; simp only [capsH] at hq; exact hch q (by simp only [capsH]; exact hq)
+      simp only [dispatchOn, hcl] at hd2
+      by_cases hupdate : clause.1.updates = true
+      · rw [if_pos hupdate] at hd2
+        split at hd2
+        case h_1 resumeValue nextParam hbodyeq =>
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, rfl⟩ := hd2
+          refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
+            stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ ?_⟩
+          · intro q hq
+            have hq' : q ∈ capsV resumeValue := by simpa only [capsC] using hq
+            apply hbody q
+            rw [hbodyeq]
+            simp only [capsC, capsV]
+            exact List.mem_append_left _ hq'
+          · intro q hq
+            simp only [capsH] at hq
+            rcases List.mem_append.mp hq with hnext | hcls
+            · apply hbody q
+              rw [hbodyeq]
+              simp only [capsC, capsV]
+              exact List.mem_append_right _ hnext
+            · exact hch q (by simp only [capsH]; exact List.mem_append_right _ hcls)
+        case h_2 =>
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, rfl⟩ := hd2
+          refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
+            stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ hch⟩
+          intro q hq
+          have : q ∈ ([] : List (Nat × Label)) := by simpa only [capsC] using hq
+          exact (List.not_mem_nil this).elim
+      · rw [if_neg hupdate] at hd2
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+        obtain ⟨rfl, rfl⟩ := hd2
+        exact ⟨capsBelow_handler_irrel (hrec ▸ hcb), hbody,
+          stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ hch⟩
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- The `Bool=1+1` encoding (ADR-0065) is closed: it carries no capabilities. -/

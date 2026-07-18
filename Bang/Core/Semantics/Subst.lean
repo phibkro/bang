@@ -401,7 +401,7 @@ the heap is untouched. ADR-0054: the body `M` is under the cap-binder, so it clo
 /-- ◊4.5b #44 STAGE 5: `closeC` distributes through a `custom ℓ p cl` handler. The param + clause bodies
 are treated as CLOSED (ADR-0085 stage 1: `Handler.substFrom _ (custom …) = custom …`, identity — like
 `transaction`), so they are untouched; the body `M` closes under the cap-binder via `closeCUnderBinders 1`. -/
-@[simp] theorem closeC_handleCustom (δ : List Val) (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) (M : Comp) :
+@[simp] theorem closeC_handleCustom (δ : List Val) (ℓ : Label) (p : Val) (cl : List (ClauseKey × Comp)) (M : Comp) :
     closeC δ (Comp.handle (Handler.custom ℓ p cl) M)
       = Comp.handle (Handler.custom ℓ p cl) (closeCUnderBinders 1 δ M) := by
   induction δ generalizing M with

@@ -75,8 +75,30 @@ def escapeCatalog : List (String × Comp) :=
        (.force (.vvar 0)))
   ]
 
+/-- Raw-IR differential witnesses for ADR-0111. The surface syntax intentionally remains gated,
+so this catalog exercises the concrete WasmGC emitter at the first layer where updating clause keys
+exist. The first operation returns parameter 1 and installs 0; the second must observe 0, yielding 10. -/
+def statefulCustomCatalog : List (String × Comp) :=
+  [ ("custom-param-update",
+      .handle (.custom 4 (.vint 1)
+          [(.updating "connect", .ret (.pair (.vvar 1) (.vint 0)))])
+        (.letC (.perform (.vvar 0) "connect" .vunit)
+          (.letC (.perform (.vvar 1) "connect" .vunit)
+            (.letC (.binop .mul (.vvar 1) (.vint 10))
+              (.binop .add (.vvar 0) (.vvar 1))))))
+  ]
+
 def main (args : List String) : IO Unit := do
   match args with
+  | "--stateful-custom" :: rest =>
+      let outdir := rest.head?.getD "."
+      for (name, c) in statefulCustomCatalog do
+        match Bang.WasmEmit.emitModuleGC c with
+        | .unsup r => IO.println s!"{name}\tORACLE={oracleInt c}\tEMIT=REFUSED\t{r}"
+        | .ok wat =>
+            let path := s!"{outdir}/{name}.wat"
+            IO.FS.writeFile path wat
+            IO.println s!"{name}\tORACLE={oracleInt c}\tEMIT=ok\t{path}"
   | "--escape" :: rest =>
       -- Emit each escape-catalog Comp to `<outdir>/<name>.wat` (or print the verdict list). The
       -- shell gate runs them on wasmtime and asserts fail-loud (kernel = .escapedCap for all).
@@ -124,4 +146,4 @@ def main (args : List String) : IO Unit := do
               match rest with
               | out :: _ => do IO.FS.writeFile out wat; IO.println s!"wat written: {out}"
               | [] => IO.println wat
-  | [] => IO.println "usage: rung4-shape [--print|--shape] <file.bang> [<out.wat>]"
+  | [] => IO.println "usage: rung4-shape [--print|--shape] <file.bang> [<out.wat>] | --escape <outdir> | --stateful-custom <outdir>"

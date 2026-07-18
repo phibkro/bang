@@ -202,7 +202,7 @@ category, whether the cause is an unparseable shape or a precedence-ambiguous on
 public def annotateDecl (p : Prog) (d : Decl) : AnnotateOutcome :=
   match d with
   | .letRecD .. | .fnD .. => .skipped .alreadyAnnotated
-  | .traitD .. | .implD .. | .dataD .. | .effectD .. => .skipped .notValueTyped
+  | .traitD .. | .implD .. | .dataD .. | .effectD .. | .handlerD .. => .skipped .notValueTyped
   | .letD _ (some _) _ => .skipped .alreadyAnnotated
   | .letD n none _ =>
       match Bang.Query.typeStringOfDecl p n with

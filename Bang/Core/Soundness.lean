@@ -248,7 +248,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?binop ?perform ?handleThrows ?handleState
-    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons h
+    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons ?clausesConsUpdating h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
@@ -266,6 +266,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     exact Nat.succ.inj (by simpa only [List.length_cons] using ihM)
   case clausesNil => intros; trivial
   case clausesCons => intros; trivial
+  case clausesConsUpdating => intros; trivial
   case ret => intro γ γ' Γ w A q _ hγ ih; subst hγ
               simp only [hsmul_eq_smul, GradeVec.smul_length]; exact ih
   case letC => intro γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B _ _ hγ ihM ihN; subst hγ
@@ -313,7 +314,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?binop ?perform ?handleThrows ?handleState
-    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons h
+    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons ?clausesConsUpdating h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
@@ -365,6 +366,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     exact Nat.succ.inj (by simpa only [List.length_cons] using ihM)
   case clausesNil => intros; trivial
   case clausesCons => intros; trivial
+  case clausesConsUpdating => intros; trivial
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -1356,7 +1358,7 @@ theorem HasCTy.subst_gen
     (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?binop ?perform ?handleThrows ?handleState
-    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons
+    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons ?clausesConsUpdating
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
     intro Γ₀ Δ Γ A γ_v v hΓ hv
@@ -1522,6 +1524,7 @@ theorem HasCTy.subst_gen
     exact HasCTy.handleCustom hcl hcov hp (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle hbocc
   case clausesNil => intros; trivial
   case clausesCons => intros; trivial
+  case clausesConsUpdating => intros; trivial
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -1623,6 +1626,14 @@ theorem HasCTy.ret_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   intro h
   cases h with
   | @ret _ γ' _ _ A q hv hγ => exact ⟨γ', A, q, rfl, rfl, hγ, hv⟩
+
+private theorem HasVTy.pair_inv {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {a b : Val} {A B : VTy Eff Mult} :
+    HasVTy γ Γ (.pair a b) (.prod A B) →
+      ∃ γa γb, γ = γa + γb ∧ HasVTy γa Γ a A ∧ HasVTy γb Γ b B := by
+  intro h
+  cases h with
+  | pair ha hb hγ => exact ⟨_, _, hγ, ha, hb⟩
 
 -- ADR-0054: `HasCTy.perform_inv` is DELETED — the old positional `perform cap ℓ op v` shape is gone
 -- (perform now carries a `Cap ℓ` VALUE), and its sole consumer was the deleted `preservation_perform_typing`.
@@ -1729,12 +1740,12 @@ type is `F q A`, the clause list types (`HasClauses`), the param `p` is a CLOSED
 under the bound cap at `e_body ≤ labelEff ℓ ⊔ φ`, and B-occ holds. Replaces the (now-false, stage-1)
 `handle_custom_uninhabited` — custom is TYPABLE at stage 3. -/
 private theorem HasCTy.handleCustom_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
-    {ℓ : Label} {p : Val} {cl : List (OpId × Comp)} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
+    {ℓ : Label} {p : Val} {cl : List (ClauseKey × Comp)} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.handle (Handler.custom ℓ p cl) M) e C →
     ∃ (e_body : Eff) (q qc : Mult) (P A : VTy Eff Mult), C = CTy.F q A
       ∧ HasClauses ℓ P cl
       ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
-          (cl.find? (·.1 == op)).isSome)
+          (cl.find? (fun clause => clause.1.op == op)).isSome)
       ∧ HasVTy [] [] p P
       ∧ HasCTy (qc :: γ0) (VTy.cap ℓ :: Γ0) M e_body (CTy.F q A)
       ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e
@@ -2087,31 +2098,61 @@ param `p : P`, the discharge relation, and B-occ (ADR-0092 D4).** The custom ana
 returned `φ` is the reinstalled frame's residual row (the substack's incoming effect). This is what the
 perform-dispatch custom arm needs to re-type the resume focus. -/
 private theorem HasStack.concat_custom_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
-    {cl : List (OpId × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    {cl : List (ClauseKey × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo Co →
     ∃ (P : VTy Eff Mult),
-      HasClauses ℓ' P cl ∧ HasVTy [] [] p P := by
+      HasClauses ℓ' P cl ∧ HasVTy [] [] p P ∧
+      ∀ next, HasVTy [] [] next P →
+        ∃ eo', eo' ≤ eo ∧
+          HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' next cl) :: Kₒ) e C eo' Co := by
   induction Kᵢ generalizing e C with
   | nil =>
     intro hK; simp only [List.nil_append] at hK
     cases hK with
-    | @customF _ _ _ _ _ _ φ _ q P A _ hcl hcov hp hle hbocc hsub => exact ⟨P, hcl, hp⟩
+    | @customF _ _ _ _ _ _ φ _ q P A _ hcl hcov hp hle hbocc hsub =>
+      refine ⟨P, hcl, hp, ?_⟩
+      intro next hnext
+      exact ⟨eo, le_refl _, HasStack.customF hcl hcov hnext hle hbocc hsub⟩
   | cons fr Kᵢ ih =>
     intro hK; simp only [List.cons_append] at hK
     cases hK with
-    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
-    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
-    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
-    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
-    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub =>
+      obtain ⟨P, hcl, hp, hreplace⟩ := ih hsub
+      exact ⟨P, hcl, hp, fun next hn => by
+        obtain ⟨eo', hleo, hs'⟩ := hreplace next hn
+        exact ⟨eo', hleo, HasStack.letF hN hs'⟩⟩
+    | @appF _ _ _ _ q A B _ hv hsub =>
+      obtain ⟨P, hcl, hp, hreplace⟩ := ih hsub
+      exact ⟨P, hcl, hp, fun next hn => by
+        obtain ⟨eo', hleo, hs'⟩ := hreplace next hn
+        exact ⟨eo', hleo, HasStack.appF hv hs'⟩⟩
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hbocc hsub =>
+      obtain ⟨P, hcl, hp, hreplace⟩ := ih hsub
+      exact ⟨P, hcl, hp, fun next hn => by
+        obtain ⟨eo', hleo, hs'⟩ := hreplace next hn
+        exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hbocc hs'⟩⟩
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hbocc hsub =>
+      obtain ⟨P, hcl, hp, hreplace⟩ := ih hsub
+      exact ⟨P, hcl, hp, fun next hn => by
+        obtain ⟨eo', hleo, hs'⟩ := hreplace next hn
+        exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hbocc hs'⟩⟩
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
+      obtain ⟨P, hcl, hp, hreplace⟩ := ih hsub
+      exact ⟨P, hcl, hp, fun next hn => by
+        obtain ⟨eo', hleo, hs'⟩ := hreplace next hn
+        exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hs'⟩⟩
+    | @customF _ _ ℓ'' _ _ _ φ _ q P₀ A _ hcl₀ hcov hp₀ hle hbocc hsub =>
+      obtain ⟨P, hcl, hp, hreplace⟩ := ih hsub
+      exact ⟨P, hcl, hp, fun next hn => by
+        obtain ⟨eo', hleo, hs'⟩ := hreplace next hn
+        exact ⟨eo', hleo, HasStack.customF hcl₀ hcov hp₀ hle hbocc hs'⟩⟩
 
-/-- **CUSTOM resume re-typing (static, ADR-0092 D4).** The custom analogue of `concat_state_resume`:
-the boundary `custom ℓ' p cl` frame is reinstalled UNCHANGED (v1 is READ-ONLY param — the resume keeps
-`p`/`cl`, exactly `Dispatch.dispatchOn`'s custom arm), re-typing the resumed stack at the SAME `e C`.
+/-- **Plain CUSTOM resume re-typing (static, ADR-0092 D4).** The custom analogue of
+`concat_state_resume`: a plain clause reinstalls the same boundary frame and re-types the resumed
+stack at the same `e C`. The updating case uses the parameter-replacement sibling.
 Each `Kᵢ` frame is rebuilt by `cases hK`, so the frame skeleton is preserved. -/
 private theorem HasStack.concat_custom_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
-    {cl : List (OpId × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    {cl : List (ClauseKey × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo Co →
     ∃ eo', eo' ≤ eo
       ∧ HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo' Co := by
@@ -2147,21 +2188,51 @@ private theorem HasStack.concat_custom_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {�
 `find?`), the body IS a `ret w` with the resumed VALUE `w : opRes ℓ op'` under `[opArg ℓ op', P]`.
 Recurse on the list, matching the found clause against the head. -/
 private theorem HasClauses.mem_typed {ℓ : Label} {P : VTy Eff Mult} :
-    ∀ {cl : List (OpId × Comp)}, HasClauses ℓ P cl → ∀ {op' : OpId} {body : Comp},
-      (op', body) ∈ cl →
+    ∀ {cl : List (ClauseKey × Comp)}, HasClauses ℓ P cl → ∀ {key : ClauseKey} {body : Comp},
+      (key, body) ∈ cl →
+      key.updates = false →
       ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (w : Val),
         body = Comp.ret w
-        ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op' = some opA
-        ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op' = some opR
+        ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ key.op = some opA
+        ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ key.op = some opR
         ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) w opR
-  | [], _, _, _, hmem => by simp at hmem
-  | (_ :: _), h, op', body, hmem => by
+  | [], _, _, _, hmem, _ => by simp at hmem
+  | (_ :: _), h, key, body, hmem, hplain => by
     cases h with
     | @cons _ _ op w rest opA opR qa qp hoa hor hw htail =>
       rcases List.mem_cons.mp hmem with heq | htl
       · obtain ⟨ho, hb⟩ := Prod.mk.injEq .. ▸ heq
         subst ho; subst hb; exact ⟨opA, opR, qa, qp, w, rfl, hoa, hor, hw⟩
-      · exact HasClauses.mem_typed htail htl
+      · exact HasClauses.mem_typed htail htl hplain
+    | @consUpdating _ _ op resume next rest opA opR qa qp hoa hor hpair htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, _⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; simp [ClauseKey.updates] at hplain
+      · exact HasClauses.mem_typed htail htl hplain
+
+/-- Updating-clause sibling of `mem_typed`: the returned pair has operation-result and parameter
+types under the clause's `[arg, param]` environment. -/
+private theorem HasClauses.mem_typed_updating {ℓ : Label} {P : VTy Eff Mult} :
+    ∀ {cl : List (ClauseKey × Comp)}, HasClauses ℓ P cl → ∀ {key : ClauseKey} {body : Comp},
+      (key, body) ∈ cl → key.updates = true →
+      ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (resume next : Val),
+        body = Comp.ret (.pair resume next)
+        ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ key.op = some opA
+        ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ key.op = some opR
+        ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) (.pair resume next) (.prod opR P)
+  | [], _, _, _, hmem, _ => by simp at hmem
+  | (_ :: _), h, key, body, hmem, hupdate => by
+    cases h with
+    | @cons _ _ op w rest opA opR qa qp hoa hor hw htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, _⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; simp [ClauseKey.updates] at hupdate
+      · exact HasClauses.mem_typed_updating htail htl hupdate
+    | @consUpdating _ _ op resume next rest opA opR qa qp hoa hor hpair htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, hb⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; subst hb; exact ⟨opA, opR, qa, qp, resume, next, rfl, hoa, hor, hpair⟩
+      · exact HasClauses.mem_typed_updating htail htl hupdate
 
 /-- **The custom ret-clause resume focus re-types at the PERFORM's ARBITRARY grade (ADR-0092 D4).** Given
 the resumed VALUE `w : opR` under `[opArg, P]` and the two CLOSED substituends (`p : P`, `v : opArg`), the
@@ -2196,6 +2267,35 @@ private theorem custom_resume_focus_types
   have hγ'nil : γ' = [] := by have := hval.length_eq; simpa using this
   subst hγ'nil
   exact HasCTy.ret hval (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros])
+
+/-- Type the two closed values produced by an ADR-0114 update envelope after substituting the
+closed operation argument and current parameter. -/
+private theorem custom_update_payload_types
+    {P opA opR : VTy Eff Mult} {qa qp : Mult} {p v resume next : Val}
+    (hp : HasVTy (Eff := Eff) (Mult := Mult) [] [] p P)
+    (hv : HasVTy (Eff := Eff) (Mult := Mult) [] [] v opA)
+    (hpair : HasVTy (qa :: qp :: []) (opA :: P :: []) (.pair resume next) (.prod opR P)) :
+    HasVTy [] [] (Val.subst p (Val.subst (Val.shift v) resume)) opR ∧
+      HasVTy [] [] (Val.subst p (Val.subst (Val.shift v) next)) P := by
+  have hwhole := custom_resume_focus_types (q_perf := (1 : Mult)) hp hv hpair
+  obtain ⟨γ', A0, q0, _heff, hCeq, _hγ, hval⟩ := hwhole.ret_inv
+  obtain ⟨_q, hA⟩ := CTy.F.injEq .. ▸ hCeq
+  subst hA
+  have hγnil : γ' = [] := by have := hval.length_eq; simpa using this
+  subst hγnil
+  change HasVTy [] []
+    (.pair (Val.subst p (Val.subst (Val.shift v) resume))
+      (Val.subst p (Val.subst (Val.shift v) next))) (.prod opR P) at hval
+  obtain ⟨γr, γn, _hgrades, hresume, hnext⟩ := hval.pair_inv
+  have hγr : γr = ([] : GradeVec Mult) := by
+    apply List.eq_nil_of_length_eq_zero
+    simpa using hresume.length_eq
+  have hγn : γn = ([] : GradeVec Mult) := by
+    apply List.eq_nil_of_length_eq_zero
+    simpa using hnext.length_eq
+  rw [hγr] at hresume
+  rw [hγn] at hnext
+  exact ⟨hresume, hnext⟩
 
 /-! ### E.1d STEP-5: identity-dispatch decomposition (`splitAtId_decomp`) -/
 
@@ -2489,23 +2589,45 @@ theorem preservation_proof
         simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
         obtain ⟨hℓ, hfound⟩ := hk; subst hℓ
         obtain ⟨clause, hcl_eq⟩ := Option.isSome_iff_exists.mp hfound
-        simp only [dispatchOn, hcl_eq, Option.some.injEq] at hstep2
-        subst hstep2
-        obtain ⟨P, hclauses, hp⟩ := hstack.concat_custom_closed
+        obtain ⟨P, hclauses, hp, hreplace⟩ := hstack.concat_custom_closed
         have hclause_mem : clause ∈ cl := List.mem_of_find?_eq_some hcl_eq
-        have hclause_op : clause.1 = op := by
+        have hclause_op : clause.1.op = op := by
           have := List.find?_some hcl_eq; simpa [beq_iff_eq] using this
-        obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
-          hclauses.mem_typed (op' := clause.1) (body := clause.2) (by rw [Prod.mk.eta]; exact hclause_mem)
-        rw [hclause_op] at hoa hor
-        have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
-        have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
-        subst hAopA; subst hBopR
-        rw [hbeq] at hnecfg' ⊢
-        have hfocus_ty := custom_resume_focus_types (q_perf := q) hp hwv hw
-        obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
-        obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
-        exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩, hnecfg'⟩
+        by_cases hupdate : clause.1.updates = true
+        · obtain ⟨opA, opR, qa, qp, resume, next, hbeq, hoa, hor, hpair⟩ :=
+            hclauses.mem_typed_updating (key := clause.1) (body := clause.2)
+              (by rw [Prod.mk.eta]; exact hclause_mem) hupdate
+          rw [hclause_op] at hoa hor
+          have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
+          have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
+          subst hAopA; subst hBopR
+          simp only [dispatchOn, hcl_eq, hbeq, hupdate, if_true, Comp.subst, Comp.substFrom,
+            Val.substFrom,
+            Option.some.injEq] at hstep2
+          subst hstep2
+          obtain ⟨hresume, hnext⟩ := custom_update_payload_types hp hwv hpair
+          obtain ⟨eo', hleo, hsub'⟩ := hreplace _ hnext
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q B,
+              HasCTy.ret hresume (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩, hnecfg'⟩
+        · have hplain : clause.1.updates = false := Bool.eq_false_of_not_eq_true hupdate
+          obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
+            hclauses.mem_typed (key := clause.1) (body := clause.2)
+              (by rw [Prod.mk.eta]; exact hclause_mem) hplain
+          simp only [dispatchOn, hcl_eq, hplain, Bool.false_eq_true, if_false,
+            Option.some.injEq] at hstep2
+          subst hstep2
+          rw [hclause_op] at hoa hor
+          have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
+          have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
+          subst hAopA; subst hBopR
+          rw [hbeq] at hnecfg' ⊢
+          have hfocus_ty := custom_resume_focus_types (q_perf := q) hp hwv hw
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩, hnecfg'⟩
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2870,23 +2992,45 @@ theorem hasConfigTy_step
         simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
         obtain ⟨hℓ, hfound⟩ := hk; subst hℓ
         obtain ⟨clause, hcl_eq⟩ := Option.isSome_iff_exists.mp hfound
-        simp only [dispatchOn, hcl_eq, Option.some.injEq] at hstep2
-        subst hstep2
-        obtain ⟨P, hclauses, hp⟩ := hstack.concat_custom_closed
+        obtain ⟨P, hclauses, hp, hreplace⟩ := hstack.concat_custom_closed
         have hclause_mem : clause ∈ cl := List.mem_of_find?_eq_some hcl_eq
-        have hclause_op : clause.1 = op := by
+        have hclause_op : clause.1.op = op := by
           have := List.find?_some hcl_eq; simpa [beq_iff_eq] using this
-        obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
-          hclauses.mem_typed (op' := clause.1) (body := clause.2) (by rw [Prod.mk.eta]; exact hclause_mem)
-        rw [hclause_op] at hoa hor
-        have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
-        have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
-        subst hAopA; subst hBopR
-        rw [hbeq]
-        have hfocus_ty := custom_resume_focus_types (q_perf := q) hp hwv hw
-        obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
-        obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
-        exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩⟩
+        by_cases hupdate : clause.1.updates = true
+        · obtain ⟨opA, opR, qa, qp, resume, next, hbeq, hoa, hor, hpair⟩ :=
+            hclauses.mem_typed_updating (key := clause.1) (body := clause.2)
+              (by rw [Prod.mk.eta]; exact hclause_mem) hupdate
+          rw [hclause_op] at hoa hor
+          have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
+          have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
+          subst hAopA; subst hBopR
+          simp only [dispatchOn, hcl_eq, hbeq, hupdate, if_true, Comp.subst, Comp.substFrom,
+            Val.substFrom,
+            Option.some.injEq] at hstep2
+          subst hstep2
+          obtain ⟨hresume, hnext⟩ := custom_update_payload_types hp hwv hpair
+          obtain ⟨eo', hleo, hsub'⟩ := hreplace _ hnext
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q B,
+              HasCTy.ret hresume (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩⟩
+        · have hplain : clause.1.updates = false := Bool.eq_false_of_not_eq_true hupdate
+          obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
+            hclauses.mem_typed (key := clause.1) (body := clause.2)
+              (by rw [Prod.mk.eta]; exact hclause_mem) hplain
+          simp only [dispatchOn, hcl_eq, hplain, Bool.false_eq_true, if_false,
+            Option.some.injEq] at hstep2
+          subst hstep2
+          rw [hclause_op] at hoa hor
+          have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
+          have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
+          subst hAopA; subst hBopR
+          rw [hbeq]
+          have hfocus_ty := custom_resume_focus_types (q_perf := q) hp hwv hw
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩⟩
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -3103,7 +3247,10 @@ private theorem dispatchOn_isSome (n : Nat) (ℓ : Label) (op : OpId) (v : Val) 
       simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hh
       obtain ⟨_, hsome⟩ := hh
       obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
-      simp only [dispatchOn, hcl]; exact ⟨_, rfl⟩
+      simp only [dispatchOn, hcl]
+      split
+      · split <;> exact ⟨_, rfl⟩
+      · exact ⟨_, rfl⟩
 
 /-- **PROGRESS'S PERFORM CASE** (probe §2): given `CapResolves K n ℓ op`, the `idDispatch` step fires —
 `splitAtId` finds the handling frame, the fail-loud `handlesOp` guard passes, and `dispatchOn` is total. -/
@@ -3311,7 +3458,7 @@ analogue of `throws_handlesWithin` — it discharges the `HandlesWithin` premise
 constructor-agnostic) abstraction-safety theorem holds at user labels too. Same shape as `throws`:
 `handlesOp (custom ℓ …) ℓ' op = true` forces `ℓ' = ℓ` via the label-match `&&` (ADR-0087 finite rep,
 `Dispatch.handlesOp`). This is the load-bearing Stage-6 lemma (the soundness composition names it). -/
-theorem custom_handlesWithin (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) :
+theorem custom_handlesWithin (ℓ : Label) (p : Val) (cl : List (ClauseKey × Comp)) :
     HandlesWithin (Eff := Eff) (Mult := Mult)
       (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ) (Handler.custom ℓ p cl) := by
   intro ℓ' op hcatch
@@ -3360,7 +3507,7 @@ never catches a FOREIGN operation (label in a disjoint row `e`). `no_accidental_
 at the custom form via `custom_handlesWithin` — the concrete "extend abstraction-safety to user
 effects" statement. Rides the already-clean frozen theorem. -/
 theorem no_accidental_handling_custom_proof
-    {ℓ : Label} {p : Val} {cl : List (OpId × Comp)} {e : Eff} :
+    {ℓ : Label} {p : Val} {cl : List (ClauseKey × Comp)} {e : Eff} :
     Disjoint (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ) e →
     ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e →
       handlesOp (Handler.custom ℓ p cl) ℓ' op = false :=

@@ -1,0 +1,6 @@
+use Codec (Shift7)
+
+let main =
+  handle
+    (let encoded = codec.encode(35) in codec.decode(encoded))
+  with Shift7 as codec

@@ -132,6 +132,7 @@ def renameVars (old new : String) : Surf → Surf
   | .binopS op a b => .binopS op (renameVars old new a) (renameVars old new b)
   | .ifS c t e     => .ifS (renameVars old new c) (renameVars old new t) (renameVars old new e)
   | .annotS e t    => .annotS (renameVars old new e) t
+  | .pledgeS row e => .pledgeS row (renameVars old new e)
   | .unitS         => .unitS
   | .foldS e       => .foldS (renameVars old new e)
   | .unfoldS e     => .unfoldS (renameVars old new e)
@@ -196,9 +197,12 @@ shadows INDEPENDENTLY (unlike `.lettMulti`'s sequential chain: a clause's own ar
 bearing on any OTHER clause, mirroring `renameDArmsVars`'s own per-arm independence and
 `qualifyHClausesVars`'s documented precedent). -/
 def renameHClausesVars (old new : String) : HClauses → HClauses
-  | .nil               => .nil
-  | .cons op x b rest  =>
+  | .nil                      => .nil
+  | .cons op x b rest         =>
       .cons op x (if x == old then b else renameVars old new b) (renameHClausesVars old new rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (if x == old then b else renameVars old new b)
+        (renameHClausesVars old new rest)
 /-- Rename a `let rec … and …` sibling chain (#97 item 2) — the CALLER (`.letRecMultiS`'s own
 arm above) has ALREADY checked no sibling shadows `old`, so every RHS renames unconditionally
 (mirrors `qualifyLetRecBindingsVars`'s own precedent — no sequential threading needed, since
@@ -245,7 +249,8 @@ for that half). Mirrors `qualifyDeclBody`'s per-constructor dispatch; `data`/`ef
 BY NAME is the decl-name half, `renameDeclName`, not this one). -/
 def renameDeclBody (old new : String) : Decl → Decl
   | .dataD n ps cs        => .dataD n ps cs
-  | .effectD n ops        => .effectD n ops
+  | .effectD n ops laws   => .effectD n ops (laws.map (fun l => { l with body := renameVars old new l.body }))
+  | .handlerD n eff cls   => .handlerD n eff (renameHClausesVars old new cls)
   | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := renameVars old new l.body }))
   | .implD n t ops        => .implD n t (ops.map (fun o => { o with body := renameVars old new o.body }))
   | .fnD n ps ty tr tv b  => .fnD n ps ty tr tv (renameVars old new b)
@@ -258,7 +263,8 @@ have no separate reference-body pass (their bodies never carry a `Surf`), so ren
 `Decl.name` alone is their WHOLE story. -/
 def renameDeclName (old new : String) : Decl → Decl
   | .dataD n ps cs        => .dataD (if n == old then new else n) ps cs
-  | .effectD n ops        => .effectD (if n == old then new else n) ops
+  | .effectD n ops laws   => .effectD (if n == old then new else n) ops laws
+  | .handlerD n eff cls   => .handlerD (if n == old then new else n) (if eff == old then new else eff) cls
   | .traitD n ps ops laws => .traitD (if n == old then new else n) ps ops laws
   | .implD n t ops        => .implD n t ops   -- an impl's "name" is its TRAIT (already handled via the trait's own decl, `qualifyDeclName`'s own precedent)
   | .fnD n ps ty tr tv b  => .fnD (if n == old then new else n) ps ty tr tv b

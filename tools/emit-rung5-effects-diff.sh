@@ -41,11 +41,15 @@ trap 'rm -rf "$outdir"' EXIT
 # Removed from this list; it now gates like any other program.
 declare -A KNOWN_REFUSALS=(
   [calc]="frontend: unbound variable Ast"
+  [codec-contract]="single-file harness: module/use resolution belongs to emit-rung5-print-diff"
   [json]="frontend: unresolved type variable"
   [hostio-echo]="frontend: host-IO perform not lowered here"
+  [pledged-plugin]="single-file harness: imported handler realization belongs to emit-rung5-print-diff"
+  [policy-host-allowlist]="single-file harness: imported effect belongs to emit-rung5-print-diff"
   [sched-roundrobin]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
   [sched-swap-dfs]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
   [sched-seeded-lcg]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
+  [stage-swap]="single-file harness: imported handler realizations belong to emit-rung5-print-diff"
 )
 
 echo "── building the rung4-shape emitter exe ──"
@@ -119,6 +123,32 @@ for dir in examples/*/; do
   fi
 done
 
+# ADR-0114 is intentionally below the surface gate, so exercise its raw `ClauseKey.updating` witness
+# separately. This is the concrete-emitter regression: the second call must observe the parameter
+# installed by the first call, not the immutable environment captured when the clauses were lifted.
+echo ""
+echo "── stateful custom-clause differential (raw typed IR) ──"
+stateful_report="$("$bin" --stateful-custom "$outdir")"
+while IFS=$'\t' read -r name oracle_field emit_field wat; do
+  [ -n "$name" ] || continue
+  expected="${oracle_field#ORACLE=}"
+  if [ "$emit_field" != "EMIT=ok" ] || [ ! -f "$wat" ]; then
+    printf '%-26s %s\n' "$name" "REFUSED"; fail=1
+    continue
+  fi
+  set +e
+  engine="$(nix shell nixpkgs#wasmtime -c wasmtime run -W gc=y,function-references=y,exceptions=y --invoke main "$wat" 2>/dev/null)"
+  wt_rc=$?
+  set -e
+  if [ "$wt_rc" -eq 0 ] && [ "$engine" = "$expected" ]; then
+    printf '%-26s %s\n' "$name" "OK (stateful custom)"
+  else
+    printf '%-26s %s\n' "$name" "MISMATCH"; fail=1
+    echo "   wasmtime stdout : [$engine]"
+    echo "   Source.eval     : [$expected]"
+  fi
+done <<< "$stateful_report"
+
 # False-green guard: assert the corpus is not silently short (S0-S4 pushed effectful count up).
 MIN_EMITTED="${MIN_EMITTED:-30}"
 MIN_EFFECTFUL="${MIN_EFFECTFUL:-18}"
@@ -132,7 +162,7 @@ fi
 echo ""
 echo "corpus: $emitted whole programs → WasmGC → wasmtime == expected.txt"
 echo "        (of which $effectful are EFFECTFUL — handle/perform/atomically, the rung-5 S0-S4 win)"
-echo "        $refused named refusals (frontend lower-errors + the first-class-cap wall)"
+echo "        $refused named frontend/host-IO refusals"
 if [ "$fail" -eq 0 ]; then
   echo "PASS — all emitted programs' READBACK matched bang run; every refusal is a NAMED wall."
 else

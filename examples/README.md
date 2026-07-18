@@ -39,8 +39,11 @@ examples/<project>/
 | [hostio-echo](hostio-echo/) | **ADR-0104 host-IO wedge** — imports the bundled `std/Io.bang` (`Console` print/readLine); the corpus run installs the SIM handler (deterministic, verified-core); the real+record+replay path is exercised by `tools/test-hostio-seam.sh`, not the corpus | ih |
 | [calc](calc/) | **the dogfood program** — a 6-module lexer→parser→evaluator (297 lines): modules, stdlib, recursion, a structural `Trace` effect; found #95/#96/#97 (`docs/notes/dogfood-calc-findings.md`) | 11021193 |
 | [nqueens](nqueens/) | **the pure-fragment stress test** — N-queens 4/5/6 fused into one self-recursion (no mutual `let rec` in v1); also the live env-vs-oracle fuel-cliff benchmark (#61) | 21004 |
-| [dst-rounds-lcg](dst-rounds-lcg/) / [dst-rounds-const](dst-rounds-const/) | **handler-swap pair 4 (DST rounds)** — a RECURSIVE driver with a declared user-effect row (`! {Div, Sched}`) performing through a captured cap; the seed threads through the driver because ret-shape + read-only `param` forbid handler-side state (the CTR-gate before/after ergonomics benchmark) | 9 / 16 |
+| [dst-rounds-lcg](dst-rounds-lcg/) / [dst-rounds-const](dst-rounds-const/) | **handler-swap pair 4 (DST rounds)** — a RECURSIVE driver with a declared user-effect row (`! {Div, Sched}`) performing through a captured cap; this historical baseline threads the seed through the driver and contrasts with ADR-0114's later explicit updating clauses | 9 / 16 |
 | [wildcard-match](wildcard-match/) | **the `_` wildcard match arm (issue #101)** — one shared body covers every constructor not named explicitly (including one WITH payload); expands to concrete arms before elaboration, so the kernel-facing eliminator (ADR-0069) is unchanged | 2 |
+| [pledged-plugin](pledged-plugin/) | **row attenuation as a type boundary** — `pledge {Audit} in …` admits an audited plugin while statically rejecting any extra `Secret` effect (ADR-0112) | 1 |
+| [policy-host-allowlist](policy-host-allowlist/) | **value-level resource policy at the handler boundary** — one pledged `{Net}` plugin runs unchanged under two runtime host allowlists carried by an ordinary handler parameter | 1001 |
+| [stateful-quota](stateful-quota/) | **handler-owned evolving policy (ADR-0114)** — one stable capability is called twice while an `update` clause atomically advances its private quota parameter | 10 |
 
 ## Running
 

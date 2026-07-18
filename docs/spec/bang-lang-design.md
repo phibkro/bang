@@ -351,6 +351,16 @@ with thread_pool(cores=2) {
 }
 ```
 
+The current tested-superset cashes the **which effects** half of that sketch as an erased row
+ceiling (ADR-0112): `pledge {Audit, Fs} in plugin_body`. A wider effect is a compile-time error.
+The `allowed_paths` half is deliberately different: paths are values inside `Fs`, so current Bang
+enforces that policy in the installed handler. `examples/policy-host-allowlist/` makes this split
+executable: one pledged `{Net}` plugin runs unchanged under two runtime allowlists carried through
+ordinary clauses' read-only `param`. Stateful policy uses the separate ADR-0114 form
+`update op(x) => (resumeValue, nextParam)`: `examples/stateful-quota/` keeps one capability while
+its handler-owned quota advances from `1` to `0`. Refinement-typed path policy remains future work;
+`pledge` is not presented as a runtime filter or path sandbox.
+
 This unlocks:
 
 - **Deterministic concurrent tests.** Install a deterministic scheduler and a simulated clock; concurrent code becomes a pure function from inputs to outputs. Property-based testing of concurrent systems becomes tractable.

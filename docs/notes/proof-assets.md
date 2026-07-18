@@ -18,7 +18,7 @@ template lemmas by convention (see the design notes for each spine, e.g.
 docs/notes/clone-triage.md for why the top clone families are not
 tactic-shaped.
 
-## `@[simp]` sets by module (105 lemmas)
+## `@[simp]` sets by module (111 lemmas)
 
 Calling `simp` in a module's proofs implicitly uses these; when writing
 new proofs in a module, check its set before re-proving a rewrite.
@@ -70,33 +70,33 @@ new proofs in a module, check its set before re-proving a rewrite.
 
 ### `Bang/Backend/EnvMachine.lean` (27)
 
-- `substEnv_nil` (EnvMachine.lean:493)
-- `substEnv_cons` (EnvMachine.lean:494)
-- `substEnvV_nil` (EnvMachine.lean:574)
-- `substEnv_ret` (EnvMachine.lean:576)
-- `substEnv_force` (EnvMachine.lean:582)
-- `substEnv_app` (EnvMachine.lean:588)
-- `substEnv_unfold` (EnvMachine.lean:594)
-- `substEnv_binop` (EnvMachine.lean:600)
-- `substEnv_perform` (EnvMachine.lean:606)
-- `substEnv_handle` (EnvMachine.lean:622)
-- `substEnvH_state` (EnvMachine.lean:630)
-- `substEnvH_transaction` (EnvMachine.lean:635)
-- `substEnvH_custom` (EnvMachine.lean:640)
-- `substEnvH_throws` (EnvMachine.lean:646)
-- `substEnvH_label` (EnvMachine.lean:652)
-- `substEnv_letC` (EnvMachine.lean:660)
-- `substEnv_lam` (EnvMachine.lean:668)
-- `substEnv_case` (EnvMachine.lean:676)
-- `substEnv_split` (EnvMachine.lean:685)
-- `substEnvV_vthunk` (EnvMachine.lean:1373)
-- `substEnvV_vunit` (EnvMachine.lean:1380)
-- `substEnvV_vint` (EnvMachine.lean:1384)
-- `substEnvV_vcap` (EnvMachine.lean:1388)
-- `substEnvV_inl` (EnvMachine.lean:1393)
-- `substEnvV_inr` (EnvMachine.lean:1398)
-- `substEnvV_pair` (EnvMachine.lean:1403)
-- `substEnvV_fold` (EnvMachine.lean:1408)
+- `substEnv_nil` (EnvMachine.lean:509)
+- `substEnv_cons` (EnvMachine.lean:510)
+- `substEnvV_nil` (EnvMachine.lean:590)
+- `substEnv_ret` (EnvMachine.lean:592)
+- `substEnv_force` (EnvMachine.lean:598)
+- `substEnv_app` (EnvMachine.lean:604)
+- `substEnv_unfold` (EnvMachine.lean:610)
+- `substEnv_binop` (EnvMachine.lean:616)
+- `substEnv_perform` (EnvMachine.lean:622)
+- `substEnv_handle` (EnvMachine.lean:638)
+- `substEnvH_state` (EnvMachine.lean:646)
+- `substEnvH_transaction` (EnvMachine.lean:651)
+- `substEnvH_custom` (EnvMachine.lean:656)
+- `substEnvH_throws` (EnvMachine.lean:662)
+- `substEnvH_label` (EnvMachine.lean:668)
+- `substEnv_letC` (EnvMachine.lean:676)
+- `substEnv_lam` (EnvMachine.lean:684)
+- `substEnv_case` (EnvMachine.lean:692)
+- `substEnv_split` (EnvMachine.lean:701)
+- `substEnvV_vthunk` (EnvMachine.lean:1389)
+- `substEnvV_vunit` (EnvMachine.lean:1396)
+- `substEnvV_vint` (EnvMachine.lean:1400)
+- `substEnvV_vcap` (EnvMachine.lean:1404)
+- `substEnvV_inl` (EnvMachine.lean:1409)
+- `substEnvV_inr` (EnvMachine.lean:1414)
+- `substEnvV_pair` (EnvMachine.lean:1419)
+- `substEnvV_fold` (EnvMachine.lean:1424)
 
 ### `Bang/Core/Semantics/Subst.lean` (20)
 
@@ -136,10 +136,19 @@ new proofs in a module, check its set before re-proving a rewrite.
 - `basis_length` (Soundness.lean:81)
 - `smul_zeros` (Soundness.lean:98)
 
+### `Bang/Backend/AbstractMachine.lean` (6)
+
+- `ctxFullEffect_cons_state` (AbstractMachine.lean:4109)
+- `ctxFullEffect_cons_txn` (AbstractMachine.lean:4116)
+- `ctxFullEffect_cons_custom` (AbstractMachine.lean:4123)
+- `ctxFullEffect_cons_throws` (AbstractMachine.lean:4130)
+- `ctxFullEffect_cons_let` (AbstractMachine.lean:4135)
+- `ctxFullEffect_cons_app` (AbstractMachine.lean:4139)
+
 ### `Bang/Core/Semantics/Dispatch.lean` (4)
 
-- `handlerCount_letF` (Dispatch.lean:208)
-- `handlerCount_appF` (Dispatch.lean:210)
-- `handlerCount_handleF` (Dispatch.lean:212)
-- `handlesOp_substFrom` (Dispatch.lean:262)
+- `handlerCount_letF` (Dispatch.lean:221)
+- `handlerCount_appF` (Dispatch.lean:223)
+- `handlerCount_handleF` (Dispatch.lean:225)
+- `handlesOp_substFrom` (Dispatch.lean:275)
 

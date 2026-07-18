@@ -1,0 +1,9 @@
+effect Quota { connect : Int -> Int }
+
+handle
+  (let first = quota.connect(7) in
+   let second = quota.connect(9) in
+   first * 10 + second)
+with (Quota 1) as quota {
+  update connect(host) => (param, 0)
+}

@@ -10,11 +10,10 @@ capabilities composing in one program.
 
 Each of 16 rounds, two replicas each draw a delivery order for the same
 racing write pair; a round converges iff the draws agree. The handler owns
-only the **policy** (seed → bit): clause bodies are ret-shape and `param`
-is read-only in v1 (ADR-0095 D4 / ADR-0092 D5), so evolving scheduler state
-*cannot* live in the handler — the seed-threading in the driver is the
-honest workaround, and the day the CTR gate lands this program is the
-before/after ergonomics benchmark.
+only the **policy** (seed → bit). This predates ADR-0114 and deliberately retains plain,
+read-only clauses, so the driver threads evolving scheduler state itself. Compare
+`../stateful-quota/` for the later explicit update envelope; this program remains the
+before/after ergonomics baseline for moving a richer recursive scheduler into that form.
 
 LCG policy (bit 6 of the seed): **9**/16 rounds converge. Swap partner:
 [`../dst-rounds-const/`](../dst-rounds-const/) — same driver byte-for-byte,

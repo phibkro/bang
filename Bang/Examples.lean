@@ -332,8 +332,8 @@ def compiledAgreesInt (fuel : Nat) (src : String) (n : Int) : Bool :=
 -- syntax yet (Stage 7), so the programs are hand-built at the `Comp` IR level (mirroring the kernel
 -- `#guard`s in `Core/Semantics/Eval.lean`, now also driven through the calculated machine). The
 -- `readerClauses` clause resumes with `arg@0 + param@1`; dispatch is first-match-wins.
-private def customReaderClauses : List (Bang.OpId × Comp) :=
-  [("read", .binop .add (.vvar 0) (.vvar 1))]
+private def customReaderClauses : List (Bang.ClauseKey × Comp) :=
+  [(.plain "read", .binop .add (.vvar 0) (.vvar 1))]
 
 /-- Custom DISPATCH + one-shot RESUME: `read 5` runs the clause `5 + 100 = 105`, resumes the `letC`
 continuation `105 + 1 = 106`. The calculated machine's `customUpdate` clause-service agrees with the

@@ -21,11 +21,9 @@ the load-bearing frame : bang's 5 kernel primitives (thunk·force·rows·handler
                          microkernel; surface/runtime/stdlib are userland. LOAD-BEARING, not
                          rhetoric — it PREDICTS four already-made decisions (§1) and one open one.
 
-cheapest actionable    : ROW-ATTENUATION COMBINATORS — a first-class `drop-to <row>` that
-                         narrows a computation's declared row (pledge/unveil, made a type). This
-                         is the sandboxed-plugin showcase's single missing primitive, and it is
-                         v1.x-cheap: it rides the EXISTING row lattice (invariant #2) as a
-                         checked upper-bound, no new kernel primitive, no proof budget. §4, §10.
+cheapest actionable    : ROW ATTENUATION — `pledge {E, …} in body`, a checked effect-row ceiling.
+                         LANDED as ADR-0112. The distinct value-policy half is now executable too:
+                         ADR-0113 carries a runtime host allowlist in an ordinary handler. §4, §10.
 
 the future headline    : seL4's NONINTERFERENCE theorem is the exact shape of bang's future
                          security headline — "effects cannot flow where the row forbids." bang's
@@ -285,20 +283,17 @@ OpenBSD `pledge(2)` requests a *subset* of syscalls via named promises (`stdio`,
    simplicity."* pledge beat seccomp on *ergonomics*.
 2. **Irreversible** — pledge sets `NO_NEW_PRIVS`; you can drop authority but never regain it.
 
-**This is bang's single missing showcase primitive.** The sandboxed-plugin example
-(`docs/spec/bang-lang-design.md`) — `with restricted_io(allowed_paths=[...]) { untrusted_plugin() }`
-— is a *design sketch that v1 cannot type*, because bang has **no notion of narrowing a row**
-(confirmed: no `attenuat`/`subrow`/masking anywhere in the tree). The row is monotone: you can only
-*add* effects (join), never *drop* them.
+**Landed as ADR-0112 (2026-07-18).** The sandboxed-plugin example
+(`docs/spec/bang-lang-design.md`) needed a row-only way to state the plugin's complete effect ceiling.
+Bang now spells that checked boundary `pledge {E, …} in body`; the original survey finding is
+retained here as the evidence that selected the slice, not as a current limitation.
 
 **Row-attenuation combinator** = pledge, made a type:
 
 ```
-  drop-to {IO.read} in c     -- c may perform AT MOST {IO.read}; a wider perform is a TYPE ERROR
-  ────────────────────────
-  c : A with ρ      ρ' ⊑ ρ (ρ' a sub-row in the EXISTING row lattice, invariant #2)
-  ─────────────────────────────────────────────────────────────────────────────────
-  drop-to ρ' in c : A with ρ'
+  c : A with ρ      ρ ⊑ ρmax
+  ─────────────────────────────────────────────────────────────────────
+  pledge ρmax in c : A with ρ   -- retains the ACTUAL row; a wider perform is a TYPE ERROR
 ```
 
 Why this is **v1.x-cheap** (the cheapest actionable item):
@@ -309,9 +304,8 @@ Why this is **v1.x-cheap** (the cheapest actionable item):
 - **No proof budget.** It is a typing rule (elaborator + checker), the *tested* superset — the
   language-level seam, not the verified kernel. It's a `pledge`-shaped restriction expressed as
   row-subtyping, which the checker already reasons about.
-- **It unlocks the flagship showcase.** `restricted_io` becomes `drop-to {IO.read allowed}`; the
-  sandboxed plugin *type-checks* — a plugin that tries a wider effect fails at compile time, the
-  confused-deputy attack surface closed *structurally*.
+- **It unlocks the flagship showcase.** `examples/pledged-plugin/` is the executable witness: an
+  Audit-only plugin type-checks, while adding a `Secret` perform fails at compile time.
 - **It is the userland `seccomp` the microkernel frame predicted** (§1): a userland computation
   voluntarily, irreversibly narrowing its own kernel privileges before calling untrusted code.
 
@@ -322,13 +316,14 @@ either (a) a refinement/dependent type on the IO cap's argument, or (b) the hand
 the whitelist at runtime (a userland *policy handler*, which bang can already write). **Recommended
 split:** row-attenuation (the `pledge` half — *whether* the effect) is the cheap type-level v1.x win;
 value-level unveil (the *which resource* half) is a handler-enforced policy today, a refinement type
-post-v1. Don't conflate them — pledge and unveil are *two* syscalls for a reason.
+post-v1. `examples/policy-host-allowlist/` now confirms this route with one unchanged plugin under
+two runtime handler parameters (ADR-0113). Don't conflate them — pledge and unveil are *two*
+syscalls for a reason.
 
-> **ADR-INPUT (the headline recommendation).** Ship **row-attenuation combinators** (`drop-to ρ'`)
-> as a v1.x surface feature: a row-subtyping rule in the checker, no kernel change, no proof cost.
-> It closes the sandboxed-plugin showcase's gap, gives bang the no-ambient-authority + attenuation
-> pair the capability canon is built on, and is the concrete down-payment on the §2 noninterference
-> headline. **Smallest publishable unit of the whole survey.**
+> **ADR-INPUT — EXECUTED by ADR-0112.** Bang shipped row attenuation as
+> `pledge {E, …} in body`: a row-subtyping rule in the checker, no kernel change. The actual row is
+> retained after the assertion. ADR-0113 separately confirms value-level policy as runtime handler
+> configuration, still outside the row assertion itself.
 
 ---
 
@@ -471,8 +466,8 @@ machinery it paid for once.
                                           separate proof line                    claim (§2.3). NOT solved.
   multi-tenant scheduling fairness       needs multi-shot (Q22) + concurrency    post-v1 handler; frame
                                           (ADR-0030); priority inversion etc.    gives placement not policy
-  value-level unveil (which resource)    needs refinement/dependent types OR     handler-enforced today;
-                                          runtime policy handler                  refinement type post-v1 (§4)
+  value-level unveil (which resource)    runtime policy handler works today;     host allowlist landed;
+                                          static proof needs refinements           refinements remain post-v1 (§4)
   the noninterference theorem itself     seL4-scale proof effort; needs the      research-grade, post-v1;
                                           IFC axis + total-fragment discipline    architecture IS in place
   actors (`!`) + supervision             reserved (ADR-0030), needs multi-shot   post-v1; mechanism landed,
@@ -495,7 +490,8 @@ Cost-tiered, per the task's ask (v1.x-cheap / post-v1 / research):
 
 | # | input | tier | rides on / cost | ADR home |
 |---|-------|------|-----------------|----------|
-| **I1** | **Row-attenuation combinators** (`drop-to ρ'`): pledge-as-a-type; checked row upper-bound in the checker. **The cheapest actionable item + smallest publishable unit.** Closes the sandboxed-plugin showcase; gives no-ambient-authority + attenuation. | **v1.x-cheap** | existing row lattice (inv #2); typing rule only, no kernel change, no proof budget | NEW ADR (surface) + amends the sandboxed-plugin showcase |
+| **I1** | **Row attenuation** (`pledge {E, …} in body`): pledge-as-a-type; checked row upper bound retaining the actual row. **LANDED 2026-07-18.** | **v1.x — shipped** | existing row lattice (inv #2); typing rule only, no kernel change | [ADR-0112](../decisions/0112-row-attenuation-as-erased-pledge.md) + `examples/pledged-plugin/` |
+| **I1b** | **Value-level resource policy as handler configuration**: runtime allowlist values are carried through `(Effect init)` / `param`, separate from the row. **LANDED 2026-07-18.** | **v1.x — shipped** | existing parameterized custom handlers + first-class installers; no kernel change | [ADR-0113](../decisions/0113-value-level-resource-policy-is-handler-configuration.md) + `examples/policy-host-allowlist/` |
 | **I2** | **Microkernel/userland as the organizing principle** behind invariants #3/#5, citing Liedtke minimality + seL4. LOAD-BEARING (predicts 4 landed decisions + I1's placement). | **v1 (doc)** | pure framing; no code | NEW ADR (principle) or a §in CLAUDE.md's architecture |
 | **I3** | **Midori bug/recoverable error taxonomy** made explicit: escapedCap/contract = abandonment (landed), throws = recoverable (landed). | **v1 (doc)** | both terminals already landed | amend ADR-0063 (escape) with the taxonomy |
 | **I4** | **IFC lattice as a grade axis** — the policy substrate for I5. Reuses GradeVec (laws-tax §5). | **post-v1** | grade-axis machinery (post-v1 surface); no new primitive | laws-taxonomy §5 → future ADR when axes ship |
@@ -505,9 +501,9 @@ Cost-tiered, per the task's ask (v1.x-cheap / post-v1 / research):
 | **I8** | **Region memory = a grade axis**, handler scope = region stack. NOT a sixth primitive. | **post-v1** | grade-axis machinery (laws-tax §5) | future ADR |
 | **I9** | **Keep fuel deterministic** — a *constraint* the future noninterference theorem (I5) depends on (seL4's scheduler-leak lesson). No scheduler primitive. | **v1 (constraint)** | fuel already landed + deterministic | note on ADR-0030 / the I5 ADR |
 
-**The one-line recommendation:** ship **I1 (row-attenuation combinators)** next — it is the single
-v1.x-cheap primitive that unlocks the flagship sandboxed-plugin showcase, gives bang the
-capability-security canon's headline properties (no ambient authority + attenuation) with zero kernel
+**The one-line recommendation (executed):** I1 was the single v1.x-cheap surface form that unlocked
+the sandboxed-plugin showcase and gave bang the capability-security canon's headline pair (no
+ambient authority + attenuation) with zero kernel
 or proof cost, and is the concrete first down-payment on the seL4-shaped noninterference headline (I5)
 that the microkernel frame (I2) says bang is architecturally positioned to reach.
 

@@ -80,6 +80,11 @@ def hashBinOp : BinOp → UInt64
 def hashStr (s : String) : UInt64 :=
   s.toUTF8.foldl (fun acc b => step acc (UInt64.ofNat b.toNat)) (tag 60)
 
+/-- Structurally hash the operation name and update mode of a custom clause key. -/
+def hashClauseKey : ClauseKey → UInt64
+  | .plain op => step (tag 34) (hashStr op)
+  | .updating op => step (tag 35) (hashStr op)
+
 mutual
 /-- Structurally hash a value to a `UInt64` (order-sensitive, per-constructor tagged). -/
 partial def hashVal : Val → UInt64
@@ -113,7 +118,7 @@ partial def hashHandler : Handler → UInt64
   | .throws ℓ          => step (tag 31) (UInt64.ofNat ℓ)
   | .transaction ℓ vs  => vs.foldl (fun acc v => step acc (hashVal v)) (step (tag 32) (UInt64.ofNat ℓ))
   | .custom ℓ p cls    =>
-      cls.foldl (fun acc (op, c) => step (step acc (hashStr op)) (hashComp c))
+      cls.foldl (fun acc (key, c) => step (step acc (hashClauseKey key)) (hashComp c))
         (step (step (tag 33) (UInt64.ofNat ℓ)) (hashVal p))
 end
 
@@ -157,6 +162,11 @@ def strLit (s : String) : String :=
 /-- `Int` literal as Lean source — parenthesize negatives so `.vint (-3)` parses. -/
 def intLit (n : Int) : String := if n < 0 then s!"({n})" else toString n
 
+/-- Render a custom clause key as literal Lean-term source. -/
+def showClauseKey : ClauseKey → String
+  | .plain op => s!"(Bang.ClauseKey.plain {strLit op})"
+  | .updating op => s!"(Bang.ClauseKey.updating {strLit op})"
+
 mutual
 /-- Render a value as literal Lean-term source (`Bang.Val.…`). -/
 partial def showVal : Val → String
@@ -190,7 +200,7 @@ partial def showHandler : Handler → String
   | .throws ℓ         => s!"(Bang.Handler.throws {ℓ})"
   | .transaction ℓ vs => s!"(Bang.Handler.transaction {ℓ} [{String.intercalate ", " (vs.map showVal)}])"
   | .custom ℓ p cls   =>
-      let clsSrc := String.intercalate ", " (cls.map (fun (op, c) => s!"({strLit op}, {showComp c})"))
+      let clsSrc := String.intercalate ", " (cls.map (fun (key, c) => s!"({showClauseKey key}, {showComp c})"))
       s!"(Bang.Handler.custom {ℓ} {showVal p} [{clsSrc}])"
 end
 

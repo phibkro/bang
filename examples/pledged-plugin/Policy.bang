@@ -1,0 +1,3 @@
+pub effect Audit { record : Int -> Int }
+pub effect Secret { reveal : Int -> Int }
+pub handler Count implements Audit { record(n) => 1 }

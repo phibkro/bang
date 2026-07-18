@@ -1701,10 +1701,9 @@ def printQueryOk (json : String) : IO UInt32 := IO.println json *> pure 0
 /-- `bang query dump <file>` / stdin — THE key operation (#80's operator refinement): the COMPLETE
 fact base in one export, so a caller composes ARBITRARY queries over it (a `jq`/`python`/Lean
 script) rather than waiting on a new fixed verb. SINGLE-FILE/STDIN fast path uses `Query.dumpJson`
-directly (full law facts — real source text `lawInstancesOf` can re-derive from); the MULTI-FILE
-resolver path uses `Query.dumpJsonP` on the merged `Prog` (empty `"laws"` array — the SAME
-documented v1 grant `check --json`'s own multi-file path carries, since a merged `Prog` has no
-single contiguous source `lawInstancesOf` could re-derive law bodies from). Written directly
+directly; the MULTI-FILE resolver path uses `Query.dumpJsonP` on the merged `Prog`, whose
+`lawInstancesOfProg` route discovers laws directly from retained declarations (no original
+contiguous source needed). Written directly
 (not via `resolveQueryProg`, which always RE-PARSES from `src` and would silently drop the
 fast-path's law-fact advantage) so the single-file route keeps `src` all the way to `dumpJson`. -/
 def runQueryDump (file : Option String) : IO UInt32 := do
@@ -1754,15 +1753,19 @@ def runQueryEffects (file : Option String) (name : String) : IO UInt32 := do
       | .error code => pure code
       | .ok p       => printQueryOk (Bang.Query.effectsJsonP p name)
 
-/-- `bang query laws <file>` — string-only (no resolver; see this section's header). -/
+/-- `bang query laws <file>` — the same single-file-fast-path / resolver-aware split as `dump`.
+An imported contract and its qualified handler realizations therefore remain queryable from the
+entry file; stdin with unresolved headers retains the ordinary no-filesystem-context limitation. -/
 def runQueryLaws (file : Option String) : IO UInt32 := do
-  let src ← match file with
-    | none      => (← IO.getStdin).readToEnd
-    | some path =>
-      match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
-      | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
-      | some s => pure s
-  printQueryOk (Bang.Query.lawsJson src)
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
+        printQueryOk (Bang.Query.lawsJson src)
+      else
+        match ← resolveQueryProg src headerProg file with
+        | .error code => pure code
+        | .ok p       => printQueryOk (Bang.Query.lawsJsonP p)
 
 /-- `bang query def <name> <file>` — the decl defining `name`. -/
 def runQueryDef (file : Option String) (name : String) : IO UInt32 := do
@@ -2077,7 +2080,8 @@ def renderOutcome (o : Bang.LawTest.NamedOutcome) : String × Bool :=
   | .evalStuck ws       => (s!"✗ {name} — STUCK — witness {ws} did not evaluate to a Bool", false)
   | .skipped m          => (s!"– {name} — SKIPPED — {m}", true)
 
-/-- `bang test [<file.bang>]` (#60's CLI wiring): discover EVERY trait-law instance in a program
+/-- `bang test [<file.bang>]` (#60's CLI wiring): discover EVERY law instance in a program
+— trait laws across implementations and effect-contract laws across named handler realizations —
 (`Bang.LawTest.runLawsFromSource`, the landed #60 discovery seam) and sample-check each one,
 reporting per-law PASS/FAIL/ERROR/STUCK. Reads a file if given, else stdin (mirrors `fmt`/`check`'s
 file-or-stdin convention). RESOLVER-AWARE for a FILE with an `import`/`use` header (#117's gap-2
@@ -2142,14 +2146,14 @@ def runTest (file : Option String) : IO UInt32 := do
   | .ok p    =>
     if !p.isLibrary then
       IO.eprintln <|
-        "error: `bang test` expects a DECLS-ONLY file (trait/impl declarations, no trailing " ++
+        "error: `bang test` expects a DECLS-ONLY file (contract/realization declarations, no trailing " ++
         "expression) — the runner supplies its own throwaway body internally; a trailing " ++
         "expression here silently corrupts every discovered law's test program. Remove the " ++
         "trailing expression (the file should end after the last decl's closing brace)."
       return 1
     match Bang.LawTest.runLawsFromSource src testSamples testSeed with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok []   => IO.println "no trait laws found (0 discovered)"; pure 0
+    | .ok []   => IO.println "no laws found (0 discovered)"; pure 0
     | .ok outcomes =>
       let rendered := outcomes.map renderOutcome
       for (line, _) in rendered do IO.println line
@@ -2504,7 +2508,7 @@ def usage : String :=
   "                                     starter (plan 013 s7, never hand-written). `--module` picks\n" ++
   "                                     the multi-file import shape (a sibling Lib.bang whose `pub`\n" ++
   "                                     fn main.bang consumes). Refuses if the dir already exists.\n\n" ++
-  "  bang test [<file.bang>]            discover + sample-check every trait law (issue #60);\n" ++
+  "  bang test [<file.bang>]            discover + sample-check every contract law (issue #60);\n" ++
   "                                     reads stdin if no file; reports per-law PASS/FAIL/ERROR/STUCK.\n" ++
   "                                     INPUT MUST BE DECLS-ONLY (no trailing expression) — the\n" ++
   "                                     runner supplies its own body internally.\n\n" ++
@@ -2522,7 +2526,7 @@ def usage : String :=
   "                                             (dump's own \"decls\" field, narrowed)\n" ++
   "    bang query type <file.bang> <name>      the checked type ! row of one top-level binding\n" ++
   "    bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding\n" ++
-  "    bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)\n" ++
+  "    bang query laws [<file.bang>]           every trait×impl and effect×handler law instance\n" ++
   "    bang query def <name> <file.bang>       the decl that defines <name>\n" ++
   "    bang query refs <name> <file.bang>      every decl whose body mentions <name>\n" ++
   "                                             (dump's own \"refs\" edge list, filtered to <name>)\n" ++

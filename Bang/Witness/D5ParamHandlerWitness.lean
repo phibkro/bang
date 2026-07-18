@@ -6,19 +6,19 @@ meta import Bang.Core.Semantics
 public import Bang.Core.Semantics
 public import Bang.Core.Grade
 
-/-! # D5 param-handler design witnesses — the mechanism is a PROJECTION of `state` (probe, HOLD)
+/-! # D5 param-handler design witnesses — explicit custom transition + its `state` precedent
 
-Companion to `docs/notes/d5-param-handlers-design.md`. Every `#guard` below is a runnable
-`Source.eval` fact at the kernel — no kernel change, no new former. The design claim these witness:
+Companion to `docs/notes/d5-param-handlers-design.md` and ADR-0114. Every `#guard` below is a runnable
+`Source.eval` fact at the kernel. ADR-0114 adds no new computation former or handler constructor: it
+marks an individual finite custom clause as parameter-updating and gives that clause an explicit
+`(resumeValue, nextParam)` return envelope.
 
-  **D5 (parameterised handlers / handler memory) is the `state`-arm's `put` swap generalized to the
-  `custom` arm — a SEMANTIC mechanism that ALREADY EXISTS in the kernel (`dispatchOn`'s `state` arm,
-  Dispatch.lean:137: `put` reinstalls `handleF n (.state ℓ' v)` with the NEW value `v`). What is
-  READ-ONLY in v1 is only the `custom` arm (Dispatch.lean:181: reinstalls `p` UNCHANGED). D5 lifts
-  that one arm; the update SHAPE is proven live by the built-in `state` witnesses here.**
+  **D5 (parameterised handlers / handler memory) generalizes the `state` arm's `put` swap to custom
+  handlers. ADR-0114 lands that generalization with explicit updating clause keys, while retaining
+  the built-in `state` witnesses below as the semantic precedent.**
 
-So the ergonomic before/after is exhibitable TODAY using the built-in `state` effect (which is a
-parameterised handler ALREADY), even though the USER-effect (`custom`) form awaits the D5 lift.
+The first witness is the live user-effect transition; the later `state` examples preserve the
+before/after design evidence that motivated it.
 -/
 
 namespace Bang.D5ParamHandlerWitness
@@ -29,7 +29,45 @@ open Bang.EffectRow (Label EffRow)
 private def yieldsInt (fuel : Nat) (c : Comp) (n : Int) : Bool :=
   match Source.eval fuel c with | .done (.vint m) => m == n | _ => false
 
-/-! ## §1 · The update mechanism ALREADY LIVES in the kernel (the `state` `put` swap)
+/-- Minimal signature used to type the raw updating-clause witness below. -/
+private instance quotaSig : EffSig EffRow QTT where
+  labelEff ℓ := {ℓ}
+  opArg ℓ op := if ℓ == 4 && op == "connect" then some .unit else none
+  opRes ℓ op := if ℓ == 4 && op == "connect" then some .int else none
+  labelEff_ne_bot ℓ := Finset.singleton_ne_empty ℓ
+  labelEff_sep ℓ ℓ' φ h hne := by
+    simp only [Finset.le_eq_subset, Finset.singleton_subset_iff, Finset.sup_eq_union,
+      Finset.mem_union, Finset.mem_singleton] at *
+    exact h.resolve_left hne
+
+/-! ## §0 · ADR-0114 kernel witness: one handler-owned request quota
+
+The updating clause below returns the current private parameter as the operation result and installs
+literal `0` as the next private parameter. The same capability is invoked twice. The first call
+therefore resumes with `1`, the second with `0`; the driver combines those observations as `10`.
+Neither the capability user nor the driver receives or supplies the quota state. -/
+
+private def customQuota : Comp :=
+  .handle (.custom 4 (.vint 1)
+      [(.updating "connect", .ret (.pair (.vvar 1) (.vint 0)))])
+    (.letC (.perform (.vvar 0) "connect" .vunit)
+      (.letC (.perform (.vvar 1) "connect" .vunit)
+        (.letC (.binop .mul (.vvar 1) (.vint 10))
+          (.binop .add (.vvar 0) (.vvar 1)))))
+
+#guard yieldsInt 200 customQuota 10
+
+/-- The live clause is admitted by the trusted typing judgment: its envelope has type
+`connect-result × next-parameter`, with the current parameter at de Bruijn index 1. -/
+private theorem customQuotaClausesTyped :
+    HasClauses (Eff := EffRow) (Mult := QTT) 4 (.int)
+      [(.updating "connect", .ret (.pair (.vvar 1) (.vint 0)))] := by
+  refine HasClauses.consUpdating (opA := .unit) (opR := .int) (qa := 0) (qp := 1)
+    rfl rfl ?_ .nil
+  refine HasVTy.pair (HasVTy.vvar rfl) HasVTy.vint ?_
+  rfl
+
+/-! ## §1 · The built-in precedent: the `state` `put` swap
 
 D5's core move — "a resumptive handler reinstalls itself carrying an UPDATED carried value" — is
 exactly what `state`'s `put` does (`dispatchOn`, Dispatch.lean:137). These `#guard`s make the
@@ -61,8 +99,8 @@ private def stateAccumulate : Comp :=
 /-! ## §2 · The DST-lcg ergonomic before/after, at the kernel
 
 `examples/dst-rounds-lcg/main.bang` threads the LCG seed through the DRIVER's own recursion (`go n s
-acc`) BECAUSE the `Sched` custom handler's param is read-only (v1). Here is the SAME shape at the
-kernel, in miniature (2 rounds, seed folded twice), shown BOTH ways:
+acc`) in the pre-ADR-0114 baseline because the `Sched` custom handler's param was read-only. Here is
+the same shape at the kernel, in miniature (2 rounds, seed folded twice), shown both ways:
 
   BEFORE (v1, status quo): the seed is a driver argument, folded by the driver — `stepSeedBefore`.
   AFTER  (D5): the seed lives in a `state` handler (a parameterised handler = D5 realized for the
@@ -120,22 +158,19 @@ private def seedInStateAfter : Comp :=
 
 /-! ## §3 · The counter-example discipline: what D5 makes expressible that v1 CANNOT
 
-**Honest verdict (matches `effect-algebra-survey.md` EA2): the DIFFERENCE for the DST/Sched class is
-ERGONOMIC — v1 CAN already compute the same values by threading state through the driver (§2-BEFORE ==
-§2-AFTER, same answer). D5's non-ergonomic win is the SIM-MAP class: a handler that is (a) a USER
+**Honest verdict (matches `effect-algebra-survey.md` EA2): the difference for the DST/Sched class is
+ergonomic — the old baseline could already compute the same values by threading state through the driver
+(§2-BEFORE == §2-AFTER, same answer). D5's non-ergonomic win is the SIM-MAP class: a handler that is (a) a USER
 effect (`custom`, not a built-in), AND (b) whose memory must be ENCAPSULATED behind the effect
 interface (the driver must NOT see the seed/queue/map).**
 
-The built-in `state` already realizes (a-for-built-ins) + (b): `seedInStateAfter` hides the seed. What
-v1 CANNOT do is realize (a) for a USER-DECLARED effect — a `Sched`/`Fs`-sim handler whose CLAUSE
-BODIES update the carried param — because `HasClauses.cons` fixes each clause to `Comp.ret w` reading a
-READ-ONLY `p` (Typing.lean:374) and `dispatchOn`'s custom arm reinstalls `p` unchanged
-(Dispatch.lean:181). So:
+The built-in `state` already realized (a-for-built-ins) + (b): `seedInStateAfter` hides the seed.
+ADR-0114 now realizes (a) for user-declared effects while deliberately retaining ret-shaped clause
+bodies: update intent and the next private parameter live in the explicit clause envelope. Thus:
 
   · The SIM-MAP class (Fs sim wanting a growing file→content map behind the `Fs` interface, the Sched
-    demo wanting an evolving queue behind `Sched`) is BLOCKED at the user-effect layer — the map/queue
-    must leak into the driver's args (the dst-rounds workaround) OR be a built-in `state` alongside the
-    user effect (two handlers where one should suffice — the "one construct per problem" cost).
+    demo wanting an evolving queue behind `Sched`) is unblocked at the core user-effect layer. Public
+    syntax is still gated, so surface programs retain the old workaround until the next path rung.
 
   · There is NO v1 program that a D5 param-update makes *semantically* reachable-in-value that the
     ret-shape threading cannot also reach: the fold is the same (§2). D5 changes WHO owns the state

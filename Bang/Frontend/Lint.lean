@@ -195,6 +195,7 @@ def safeToAutoDelete : Decl → Bool
   | .traitD ..  => false
   | .implD ..   => false
   | .effectD .. => false
+  | .handlerD .. => false
 
 #guard safeToAutoDelete (.letD "x" none (.lit 1))
 #guard safeToAutoDelete (.letRecD "x" .tInt (.lit 1))
@@ -202,7 +203,7 @@ def safeToAutoDelete : Decl → Bool
 #guard ! safeToAutoDelete (.dataD "Pair" [] [("Mk", [.tInt, .tInt])])
 #guard ! safeToAutoDelete (.traitD "Greet" [] [] [])
 #guard ! safeToAutoDelete (.implD "Greet" .tInt [])
-#guard ! safeToAutoDelete (.effectD "KV" [("get2", .tInt)])
+#guard ! safeToAutoDelete (.effectD "KV" [("get2", .tInt)] [])
 
 /-- **PUBLIC:** remove the top-level decl named `declName` from `p`, or `none` if no such decl
 exists (a fixit applied to a stale/renamed finding — `Main.lean` reports this as a usage error,

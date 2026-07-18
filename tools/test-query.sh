@@ -140,6 +140,17 @@ check "dump-multifile-exit" "$got_exit4" "0"
 check "dump-multifile-imports-present" "$(printf '%s' "$got_out4" | grep -o '"imports":\[{"module":"Json"}' || true)" '"imports":[{"module":"Json"}'
 check "dump-multifile-qualified-present" "$(printf '%s' "$got_out4" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
 
+# ── Resolver-aware LAW FACTS: the Codec entry imports its effect contract + two named handler
+# realizations. `dump` and the curated `laws` view must expose the SAME qualified effect×handler
+# instances instead of the old multi-file `laws:[]` grant. ──
+codec_dump="$($bang query dump examples/codec-contract/main.bang 2>/dev/null)" && codec_dump_exit=0 || codec_dump_exit=$?
+check "dump-multifile-codec-exit" "$codec_dump_exit" "0"
+contains_codec='"contract":"Codec_Codec","realization":"Shift7","law":"decode_encode"'
+check "dump-multifile-codec-laws" "$(printf '%s' "$codec_dump" | grep -o "$contains_codec" || true)" "$contains_codec"
+codec_laws="$($bang query laws examples/codec-contract/main.bang 2>/dev/null)" && codec_laws_exit=0 || codec_laws_exit=$?
+check "laws-multifile-codec-exit" "$codec_laws_exit" "0"
+check "laws-multifile-codec-view" "$(printf '%s' "$codec_laws" | grep -o "$contains_codec" || true)" "$contains_codec"
+
 # ── GOLDEN-DUMP DRIFT TEST (the DBMS survey's eager-schema-discipline item, §6/§8, REFINED by the
 # operator's schemaVersion/bangVersion-disjointness ruling — a pinned `dump` output that FAILS CI
 # when the shape drifts UN-versioned; the "test" rung of the derivation-strength ladder applied to
@@ -243,7 +254,7 @@ check "type-miss-exit" "$got_exit" "0"
 
 got_out="$("$bang" query laws "$tmpdir/laws.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "laws-exit" "$got_exit" "0"
-check "laws-shape" "$got_out" '{"ok":true,"laws":[{"trait":"Eq","law":"refl","params":["x"],"body":"eq(x, x) == 1"}]}'
+check "laws-shape" "$got_out" '{"ok":true,"laws":[{"trait":"Eq","contract":"Eq","realization":null,"law":"refl","params":["x"],"body":"eq(x, x) == 1"}]}'
 
 capture got_stdin got_stdin_exit "$bang" query laws 2>/dev/null < "$tmpdir/laws.bang"
 check "laws-stdin-exit" "$got_stdin_exit" "0"
@@ -362,7 +373,8 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (71 — the former 64 plus seven producer-status checks); jq's three guarded blocks
+# always runs (75 — the former 64 plus seven producer-status checks and four resolver-law checks);
+# jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
 # producers in addition to its output;
 # jq IS in the standard `nix develop` shell, so this is the steady-state path); duckdb's guarded
@@ -370,7 +382,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=71
+want_total=75
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

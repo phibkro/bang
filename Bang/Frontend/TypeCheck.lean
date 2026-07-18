@@ -1110,6 +1110,35 @@ def absorbedLetHint : Surf → Surf → String
         ++ s!"after '{n}', or a missing newline/`;` boundary."
   | _, _ => ""
 
+/-- Resolve a `pledge`'s surface names, then enforce that `actual` is below that closed row.
+Kept outside `synthSC`/`checkSC` so synthesis and checking cannot drift into different security
+rules. Success deliberately returns no widened row: each caller retains the body's actual row. -/
+def enforcePledge (allowed : List String) (actual : Row) : Infer Unit := do
+  let effects ← (do return (← get).effects)
+  let labels ← allowed.mapM (fun n =>
+    let label? :=
+      if n = "throws" then some exnLabel
+      else if n = "state" then some stateLabel
+      else if n = "stm" then some stmLabel
+      else if n = "Div" then some divLabel
+      else (effects.lookup n).map EffectInfo.label
+    match label? with
+    | some ℓ => pure ℓ
+    | none   => throw s!"pledge: '{n}' is not a declared effect")
+  let bound := labels.foldl (fun acc ℓ => insert ℓ acc) (∅ : EffRow)
+  if (← subRow bigFuel actual (embRow bound)) then return ()
+  let resolved ← resolveRow bigFuel actual
+  throw s!"pledge violation: inferred row {showRow resolved.labels effects} exceeds allowed row {showRow bound effects}"
+
+/-- The first operation implemented more than once in a custom clause list. Dispatch is
+first-match, but the typed surface must not let textual order choose between two implementations;
+in particular, ADR-0114 forbids a plain and an updating key for the same operation. -/
+def firstDuplicateHClauseOp : HClauses → Option String
+  | .nil => none
+  | .cons op _ _ rest | .consUpdating op _ _ rest =>
+      if (Bang.Surface.hClausesToList rest).any (fun (op', _, _) => op' == op) then some op
+      else firstDuplicateHClauseOp rest
+
 -- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
 -- in the spike; every other call is on a structural subterm of the `Surf`.
 mutual
@@ -1248,6 +1277,10 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
       match effOf t with                              -- declared row (if any) is an upper bound — ④b
       | some ρ => if (← subRow bigFuel φ (embRow ρ)) then return (C, φ) else throw "inferred effect exceeds the declared row"
       | none   => return (C, φ)
+  | .pledgeS allowed b => do
+      let (C, φ) ← synthSC Γ b
+      enforcePledge allowed φ
+      return (C, φ)
   -- ── effects (ADR-0066 ④): each op ADDS its label to the row; handlers DISCHARGE it (`Finset.erase`).
   -- v1 simplification (marked): operation payload/result types are fixed to the surface convention
   -- (state cell + TVar contents + exn payload are `Int`, ADR-0030) — no payload-type threading yet.
@@ -1337,6 +1370,10 @@ entirely inside the `{kind}`/`with` block, or return only ordinary values."
                 | .none    => pure (.unit : IVTy)
                 | .one p0  => synthSV Γ p0
                 | .two _ _ => throw "handle: the param-init takes at most 1 argument")
+              match firstDuplicateHClauseOp cls with
+              | some op =>
+                  throw s!"handle: duplicate clause for effect '{effN}' operation '{op}' — each operation has exactly one clause, so plain and update modes cannot coexist"
+              | none => pure ()
               -- RET-SHAPE (ADR-0092 D3/D4, the grade wall): v1 requires each clause body's SYNTAX to
               -- be a bare value-shaped expression (no further computation after the resume value).
               -- `checkHClauses` approximates this SEMANTICALLY (no separate `.ret` marker exists in
@@ -1463,6 +1500,10 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
       match effOf t with
         | some ρ => if (← subRow bigFuel φ (embRow ρ)) then return φ else throw "inferred effect exceeds the declared row"
         | none   => return φ
+  | .pledgeS allowed b, expected => do
+      let φ ← checkSC Γ b expected
+      enforcePledge allowed φ
+      return φ
   -- #119 fork-1: a `.lett`-chain's TAIL can be a value-constructor shape (`.pairS`, `.thunk`, …)
   -- carrying its OWN declared row bound (e.g. `buildLetRecMulti`'s pair-of-thunks) — without this
   -- arm, `.lett` falls to the catch-all below, which `synthSC`s the WHOLE chain (losing the tail's
@@ -1568,6 +1609,19 @@ def checkHClauses (Γ : NCtx) (effN : String) (ops : List (String × Option VT �
           -- workaround for testing row-emptiness in this compiled #guard-reachable path.
           if !(decide (φr.labels = ∅) && φr.tail.isNone) then
             throw s!"handle: clause '{op}' body must be a `ret`-shape value in v1 (no effects before resuming) — a compute-then-return body needs binop typing (ADR-0065) + resumption-grade surfacing (Q27), tracked as the general-body entry gate (ADR-0095 D4)"
+          checkHClauses Γ effN ops P rest
+  | .consUpdating op x b rest => do
+      match ops.find? (fun (n, _, _) => n == op) with
+      | none => throw s!"handle: update clause '{op}' is not an operation of effect '{effN}'"
+      | some (_, argTy?, resTy) => do
+          let argTy := embV (argTy?.getD .unit)
+          if !(match b with | .pairS a next => isValueSurf a && isValueSurf next | _ => false) then
+            throw s!"handle: update clause '{op}' must return a value pair `(resumeValue, nextParam)`"
+          let (Cb, φ) ← synthSC ((x, argTy) :: ("param", P) :: Γ) b
+          let _ ← unifyC bigFuel Cb (.F .omega (.prod (embV resTy) P))
+          let φr ← resolveRow bigFuel φ
+          if !(decide (φr.labels = ∅) && φr.tail.isNone) then
+            throw s!"handle: update clause '{op}' must compute its `(resumeValue, nextParam)` envelope without effects"
           checkHClauses Γ effN ops P rest
   termination_by cls => (sizeOf cls, 4)
 end
@@ -2114,6 +2168,15 @@ public structure HktImpl where
   /-- The impl's op definitions, spliced monomorphically at each concrete use. -/
   ops       : List Bang.Surface.OpDef
 
+/-- A named, statically selected realization of a user effect. The clauses are kept as surface
+syntax until an installation site supplies the capability binder and optional carried parameter;
+elaboration then expands it to the existing `handleCustomS` representation. -/
+public structure NamedHandler where
+  /-- The declared effect this realization implements. -/
+  effectName : String
+  /-- The existing custom-handler clauses reused at every static installation. -/
+  clauses    : Bang.Surface.HClauses
+
 /-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls
 + bounded generic functions + raw impls (for bounded-fn monomorphization) + higher-kinded traits/impls
 + user EFFECT decls (ADR-0092 D1/D2 — name ↦ allocated label + op signatures). PUBLIC (#60 seam):
@@ -2141,6 +2204,8 @@ public structure ElabEnv where
   hktImpls    : List HktImpl := []
   /-- ADR-0092 D1/D2: user effect NAME ↦ its allocated label + op sigs. -/
   effects     : List (String × EffectInfo) := []
+  /-- Named static handler realization NAME ↦ effect + reusable clauses. -/
+  handlers    : List (String × NamedHandler) := []
   /-- #112: 2-param impl ops awaiting `elabProg`'s knot wrap. -/
   pendingKnots : List PendingOpKnot := []
 
@@ -2573,6 +2638,7 @@ def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : N
   | .getS           => true
   | .var g          => g != name                    -- a bare `name` (used as a value) is non-structural
   | .thunk e        => structOK fuel name slots targetIdx e
+  | .pledgeS _ e    => structOK fuel name slots targetIdx e
   | .force (.var g) => g != name                    -- `$name` NOT immediately applied to args → reject
   | .force e        => structOK fuel name slots targetIdx e
   | .app f a        => structOK fuel name slots targetIdx f && structOK fuel name slots targetIdx a
@@ -3179,6 +3245,7 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   | f + 1, .foldS e   => do return .foldS (← expandBFns env carrier? f e)
   | f + 1, .unfoldS e => do return .unfoldS (← expandBFns env carrier? f e)
   | f + 1, .divMark e => do return .divMark (← expandBFns env carrier? f e)
+  | f + 1, .pledgeS row e => do return .pledgeS row (← expandBFns env carrier? f e)
   | f + 1, .lam x b   => do return .lam x (← expandBFns env carrier? f b)
   | f + 1, .lett x e b   => do return .lett x (← expandBFns env carrier? f e) (← expandBFns env carrier? f b)
   | f + 1, .app g a      => do
@@ -3231,8 +3298,17 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   -- no termination-measure conflict with `synthSC`'s wall — `expandBFns` is ALREADY fuel-driven, not
   -- `sizeOf`-based, so a mutual `List`/`HClauses` sibling here is unremarkable, unlike the typing arm).
   | f + 1, .handleCustomS lbl n p? h cls b => do
-      return .handleCustomS lbl (← expandBFns env carrier? f n) (← expandArgs env carrier? f p?) h
-        (← expandHClauses env carrier? f cls) (← expandBFns env carrier? f b)
+      match cls, n with
+      | .nil, .var handlerName =>
+          match env.handlers.lookup handlerName with
+          | some hd =>
+              return .handleCustomS lbl (.var hd.effectName) (← expandArgs env carrier? f p?) h
+                (← expandHClauses env carrier? f hd.clauses) (← expandBFns env carrier? f b)
+          | none => throw s!"handle: '{handlerName}' is neither a declared effect with inline clauses nor a declared handler realization"
+      | .nil, _ => throw "handle: a named handler realization must be a bare identifier"
+      | _, _ =>
+          return .handleCustomS lbl (← expandBFns env carrier? f n) (← expandArgs env carrier? f p?) h
+            (← expandHClauses env carrier? f cls) (← expandBFns env carrier? f b)
   | f + 1, .annotS e t => do
       -- HKT (ADR-0082): a higher-kinded METHOD call `(fmap inc x : Option Int)` — the result annotation
       -- fixes the carrier constructor (`f := Option`), so we resolve the `Functor Option` impl and SPLICE
@@ -3306,6 +3382,8 @@ def expandHClauses (env : ElabEnv) (carrier? : Option String) : Nat → HClauses
   | 0,     _              => .error "bounded-fn expansion out of fuel"
   | _ + 1, .nil           => .ok .nil
   | f + 1, .cons op x b r => do return .cons op x (← expandBFns env carrier? f b) (← expandHClauses env carrier? f r)
+  | f + 1, .consUpdating op x b r => do
+      return .consUpdating op x (← expandBFns env carrier? f b) (← expandHClauses env carrier? f r)
 
 /-- `LetBindings` expansion (issue #68's `;`-binding list). -/
 def expandLetBindings (env : ElabEnv) (carrier? : Option String) : Nat → LetBindings → Except String LetBindings
@@ -3444,7 +3522,7 @@ partial def callSitesOf (name : String) (domains : List Ty) (resultDom : Ty) (e 
   here ++ match e with
     | .lit _ | .var _ | .getS | .unitS => []
     | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e =>
+    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .pledgeS _ e =>
         callSitesOf name domains resultDom e
     -- ADR-0103 Amendment ②: `e`'s OWN annotation `t` is a RESULT-position discovery anchor when
     -- the annotated expression is EXACTLY `name`'s call spine — merged into THAT spine's binding
@@ -3501,6 +3579,7 @@ partial def callSitesOfBindings (name : String) (domains : List Ty) (resultDom :
 partial def callSitesOfHClauses (name : String) (domains : List Ty) (resultDom : Ty) : HClauses → List (List (String × Ty))
   | .nil               => []
   | .cons _ _ b rest   => callSitesOf name domains resultDom b ++ callSitesOfHClauses name domains resultDom rest
+  | .consUpdating _ _ b rest => callSitesOf name domains resultDom b ++ callSitesOfHClauses name domains resultDom rest
 partial def callSitesOfLRBindings (name : String) (domains : List Ty) (resultDom : Ty) : LetRecBindings → List (List (String × Ty))
   | .nil               => []
   | .cons n _ e rest   =>
@@ -3624,6 +3703,7 @@ partial def redirectCalls (name : String) (domains : List Ty) (resultDom : Ty) (
     | .foldS e   => .foldS   (redirectCalls name domains resultDom tvs residues self? e)
     | .unfoldS e => .unfoldS (redirectCalls name domains resultDom tvs residues self? e)
     | .divMark e => .divMark (redirectCalls name domains resultDom tvs residues self? e)
+    | .pledgeS row e => .pledgeS row (redirectCalls name domains resultDom tvs residues self? e)
     | .lam x e   => .lam x   (redirectCalls name domains resultDom tvs residues self? e)
     -- ADR-0103 Amendment ②: when the ANNOTATED inner expression is `name`'s own call spine, the
     -- fresh residue must be looked up using the SAME merged (argument ++ result) binding
@@ -3696,6 +3776,9 @@ partial def redirectCallsHClauses (name : String) (domains : List Ty) (resultDom
     (residues : List (List (String × Ty) × String)) (self? : Option String) : HClauses → HClauses
   | .nil               => .nil
   | .cons op x b rest  => .cons op x (redirectCalls name domains resultDom tvs residues self? b) (redirectCallsHClauses name domains resultDom tvs residues self? rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (redirectCalls name domains resultDom tvs residues self? b)
+        (redirectCallsHClauses name domains resultDom tvs residues self? rest)
 partial def redirectCallsLRBindings (name : String) (domains : List Ty) (resultDom : Ty) (tvs : List String)
     (residues : List (List (String × Ty) × String)) (self? : Option String) : LetRecBindings → LetRecBindings
   | .nil               => .nil
@@ -3734,6 +3817,7 @@ def substTyVarInSurf (qTy : Ty → Ty) : Surf → Surf
   | .foldS e     => .foldS (substTyVarInSurf qTy e)
   | .unfoldS e   => .unfoldS (substTyVarInSurf qTy e)
   | .divMark e   => .divMark (substTyVarInSurf qTy e)
+  | .pledgeS row e => .pledgeS row (substTyVarInSurf qTy e)
   | .lam x e     => .lam x (substTyVarInSurf qTy e)
   | .annotS e t  => .annotS (substTyVarInSurf qTy e) (qTy t)
   | .lett x a b  => .lett x (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
@@ -3772,6 +3856,8 @@ def substTyVarInSurfBindings (qTy : Ty → Ty) : LetBindings → LetBindings
 def substTyVarInSurfHClauses (qTy : Ty → Ty) : HClauses → HClauses
   | .nil               => .nil
   | .cons op x b rest  => .cons op x (substTyVarInSurf qTy b) (substTyVarInSurfHClauses qTy rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (substTyVarInSurf qTy b) (substTyVarInSurfHClauses qTy rest)
 def substTyVarInSurfLRBindings (qTy : Ty → Ty) : LetRecBindings → LetRecBindings
   | .nil               => .nil
   | .cons n t e rest   => .cons n (qTy t) (substTyVarInSurf qTy e) (substTyVarInSurfLRBindings qTy rest)
@@ -3809,6 +3895,7 @@ partial def inlineVarAliases : Surf → Surf
   | .foldS e     => .foldS (inlineVarAliases e)
   | .unfoldS e   => .unfoldS (inlineVarAliases e)
   | .divMark e   => .divMark (inlineVarAliases e)
+  | .pledgeS row e => .pledgeS row (inlineVarAliases e)
   | .lam x e     => .lam x (inlineVarAliases e)
   | .annotS e t  => .annotS (inlineVarAliases e) t
   | .lett n (.var m) rest =>
@@ -3853,6 +3940,8 @@ partial def inlineVarAliasesBindings : LetBindings → LetBindings
 partial def inlineVarAliasesHClauses : HClauses → HClauses
   | .nil               => .nil
   | .cons op x b rest  => .cons op x (inlineVarAliases b) (inlineVarAliasesHClauses rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (inlineVarAliases b) (inlineVarAliasesHClauses rest)
 partial def inlineVarAliasesLRBindings : LetRecBindings → LetRecBindings
   | .nil               => .nil
   | .cons n t e rest   => .cons n t (inlineVarAliases e) (inlineVarAliasesLRBindings rest)
@@ -3877,6 +3966,7 @@ partial def renameVarTo (n m : String) : Surf → Surf
   | .foldS e     => .foldS (renameVarTo n m e)
   | .unfoldS e   => .unfoldS (renameVarTo n m e)
   | .divMark e   => .divMark (renameVarTo n m e)
+  | .pledgeS row e => .pledgeS row (renameVarTo n m e)
   | .lam x e     => if x == n then .lam x e else .lam x (renameVarTo n m e)
   | .annotS e t  => .annotS (renameVarTo n m e) t
   | .lett x a b  => if x == n then .lett x (renameVarTo n m a) b else .lett x (renameVarTo n m a) (renameVarTo n m b)
@@ -3918,6 +4008,8 @@ partial def renameVarToDArms (n m : String) : DArms → DArms
 partial def renameVarToHClauses (n m : String) : HClauses → HClauses
   | .nil               => .nil
   | .cons op x b rest  => .cons op x (if x == n then b else renameVarTo n m b) (renameVarToHClauses n m rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (if x == n then b else renameVarTo n m b) (renameVarToHClauses n m rest)
 partial def renameVarToLRBindings (n m : String) : LetRecBindings → LetRecBindings
   | .nil               => .nil
   | .cons nm t e rest  => .cons nm t (renameVarTo n m e) (renameVarToLRBindings n m rest)
@@ -4021,6 +4113,7 @@ def monomorphizeLetRec (gen : List (String × GenData)) (aliases : List (String 
   | f + 1, .foldS e   => do return .foldS (← monomorphizeLetRec gen aliases f e)
   | f + 1, .unfoldS e => do return .unfoldS (← monomorphizeLetRec gen aliases f e)
   | f + 1, .divMark e => do return .divMark (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .pledgeS row e => do return .pledgeS row (← monomorphizeLetRec gen aliases f e)
   | f + 1, .lam x b   => do return .lam x (← monomorphizeLetRec gen aliases f b)
   | f + 1, .lett x e b   => do return .lett x (← monomorphizeLetRec gen aliases f e) (← monomorphizeLetRec gen aliases f b)
   | f + 1, .app g a      => do return .app (← monomorphizeLetRec gen aliases f g) (← monomorphizeLetRec gen aliases f a)
@@ -4066,6 +4159,9 @@ def monomorphizeHClauses (gen : List (String × GenData)) (aliases : List (Strin
   | 0,     _              => .error "let rec monomorphization out of fuel"
   | _ + 1, .nil           => .ok .nil
   | f + 1, .cons op x b r => do return .cons op x (← monomorphizeLetRec gen aliases f b) (← monomorphizeHClauses gen aliases f r)
+  | f + 1, .consUpdating op x b r => do
+      return .consUpdating op x (← monomorphizeLetRec gen aliases f b)
+        (← monomorphizeHClauses gen aliases f r)
 def monomorphizeLetBindings (gen : List (String × GenData)) (aliases : List (String × Ty)) :
     Nat → LetBindings → Except String LetBindings
   | 0,     _              => .error "let rec monomorphization out of fuel"
@@ -4127,6 +4223,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .getS  => .ok .getS
   | _, .unitS => .ok .unitS
   | Γ, .thunk b  => do return .thunk (← elabS env Γ b)
+  | Γ, .pledgeS allowed b => do return .pledgeS allowed (← elabS env Γ b)
   | Γ, .force b  => do return .force (← elabS env Γ b)
   -- A-normalize a computation ARGUMENT (#26 part-2), as `.pairS` does: an effect op's arg is
   -- VALUE-position (`checkSV … .int`), so `put (get + 1)` ⟹ `let #anf = get + 1 in put #anf`. A bare
@@ -4598,6 +4695,12 @@ def elabHClauses (env : ElabEnv) (Γ : NCtx) : HClauses → Except String HClaus
       let b' ← elabS env Γ' b
       let rest' ← elabHClauses env Γ rest
       .ok (.cons op x b' rest')
+  | .consUpdating op x b rest => do
+      let Γ' := (x, ({ body := paramHole Γ.length } : Scheme))
+               :: ("param", ({ body := paramHole (Γ.length + 1) } : Scheme)) :: Γ
+      let b' ← elabS env Γ' b
+      let rest' ← elabHClauses env Γ rest
+      .ok (.consUpdating op x b' rest')
   termination_by cls => (sizeOf cls, 2)
 /-- Elaborate every sibling's body (#97 item 2) under `Γsibs`, recursing over the ORIGINAL
 `LetRecBindings` tree (the `elabHClauses`/`HClauses` structural-recursion precedent — see
@@ -4674,6 +4777,7 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut hktMethodOf : List (String × String) := []
   let mut hktImpls    : List HktImpl := []
   let mut effects     : List (String × EffectInfo) := []
+  let mut handlers    : List (String × NamedHandler) := []
   for (d, declIdx) in ds.zipIdx do
     match d with
     | .dataD n [] cs => do                       -- MONOMORPHIC: byte-identical to the ADR-0069 path
@@ -4764,7 +4868,7 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   -- narrowed to the one arity that genuinely has no knot shape to build.
                   | [] =>
                       let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
-                      let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], [], [], []⟩ bodyΓ od.body
+                      let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], [], [], [], []⟩ bodyΓ od.body
                       insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody, none⟩]
                   rawOps := rawOps ++ [⟨od.name, od.params, od.body, sig.retTy⟩]   -- RAW, for bounded-fn monomorphization
             rawImpls := rawImpls ++ [⟨tn, vtyOf τR, rawOps⟩]
@@ -4772,13 +4876,16 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
         if (traits.lookup tr).isNone then throw s!"fn '{n}': bound trait '{tr}' is not declared"
         if (bfns.lookup n).isSome then throw s!"duplicate function '{n}'"
         bfns := (n, ⟨n, ps, ty, tr, tv, b⟩) :: bfns
-    | .effectD n ops => do                       -- ADR-0092 D1/D2: `effect N { op : ArgTy -> ResTy, … }`
+    | .effectD n ops laws => do                  -- ADR-0092 D1/D2 + contract laws
         -- D1: duplicate EFFECT names are a LOUD elaboration error (op-name duplicates within one
         -- block are already caught at PARSE time, `pEffectMembers`) — naming both conflicting sites
         -- isn't possible with only a name here (the parser doesn't carry spans this deep), so the
         -- message names the effect; ADR-0076's span-view still locates the token by name downstream.
         if (effects.lookup n).isSome then throw s!"duplicate effect '{n}'"
         if ops.isEmpty then throw s!"effect {n}: needs at least one operation"
+        for law in laws do
+          if law.params.isEmpty then
+            throw s!"effect {n}: law '{law.name}' needs an explicit capability as its first parameter"
         -- BUILT-IN op names are RESERVED in an `effect` decl, v1 (operator ruling, follow-up to
         -- D1/D2's initial landing). Root cause: the label-first `.dotPerform` dispatch fix (this
         -- file) makes elaboration correctly type a user op sharing a built-in's NAME (dispatch is
@@ -4837,6 +4944,19 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
               | (_, .arr ..)   => throw s!"effect {n}: op '{opName}' is multi-argument — v1 supports only a single `ArgTy -> ResTy` arrow"
           | _ => opSigs := opSigs ++ [(opName, none, vtyOf tyR)]
         effects := (n, ⟨ℓ, opSigs⟩) :: effects
+    | .handlerD n eff cls => do
+        if (handlers.lookup n).isSome then throw s!"duplicate handler realization '{n}'"
+        let ei ← match effects.lookup eff with
+          | some ei => pure ei
+          | none    => throw s!"handler {n}: effect '{eff}' must be declared before its handler realization"
+        let clauseNames := Bang.Surface.hClausesToList cls |>.map (fun c => c.1)
+        for (op, _, _) in ei.ops do
+          if !clauseNames.contains op then
+            throw s!"handler {n}: effect '{eff}' op '{op}' has no clause"
+        for op in clauseNames do
+          if !(ei.ops.any (fun (declared, _, _) => declared == op)) then
+            throw s!"handler {n}: clause '{op}' is not an operation of effect '{eff}'"
+        handlers := (n, ⟨eff, cls⟩) :: handlers
     | .letD .. | .letRecD .. => pure ()
       -- ADR-0093 D5 (operator ruling): a top-level `let`/`let rec` DECL is a BINDER, not a static
       -- environment entry like `data`/`trait`/`effect` — it never enters `ElabEnv` at all. Instead
@@ -4848,7 +4968,7 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
       -- (see `elabProg`'s new pre-pass) — this arm exists only so the match stays exhaustive for
       -- a caller that hands `buildEnv` a RAW (pre-fold) decl list (the `mergeModules` internals,
       -- which qualify `letD`/`letRecD` bodies before folding happens).
-  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls, effects, pendingKnots⟩
+  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls, effects, handlers, pendingKnots⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
 you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
@@ -4938,6 +5058,9 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
   | .binopS op a b => .binopS op (qualifyVars modName names a) (qualifyVars modName names b)
   | .ifS c t e     => .ifS (qualifyVars modName names c) (qualifyVars modName names t) (qualifyVars modName names e)
   | .annotS e t    => .annotS (qualifyVars modName names e) t
+  | .pledgeS row e =>
+      .pledgeS (row.map fun n => if names.contains n then qualifyName modName n else n)
+        (qualifyVars modName names e)
   | .unitS         => .unitS
   | .foldS e       => .foldS (qualifyVars modName names e)
   | .unfoldS e     => .unfoldS (qualifyVars modName names e)
@@ -4986,6 +5109,9 @@ def qualifyHClausesVars (modName : String) (names : List String) : HClauses → 
   | .nil                => .nil
   | .cons op x b rest =>
       .cons op x (if names.contains x then b else qualifyVars modName names b) (qualifyHClausesVars modName names rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (if names.contains x then b else qualifyVars modName names b)
+        (qualifyHClausesVars modName names rest)
 /-- Qualify a `;`-binding chain (issue #68), threading shadowing sequentially: once a binding's
 name matches one of `names`, EVERY later binding's RHS (and the eventual body) stops being
 qualified — mirroring `.lett`'s own "shadowed past `n`" rule, applied binding-by-binding. Each
@@ -5072,7 +5198,11 @@ def qualifyDeclBody (modName : String) (names : List String) : Decl → Decl :=
   let qTy := qualifyTyName (names.map (·, modName)) []
   fun d => match d with
   | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
-  | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+  | .effectD n ops laws   => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+      (laws.map (fun l => { l with body := qualifyVars modName names l.body }))
+  | .handlerD n eff cls   =>
+      .handlerD n (if names.contains eff then qualifyName modName eff else eff)
+        (qualifyHClausesVars modName names cls)
   | .traitD n ps ops laws =>
       .traitD n ps ops (laws.map (fun l => { l with body := qualifyVars modName names l.body }))
   | .implD n t ops        =>
@@ -5122,8 +5252,10 @@ effect (row annotation)` for a bare row naming a `use`d effect). -/
 def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .dataD n ps cs        =>
       .dataD (qualifyName modName n) ps (cs.map (fun (c, tys) => (if usedCtors.contains c then c else qualifyName modName c, tys)))
-  | .effectD n ops        =>
-      .effectD (if usedCtors.contains n then n else qualifyName modName n) ops
+  | .effectD n ops laws   =>
+      .effectD (if usedCtors.contains n then n else qualifyName modName n) ops laws
+  | .handlerD n eff cls   =>
+      .handlerD (if usedCtors.contains n then n else qualifyName modName n) eff cls
   | .traitD n ps ops laws =>
       .traitD (if usedCtors.contains n then n else qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
@@ -5186,7 +5318,7 @@ legitimately turns it into a `hostPerformS` host perform for exactly this shape:
 op. Non-`pub` effects are NOT exempted (a private effect's ops stay genuinely private, D3). -/
 def isPubEffectOp (modP : Prog) (op : String) : Bool :=
   modP.decls.any (fun d => match d with
-    | .effectD n ops => modP.pubNames.contains n && ops.any (fun (opN, _) => opN == op)
+    | .effectD n ops _ => modP.pubNames.contains n && ops.any (fun (opN, _) => opN == op)
     | _              => false)
 
 mutual
@@ -5198,7 +5330,8 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
   | .dotPerform r _ args           => firstPrivateDotAccess resolved r <|> argsFirstPrivateDotAccess resolved args
   | .lit _ | .var _ | .getS | .unitS => none
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => firstPrivateDotAccess resolved e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
+  | .pledgeS _ e => firstPrivateDotAccess resolved e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => firstPrivateDotAccess resolved a <|> firstPrivateDotAccess resolved b
   | .matchS s _ l _ r              => firstPrivateDotAccess resolved s <|> firstPrivateDotAccess resolved l <|> firstPrivateDotAccess resolved r
@@ -5236,6 +5369,7 @@ def dArmsFirstPrivateDotAccess (resolved : List (String × Prog)) : DArms → Op
 def hClausesFirstPrivateDotAccess (resolved : List (String × Prog)) : HClauses → Option (String × String)
   | .nil               => none
   | .cons _ _ b rest   => firstPrivateDotAccess resolved b <|> hClausesFirstPrivateDotAccess resolved rest
+  | .consUpdating _ _ b rest => firstPrivateDotAccess resolved b <|> hClausesFirstPrivateDotAccess resolved rest
 def argsFirstPrivateDotAccess (resolved : List (String × Prog)) : SurfArgs → Option (String × String)
   | .none    => none
   | .one a   => firstPrivateDotAccess resolved a
@@ -5254,7 +5388,8 @@ def firstPrivateDotAccessProg (resolved : List (String × Prog)) (p : Prog) : Op
     | .letD _ _ e        => firstPrivateDotAccess resolved e
     | .letRecD _ _ e     => firstPrivateDotAccess resolved e
     | .dataD ..          => none
-    | .effectD ..        => none)
+    | .effectD ..        => none
+    | .handlerD _ _ cls  => hClausesFirstPrivateDotAccess resolved cls)
   <|> firstPrivateDotAccess resolved p.body
 
 /-! Rewrite BARE qualified access (`tokenizer.lex`, parsed as `.dotPerform (.var "tokenizer") "lex"
@@ -5341,6 +5476,7 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
   | .binopS op a b            => .binopS op (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
   | .ifS c t e                 => .ifS (qualifyDotAccess imports ctorOwners effectOps qTy c) (qualifyDotAccess imports ctorOwners effectOps qTy t) (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .annotS e t                => .annotS (qualifyDotAccess imports ctorOwners effectOps qTy e) (qTy t)
+  | .pledgeS row e             => .pledgeS row (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .unitS                    => .unitS
   | .foldS e                  => .foldS (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .unfoldS e                => .unfoldS (qualifyDotAccess imports ctorOwners effectOps qTy e)
@@ -5370,6 +5506,9 @@ def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × Str
 def qualifyHClausesAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : HClauses → HClauses
   | .nil                 => .nil
   | .cons op x b rest     => .cons op x (qualifyDotAccess imports ctorOwners effectOps qTy b) (qualifyHClausesAccess imports ctorOwners effectOps qTy rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (qualifyDotAccess imports ctorOwners effectOps qTy b)
+        (qualifyHClausesAccess imports ctorOwners effectOps qTy rest)
 def qualifyLetBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : LetBindings → LetBindings
   | .nil            => .nil
   | .cons n e rest  => .cons n (qualifyDotAccess imports ctorOwners effectOps qTy e) (qualifyLetBindingsAccess imports ctorOwners effectOps qTy rest)
@@ -5411,7 +5550,7 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
   -- below for the identical construction).
   let effectOps : List (String × String × String) := resolved.flatMap (fun (modName, modP) =>
     modP.decls.flatMap (fun d => match d with
-      | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
+      | .effectD n ops _ => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
       | _              => []))
   -- an EFFECT or TRAIT name is not a `let`-aliasable "plain fn" — `mergeModules`'s twin site (this
   -- function's own doc-comment cross-ref) has the full rationale; this transitively-imported-module
@@ -5419,7 +5558,8 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
   -- gets the same bare, direct-resolving name, not a shadowing `let`-alias.
   let nonAliasableNames : List String := resolved.flatMap (fun (_, modP) =>
     modP.decls.flatMap (fun d => match d with
-      | .effectD n _   => [n]
+      | .effectD n _ _ => [n]
+      | .handlerD n _ _ => [n]
       | .traitD n _ _ _ => [n]
       | _              => []))
   let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
@@ -5428,7 +5568,9 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
       then none else some (n, u.modName)))
   let decls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
-    | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+    | .effectD n ops laws   => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+        (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners effectOps qTy l.body }))
+    | .handlerD n eff cls   => .handlerD n eff (qualifyHClausesAccess importNames ctorOwners effectOps qTy cls)
     | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners effectOps qTy l.body }))
     | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners effectOps qTy o.body }))
     | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners effectOps qTy b)
@@ -5516,7 +5658,7 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
   -- doc comment has the full rationale). D3-gated: only a `pub effect`'s ops appear.
   let effectOps : List (String × String × String) := resolved.flatMap (fun (modName, modP) =>
     modP.decls.flatMap (fun d => match d with
-      | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
+      | .effectD n ops _ => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
       | _              => []))
   -- an EFFECT or TRAIT name is a fourth classification kind, not "plain fn" (the doc comment two
   -- paragraphs below was stale on this point — before this fix, `use Mod (Log)` naming an effect
@@ -5530,7 +5672,8 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
   -- same "referenced via one non-`let`-able surface position" rationale). -/
   let nonAliasableNames : List String := resolved.flatMap (fun (_, modP) =>
     modP.decls.flatMap (fun d => match d with
-      | .effectD n _   => [n]
+      | .effectD n _ _ => [n]
+      | .handlerD n _ _ => [n]
       | .traitD n _ _ _ => [n]
       | _              => []))
   -- a `use`d name that is a PLAIN fn (not a ctor, not a data type, not an effect/trait) gets the
@@ -5544,7 +5687,9 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
   let qTy := qualifyTyName dataTyOwners usedNames
   let entryDecls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
-    | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+    | .effectD n ops laws   => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+        (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners effectOps qTy l.body }))
+    | .handlerD n eff cls   => .handlerD n eff (qualifyHClausesAccess importNames ctorOwners effectOps qTy cls)
     | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners effectOps qTy l.body }))
     | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners effectOps qTy o.body }))
     | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners effectOps qTy b)
@@ -5694,7 +5839,8 @@ public def surfUsesVar (nm : String) : Surf → Bool
   | .var x                         => x == nm
   | .lit _ | .getS | .unitS        => false
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => surfUsesVar nm e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
+  | .pledgeS _ e => surfUsesVar nm e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => surfUsesVar nm a || surfUsesVar nm b
   | .matchS s _ l _ r              => surfUsesVar nm s || surfUsesVar nm l || surfUsesVar nm r
@@ -5728,6 +5874,7 @@ def letBindingsUseVar (nm : String) : LetBindings → Bool
 def hClausesUseVar (nm : String) : HClauses → Bool
   | .nil               => false
   | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
+  | .consUpdating _ _ b rest => surfUsesVar nm b || hClausesUseVar nm rest
 def letRecBindingsUseVar (nm : String) : LetRecBindings → Bool
   | .nil               => false
   | .cons _ _ e rest   => surfUsesVar nm e || letRecBindingsUseVar nm rest
@@ -5757,7 +5904,8 @@ def letRecBoundNames : Surf → List String
   | .letRecMultiS binds b          => letRecBindingsNamesTC binds ++ letRecBoundNames b
   | .lit _ | .var _ | .getS | .unitS => []
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => letRecBoundNames e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
+  | .pledgeS _ e => letRecBoundNames e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => letRecBoundNames a ++ letRecBoundNames b
   | .matchS s _ l _ r              => letRecBoundNames s ++ letRecBoundNames l ++ letRecBoundNames r
@@ -5783,6 +5931,7 @@ def letRecBoundNamesBindings : LetBindings → List String
 def letRecBoundNamesHClauses : HClauses → List String
   | .nil               => []
   | .cons _ _ b rest   => letRecBoundNames b ++ letRecBoundNamesHClauses rest
+  | .consUpdating _ _ b rest => letRecBoundNames b ++ letRecBoundNamesHClauses rest
 def letRecBindingsNamesTC : LetRecBindings → List String
   | .nil               => []
   | .cons n _ e rest   => n :: (letRecBoundNames e ++ letRecBindingsNamesTC rest)
@@ -5819,7 +5968,9 @@ def declBodiesTC : Decl → List Surf
   | .letRecD _ _ e   => [e]
   | .traitD _ _ _ laws => laws.map (·.body)
   | .implD _ _ ops     => ops.map (·.body)
-  | .dataD ..  | .effectD .. => []
+  | .effectD _ _ laws      => laws.map (·.body)
+  | .handlerD _ _ cls      => Bang.Surface.hClausesToList cls |>.map (fun c => c.2.2)
+  | .dataD ..              => []
 
 /-- Does `nm` occur anywhere in `p` — its trailing body OR any decl's own body (a name mentioned
 only inside another top-level `let`'s definition, not the trailing expression, must still trigger
@@ -6268,7 +6419,7 @@ shadowing the direct-resolution `handleCustomS` needs). Exercises `mergeModules`
 positions BOTH present, so either half of the fix regressing fails this guard. -/
 def logModProg : Prog :=
   { pubNames := ["Log", "helper"],
-    decls := [.effectD "Log" [("emit", .tArr .tInt .tInt)],
+    decls := [.effectD "Log" [("emit", .tArr .tInt .tInt)] [],
               .letRecD "helper" (.tArr (.tApp "Cap" (.one (.tName "Log"))) (.tArr .tInt (.tEff ["Log"] .tInt)))
                 (.lam "cap" (.lam "x" (.dotPerform (.var "cap") "emit" (.one (.var "x")))))],
     body := .lit 0, isLibrary := true }
@@ -6775,7 +6926,8 @@ def checkLaws (src : String) : Except String (List String) := do
     | .implD .. => pure ()
     | .dataD .. => pure ()
     | .fnD ..   => pure ()
-    | .effectD .. => pure ()   -- ADR-0092: no laws attached to an effect decl
+    | .effectD .. => pure ()   -- effect laws are checked per named handler by `lawInstancesOf`
+    | .handlerD .. => pure ()
     | .letD .. => pure ()      -- ADR-0093 D5: no laws attached to a plain let/let-rec decl either
     | .letRecD .. => pure ()
     | .traitD tn _ _ laws =>
@@ -6784,7 +6936,8 @@ def checkLaws (src : String) : Except String (List String) := do
           | .traitD .. => pure ()
           | .dataD ..  => pure ()
           | .fnD ..    => pure ()
-          | .effectD .. => pure ()   -- ADR-0092: ditto
+          | .effectD .. => pure ()
+          | .handlerD .. => pure ()
           | .letD .. => pure ()
           | .letRecD .. => pure ()
           | .implD tn' τTy _ =>
@@ -6817,7 +6970,8 @@ def firstBareOpCall (opNames : List String) : Surf → Option String
 def firstBareOpCallStep (opNames : List String) : Surf → Option String
   | .var _ | .lit _ | .getS | .unitS => none
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => firstBareOpCall opNames e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
+  | .pledgeS _ e => firstBareOpCall opNames e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => firstBareOpCall opNames a <|> firstBareOpCall opNames b
   | .matchS s _ l _ r              => firstBareOpCall opNames s <|> firstBareOpCall opNames l <|> firstBareOpCall opNames r
@@ -6857,6 +7011,7 @@ def dArmsFirstBareOpCall (opNames : List String) : DArms → Option String
 def hClausesFirstBareOpCall (opNames : List String) : HClauses → Option String
   | .nil                => none
   | .cons _ _ b rest    => firstBareOpCall opNames b <|> hClausesFirstBareOpCall opNames rest
+  | .consUpdating _ _ b rest => firstBareOpCall opNames b <|> hClausesFirstBareOpCall opNames rest
 end
 
 -- `add(a, b)` (tuple-call) is caught: `add` is a declared trait op, applied to a pair.
@@ -6870,16 +7025,11 @@ end
 -- nested inside a `let`/`if` — the traversal reaches every subexpression, not just the top.
 #guard firstBareOpCall ["eq"] (.lett "r" (.app (.var "eq") (.pairS (.var "x") (.var "x"))) (.var "r")) == some "eq"
 
-/-- **PUBLIC (#60 seam):** enumerate every LAW INSTANCE in a program — one entry per (trait law ×
-matching impl), exactly the pairs `checkLaws` itself walks above, reused structurally (same
-trait×impl match, not re-derived). Each entry is `(traitName, lawName, params, body)`, `body`
-rendered to SOURCE TEXT (`Bang.Format.showSurf`) rather than the internal `Surf` AST — this keeps
-the export's OWN signature entirely `Surf`/`Ty`-free (the narrower alternative preferred over the
-broader visibility markers: no new type exposure, just four strings/list-of-strings per instance).
-A law-runner harness (`Bang.Witness.LawTest`, #60) can drive each entry's `body` + `params` through
-its OWN source-string generation/sampling without needing `ElabEnv`/`Val`/`VT` at all. -/
-public def lawInstancesOf (src : String) : Except String (List (String × String × List String × String)) := do
-  let p ← parseProgWithDerives src
+/-- The ONE declaration walk behind both law-discovery entries below. It assumes module resolution,
+derive expansion, and prelude injection have already happened; callers differ only in how they reach
+that normalized `Prog` (`String` parse vs resolver-produced `Prog`). Keeping the cross-products here
+prevents the multi-file query route from growing a second interpretation of what a law instance is. -/
+def lawInstancesIn (p : Prog) : Except String (List (String × String × List String × String)) := do
   let mut out : List (String × String × List String × String) := []
   for d in p.decls do
     match d with
@@ -6891,17 +7041,46 @@ public def lawInstancesOf (src : String) : Except String (List (String × String
                 for l in laws do
                   out := out ++ [(tn, l.name, l.params, Bang.Format.showSurf l.body)]
           | _ => pure ()
+    | .effectD eff _ laws =>
+        for other in p.decls do
+          match other with
+          | .handlerD handler eff' _ =>
+              if eff' == eff && !laws.isEmpty then
+                for l in laws do
+                  match l.params with
+                  | cap :: params =>
+                      let body := s!"handle {Bang.Format.showSurf l.body} with {handler} as {cap}"
+                      out := out ++ [(eff ++ "@" ++ handler, l.name, params, body)]
+                  | [] => throw s!"effect {eff}: law '{l.name}' needs an explicit capability as its first parameter"
+          | _ => pure ()
     | _ => pure ()
   return out
+
+/-- **PUBLIC (#60 seam):** enumerate every LAW INSTANCE from source — trait law × matching impl,
+plus effect law × matching named handler realization. Trait pairs reuse `checkLaws`'s structural
+walk; effect pairs install the handler around the law body and omit the explicit capability binder
+from sampled params. Each entry is `(contractKey, lawName, params, body)`, with `body` rendered to
+SOURCE TEXT (`Bang.Format.showSurf`) rather than exposing the internal `Surf`/`Ty` types. -/
+public def lawInstancesOf (src : String) : Except String (List (String × String × List String × String)) := do
+  lawInstancesIn (← parseProgWithDerives src)
+
+/-- **PUBLIC resolver-aware twin of `lawInstancesOf`:** discover laws from an already merged `Prog`.
+Runs the SAME derive/prelude normalization `parseProgWithDerives` applies to source, then delegates
+to `lawInstancesIn`'s single cross-product walk. This is the query/database route: a merged module
+graph has no contiguous original source string, but it has already retained every declaration and
+law body needed for discovery. -/
+public def lawInstancesOfProg (p : Prog) : Except String (List (String × String × List String × String)) := do
+  let p ← expandDerives p
+  let p ← injectPrelude p
+  lawInstancesIn p
 
 /-- **PUBLIC (#60/#74 seam):** for every law instance `lawInstancesOf` would discover, ALSO report
 whether its BODY calls a trait op BY NAME (`firstBareOpCall`, against THAT trait's own declared op
 names, `sigs.map (·.name)`) — the shape the language has no execution path for (see
-`firstBareOpCall`'s docstring). Returns one entry PER LAW INSTANCE, in the SAME order
-`lawInstancesOf` would enumerate them (`(traitName, lawName, badOpName?)`), so a caller can zip the
-two lists positionally without re-deriving the trait×impl walk a second time (kept as a SEPARATE
-function rather than widening `lawInstancesOf`'s own additive/stable 4-tuple signature, which
-existing `#guard`s and `LawTest.lean` already destructure). -/
+`firstBareOpCall`'s docstring). Effect-handler instances receive aligned `none` entries because
+their operations are capability-qualified. Returns one entry PER LAW INSTANCE, in the SAME order
+as `lawInstancesOf`, so a caller can zip the two lists positionally without re-deriving either
+cross-product (kept separate rather than widening `lawInstancesOf`'s stable 4-tuple signature). -/
 public def lawInstanceOpCallDiagnostics (src : String) : Except String (List (String × String × Option String)) := do
   let p ← parseProgWithDerives src
   let mut out : List (String × String × Option String) := []
@@ -6915,6 +7094,13 @@ public def lawInstanceOpCallDiagnostics (src : String) : Except String (List (St
               if tn' == tn && !laws.isEmpty then
                 for l in laws do
                   out := out ++ [(tn, l.name, firstBareOpCall opNames l.body)]
+          | _ => pure ()
+    | .effectD eff _ laws =>
+        for other in p.decls do
+          match other with
+          | .handlerD _ eff' _ =>
+              if eff' == eff && !laws.isEmpty then
+                for l in laws do out := out ++ [(eff, l.name, none)]
           | _ => pure ()
     | _ => pure ()
   return out
@@ -8784,6 +8970,36 @@ gap the #85/#86 fixes were also closing (a binder silently missing, not a type e
     "effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }"
     30
 
+/-! ### ADR-0112 — row attenuation as an erased `pledge`
+
+The body is checked normally, then its inferred row must be a subset of the named ceiling. The
+actual row is retained (no precision-losing widening) and the surface node erases before lowering. -/
+
+-- ACCEPT: the body uses exactly its pledged authority and still runs through the ordinary handler.
+#guard runTypedYieldsInt 200
+    "effect Audit { record : Int -> Int } handle (pledge {Audit} in audit.record(41)) with Audit as audit { record(n) => 1 }"
+    1
+
+-- ACCEPT: attenuation is an upper bound, so a pure body is admitted under a wider pledge.
+#guard (match checkProg
+    "effect Audit { record : Int -> Int } pledge {Audit} in 41"
+  with | .ok _ => true | .error _ => false)
+
+-- REJECT: a second capability is in lexical scope, but performing it inside the pledged region
+-- makes the inferred row `{Audit, Secret}`, which is not a subset of `{Audit}`.
+#guard (match checkProg
+    "effect Audit { record : Int -> Int } effect Secret { reveal : Int -> Int } handle (handle (pledge {Audit} in let x = audit.record(1) in secret.reveal(x)) with Audit as audit { record(n) => n }) with Secret as secret { reveal(n) => n }"
+  with
+  | .error m => (m.splitOn "pledge violation").length > 1 &&
+                (m.splitOn "Secret").length > 1 && (m.splitOn "Audit").length > 1
+  | .ok _ => false)
+
+-- REJECT: a typo cannot silently become an empty or fresh row label.
+#guard (match checkProg "pledge {Ghost} in 41" with
+  | .error m => (m.splitOn "Ghost").length > 1 &&
+                (m.splitOn "not a declared effect").length > 1
+  | .ok _ => false)
+
 -- DIAGNOSTIC: an undeclared effect name in a row annotation fails loud, naming it — never a
 -- silent empty-row default (the bug this issue closes).
 #guard (match checkProg
@@ -8884,6 +9100,49 @@ identifier uses. The reference's former "known v1 limitation" bullet is RETIRED 
 -- ACCEPT: a bare `param` clause body resumes with the carried init value directly (no arithmetic).
 #guard runTypedYieldsInt 200
     "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param }" 100
+
+/-! ### ADR-0114 — explicit updating clauses
+
+`update op(x) => (resumeValue, nextParam)` is the surface protocol for handler-owned state.
+The envelope must be a syntactic pair of values, its first component must match the operation
+result, and its second component must match the installed parameter. Plain clauses keep the old
+read-only behavior, including when the operation itself is literally named `update`. -/
+
+-- The quota consumer: one stable capability, two calls, handler-private state 1 → 0. This pins
+-- parsing, elaboration, checking, lowering, source execution, and typed readback in one guard.
+#guard runTypedYieldsInt 300
+    "effect Quota { connect : Int -> Int } handle (let first = quota.connect(7) in let second = quota.connect(9) in first * 10 + second) with (Quota 1) as quota { update connect(host) => (param, 0) }"
+    10
+-- Modes are per operation: a plain observation reads the current parameter, the updating
+-- operation advances it, and the next plain observation sees the new parameter.
+#guard runTypedYieldsInt 400
+    "effect Cell { peek : Int -> Int, take : Int -> Int } handle (let before = cell.peek(0) in let used = cell.take(7) in let after = cell.peek(0) in before * 100 + used * 10 + after) with (Cell 1) as cell { peek(x) => param, update take(x) => (x, 0) }"
+    170
+-- An operation named `update` is still a plain clause; its product result is ordinary data, not
+-- an update envelope. Acceptance here is the type-level half of the parser ambiguity guard.
+#guard (match checkProg
+    "effect E { update : Int -> (Int * Int) } handle e.update(7) with E as e { update(x) => (x, x) }"
+  with | .ok _ => true | .error _ => false)
+-- Malformed envelopes fail at the construct boundary with the ADR-0114 teaching diagnostic.
+#guard (match checkProg
+    "effect Quota { connect : Int -> Int } handle quota.connect(7) with (Quota 1) as quota { update connect(host) => param }"
+  with
+  | .error m => (m.splitOn "must return a value pair").length > 1 &&
+                (m.splitOn "resumeValue, nextParam").length > 1
+  | .ok _ => false)
+-- The next parameter is checked against the initializer's type; a Unit cannot silently replace
+-- the Int quota merely because the outer expression is a pair.
+#guard (match checkProg
+    "effect Quota { connect : Int -> Int } handle quota.connect(7) with (Quota 1) as quota { update connect(host) => (param, ()) }"
+  with | .error _ => true | .ok _ => false)
+-- Plain and updating clauses for one operation are not ordered fallbacks. Accepting both would
+-- make dispatch's first-match detail observable and violate ADR-0114's one-mode-per-op contract.
+#guard (match checkProg
+    "effect Quota { connect : Int -> Int } handle quota.connect(7) with (Quota 1) as quota { connect(host) => param, update connect(host) => (param, 0) }"
+  with
+  | .error m => (m.splitOn "duplicate clause").length > 1 &&
+                (m.splitOn "plain and update modes cannot coexist").length > 1
+  | .ok _ => false)
 -- ACCEPT: `param` in a compound position, both operand orders (`x + param` / `param + x`) — the
 -- ORIGINAL #87 report's own motivating shape (`fetch(x) => x + param`, README's stated intent).
 #guard runTypedYieldsInt 200
@@ -9035,6 +9294,17 @@ back to source text via `showSurf`, reusing the existing `vecLawProg`/`intOrdPro
         | _ => false)
 -- a malformed program still fails LOUD through the same `parseProg` gate `checkLaws` uses.
 #guard (match lawInstancesOf "let x = in" with | .error _ => true | .ok _ => false)
+
+-- An effect CONTRACT crosses every named handler REALIZATION, dropping the explicit capability
+-- parameter from the sampled inputs and installing that realization around the rendered law body.
+#guard (match lawInstancesOf
+    "effect Codec { encode : Int -> Int decode : Int -> Int law roundtrip(codec, x): let y = codec.encode(x) in codec.decode(y) == x } handler Identity implements Codec { encode(x) => x, decode(x) => x } handler Shift7 implements Codec { encode(x) => x + 7, decode(x) => x - 7 } 0"
+  with
+  | .ok [("Codec@Identity", "roundtrip", ["x"], b1),
+         ("Codec@Shift7", "roundtrip", ["x"], b2)] =>
+      b1 == "handle let y = codec.encode(x) in codec.decode(y) == x with Identity as codec" &&
+      b2 == "handle let y = codec.encode(x) in codec.decode(y) == x with Shift7 as codec"
+  | _ => false)
 
 /-! ### Modules (ADR-0093) — the v1 ORACLE: `elaborate(import-merged) ≡ elaborate(hand-qualified)`.
 

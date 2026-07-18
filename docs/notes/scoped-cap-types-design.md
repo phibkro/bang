@@ -209,24 +209,26 @@ verified-core fail-loud. Ship (b) as the checker; **do not delete `escapedCap`**
 
 ## 6 · Interaction with row-attenuation (pledge-as-a-type)
 
-The OS-survey's headline cheap win is **row-attenuation** (`drop-to ρ'`, pledge-as-a-type — narrow a
-computation's declared row, os-inspiration §4, I1). Scoped-cap types and row-attenuation are
+The OS-survey's headline cheap win is **row attenuation**, now shipped as
+`pledge {E, …} in body` (ADR-0112 — assert an effect-row ceiling while retaining the body's actual
+row). Scoped-cap types and row attenuation are
 **orthogonal and complementary**, and the OS-survey already named the split (§4.2 "pledge and unveil are
 two syscalls for a reason"):
 
 ```
 row-attenuation  = pledge  : restricts WHICH effects a computation may perform  (the label/row axis)
+handler policy   = runtime : restricts WHICH operation values are admitted       (the value axis)
 scoped-cap types = the cap-lifetime discipline : restricts WHERE a cap may FLOW  (the identity axis)
 ```
 
 Row-attenuation narrows the *static row* (whether the effect); scoped-cap types constrain *cap escape*
-(where the handler instance flows). They touch different axes of bang's core principle ("typing by label,
-dispatch by identity"): attenuation is a label/row upper-bound; scoped-caps is an identity-flow bound.
-Both are surface-checker, both kernel-free, both erased rungs. **They can ship independently and in
-either order** — no interaction beyond both being pledge-family capability-security wins. (Row-attenuation
-is the *cheaper and more broadly demanded* of the two — it closes the sandboxed-plugin showcase — so if
-sequencing forces a choice, row-attenuation goes first; but scoped-caps is the one that closes the #134
-*soundness* story, so it is the higher-*correctness* priority.)
+(where the handler instance flows). ADR-0113's host-allowlist consumer occupies the third axis:
+ordinary handler configuration decides which request values are admitted. They touch different axes
+of bang's core principle ("typing by label, dispatch by identity"): attenuation is a label/row
+upper-bound; handler policy is a value predicate at dispatch; scoped-caps is an identity-flow bound.
+Both are surface-checker, kernel-free, erased rungs. They ship independently: row attenuation has
+landed first because the sandboxed-plugin consumer selected it; scoped caps remain the separate
+identity-flow mechanism needed to close the #134 *soundness* story.
 
 ---
 

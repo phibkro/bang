@@ -247,8 +247,9 @@ comma-separated form, not curried `fn add a b`. This is a deliberate but visible
 asymmetry: trait/impl SIGNATURES use the paren-list form, law BODIES and ordinary
 function calls elsewhere use curried application.
 
-`bang test [<file.bang>]` (issue #60) discovers every trait-law instance in a decls-only
-program and sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible
+`bang test [<file.bang>]` (issue #60) discovers every law-bearing contract/realization
+pair in a decls-only program — traits × impls and effects × named handlers — and
+sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible
 runs), reporting PASS/FAIL/ERROR/STUCK per law — end-to-end law EXECUTION through the CLI
 works (issue #74, closed): a law body written in the SUPPORTED shape (its trait ops
 reached only through the overloaded operator — `add a b == add b a`, not `add(a, b)` by
@@ -303,8 +304,9 @@ needed. See `examples/derive-eq-ord/`, `examples/trait-recursive-eq/`,
 
 ## User-defined effects (ADR-0095, issue #44 Stage 7)
 
-A user declares a NAMED effect interface (`effect Name { op : ArgTy -> ResTy, … }`),
-installs a HANDLER for it at a use site (`handle e with Name as h { … }`), and PERFORMS
+A user declares a NAMED effect contract (`effect Name { op : ArgTy -> ResTy, …; law … }`),
+declares reusable handler REALIZATIONS (`handler H implements Name { … }`), selects one
+at an installation site (`handle e with H as h`), and PERFORMS
 through the handler's own capability value (`h.op(arg)`) — the SAME "runtime is a
 handler installed at the use site" thesis the built-in effects (`state`/`atomically`)
 already use, now user-spellable. The kernel is untouched: this surface lowers to the
@@ -324,10 +326,14 @@ with Net as net {
 
 | Form | Meaning |
 |---|---|
-| `effect Name { op : ArgTy -> ResTy, … }` | declares a named interface; the elaborator allocates a label (`4 + declIndex`, deterministic by decl order) and builds a program-derived op-signature table — the surface analogue of the kernel's `EffSig`. v1 ops are single-argument (`ArgTy -> ResTy`) or nullary (`op : ResTy`, no arrow) |
+| `effect Name { op : ArgTy -> ResTy, …; law lawName(cap, x): expr }` | declares a named contract; the elaborator allocates a label (`4 + declIndex`, deterministic by decl order) and builds a program-derived op-signature table — the surface analogue of the kernel's `EffSig`. The first law parameter explicitly names the capability; remaining parameters are sampled inputs |
+| `handler H implements Name { op(x) => body, … }` | declares a named, reusable static realization; every operation of `Name` must have a clause and no foreign clause is allowed |
+| `handle e with H as h` | selects named realization `H`; elaboration expands it to the existing custom-handler form and binds capability `h` around `e` — handlers are not first-class runtime values in this slice |
 | `handle e with Name as h { op(x) => body, … }` | installs a handler for `Name` around `e`, binding the capability as `h` — the `as h` binder is MANDATORY (no implicit default: two nested handlers of the same effect would otherwise silently collide) and scopes over `e`, not the clause bodies |
 | `handle e with (Name init) as h { … }` | the PARAMETER-CARRYING form — `init` is threaded internally at install time AND clause-nameable via the reserved identifier `param` (see below) |
+| `update op(x) => (resumeValue, nextParam)` | marks one custom clause as parameter-updating: resume with the first value and atomically install the second before the continuation runs (ADR-0114) |
 | `h.op(arg)` | performs `op` on the named capability `h` — the SAME `$h.op` bare-call convention the built-in named-cap surface uses (`state … as h`); NOT `$h.op arg` (`h` is already a value, not a thunk) |
+| `pledge {E₁, E₂, …} in e` | checks that `e`'s inferred row is a subset of the named closed row, retains the actual inferred row, and erases before lowering (ADR-0112) |
 
 **Clause bodies are CURRIED, matching the perform site** (`op(x, y) => body` desugars to a
 curried clause, mirroring `h.op(x)(y)`'s own curried call shape) — a deliberate divergence
@@ -341,8 +347,8 @@ surface additively, it does not change this form).
 
 **The carried param is CLAUSE-NAMEABLE via the reserved identifier `param`** (issue #87,
 ADR-0095 D1's own worked example). A `(Name init) as h` clause body reads the `init` value
-through the bare word `param` — READ-ONLY in v1 (no param-UPDATE surface, ADR-0092 D5
-deferred):
+through the bare word `param`. Ordinary clauses are read-only; an explicit `update`
+clause may replace it (ADR-0114):
 
 ```bang
 effect Reader { fetch : Int -> Int }
@@ -350,6 +356,18 @@ handle net.fetch(5) with (Reader 100) as net { fetch(x) => x + param }
 -- net.fetch(5) resumes with 5 + 100
 -- ⟹ 105
 ```
+
+An updating clause has the exact form
+`update op(x) => (resumeValue, nextParam)`. Its pair is a protocol envelope, not an
+inference from product shape: plain `op(x) => (a, b)` still returns an ordinary product.
+The resume component must have the operation result type, the next component must have
+the initializer's type, and both must be values. Dispatch installs `nextParam` before
+resuming, so later calls through the same capability observe it. The mode is per clause;
+plain observations and updating operations may coexist in one handler. An operation
+literally named `update` remains plain as `update(x) => body`; the modifier spelling has
+two tokens, `update op(…)`. Each operation has exactly one clause: declaring both plain
+and updating clauses for the same op is a type error. See `examples/stateful-quota/` for
+the two-call `1 → 0` witness.
 
 `param` is RESERVED at every BINDER position (a clause-arg name, the `as h` capability
 binder, a `let`/`fun` name, …) — the same discipline `with`/`resume` already use — so no
@@ -372,6 +390,30 @@ error: handle: clause 'fetch' body must be a `ret`-shape value in v1 (no effects
 A clause body that only computes arithmetically over its argument and returns (no nested
 effect performed) is fine (`fetch(n) => n * 10`, `fetch(n) => n + 1`); a clause performing
 `raise`/another op/etc. before its final value hits this wall.
+
+**Effect laws are checked once per named realization.** `bang test` forms the
+effect × handler cross product, installs each handler around each law body, and samples
+the non-capability parameters. `examples/codec-contract/Codec.bang` therefore yields
+four checks: two round-trip laws × `Identity`/`Shift7`. `bang query laws` exports the
+same instances with explicit `contract` and `realization` fields.
+
+**`pledge` makes an effect-row ceiling local and result-type independent.** For example,
+`pledge {Audit} in audit.record(41)` is accepted, while adding a `Secret` operation
+inside that region is a type error (`pledge violation`). A pure body under the same
+ceiling remains pure: the checker returns the body's ACTUAL row rather than widening it
+to the allowed row. Every name must resolve to a built-in or declared user effect.
+
+This is a compile-time assertion, not a grant or runtime filter: the body still needs
+the relevant capability, handlers still define admitted operations, and lowering erases
+the pledge node. Rows restrict WHICH effect labels may occur; value-level policy such as
+filesystem paths or hostnames remains handler-enforced. See `examples/pledged-plugin/`.
+
+**Value-level resource policy is ordinary handler configuration (ADR-0113).**
+`examples/policy-host-allowlist/` runs one unchanged pledged `{Net}` plugin under two
+host values carried by `(Net allowed)` and read in the clause as `param`. The row admits
+both `connect(7)` and `connect(9)`; the handler decides which request resumes as allowed.
+This is complete mediation for checked operations through that capability, not OS isolation
+or a static refinement theorem about the host value.
 
 **Effect op names may not collide with a built-in effect's own operations** (`get`/`put`/
 `new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is
@@ -406,7 +448,8 @@ See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/` (now read
 carried param through `param` for real, issue #87), and
 `examples/handle-custom-abort-coexist/` (a `raise` inside a nested `handle` still aborts
 PAST a custom handler that is still installed — the two effect systems coexist) for worked,
-`check-examples`-gated single-op programs.
+`check-examples`-gated single-op programs; `examples/stateful-quota/` demonstrates an
+updating clause across two calls.
 
 ## Effect channels
 
@@ -464,7 +507,7 @@ The surface is sugar over these; `Source.eval` (Bang/Core/IR.lean) is the refere
 | `state` | `Label → Val → Handler` |  |
 | `throws` | `Label → Handler` |  |
 | `transaction` | `Label → List Val → Handler` |  |
-| `custom` | `Label → Val → List (OpId × Comp) → Handler` |  |
+| `custom` | `Label → Val → List (ClauseKey × Comp) → Handler` |  |
 
 ## Standard library
 
@@ -739,6 +782,9 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### #90 — row annotations (`T ! {…}`) could only name the four BUILT-IN effects (`throws`/
 
 - `effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }` ⟹ `30`  — types, and RUNS end to end (the #84 gap-1 pipeline that was `checkProg`-only until this fix).
+### ADR-0112 — row attenuation as an erased `pledge`
+
+- `effect Audit { record : Int -> Int } handle (pledge {Audit} in audit.record(41)) with Audit as audit { record(n) => 1 }` ⟹ `1`  — ACCEPT: the body uses exactly its pledged authority and still runs through the ordinary handler.
 - `effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in ($test) logic` ⟹ `30`  — Now types AND runs.
 - `effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in (($test) logic) * 1000 + (($prod) logic)` ⟹ `30005`  — under each stage. `30005 = 30*1000 + 5` (test's `n*10` vs prod's `n+1`, both over `1+2`).
 - `effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in let selector = (if 1 < 2 then test else prod) in ($selector) logic` ⟹ `30`  — pattern's "runtime-selectable" claim, confirmed live, not just narrated.
@@ -753,6 +799,10 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### #87 — the parameter-carrying form's `init` becomes CLAUSE-NAMEABLE via the literal
 
 - `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param }` ⟹ `100`  — ACCEPT: a bare `param` clause body resumes with the carried init value directly (no arithmetic).
+### ADR-0114 — explicit updating clauses
+
+- `effect Quota { connect : Int -> Int } handle (let first = quota.connect(7) in let second = quota.connect(9) in first * 10 + second) with (Quota 1) as quota { update connect(host) => (param, 0) }` ⟹ `10`  — parsing, elaboration, checking, lowering, source execution, and typed readback in one guard.
+- `effect Cell { peek : Int -> Int, take : Int -> Int } handle (let before = cell.peek(0) in let used = cell.take(7) in let after = cell.peek(0) in before * 100 + used * 10 + after) with (Cell 1) as cell { peek(x) => param, update take(x) => (x, 0) }` ⟹ `170`  — operation advances it, and the next plain observation sees the new parameter.
 - `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => x + param }` ⟹ `105`  — ORIGINAL #87 report's own motivating shape (`fetch(x) => x + param`, README's stated intent).
 - `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param + x }` ⟹ `105`
 - `effect R { fetch : Int -> Int } handle (let r = net.fetch(5) in r + 1) with (R 100) as net { fetch(x) => x + param }` ⟹ `106`  — instead of hardcoding the literal `100` the way #87's report found.
@@ -880,7 +930,7 @@ capability types (#21) make the escape unrepresentable rather than merely detect
 JSON — the cheapest "LSP for agents": no server, no protocol, one process per call.
 Every op's Lean-side implementation is `Bang/Frontend/Query.lean`, a **public library
 API** (every fact-producing function is `public`, documented as reusable outside the
-CLI — a Lean script can call `declFactsOf`/`nameRefEdgesOf`/`lawInstancesOf` directly).
+CLI — a Lean script can call `declFactsOf`/`nameRefEdgesOf`/`lawInstancesOf{,Prog}` directly).
 
 **`bang query dump [<file.bang>]` is the key operation**: the COMPLETE fact base in one
 export, so you compose *arbitrary* queries (`jq`, `python`, a Lean script) instead of
@@ -895,11 +945,12 @@ not six independent implementations.
   "ok": true,
   "schemaVersion": 1,
   "bangVersion": "0.1.1",
-  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",
+  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
   "refs": [ { "from": "declName", "to": "referencedName" } ],
-  "laws": [ { "trait": "..", "law": "..", "params": [".."], "body": "source text" } ],
+  "laws": [ { "trait": "compat-key", "contract": "..", "realization": ".."|null,
+                "law": "..", "params": [".."], "body": "source text" } ],
   "imports": [ { "module": ".." } ],
   "uses":    [ { "module": "..", "names": [".."] } ]
 }
@@ -918,7 +969,7 @@ Every `DeclFact` key is **always present** — `null` means absent, never a miss
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
 nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
 type-checks; `typeError` carries the checker's message when it doesn't; `shape` carries
-a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`, which have no
+a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`/`handler`, which have no
 value-level type. `refs` is DECL-granularity (which decl's body mentions which name).
 
 **Position-addressing (line/col → decl) landed at DECL granularity** (issue #52 slice 5,
@@ -955,16 +1006,16 @@ computed from other facts); the curated verbs below are **intensional** — deri
 predicates (views) over this extensional base, kept few and stable per the Kythe/Glean
 small-core lesson (push richness into derived views, not the base schema).
 
-**KNOWN v1 LIMITATIONS** (both match `check --json`'s own documented multi-file grants,
-not new gaps): on a MULTI-FILE (resolver-aware) `dump`, `"laws"` is always `[]` — the
-merged program has no single contiguous source `lawInstancesOf` could re-derive law
-bodies from; and a decl's `"module"` is `null` unless the CLI layer's own resolution
+**KNOWN v1 LIMITATION**: a decl's `"module"` is `null` unless the CLI layer's own resolution
 walk supplies provenance (`Query.lean`'s `declFactsOf` alone never computes it — a flat
 merged `Prog` carries no per-decl module field). An imported (not `use`d) decl's own
 `"name"` is QUALIFIED by the merge (`Parse.bang`'s `dropWs` becomes `Parse_dropWs`,
 `TypeCheck.mergeModules`'s convention) — `def`/`refs`/`type`/`effects` on a multi-file
 program address the qualified name, discoverable via `dump`/`symbols`'s own `"name"`
 field.
+Resolver-aware law facts do NOT have that source-text limitation: `lawInstancesOfProg`
+walks the merged declarations directly, so imported trait×impl and effect×handler
+instances appear in both `dump` and `query laws` (qualified by the module merge).
 
 ### The curated verbs (thin projections of `dump`)
 
@@ -973,7 +1024,7 @@ field.
 | `symbols` | `[<file.bang>]` | `dump`'s own `"decls"` array, unfiltered |
 | `type` | `<file.bang> <name>` | one `DeclFact`'s `type`+`row`, looked up by name |
 | `effects` | `<name> [<file.bang>]` | one `DeclFact`'s `row` alone |
-| `laws` | `[<file.bang>]` | every discovered trait-law × impl instance (issue #60 seam) |
+| `laws` | `[<file.bang>]` | every discovered trait×impl and effect×handler law instance |
 | `def` | `<name> <file.bang>` | the one decl DEFINING `name`, as a `DeclFact` |
 | `refs` | `<name> <file.bang>` | `dump`'s own `"refs"` edges, filtered to `<name>` |
 | `hover` | `[<file.bang>] <line> <col>` | the decl at 1-indexed `<line>:<col>` — nearest-enclosing, DECL granularity (issue #52 slice 5) |

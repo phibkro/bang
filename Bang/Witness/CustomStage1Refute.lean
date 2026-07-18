@@ -30,7 +30,7 @@ services the op and RESUMES — the perform (the whole body) resolves to the cla
 `Source.eval = done 7`. (Stage-1 this ESCAPED — `handlesOp custom = false`; the finite rep + real dispatch
 is exactly what changed. Kept as the Stage-1→Stage-2 behaviour-shift witness.) -/
 def cPerform : Comp :=
-  .handle (Handler.custom 0 .vunit [("myop", .ret (.vint 7))])
+  .handle (Handler.custom 0 .vunit [(.plain "myop", .ret (.vint 7))])
     (.perform (.vvar 0) "myop" .vunit)
 example : Source.eval 50 cPerform = Result.done (.vint 7) := by rfl
 

@@ -28,8 +28,9 @@ the third point in the design space alongside "hand-designed policy."
 ## The v1 wall this demo works around (named honestly)
 
 A textbook seeded scheduler carries a MUTABLE PRNG register the handler updates on
-every pick. v1 handler clauses are `ret`-shape only and params are read-only (ADR-0095
-D4 / ADR-0092 D5) — no carried register. Worse, a v1 clause also can't CALL a
+every pick. ADR-0114 now provides a ret-shaped value update envelope, but this historical
+demo deliberately keeps its original plain/read-only clause and threads the seed externally.
+It also can't CALL a
 recursive `Div`-performing function (like the LCG step) inline and then do arithmetic
 on the result — that is a compute-then-return body, and even though it types today for
 SIMPLE arithmetic (`examples/dst-rounds-lcg`'s `(s/64) - ((s/64)/2)*2` on an

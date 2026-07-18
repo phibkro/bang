@@ -382,6 +382,11 @@ partial def fmtSurf (need : SPrec) : Surf → Format
             ++ nestD (Format.line ++ Format.text "then " ++ fmtSurf .cmp t
                         ++ Format.line ++ Format.text "else " ++ fmtSurf .cmp e))
   | .annotS e t => Format.text "(" ++ fmtSurf .cmp e ++ Format.text s!" : {showTy t})"
+  | .pledgeS allowed e =>
+      fParenIf need .cmp <|
+        Format.group
+          (Format.text "pledge {" ++ Format.text (String.intercalate ", " allowed) ++ Format.text "}" ++ Format.line ++
+            Format.text "in " ++ fmtSurf .cmp e)
   | .foldS e   => Format.text "(fold " ++ fmtSurf .atom e ++ Format.text ")"                              -- INTERNAL; printed defensively
   | .unfoldS e => Format.text "(unfold " ++ fmtSurf .atom e ++ Format.text ")"                           -- INTERNAL; ditto
   -- `match s { arms }` (D2): break after `{`, one arm per line nested +2, `}` at base.
@@ -415,7 +420,10 @@ partial def fmtSurf (need : SPrec) : Surf → Format
             | .none    => fmtSurf .atom n
             | .one p   => Format.text "(" ++ fmtSurf .atom n ++ Format.text " " ++ fmtSurf .atom p ++ Format.text ")"
             | .two _ _ => fmtSurf .atom n) ++
-          Format.text s!" as {h} " ++ fmtBraceBlock (fmtHClauseList cls)
+          Format.text s!" as {h}" ++
+            (match cls with
+             | .nil => Format.text ""
+             | _    => Format.text " " ++ fmtBraceBlock (fmtHClauseList cls))
   -- `h.op(args)` is parsed by `pDotLoop`, invoked FROM `pDotted` right after `pAtom` — the whole
   -- chain result feeds `pAppLoop`/`pOp` same as any other atom, so it never needs defensive parens
   -- at an `.app`-spine or looser slot. Its OWN natural tier is `.dotted` (#96 fix): a `pDotted`
@@ -521,6 +529,8 @@ partial def fmtDArmList : DArms → List Format
 arrow, not `->`). -/
 partial def fmtHClause : String → String → Surf → Format
   | op, x, b => Format.text s!"{op}({x}) => " ++ fmtSurf .cmp b
+partial def fmtHClauseUpdating : String → String → Surf → Format
+  | op, x, b => Format.text s!"update {op}({x}) => " ++ fmtSurf .cmp b
 /-- `let rec … and …` (#97 item 2) sibling list: `f : T1 = e1 and\ng : T2 = e2` — one sibling per
 LINE (`Format.line` between siblings, the `fmtLetBindingsList` break-point idiom), never a bare
 `" and "` join, so a long mutual group falls back to readable one-per-line instead of an
@@ -532,8 +542,9 @@ partial def fmtLetRecBindings : LetRecBindings → Format
       Format.text s!"{n} : {showTy t} = " ++ fmtSurf .cmp e ++ Format.text " and" ++ Format.line
         ++ fmtLetRecBindings rest
 partial def fmtHClauseList : HClauses → List Format
-  | .nil               => []
-  | .cons op x b rest  => fmtHClause op x b :: fmtHClauseList rest
+  | .nil                      => []
+  | .cons op x b rest         => fmtHClause op x b :: fmtHClauseList rest
+  | .consUpdating op x b rest => fmtHClauseUpdating op x b :: fmtHClauseList rest
 /-- Flatten a CTOR CALL's right-nested payload (B011's v1 arity-2 cap lifted, #144) back to its
 flat surface spelling: `Q(1, (2, (3, 4)))`'s tree — `a1 = 1`, `a2 = .pairS 2 (.pairS 3 4)` — prints
 as `[1, 2, 3, 4]`, so the caller's `fmtTupleGroup` renders `Q(1, 2, 3, 4)`, matching what the author
@@ -630,9 +641,11 @@ def fmtDeclDoc (derivesFor : List (String × List String)) : Decl → Format
       Format.group (nestD (
         Format.text s!"fn {n}({String.intercalate ", " ps}) : {showTy ty} where {tr} {tv} ="
           ++ Format.line ++ fmtSurf .cmp body))
-  | .effectD n ops =>    -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }` — same member-block
+  | .effectD n ops laws => -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }` — same member-block
                           -- shape as trait/impl (D2's flat-vs-wrapped rule applies uniformly).
-      Format.text s!"effect {n} " ++ fmtMemberBlock (ops.map fmtEffectOp)
+      Format.text s!"effect {n} " ++ fmtMemberBlock ((ops.map fmtEffectOp) ++ (laws.map fmtLawDecl))
+  | .handlerD n eff cls =>
+      Format.text s!"handler {n} implements {eff} " ++ fmtBraceBlock (fmtHClauseList cls)
   | .letD n ty e =>       -- ADR-0093 D5 (operator ruling): `let name [: Ty] = expr` — NO trailing
                           -- `in`, the one visible difference from the ordinary `let`/EXPRESSION
                           -- printer. The OPTIONAL ascription (ruling point (c)) prints only when
@@ -1136,3 +1149,18 @@ open Bang.Format in
 #guard roundTripsOn "Mod.op" && idempotentOn "Mod.op"
 open Bang.Format in
 #guard fmtExpr "Mod.op" == .ok "Mod.op"
+
+-- ADR-0112: the row-bound form obeys both formatter laws and keeps its effect names in order.
+open Bang.Format in
+#guard roundTripsOn "pledge {Audit, Secret} in audit.record(41)" &&
+       idempotentOn "pledge {Audit, Secret} in audit.record(41)"
+
+-- ADR-0114: updating custom clauses retain their explicit mode through canonical formatting;
+-- this is semantic syntax, not optional decoration. The neighboring operation literally named
+-- `update` remains plain and therefore prints with only one `update` token.
+open Bang.Format in
+#guard roundTripsOn "handle q.connect(7) with (Quota 1) as q { update connect(host) => (param, 0) }" &&
+       idempotentOn "handle q.connect(7) with (Quota 1) as q { update connect(host) => (param, 0) }"
+open Bang.Format in
+#guard fmtExpr "handle q.update(7) with Q as q { update(x) => (x, x) }" ==
+       .ok "handle q.update(7) with Q as q { update(x) => (x, x) }"

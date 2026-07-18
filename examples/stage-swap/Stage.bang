@@ -1,0 +1,15 @@
+pub effect Net {
+  fetch : Int -> Int
+  law stable(stage, key):
+    let first = stage.fetch(key) in
+    let second = stage.fetch(key) in
+    first == second
+}
+
+pub handler Test implements Net {
+  fetch(n) => n * 10
+}
+
+pub handler Prod implements Net {
+  fetch(n) => n + 1
+}

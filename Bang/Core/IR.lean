@@ -71,6 +71,29 @@ the offset to its binder (0 = nearest enclosing binder). -/
 /-- An effect operation's name (a `String`); dispatched to a handler, not a bound variable. -/
 abbrev OpId := String
 
+/-- A custom clause's operation key and parameter-transition mode (ADR-0114).
+`plain op` returns the operation result and preserves the handler parameter;
+`updating op` returns `(operation result, next parameter)` and installs the latter
+before resuming. Keeping the mode outside the returned value avoids confusing an
+ordinary product-valued operation result with protocol metadata. -/
+inductive ClauseKey where
+  | plain : OpId → ClauseKey
+  | updating : OpId → ClauseKey
+  deriving Repr, Inhabited, DecidableEq
+
+namespace ClauseKey
+
+/-- The declared effect operation named by a custom clause key. -/
+def op : ClauseKey → OpId
+  | .plain op | .updating op => op
+
+/-- Whether the clause returns the `(resume value, next parameter)` envelope. -/
+def updates : ClauseKey → Bool
+  | .plain _ => false
+  | .updating _ => true
+
+end ClauseKey
+
 /-- Primitive binary operators on the `Int` base type (ADR-0065). NOT effect operations
 (those are `OpId` strings dispatched to handlers) — these are pure δ-rules: `binop` reduces
 in place like `case`/`split`/`unfold`. Arithmetic (`add`/`sub`/`mul`/`div`) returns `Int`;
@@ -157,7 +180,7 @@ inductive Handler : Type where
   | transaction : Label → List Val → Handler
   -- custom ℓ p clauses (ADR-0085, #44 stage 1; ADR-0087 finite rep): the GENERAL user-defined-effect
   -- handler — a label, a carried parameter `p` (a closed `Val`, like `state`'s `s` / `transaction`'s `Θ`),
-  -- and a FINITE CLAUSE LIST `List (OpId × Comp)` (each entry services one `op`; the `Comp` binds the param
+  -- and a FINITE CLAUSE LIST `List (ClauseKey × Comp)` (each entry services one `op`; the `Comp` binds the param
   -- at index 1 and the operation argument at index 0, returning the resumption value — one-shot v1, D2).
   -- Dispatch is first-match-wins lookup (`cls.find? (·.1 = op)`); the elaborator emits distinct ops from
   -- an `effect` decl by construction (duplicate = LOUD error, ADR-0046). This GENERALIZES the built-in
@@ -173,7 +196,7 @@ inductive Handler : Type where
   -- UNTYPED (no `handleCustom` rule yet), so no well-typed program contains it; real dispatch is stage 2,
   -- typing stage 3, the DERIVED calc-machine arm stage 4. Coexist keeps the three built-ins' arms
   -- byte-identical — the ripple is ADDITIVE (a new match case), never a re-freeze of the census.
-  | custom : Label → Val → List (OpId × Comp) → Handler
+  | custom : Label → Val → List (ClauseKey × Comp) → Handler
 end
 
 /-- The `Bool = 1 + 1` encoding (ADR-0065/0029): `true = inr unit`, `false = inl unit`. The single

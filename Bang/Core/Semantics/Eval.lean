@@ -330,9 +330,10 @@ regardless of the metatheory. -/
 
 /-- The `{Reader}`-style clause list: `read x` resumes with `x + p` (arg@0 + param@1). A one-shot
 tail-resumptive clause carrying a config param `p` — reader / `{Net}`-config / logging, the v1 sweet spot
-(read-only param). Other ops are unserviced (`find?` returns `none`). -/
-private def readerClauses : List (OpId × Comp) :=
-  [("read", .binop .add (.vvar 0) (.vvar 1))]   -- resume with arg@0 + param@1
+(plain clause), while ADR-0114 updating clauses replace it explicitly. Other ops are unserviced
+(`find?` returns `none`). -/
+private def readerClauses : List (ClauseKey × Comp) :=
+  [(.plain "read", .binop .add (.vvar 0) (.vvar 1))]   -- resume with arg@0 + param@1
 
 /-- **(a) DISPATCH + ONE-SHOT RESUME.** A custom handler (label 1, param `100`) services `read 5` by
 running the clause `arg + param = 5 + 100 = 105`, RESUMING the `letC` continuation with `105`; the

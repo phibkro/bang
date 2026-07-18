@@ -136,7 +136,7 @@ consumer never branches on key existence, only nullness. -/
 `Diagnostics.DiagCode`'s own stability convention: a NEW kind is a schema addition, never a
 renumbering). -/
 public inductive DeclKind where
-  | letD | letRecD | fnD | traitD | implD | dataD | effectD
+  | letD | letRecD | fnD | traitD | implD | dataD | effectD | handlerD
   deriving Repr, DecidableEq
 
 /-- `DeclKind` from a `Decl` — the SINGLE place that knows the mapping (every fact/filter below
@@ -149,6 +149,7 @@ public def DeclKind.of : Decl → DeclKind
   | .implD ..   => .implD
   | .dataD ..   => .dataD
   | .effectD .. => .effectD
+  | .handlerD .. => .handlerD
 
 /-- The JSON-schema STRING a `DeclKind` renders as (`"let"`/`"letRec"`/`"fn"`/`"trait"`/`"impl"`/
 `"data"`/`"effect"`) — the schema's own stable vocabulary, unrelated to Lean's constructor names. -/
@@ -160,6 +161,7 @@ public def DeclKind.toJson : DeclKind → String
   | .implD   => "\"impl\""
   | .dataD   => "\"data\""
   | .effectD => "\"effect\""
+  | .handlerD => "\"handler\""
 
 /-- A trait/impl/data/effect decl's STRUCTURAL summary (its ops/ctors/params, pre-rendered as one
 JSON value) — the non-value-typed kinds' analogue of a `letD`'s checker type. `none` for `letD`/
@@ -177,9 +179,13 @@ def declShapeJson : Decl → Option String
       some <| jsonObj [jsonField "params" (jsonStrArr params),
                jsonField "ctors" (jsonArr (ctors.map (fun c =>
                  jsonObj [jsonStrField "name" c.1, jsonField "payload" (jsonStrArr (c.2.map Bang.Format.showTy))])))]
-  | .effectD _ ops =>
+  | .effectD _ ops laws =>
       some <| jsonObj [jsonField "ops" (jsonArr (ops.map (fun o =>
-                 jsonObj [jsonStrField "name" o.1, jsonStrField "type" (Bang.Format.showTy o.2)])))]
+                 jsonObj [jsonStrField "name" o.1, jsonStrField "type" (Bang.Format.showTy o.2)]))),
+               jsonField "laws" (jsonStrArr (laws.map (·.name)))]
+  | .handlerD _ eff cls =>
+      some <| jsonObj [jsonStrField "implements" eff,
+               jsonField "ops" (jsonStrArr ((Bang.Surface.hClausesToList cls).map (fun c => c.1)))]
   | .fnD _ ps _ tr tv _ =>
       -- `fnD`'s BOUND-generic header (trait/typeVar/params) is structural too, alongside its
       -- checker `type`/`row` (both present — a bounded fn is the one kind with BOTH).
@@ -304,7 +310,8 @@ public def declBodies : Decl → List Surf
   | .implD _ _ ops     => ops.map (·.body)
   | .dataD ..           => []
   | .fnD _ _ _ _ _ b    => [b]
-  | .effectD ..          => []
+  | .effectD _ _ laws    => laws.map (·.body)
+  | .handlerD _ _ cls    => (Bang.Surface.hClausesToList cls).map (fun c => c.2.2)
   | .letD _ _ e         => [e]
   | .letRecD _ _ e      => [e]
 
@@ -355,13 +362,22 @@ public def nameRefEdgesOf (p : Prog) : List RefEdge :=
 def RefEdge.toJson (e : RefEdge) : String :=
   jsonObj [jsonStrField "from" e.src, jsonStrField "to" e.tgt]
 
-/-- **PUBLIC (TIER 1):** one law instance `(trait, law, params, body)` → its `LawFact`-shaped JSON.
-Thin re-rendering of `Bang.TypeCheck.lawInstancesOf` (#60's own discovery seam) — zero new
-discovery logic. -/
+/-- **PUBLIC (TIER 1):** one law instance `(contractKey, law, params, body)` → its `LawFact` JSON.
+For traits, `contractKey` is the historical trait name and `realization` is null. Effect-handler
+instances use `Effect@Handler`; `contract`/`realization` expose those components while the old
+`trait` field remains an additive-schema compatibility key. Discovery stays entirely in
+`Bang.TypeCheck.lawInstancesOf` (#60) — zero new discovery logic. -/
 def lawInstanceJson (inst : String × String × List String × String) : String :=
   let (trait, law, params, body) := inst
-  jsonObj [jsonStrField "trait" trait, jsonStrField "law" law,
+  let parts := trait.splitOn "@"
+  let contract := parts.head?.getD trait
+  let realization := if parts.length == 2 then parts[1]? else none
+  jsonObj [jsonStrField "trait" trait, jsonStrField "contract" contract,
+           jsonOptStrField "realization" realization, jsonStrField "law" law,
            jsonField "params" (jsonStrArr params), jsonStrField "body" body]
+
+#guard lawInstanceJson ("Codec@Shift7", "roundtrip", ["x"], "handle body with Shift7 as codec") ==
+  "{\"trait\":\"Codec@Shift7\",\"contract\":\"Codec\",\"realization\":\"Shift7\",\"law\":\"roundtrip\",\"params\":[\"x\"],\"body\":\"handle body with Shift7 as codec\"}"
 
 /-! ## 2. TIER 2 — `bang query dump <file>`: the COMPLETE fact base in one export.
 
@@ -376,7 +392,7 @@ fact base — `decls`/`refs`/`laws`/`imports`/`uses` are top-level ARRAYS OF FLA
 "predicates = tables, facts = rows" framing), never a nested tree; the concrete gate is that the
 golden `dump` output loads into DuckDB with ONE `read_json` call (`tools/test-query.sh`'s
 `golden-dump-duckdb-loadable` check) — no unnesting gymnastics. The curated verbs (`symbols`/
-`type`/`effects`/`def`/`refs`) are DERIVED PREDICATES (views) over this extensional base — Tier 3.
+`type`/`effects`/`def`/`refs`/`laws`) are DERIVED PREDICATES (views) over this extensional base — Tier 3.
 
 SCHEMA VERSIONING (the DBMS survey's ONE eager-adoption item, §6/§8 — REFINED, operator ruling,
 2026-07-10): bang's 0.x "breaking changes allowed" policy collides with "agents write durable
@@ -427,17 +443,15 @@ schema documented in `docs/reference/language.md`. -/
 public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := []) :
     String :=
   let facts := (declFactsOf p).map (fun f => f.withModule (declModule.lookup f.name))
-  -- NOTE: `lawInstancesOf` takes SOURCE TEXT, not a `Prog` (#60's own signature) — there is no
-  -- `Prog`-taking sibling (matching `laws`'s own documented non-resolver-aware precedent below).
-  -- `dump`'s law facts therefore come from the CALLER's original source string when available
-  -- (`dumpJson`, the string-taking entry) and are an EMPTY (not absent) array on the `Prog`-only
-  -- resolver route, where no single contiguous source exists to re-derive them from (the SAME
-  -- `span:null`-class v1 grant `check --json`'s multi-file path already documents).
+  let lawsJ := match Bang.TypeCheck.lawInstancesOfProg p with
+    | .ok insts => insts.map lawInstanceJson
+    | .error _  => []   -- same per-seam failure isolation as `dumpJson`: law discovery cannot hide
+                         -- otherwise valid declaration/reference/header facts.
   jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
            jsonStrField "bangVersion" bangVersion,
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
            jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
-           jsonField "laws" "[]",
+           jsonField "laws" (jsonArr lawsJ),
            jsonField "imports" (jsonArr (p.imports.map importJson)),
            jsonField "uses" (jsonArr (p.uses.map useJson))]
 
@@ -477,9 +491,8 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
 
 `symbols` = `declFactsOf` rendered whole (one construct with `dump`'s own `"decls"` field — the
 SAME `DeclFact.toJson`). `type`/`effects` = one `DeclFact` looked up by name. `def` = ditto,
-wrapped as a single hit. `refs` = `nameRefEdgesOf` filtered to one target. `laws` stays its own
-thin wrapper (STRING-only — no `Prog`-taking sibling, matching `bang test`'s own documented
-non-resolver-aware precedent: "no multi-file law-discovery need has arisen yet"). -/
+wrapped as a single hit. `refs` = `nameRefEdgesOf` filtered to one target. `laws` is the same
+`lawInstancesOf{,Prog}` fact list `dump` exports, narrowed to its own top-level object. -/
 
 /-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): every top-level decl of `p`, in SOURCE
 ORDER, rendered via the SAME `DeclFact.toJson` `dump` uses — `symbols` is `dump` narrowed to just
@@ -538,10 +551,17 @@ public def effectsJson (src name : String) : String :=
   | .error (m, _) => errorJsonOk m
   | .ok p         => effectsJsonP p name
 
-/-- **PUBLIC entry**: `bang query laws <file>` — `{"ok":true,"laws":[{"trait","law","params","body"},
-...]}` for every discovered law instance, or `{"ok":false,"error":"..."}` on a parse/elaboration
-failure (`lawInstancesOf`'s own `Except String _`). STRING-only (no resolver — see this section's
-header; matches `runTest`'s own documented precedent). -/
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): every law instance retained by an
+already merged module graph. Thin rendering of `lawInstancesOfProg`; the same list `dumpJsonP`
+places in its `laws` table. -/
+public def lawsJsonP (p : Prog) : String :=
+  match Bang.TypeCheck.lawInstancesOfProg p with
+  | .error e  => errorJsonOk e
+  | .ok insts => jsonObj [jsonField "ok" "true", jsonField "laws" (jsonArr (insts.map lawInstanceJson))]
+
+/-- **PUBLIC entry**: `bang query laws <file>` — `{"ok":true,"laws":[... ]}` for every discovered
+law instance, or `{"ok":false,"error":"..."}` on a parse/elaboration failure. Source-taking twin
+of resolver-aware `lawsJsonP`. -/
 public def lawsJson (src : String) : String :=
   match Bang.TypeCheck.lawInstancesOf src with
   | .error e  => errorJsonOk e

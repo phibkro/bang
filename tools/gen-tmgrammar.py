@@ -35,6 +35,9 @@ LINE_COMMENT = "--.*$"          # issue #62: `--` runs to end-of-line, maximal-m
 STRING_PATTERN = r'"'           # string opens on `"`; the JSON rule captures the body + escapes
 NUMBER_PATTERN = r"\b-?\d+\b"   # integer literals (Int is unbounded ℤ, ADR-0067)
 PUNCTUATION = r"[{}(),;]"       # effect/handler/tuple block punctuation
+# Contextual clause modifier from ADR-0114. It is intentionally not in `pIdent`'s global reserved
+# set: an operation literally named `update` remains legal as `update(x) => body`.
+CONTEXTUAL_KEYWORDS = ["update"]
 
 
 def alternation(words):
@@ -57,7 +60,7 @@ def render():
     # order-stable, so the grammar names every parser keyword exactly once.
     keyword_words = []
     seen = set()
-    for w in kw_led + reserved:
+    for w in kw_led + reserved + CONTEXTUAL_KEYWORDS:
         if w not in seen:
             seen.add(w)
             keyword_words.append(w)

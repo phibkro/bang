@@ -2,7 +2,7 @@
 
 The per-stage story (#84): ONE shared effectful LOGIC function — `net.fetch(1) + net.fetch(2)` —
 composed with TWO different reusable HANDLER-INSTALLER functions (`test`/`prod`, each installing
-its own `handle … with Net`), producing two different, distinguishable stage outputs (combined
+a named realization of the `Stage_Net` contract), producing two different, distinguishable stage outputs (combined
 into one printable Int: `stage1_result * 1000 + stage2_result`, so both are legible in the single
 `expected.txt` value). Demonstrates the thesis directly: "the stage IS the handler; the row is the
 interface contract" — the SAME `logic` function, unchanged, means something different depending on
@@ -11,25 +11,38 @@ which installer it is passed to: `test` (`fetch(n) => n * 10`, `30 * 1000 = 3000
 
 ```
 lake exe bang run examples/stage-swap/main.bang    # 30005
+lake exe bang test examples/stage-swap/Stage.bang  # 2/2 laws pass
+lake exe bang query laws examples/stage-swap/main.bang
 ```
+
+`Stage.bang` owns the reusable semantic unit: the `Net` effect contract, a `stable`
+law saying repeated fetches of one key agree, and the `Test`/`Prod` named handler
+realizations. The law runner checks the same obligation against both realizations;
+resolver-aware queries retain both imported facts from the entry file.
 
 ## The wrapper pattern (operator-ruled, #84 gap 2)
 
-A reusable "handler" is a `pub` FUNCTION that installs the `handle` around a body it receives:
+A runtime-selectable stage is a FUNCTION that installs a statically named realization around a
+body it receives:
 
 ```
-let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }}
-             : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) )
+let test = ( {fun body => handle (($body)(net)) with Stage_Test as net}
+             : Thunk (Thunk (Cap Stage_Net -> Int ! {Stage_Net}) -> Int) )
 ```
 
 Wrapper functions are already first-class values — passable, storable, and RUNTIME-selectable
-(`(if flag then test else prod)(logic)`) — which is what the per-stage story needs, and delivers
-it with ZERO kernel change: the reusable artifact is the INSTALLER, not a reified handler value.
+— which is what the per-stage story needs. `main.bang` now exercises that route directly with
+`let selected = if 1 == 1 then test else prod`: choice is dynamic at the installer layer while
+each installer expands a named realization through the existing custom-handler path. This delivers
+runtime stage selection with ZERO kernel change; the first-class artifact is the installer, not a
+reified handler value.
 
-The SHARED logic is an ordinary `Cap Net`-typed function (#84 gap 1: cap-typed function params):
+The SHARED logic is an ordinary `Cap Stage_Net`-typed function (#84 gap 1: cap-typed function params):
 
 ```
-let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) )
+let logic =
+  ( {fun net => (net.fetch(1)) + (net.fetch(2))}
+    : Thunk (Cap Stage_Net -> Int ! {Stage_Net}) )
 ```
 
 **v1 surface notes** (both pre-existing, not this example's doing — see `Bang/Frontend/TypeCheck.lean`'s

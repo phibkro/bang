@@ -39,11 +39,12 @@ def handlesOp : Handler → Label → OpId → Bool
       (ℓ' = ℓ) && (op == "newTVar" || op == "readTVar" || op == "writeTVar")
   -- custom (ADR-0085 #44 STAGE 2, ADR-0087 finite rep): REAL — the general user-defined-effect handler
   -- services `op` iff its label matches AND its finite CLAUSE LIST has an entry (first-match lookup
-  -- `clauses.find? (·.1 == op)`). Mirrors the built-ins' shape (label-match `&&` op-membership),
+  -- `clauses.find? (fun clause => clause.1.op == op)`). Mirrors the built-ins' shape (label-match `&&` op-membership),
   -- generalized from a hardcoded op-string set to the user's clause list. Still UNTYPED (stage 3), so no
   -- well-typed program routes here (typed soundness discharges custom via `HasStack` having no custom
   -- frame — `handle_custom_uninhabited`/`concat_custom_absurd`).
-  | .custom ℓ' _ clauses, ℓ, op => (ℓ' = ℓ) && (clauses.find? (·.1 == op)).isSome
+  | .custom ℓ' _ clauses, ℓ, op =>
+      (ℓ' = ℓ) && (clauses.find? (fun clause => clause.1.op == op)).isSome
 
 /-- `handlesOp` forces the label match: a catching handler's `label` IS the dispatched `ℓ`. -/
 theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp h ℓ op = true) :
@@ -167,15 +168,27 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) :
       -- STACK SHAPE. The clause is the RESUME FOCUS: it binds the carried param `p` at index 1 and the
       -- operation ARGUMENT `v` at index 0 (both CLOSED — the focus is always closed), and computes in TAIL
       -- position the value that resumes `Kᵢ` (resume is implicit-at-tail — no first-class continuation, so
-      -- labelling/Q22 stays untouched). The reinstalled param is `p` UNCHANGED: v1 is a READ-ONLY param
-      -- (reader/config/Net — `get`-like); put-like param MUTATION is a stage-4 concern. Zero-shot abort is
+      -- labelling/Q22 stays untouched). Plain keys reinstall `p`; ADR-0114 updating keys install the explicit
+      -- next parameter from their result envelope before resumption. Zero-shot abort is
       -- the `throws` built-in coexisting (ADR-0085 "throws generalized"). Substitution mirrors `split`
       -- (idx1 then idx0): `subst p (subst (shift v) clause)` = `clause[param@1 := p, arg@0 := v]`.
       | .custom ℓ' p clauses =>
-          match clauses.find? (·.1 == op) with
+          match clauses.find? (fun clause => clause.1.op == op) with
           | some clause =>
-              some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ,
-                    Comp.subst p (Comp.subst (Val.shift v) clause.2))
+              let body := Comp.subst p (Comp.subst (Val.shift v) clause.2)
+              if clause.1.updates then
+                -- ADR-0114 S0: an updating ret-shaped clause returns an explicit
+                -- `(resumeValue, nextParam)` envelope. Install the next parameter
+                -- before resuming; malformed untyped envelopes are fail-loud.
+                match body with
+                | .ret (.pair resumeValue nextParam) =>
+                    some (Kᵢ ++ Frame.handleF n (.custom ℓ' nextParam clauses) :: Kₒ,
+                          .ret resumeValue)
+                | _ =>
+                    some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ,
+                          .wrong "custom update clause must return (result, next param)")
+              else
+                some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ, body)
           | none => none   -- UNREACHABLE: the `handlesOp` guard forced `(clauses.find? …).isSome` before here.
 
 /-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the

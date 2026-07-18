@@ -322,22 +322,26 @@ def wUnwindFind : Nat → Bang.OpId → HStack → Option (Code × VStack × HSt
                      else (wUnwindFind n op hs).map (fun p => (p.1, p.2.1, p.2.2))
       | _ => (wUnwindFind n op hs).map (fun p => (p.1, p.2.1, p.2.2))
 
-/-- WASM analog of CalcVM's `customUpdate` (ADR-0085 Stage 4 user-effect inline clause-service):
-find the nearest `custom ℓ`-frame with IDENTITY `n`, look up the op's clause, and return the
-clause BODY (`subst p (subst (shift v) clause.2)`) to run BEFORE the resume continuation, the
-frame kept live (κ unchanged). STRUCTURALLY IDENTICAL to CalcVM's `customUpdate` (same recursion,
-same `Handler.custom` payload — the WASM HStack shares `Handler`, so the clauses live in the shared
-`custom ℓ0 p cls`). No matching clause / no custom frame at `n` ⇒ `none` (the caller falls through
-to `wUnwindFind`, the throws path). The returned `Comp` is re-compiled+lowered at the `opH` custom
-arm, mirroring `exec`'s `compile body c` (invariant #4). -/
+/-- WASM analog of CalcVM's `customUpdate`: find the nearest custom frame with identity `n`,
+instantiate the matching clause, and either run a plain body or consume an updating clause's
+direct `(resumeValue, nextParam)` result while replacing the live frame parameter. -/
 def wCustomUpdate : Nat → Bang.OpId → Bang.Val → HStack → Option (Comp × HStack)
   | _, _, _, []       => none
   | n, op, v, fr :: hs =>
       match fr.handler with
       | .custom _ p cls =>
           if fr.id = n then
-            match cls.find? (·.1 == op) with
-            | some clause => some (Comp.subst p (Comp.subst (Val.shift v) clause.2), fr :: hs)
+            match cls.find? (fun clause => clause.1.op == op) with
+            | some clause =>
+                let body := Comp.subst p (Comp.subst (Val.shift v) clause.2)
+                if clause.1.updates then
+                  match body with
+                  | .ret (.pair resumeValue nextParam) =>
+                      some (.ret resumeValue,
+                        { fr with handler := .custom fr.handler.label nextParam cls } :: hs)
+                  | _ => some (.wrong "custom update clause must return (result, next param)", fr :: hs)
+                else
+                  some (body, fr :: hs)
             | none        => none
           else (wCustomUpdate n op v hs).map (fun q => (q.1, fr :: q.2))
       | _ => (wCustomUpdate n op v hs).map (fun q => (q.1, fr :: q.2))
@@ -657,12 +661,19 @@ theorem wCustomUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
           rw [hfr] at h
           by_cases hid : fr.id = n
           · simp only [hid, if_pos rfl] at h
-            cases hcl : cl.find? (·.1 == op) with
+            cases hcl : cl.find? (fun clause => clause.1.op == op) with
             | none => rw [hcl] at h; simp at h
             | some clause =>
-                rw [hcl] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h
-                obtain ⟨rfl, rfl⟩ := h
-                simp [wCustomUpdate, injHStack, injHFrame, hfr, hid, hcl]
+                rw [hcl] at h
+                by_cases hupd : clause.1.updates = true
+                · simp only [hupd, if_true] at h
+                  split at h <;>
+                    simp only [Option.some.injEq, Prod.mk.injEq] at h <;>
+                    obtain ⟨rfl, rfl⟩ := h <;>
+                    simp_all [wCustomUpdate, injHStack, injHFrame]
+                · simp only [hupd, if_false] at h
+                  obtain ⟨rfl, rfl⟩ := Option.some.inj h
+                  simp [wCustomUpdate, injHStack, injHFrame, hfr, hid, hcl, hupd]
           · simp only [hid, if_neg hid] at h
             cases hrec : CalcVM.customUpdate n op v hs with
             | none => rw [hrec] at h; simp at h
@@ -709,9 +720,14 @@ theorem wCustomUpdate_comm_none (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
           simp only [hfr] at h ⊢
           by_cases hid : fr.id = n
           · simp only [hid, if_pos rfl] at h ⊢
-            cases hcl : cl.find? (·.1 == op) with
+            cases hcl : cl.find? (fun clause => clause.1.op == op) with
             | none => simp only [hcl] at h ⊢; rfl
-            | some clause => rw [hcl] at h; simp at h
+            | some clause =>
+                rw [hcl] at h
+                by_cases hupd : clause.1.updates = true
+                · simp only [hupd, if_true] at h
+                  split at h <;> simp at h
+                · simp [hupd] at h
           · simp only [hid, if_neg hid] at h ⊢
             cases hrec : CalcVM.customUpdate n op v hs with
             | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
@@ -1335,10 +1351,8 @@ theorem txnUpdate_hstackOk :
                       · exact hfr
                       · exact ih hsh0 hrec fr2 hfr2
 
-/-- `customUpdate` preserves `HStackOk` (the custom sibling of `stateUpdate_hstackOk`): a serviced
-custom op keeps the frame LIVE and UNCHANGED (returns `fr :: hs` — no `savedCode` rewrite; the param
-is READ-ONLY in v1), so every frame's `savedCode` stays `CodeOk`. The `HStackOk` fact the OP custom
-clause-service arm needs to recurse on the recompiled clause body (#62). -/
+/-- `customUpdate` preserves `HStackOk`: a serviced custom op keeps the frame live and may replace
+its private parameter, but never changes any frame's saved continuation. -/
 theorem customUpdate_hstackOk {n : Nat} {op : Bang.OpId} {v : Bang.Val} :
     ∀ {hs : CalcVM.HStack} {body hs'}, HStackOk hs → CalcVM.customUpdate n op v hs = some (body, hs') →
       HStackOk hs' := by
@@ -1355,10 +1369,21 @@ theorem customUpdate_hstackOk {n : Nat} {op : Bang.OpId} {v : Bang.Val} :
           rw [hfrh] at h
           by_cases hid : fr.id = n
           · simp only [hid, if_pos rfl] at h
-            cases hcl : cl.find? (·.1 == op) with
+            cases hcl : cl.find? (fun clause => clause.1.op == op) with
             | none => rw [hcl] at h; simp at h
-            | some clause => rw [hcl] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h
-                             obtain ⟨_, rfl⟩ := h; exact hsh   -- frame kept live + unchanged
+            | some clause =>
+                rw [hcl] at h
+                by_cases hupd : clause.1.updates = true
+                · simp only [hupd, if_true] at h
+                  split at h <;>
+                    simp only [Option.some.injEq, Prod.mk.injEq] at h <;>
+                    obtain ⟨_, rfl⟩ := h <;>
+                    intro fr2 hfr2 <;>
+                    rcases List.mem_cons.mp hfr2 with rfl | hfr2
+                  all_goals first | exact hfr | exact hsh0 fr2 hfr2
+                · simp only [hupd, if_false, Option.some.injEq, Prod.mk.injEq] at h
+                  obtain ⟨_, rfl⟩ := h
+                  exact hsh
           · simp only [hid, if_neg hid] at h
             cases hrec : CalcVM.customUpdate n op v hs with
             | none => rw [hrec] at h; simp at h
@@ -2337,9 +2362,15 @@ theorem evalD_mono : ∀ (f g : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (�
             | none => simp only [hσ, hτ, hκ] at h ⊢; exact h
             | some pcls =>
                 obtain ⟨p, cls⟩ := pcls
-                cases hcl : cls.find? (·.1 == op) with
+                cases hcl : cls.find? (fun clause => clause.1.op == op) with
                 | none => simp only [hσ, hτ, hκ, hcl] at h ⊢; exact h
-                | some clause => simp only [hσ, hτ, hκ, hcl] at h ⊢; exact ih _ _ _ _ _ r h
+                | some clause =>
+                    simp only [hσ, hτ, hκ, hcl] at h ⊢
+                    by_cases hupd : clause.1.updates = true
+                    · simp only [hupd, if_true] at h ⊢
+                      exact h
+                    · simp only [hupd, if_false] at h ⊢
+                      exact ih _ _ _ _ _ r h
         | _ => simp only [CalcVM.evalD] at h ⊢ <;> exact h
     | handle hh M =>
         cases hh with
@@ -2876,11 +2907,11 @@ example : Wasmfx.run 50
 -- carried continuation `cc` at the `opH` custom arm — exactly `exec`'s `compile body c`, lowered.
 -- wexec ≡ kernel (106), the build-enforced witness that the custom OP-resume branch is sound.
 example : Source.eval 200
-    (.handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
+    (.handle (.custom 1 (.vint 100) [(.plain "read", .binop .add (.vvar 0) (.vvar 1))])
       (.letC (.perform (.vvar 0) "read" (.vint 5)) (.binop .add (.vvar 0) (.vint 1))))
     = Result.done (.vint 106) := by rfl
 example : Wasmfx.run 200
-    (compileC (.handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
+    (compileC (.handle (.custom 1 (.vint 100) [(.plain "read", .binop .add (.vvar 0) (.vvar 1))])
       (.letC (.perform (.vvar 0) "read" (.vint 5)) (.binop .add (.vvar 0) (.vint 1)))))
     = some (.int 106) := by rfl
 
@@ -2897,12 +2928,12 @@ example : Wasmfx.run 100 (compileC (.handle (.custom 2 .vunit []) (.ret (.vint 5
 -- under the drop (kernel + wexec agree).
 example : Source.eval 80
     (.handle (.throws 0)
-      (.letC (.handle (.custom 3 .vunit [("known", .ret (.vint 1))])
+      (.letC (.handle (.custom 3 .vunit [(.plain "known", .ret (.vint 1))])
                (.letC (.perform (.vvar 1) "raise" (.vint 9)) (.ret (.vint 99)))) (.ret (.vvar 0))))
     = Result.done (.vint 9) := by rfl
 example : Wasmfx.run 80
     (compileC (.handle (.throws 0)
-      (.letC (.handle (.custom 3 .vunit [("known", .ret (.vint 1))])
+      (.letC (.handle (.custom 3 .vunit [(.plain "known", .ret (.vint 1))])
                (.letC (.perform (.vvar 1) "raise" (.vint 9)) (.ret (.vint 99)))) (.ret (.vvar 0)))))
     = some (.int 9) := by rfl
 
@@ -2910,11 +2941,11 @@ example : Wasmfx.run 80
 -- walks past `inc`), resuming the letC continuation. Strengthens the corpus over the multi-clause
 -- find (the frozen headline holds over a non-singleton clause list). wexec ≡ kernel.
 example : Source.eval 200
-    (.handle (.custom 4 .vunit [("inc", .binop .add (.vvar 0) (.vint 1)), ("dbl", .binop .add (.vvar 0) (.vvar 0))])
+    (.handle (.custom 4 .vunit [(.plain "inc", .binop .add (.vvar 0) (.vint 1)), (.plain "dbl", .binop .add (.vvar 0) (.vvar 0))])
       (.letC (.perform (.vvar 0) "dbl" (.vint 6)) (.binop .add (.vvar 0) (.vint 1))))
     = Result.done (.vint 13) := by rfl
 example : Wasmfx.run 200
-    (compileC (.handle (.custom 4 .vunit [("inc", .binop .add (.vvar 0) (.vint 1)), ("dbl", .binop .add (.vvar 0) (.vvar 0))])
+    (compileC (.handle (.custom 4 .vunit [(.plain "inc", .binop .add (.vvar 0) (.vint 1)), (.plain "dbl", .binop .add (.vvar 0) (.vvar 0))])
       (.letC (.perform (.vvar 0) "dbl" (.vint 6)) (.binop .add (.vvar 0) (.vint 1)))))
     = some (.int 13) := by rfl
 

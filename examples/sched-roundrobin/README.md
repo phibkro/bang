@@ -22,8 +22,8 @@ pub effect Sched { spawn : Int -> Int, next : Int -> Int }
 `spawn` registers a task (echoes back the caller-chosen id — see `Sched.bang`'s doc
 comment for why v1 can't allocate ids inside the handler itself). `next` is the
 scheduling DECISION: the driver calls `sched.next(round)` once per round (passing a
-plain round counter, not a mutable "whose turn" register — v1 handler params are
-read-only, ADR-0095 D4/ADR-0092 D5), and the handler returns which runnable task index
+plain round counter, not a mutable "whose turn" register — these clauses are deliberately
+plain/read-only; ADR-0114's `update` form is not used), and the handler returns which runnable task index
 goes next. Everything about HOW tasks interleave lives in that one clause:
 
 ```bang

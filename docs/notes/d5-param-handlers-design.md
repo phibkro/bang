@@ -1,5 +1,11 @@
-<!-- note-status: active -->
+<!-- note-status: historical -->
 # D5 — parameterised handlers (handler memory): design probe with HOLD (#44 rung-2 face)
+
+> **Historical design probe.** ADR-0114 has now landed the explicit `ClauseKey.plain` /
+> `ClauseKey.updating` protocol across typing, source dispatch, CalcVM, EnvMachine, abstract Wasm,
+> and concrete WasmGC. Statements below written in the present tense describe the pre-ADR baseline;
+> the final design differs from the early value-shape proposal by recording update intent in the
+> clause key, so ordinary product-valued results remain unambiguous.
 
 > The task (2026-07-12, Wave C): design **D5 — parameterised handlers / handler memory**, the
 > rung-1→2 boundary of the effect-algebra ladder (`effect-algebra-survey.md` §2, Plotkin–Pretnar
@@ -7,7 +13,7 @@
 > demo's seed/queue threading through the driver, the DST examples' ret-shape contortions, the Fs
 > sim-map wanting state. **ADR-input probe, not an ADR — DESIGN-FIRST with a HOLD before any
 > implementation** (the proven spine is touched). Every kernel claim is `file:line` or ADR; the
-> ergonomic claim is a runnable witness (`Bang/Witness/D5ParamHandlerWitness.lean`, 5 `#guard`s
+> ergonomic claim is a runnable witness (`Bang/Witness/D5ParamHandlerWitness.lean`, 6 `#guard`s
 > green). Terminology guard: the "**D5**" here is the effect-algebra ladder's rung-2 **param-update**
 > (ADR-0092 §D5 open item / ADR-0087 §Open-questions) — NOT ADR-0095's decision-list "(D5)" (the
 > `resume` surface spelling), a different D5.
@@ -352,7 +358,8 @@ value reinstall template) `:177-181` (custom arm, read-only param — the ONE ar
 (custom_resume_focus_types — the grade-freedom the pair preserves) `:3392` (custom_program_safe) ·
 `BinaryLR.lean:662,700` (krelS_state_reinstall + its PUT arm = D5's template) `:1307` (krelS_custom_
 reinstall — read-only today, the heart to lift) · `AbstractMachine.lean:318` (evalD custom arm, CStore)
-· `Bang/Witness/D5ParamHandlerWitness.lean` (5 green `#guard`s: the mechanism + the before/after).
+· `Bang/Witness/D5ParamHandlerWitness.lean` (6 green `#guard`s plus a typed updating-clause theorem:
+the mechanism + the before/after).
 ADRs: 0025 (resumptive state — the parameterised-handler precedent) · 0030 (transaction — multi-cell
 state) · 0085 (custom coexist, one-shot v1) · 0087 (finite rep + §Open-questions where param-update
 is named) · 0092 §D5 (the read-only-param deferral this note designs the lift of) · 0095 (surface;

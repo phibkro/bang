@@ -11,7 +11,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 #
 # Corpus (whole example PROGRAMS with an `expected.txt` oracle):
 #   json (import-ing multi-module) · factorial (bignum print path) · logger-counting (EFFECTFUL —
-#   an in-program handler the GC path lowers). Each is built to a module, run on wasmtime, diffed.
+#   an in-program handler the GC path lowers) · stateful-quota (ADR-0114 updating custom clause).
+# Each is built to a module, run on wasmtime, and diffed.
 # The --component leg additionally wraps json as a WASI component (via the pinned preview1 adapter,
 # fetched to a cache) and asserts the component prints the same value — the full static story.
 #
@@ -102,6 +103,7 @@ echo "── MODULE form: bang build → wasm-tools parse/validate → wasmtime 
 build_and_run json            # import-ing multi-module  → 163
 build_and_run factorial       # bignum print path         → 25!
 build_and_run logger-counting # EFFECTFUL (in-prog handler) → 3
+build_and_run stateful-quota  # EFFECTFUL updating custom clause → 10
 
 # ── default output name: `bang build <file>` with no -o writes <stem>.wasm in CWD ──
 echo "── default output name (<stem>.wasm) ──"
@@ -157,8 +159,8 @@ fi
 echo "──────────────────────────────"
 echo "bang build: $pass passed, $fail failed"
 # The count varies by the --component branch (both branches emit exactly 2 checks), so the module
-# legs (3×2=6) + default-out (2) + component branch (2) = 10 is invariant across online/offline.
-want_total=10
+# legs (4×2=8) + default-out (2) + component branch (2) = 12 is invariant across online/offline.
+want_total=12
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks, only $got_total ran (script truncated?)"

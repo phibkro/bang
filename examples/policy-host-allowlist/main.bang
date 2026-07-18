@@ -1,0 +1,21 @@
+import Policy
+
+let plugin =
+  ( {fun net =>
+      pledge {Policy_Net} in
+      let internal = net.connect(7) in
+      let public = net.connect(9) in
+      internal * 10 + public}
+    : Thunk (Cap Policy_Net -> Int ! {Policy_Net}) ) in
+let install =
+  ( {fun allowed =>
+      fun body =>
+        handle (($body)(net))
+        with (Policy_Net allowed) as net {
+          connect(host) => if host == param then 1 else 0
+        }}
+    : Thunk (Int -> Thunk (Cap Policy_Net -> Int ! {Policy_Net}) -> Int) ) in
+let selectedHost = if 1 == 1 then 7 else 9 in
+let selected = (($install) selectedHost) plugin in
+let publicOnly = (($install) 9) plugin in
+selected * 100 + publicOnly

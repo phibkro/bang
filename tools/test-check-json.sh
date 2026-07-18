@@ -95,6 +95,33 @@ got_mf="$("$bang" check --json "$tmpdir/mf/main.bang" 2>/dev/null)" || true
 check "75-multi-file-grant-intact-code-type" "$(printf '%s' "$got_mf" | grep -o '"code":"type"' || true)" '"code":"type"'
 check "75-multi-file-grant-intact-span-null" "$(printf '%s' "$got_mf" | grep -o '"span":null' || true)" '"span":null'
 
+# ── ADR-0112: `pledge` is a checked row ceiling. Pin both the admitted plugin and the exact
+# rejected class through the public JSON/exit-code surface (not only Lean-level checker guards). ──
+got_pledge_ok="$("$bang" check --json examples/pledged-plugin/main.bang 2>/dev/null)" && got_pledge_ok_exit=0 || got_pledge_ok_exit=$?
+check "pledge-admits-bounded-plugin" "$got_pledge_ok" '{"ok":true,"diagnostics":[]}'
+check "pledge-admits-exit" "$got_pledge_ok_exit" "0"
+
+pledge_bad_src='effect Audit { record : Int -> Int }
+effect Secret { reveal : Int -> Int }
+handler A implements Audit { record(n) => n }
+handler S implements Secret { reveal(n) => n }
+handle (handle (pledge {Audit} in let x = audit.record(1) in secret.reveal(x)) with A as audit) with S as secret'
+got_pledge_bad="$(printf '%s' "$pledge_bad_src" | "$bang" check --json 2>/dev/null)" && got_pledge_bad_exit=0 || got_pledge_bad_exit=$?
+check "pledge-rejects-extra-effect" "$(printf '%s' "$got_pledge_bad" | grep -o 'pledge violation' || true)" "pledge violation"
+check "pledge-rejects-exit" "$got_pledge_bad_exit" "1"
+
+# ── ADR-0114: the public checker accepts the explicit update protocol and rejects a malformed
+# envelope with the construct-specific teaching diagnostic (not a later lowering/runtime crash). ──
+got_update_ok="$("$bang" check --json examples/stateful-quota/main.bang 2>/dev/null)" && got_update_ok_exit=0 || got_update_ok_exit=$?
+check "update-clause-valid" "$got_update_ok" '{"ok":true,"diagnostics":[]}'
+check "update-clause-valid-exit" "$got_update_ok_exit" "0"
+
+update_bad_src='effect Quota { connect : Int -> Int }
+handle quota.connect(7) with (Quota 1) as quota { update connect(host) => param }'
+got_update_bad="$(printf '%s' "$update_bad_src" | "$bang" check --json 2>/dev/null)" && got_update_bad_exit=0 || got_update_bad_exit=$?
+check "update-clause-envelope-diagnostic" "$(printf '%s' "$got_update_bad" | grep -o 'must return a value pair' || true)" "must return a value pair"
+check "update-clause-envelope-exit" "$got_update_bad_exit" "1"
+
 # ── every examples/*/main.bang round-trips ok:true through --json (the corpus, not just one file) ──
 examples_pass=0
 examples_fail=0
@@ -178,7 +205,7 @@ echo "────────────────────────�
 echo "check-json: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run (the gotcha the mission
 # brief calls out) even if every individual `check` that DID run happened to pass.
-want_total=32
+want_total=40
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

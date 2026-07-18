@@ -1,0 +1,18 @@
+pub effect Codec {
+  encode : Int -> Int
+  decode : Int -> Int
+  law decode_encode(codec, x):
+    let encoded = codec.encode(x) in codec.decode(encoded) == x
+  law encode_decode(codec, x):
+    let decoded = codec.decode(x) in codec.encode(decoded) == x
+}
+
+pub handler Identity implements Codec {
+  encode(x) => x,
+  decode(x) => x
+}
+
+pub handler Shift7 implements Codec {
+  encode(x) => x + 7,
+  decode(x) => x - 7
+}

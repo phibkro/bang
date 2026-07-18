@@ -1,0 +1,5 @@
+import Policy
+let plugin = ({fun audit =>
+    pledge {Policy_Audit} in audit.record(41)} : Thunk (Cap Policy_Audit -> Int ! {Policy_Audit}))
+  in
+handle $plugin audit with Policy_Count as audit

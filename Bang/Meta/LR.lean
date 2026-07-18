@@ -606,7 +606,7 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
   simp only [renameH]
 @[simp] theorem renameH_transaction (σ : Nat → Nat) (ℓ : Label) (Θ : List Val) :
     renameH σ (.transaction ℓ Θ) = .transaction ℓ (Θ.map (renameV σ)) := by simp only [renameH]
-@[simp] theorem renameH_custom (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) :
+@[simp] theorem renameH_custom (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : List (ClauseKey × Comp)) :
     renameH σ (.custom ℓ p cl) = .custom ℓ p cl := by simp only [renameH]
 
 @[simp] theorem renameF_letF (σ : Nat → Nat) (N : Comp) : renameF σ (.letF N) = .letF (renameC σ N) := rfl
@@ -1525,8 +1525,8 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
         ∀ i : Nat, i < Θ₁.length →
           VrelK (Eff := Eff) (Mult := Mult) n VTy.int (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
   -- custom (#44 STAGE 5, ADR-0092 §D3 ret-shape): the user-effect analogue of `state`'s stored-cell
-  -- relation. Same label, same clause list (`cl₁ = cl₂` — v1 clauses are closed source literals, both
-  -- sides run the SAME handler), and the carried READ-ONLY param `p₁ ~ p₂` at SOME param type `P` under
+  -- relation. Same label, same clause list (`cl₁ = cl₂` — clauses are closed source literals, both
+  -- sides run the SAME handler), and the carried evolving param `p₁ ~ p₂` at SOME param type `P` under
   -- which the clause list is well-typed (`∃ P, VrelK n P p₁ p₂ ∧ HasClauses ℓ₁ P cl₁`) — the exact shape
   -- of state's `∃ S, VrelK n S s₁ s₂`, with `HasClauses` carrying the interface the reinstall resumes at.
   | Handler.custom ℓ₁ p₁ cl₁, Handler.custom ℓ₂ p₂ cl₂ =>
@@ -1643,7 +1643,7 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} :
         exact hh
       · -- transaction/transaction: pointwise heap mono
         exact ⟨hh.1, hh.2.1, fun i hi => VrelK_mono hmn (hh.2.2 i hi)⟩
-      · -- custom/custom: relate the read-only param at the smaller index (clauses unchanged)
+      · -- custom/custom: relate the current carried param at the smaller index (clauses unchanged)
         exact ⟨hh.1, hh.2.1, hh.2.2.imp fun _ hpv => ⟨VrelK_mono hmn hpv.1, hpv.2⟩⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK

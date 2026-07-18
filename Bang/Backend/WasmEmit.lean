@@ -700,21 +700,21 @@ def GCState.freshTag (st : GCState) : Nat × GCState :=
   - `none`        : an ordinary value binder (letC result, lam arg, case/split payload, state box).
   - `throwsTag t` : a `handle (throws)` cap-binder — a `raise` on it emits `throw $exn{t}` (tag
                     identity = lexical dispatch, exactly the inline `.cap t` Slot).
-  - `customClo f p`: a `handle (custom p cls)` cap-binder (RUNG 5 S4) — a matching `perform op v`
-                    `call_ref`s the lifted clause fn `f` with `(v :: p :: handlerEnv)`; `p` is the
-                    handler param $val (read-only in v1). Non-matching ops fall through to a raise.
+  - `custom`: a `handle (custom p cls)` cap-binder (RUNG 5 S4). The cap's runtime `$txbox`
+              owns the clause closures and their shared mutable parameter environment.
 Pushed identically to the `$env` at every binder so index `i` agrees between the two. -/
 inductive CapSlot where
   | none      : CapSlot
   | throwsTag : Nat → CapSlot
   -- RUNG 5 S4: a `handle (custom p cls)` cap-binder. `clauses` maps each op NAME to its POSITION in the
   -- cap's clause-closure list (a $env of lam-style `$clos`, built at the handle site capturing
-  -- `p :: handlerEnv`, held in a $txbox stored in the cap's ENV slot — so a nested closure that
+  -- a shared mutable `p :: handlerEnv`, held in a $txbox stored in the cap's ENV slot — so a nested closure that
   -- performs the op reaches it via $lookup, NOT a compile-time local). A matching `perform op v`
   -- `call_ref`s the clause at that position with arg `v` ⇒ body env `(v :: p :: handlerEnv)` — the
-  -- image of `subst p (subst (shift v) clause.2)`. An unhandled op raises (kernel: no matching clause ⇒
+  -- image of `subst p (subst (shift v) clause.2)`. Updating keys consume the returned pair and replace
+  -- that shared environment's head before resuming. An unhandled op raises (kernel: no matching clause ⇒
   -- `.raised`), refused loudly here (v1 has no runtime raise-forward on the GC path).
-  | custom    : List (String × Nat) → CapSlot
+  | custom    : List (Bang.ClauseKey × Nat) → CapSlot
   deriving Inhabited
 
 /-- Wrap a statement-prefixed sequence (`local.set …`s followed by a value expression) in a
@@ -979,9 +979,10 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
       match caps[i]? with
       | some (.custom clauseMap) =>
           -- S4: user op. Find its clause POSITION; look up the cap's $txbox (env-reachable), walk its
-          -- clause list to that position, `call_ref` with the op-value v (one-shot resume, κ unchanged).
-          match clauseMap.find? (·.1 == op) with
-          | some (_, pos) =>
+          -- clause list to that position, and `call_ref` with the op-value v. An updating key consumes
+          -- the returned `(resumeValue, nextParam)` pair and mutates the handler's shared parameter env.
+          match clauseMap.find? (fun clause => clause.1.op == op) with
+          | some (key, pos) =>
               match emitValGC envL caps v st with
               | (.unsup r, st') => (.unsup r, st')
               | (.ok ev, st1) =>
@@ -989,8 +990,14 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
                   -- #134 ESCAPE STAMP: gate the custom cap's $txbox $id before dispatching its clause.
                   let capBox := s!"(ref.cast (ref $txbox) {lookupGC envL i})"
                   let cloE := s!"(call $clausecell (struct.get $txbox $list {capBox}) (i64.const {pos}))"
-                  let gated := s!"(call $capGate (struct.get $txbox $id {capBox}))\n    {callClosGC tmpL cloE ev}"
-                  (.ok (seqBlock gated), st2)
+                  let gate := s!"(call $capGate (struct.get $txbox $id {capBox}))"
+                  if key.updates then
+                    let (resultL, st3) := st2.fresh tyVal
+                    let pairE := s!"(ref.cast (ref $pair) (local.get {resultL}))"
+                    let paramEnv := s!"(struct.get $txbox $param {capBox})"
+                    (.ok (seqBlock s!"{gate}\n    (local.set {resultL} {callClosGC tmpL cloE ev})\n    (struct.set $env $hd {paramEnv} (struct.get $pair 1 {pairE}))\n    (struct.get $pair 0 {pairE})"), st3)
+                  else
+                    (.ok (seqBlock s!"{gate}\n    {callClosGC tmpL cloE ev}"), st2)
           | none => (.unsup s!"custom op {op} unhandled by the handler's clause list (kernel: raises; no GC raise-forward in v1)", st)
       | some (.throwsTag t) =>
           if op = "raise" then
@@ -1059,13 +1066,17 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
             | (.unsup r, st') => (.unsup r, st')
             | (.ok ev, st1) =>
                 let (tmpL, st2) := st1.fresh tyVal
+                let (resultL, st3) := st2.fresh tyVal
                 let capBox := s!"(ref.cast (ref $txbox) {lookupGC envL i})"
                 let hlist  := s!"(struct.get $txbox $list {capBox})"
                 -- gate id (escape), then guard single-op (clauselen==1 else trap), then dispatch pos 0.
                 let gate := s!"(call $capGate (struct.get $txbox $id {capBox}))"
                 let guard := s!"(if (i32.ne (call $clauselen {hlist}) (i32.const 1)) (then (unreachable)))"
                 let cloE := s!"(call $clausecell {hlist} (i64.const 0))"
-                (.ok (seqBlock s!"{gate}\n    {guard}\n    {callClosGC tmpL cloE ev}"), st2)
+                let pairE := s!"(ref.cast (ref $pair) (local.get {resultL}))"
+                let paramEnv := s!"(struct.get $txbox $param {capBox})"
+                let resume := s!"(if (result (ref null $val)) (struct.get $txbox $updates {capBox})\n      (then (struct.set $env $hd {paramEnv} (struct.get $pair 1 {pairE})) (struct.get $pair 0 {pairE}))\n      (else (local.get {resultL})))"
+                (.ok (seqBlock s!"{gate}\n    {guard}\n    (local.set {resultL} {callClosGC tmpL cloE ev})\n    {resume}"), st3)
       | none => (.unsup s!"perform target vvar {i} is free (open term) — no capability in scope", st)
   | .perform _ _ _ => (.unsup "perform on a non-vvar target (runtime cap / malformed — out of the GC-path fragment)", st)
   -- RUNG 5 S1: handle (state s₀) M on the GC path. Mint a $ref box holding s₀, PREPEND it as env slot
@@ -1132,11 +1143,11 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
             -- #134 ESCAPE STAMP: mint id (bumps $liveTop), stamp the $txbox with it. env slot 0 = H;
             -- body under a txcommit/txab rollback wrapper. On the COMMIT (fall-through) path, restore
             -- $liveTop after the block; on ABORT the throw_ref unwinds past here (an outer catcher's
-            -- exit restores). $txbox field 0 = $id, field 1 = $list (the journal).
-            (.ok (seqBlock s!"(local.set {idL} (call $capMint))\n    (local.set {hL} (struct.new $txbox (local.get {idL}) (ref.null $env)))\n    (local.set {e2L} (struct.new $env (local.get {hL}) (local.get {envL})))\n    (block $txc{hL} (result (ref null $val))\n      (block $txa{hL} (result exnref)\n        (try_table (result (ref null $val)) (catch_all_ref $txa{hL})\n          {bM})\n        (call $capExit (local.get {idL}))\n        (br $txc{hL}))\n      (struct.set $txbox $list (local.get {hL}) (ref.null $env))\n      (throw_ref))"), st3)
+            -- exit restores). The custom-only parameter fields are null/false for a transaction box.
+            (.ok (seqBlock s!"(local.set {idL} (call $capMint))\n    (local.set {hL} (struct.new $txbox (local.get {idL}) (ref.null $env) (ref.null $env) (i32.const 0)))\n    (local.set {e2L} (struct.new $env (local.get {hL}) (local.get {envL})))\n    (block $txc{hL} (result (ref null $val))\n      (block $txa{hL} (result exnref)\n        (try_table (result (ref null $val)) (catch_all_ref $txa{hL})\n          {bM})\n        (call $capExit (local.get {idL}))\n        (br $txc{hL}))\n      (struct.set $txbox $list (local.get {hL}) (ref.null $env))\n      (throw_ref))"), st3)
   -- RUNG 5 S4: handle (custom p cls) M on the GC path — user-defined effects (ADR-0085 Stage 4). A
-  -- custom op runs `subst p (subst (shift v) clause.2)` INLINE (κ unchanged, param read-only, one-shot
-  -- resume — no reified continuation, rung-5 design (c)). Image: build a local `pEnvL = (p ::
+  -- custom op runs `subst p (subst (shift v) clause.2)` INLINE (one-shot resume, no reified
+  -- continuation, rung-5 design (c)). Image: build a shared mutable `pEnvL = (p ::
   -- handlerEnv)`, lambda-lift EACH clause body as a lam-style `$clos` capturing pEnvL (so the clause's
   -- index 0 = the op-arg the fn prepends, index 1 = p, index ≥2 = handlerEnv — exactly the subst
   -- order). A matching `perform op v` `call_ref`s that closure with `v`. The CapSlot.custom carries the
@@ -1162,8 +1173,12 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
                   -- pEnvL := (p :: handlerEnv); cap env slot := the box; run M; save its value; restore
                   -- $liveTop; yield. A closure escaping in M's value that performs the op carries the
                   -- stamped cap; forced past this exit its $id >= $liveTop ⇒ $capGate traps. $txbox
-                  -- field 0 = $id, field 1 = $list (the clause-closure list).
-                  (.ok (seqBlock s!"(local.set {pEnvL} (struct.new $env {ep} (local.get {envL})))\n    (local.set {idL} (call $capMint))\n    (local.set {boxL} (struct.new $txbox (local.get {idL}) {listExpr}))\n    (local.set {capL} (struct.new $env (local.get {boxL}) (local.get {envL})))\n    (local.set {valL} {bM})\n    (call $capExit (local.get {idL}))\n    (local.get {valL})"), st5)
+                  -- fields are id, clause list, shared parameter env, and the first-clause update bit
+                  -- (the latter lets the supported single-op first-class-cap route preserve mode).
+                  let updateFlag : Nat := match cls with
+                    | (key, _) :: _ => if key.updates then 1 else 0
+                    | [] => 0
+                  (.ok (seqBlock s!"(local.set {pEnvL} (struct.new $env {ep} (local.get {envL})))\n    (local.set {idL} (call $capMint))\n    (local.set {boxL} (struct.new $txbox (local.get {idL}) {listExpr} (local.get {pEnvL}) (i32.const {updateFlag})))\n    (local.set {capL} (struct.new $env (local.get {boxL}) (local.get {envL})))\n    (local.set {valL} {bM})\n    (call $capExit (local.get {idL}))\n    (local.get {valL})"), st5)
   | .oom => (.unsup "oom", st)
   | .wrong s => (.unsup s!"wrong: {s}", st)
 
@@ -1172,7 +1187,8 @@ and BUILD an `$env` list of the closures with clause 0 FRONTMOST (so op-position
 the front). Returns the op→position map and the list-building expression (a nested `struct.new $env`).
 `pos` counts the current clause's position. `Except String` on refusal (a clause body that can't lower). -/
 partial def emitClauses (pEnvL : Nat) (caps : List CapSlot) (pos : Nat) :
-    List (String × Comp) → GCState → Except String (List (String × Nat) × String) × GCState
+    List (Bang.ClauseKey × Comp) → GCState →
+      Except String (List (Bang.ClauseKey × Nat) × String) × GCState
   | [], st => (.ok ([], "(ref.null $env)"), st)
   | (op, body) :: rest, st =>
       -- lam-style lift: the fn prepends its arg (the op-value v) at index 0; the captured env is
@@ -1233,12 +1249,12 @@ def gcTypes : String :=
   -- fail-loud (ADR-0063). For a TXN data cell (also a $ref) the id is inert (id 0) — txn cells are
   -- never performed on as caps; only the $txbox is the cap. `$box` (field 1) is the mutable payload.
   "    (type $ref  (sub $val (struct (field $id i64) (field $box (mut (ref null $val))))))\n" ++
-  -- RUNG 5 S3: a $txbox is the transaction HEAP box — a mutable pointer to the $env journal of $ref
-  -- cells. Distinct from $ref because its field is a $env list, not a $val (a $env is not a $val).
-  -- #134 ESCAPE STAMP: field $id = the txn/custom handler's minted identity; a perform on it gates
-  -- `$id < $liveTop` (escape ⇒ trap). `$list` (field 1) is the journal / clause-closure list.
-  "    (type $txbox (sub $val (struct (field $id i64) (field $list (mut (ref null $env))))))\n" ++
-  "    (type $env  (struct (field $hd (ref null $val)) (field $tl (ref null $env))))\n" ++
+  -- RUNG 5 S3/S4: `$list` is the transaction journal or custom clause list. Custom boxes also point
+  -- at the shared parameter environment and carry the single-op first-class update bit; transaction
+  -- boxes use null/false. `$env.$hd` is mutable solely so an updating clause can install nextParam
+  -- while every clause closure keeps capturing the same environment object.
+  "    (type $txbox (sub $val (struct (field $id i64) (field $list (mut (ref null $env))) (field $param (ref null $env)) (field $updates i32))))\n" ++
+  "    (type $env  (struct (field $hd (mut (ref null $val))) (field $tl (ref null $env))))\n" ++
   "    (type $fn   (func (param (ref null $env)) (param (ref null $val)) (result (ref null $val))))\n" ++
   "    (type $clos (sub $val (struct (field $code (ref $fn)) (field $env (ref null $env))))))"
 

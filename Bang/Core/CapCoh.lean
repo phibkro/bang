@@ -374,27 +374,82 @@ private theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val
                    · exact weakCoh_replace (by rfl) (wkV p (by simp only [capsV, List.mem_append] at h3 ⊢; tauto)))
               · exact weakCoh_replace (by rfl) (wkA p (Or.inr (Or.inr h'')))
     | custom ℓ' pm cl =>
-      -- custom (ADR-0085 stage 2, ADR-0087 finite rep): ONE-SHOT resume. dispatchOn reinstalls the frame
-      -- IDENTICALLY (K' = K, read-only param), so reassembled-stack coherence (2) mirrors `state`;
+      -- custom (ADR-0085 stage 2, ADR-0114): ONE-SHOT resume. Plain clauses reinstall the same frame;
+      -- updating clauses replace only its parameter, with both cases handled below;
       -- resume-focus coherence (1) splits (capsC_substFrom) into arg caps (wkV), param caps
       -- (`capsV pm ⊆ capsH custom`, via wkA), and the CLAUSE's own literal caps — THE D2 PAYOFF: those are
       -- now `capsCls cl ⊆ capsH custom` (enumerable), so the gh44s2 `sorry` closes via `capsCls_find?`.
       simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
       obtain ⟨_, hsome⟩ := hk
       obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
-      simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
-      obtain ⟨rfl, rfl⟩ := hd2
-      refine ⟨?_, ?_⟩
-      · intro q hq
+      have hbody : ∀ q ∈ capsC (Comp.subst pm (Comp.subst (Val.shift v) clause.2)),
+          WeakCoh (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' pm cl) :: Kₒ) q := by
+        intro q hq
         rcases capsC_substFrom 0 pm _ q hq with h' | h'
         · rcases capsC_substFrom 0 (Val.shift v) clause.2 q h' with h'' | h''
           · -- q ∈ capsC clause.2: the clause's OWN literal caps, now bounded (ADR-0087 enumerability).
-            exact weakCoh_replace (by rfl)
-              (wkA q (Or.inr (Or.inl (by simp only [capsH]; exact List.mem_append_right _ (capsCls_find? hcl q h'')))))
-          · rw [capsV_shiftFrom] at h''; exact weakCoh_replace (h := Handler.custom ℓ' pm cl) (by rfl) (wkV q h'')
-        · exact weakCoh_replace (by rfl)
-            (wkA q (Or.inr (Or.inl (by simp only [capsH]; exact List.mem_append_left _ h'))))
-      · intro q hq
+            apply wkA q
+            apply Or.inr
+            apply Or.inl
+            simp only [capsH]
+            exact List.mem_append_right _ (capsCls_find? hcl q h'')
+          · rw [capsV_shiftFrom] at h''; exact wkV q h''
+        · apply wkA q
+          apply Or.inr
+          apply Or.inl
+          simp only [capsH]
+          exact List.mem_append_left _ h'
+      simp only [dispatchOn, hcl] at hd2
+      by_cases hupdate : clause.1.updates = true
+      · rw [if_pos hupdate] at hd2
+        split at hd2
+        case h_1 resumeValue nextParam hbodyeq =>
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, rfl⟩ := hd2
+          refine ⟨?_, ?_⟩
+          · intro q hq
+            apply weakCoh_replace (h := Handler.custom ℓ' pm cl) (by rfl)
+            apply hbody q
+            rw [hbodyeq]
+            have hq' : q ∈ capsV resumeValue := by simpa only [capsC] using hq
+            simp only [capsC, capsV]
+            exact List.mem_append_left _ hq'
+          · intro q hq
+            apply weakCoh_replace (h := Handler.custom ℓ' pm cl) (by rfl)
+            rw [capsK_append] at hq; simp only [capsK, capsH] at hq
+            rcases List.mem_append.mp hq with hi | hrest
+            · exact wkA q (Or.inl hi)
+            · rcases List.mem_append.mp hrest with hhandler | ho
+              · rcases List.mem_append.mp hhandler with hnext | hcls
+                · apply hbody q
+                  rw [hbodyeq]
+                  simp only [capsC, capsV]
+                  exact List.mem_append_right _ hnext
+                · apply wkA q
+                  apply Or.inr
+                  apply Or.inl
+                  simp only [capsH]
+                  exact List.mem_append_right _ hcls
+              · exact wkA q (Or.inr (Or.inr ho))
+        case h_2 =>
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, rfl⟩ := hd2
+          refine ⟨?_, ?_⟩
+          · intro q hq
+            have : q ∈ ([] : List (Nat × Label)) := by simpa only [capsC] using hq
+            exact (List.not_mem_nil this).elim
+          · intro q hq
+            rw [capsK_append] at hq; simp only [capsK, capsH] at hq
+            rcases List.mem_append.mp hq with h' | h'
+            · exact wkA q (Or.inl h')
+            · rcases List.mem_append.mp h' with h'' | h''
+              · exact wkA q (Or.inr (Or.inl (by simpa only [capsH] using h'')))
+              · exact wkA q (Or.inr (Or.inr h''))
+      · rw [if_neg hupdate] at hd2
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+        obtain ⟨rfl, rfl⟩ := hd2
+        refine ⟨fun q hq => weakCoh_replace (by rfl) (hbody q hq), ?_⟩
+        intro q hq
         rw [capsK_append] at hq; simp only [capsK, capsH] at hq
         rcases List.mem_append.mp hq with h' | h'
         · exact weakCoh_replace (by rfl) (wkA q (Or.inl h'))

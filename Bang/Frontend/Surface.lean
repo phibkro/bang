@@ -213,6 +213,7 @@ inductive Surf where
   | binopS : BinOp → Surf → Surf → Surf   -- a + b   (arithmetic + - * /, comparison < ==)
   | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e   (sugar over case on Bool = 1+1)
   | annotS : Surf → Ty → Surf             -- (e : T)   type ascription (ADR-0066 ②); erased at lowering
+  | pledgeS : List String → Surf → Surf    -- pledge {E₁, …} in e   checked row upper bound; erased at lowering
   -- ── ADR-0069 (data declarations) ──
   | unitS  : Surf                         -- ()   the unit value literal
   | foldS  : Surf → Surf                  -- μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)
@@ -349,6 +350,7 @@ curry-desugar for `op(a, b) => body` (→ nested single-binder clauses) is FUTUR
 inductive HClauses where
   | nil  : HClauses
   | cons : String → String → Surf → HClauses → HClauses
+  | consUpdating : String → String → Surf → HClauses → HClauses
 
 /-- Mutual `let rec … and …` sibling list (#97 item 2, H2 design: `docs/notes/mutual-rec-design.md`)
 — a `Surf`-mutual list (the `LetBindings`/`DArms` precedent: keeps `Surf`'s `DecidableEq`/`Repr`
@@ -402,8 +404,9 @@ loop inside the `Infer` monad can't be a LOCAL `let rec` there without joining `
 mutual-recursion group, which breaks termination — #21's own finding). Plain structural recursion
 (NOT part of any mutual block), so no termination hazard here. -/
 def hClausesToList : HClauses → List (String × String × Surf)
-  | .nil              => []
-  | .cons op x b rest => (op, x, b) :: hClausesToList rest
+  | .nil                      => []
+  | .cons op x b rest         => (op, x, b) :: hClausesToList rest
+  | .consUpdating op x b rest => (op, x, b) :: hClausesToList rest
 
 /-- Desugar `.lettMulti binds body` to the IDENTICAL nested `.lett` chain a hand-written
 `let x = e1 in let y = e2 in … in body` already produces — a ONE-LEVEL unfold (does NOT itself
@@ -449,6 +452,7 @@ def eraseLettMulti : Surf → Surf
   | .binopS op a b => .binopS op (eraseLettMulti a) (eraseLettMulti b)
   | .ifS c t e     => .ifS (eraseLettMulti c) (eraseLettMulti t) (eraseLettMulti e)
   | .annotS e t    => .annotS (eraseLettMulti e) t
+  | .pledgeS row e => .pledgeS row (eraseLettMulti e)
   | .unitS         => .unitS
   | .foldS e       => .foldS (eraseLettMulti e)
   | .unfoldS e     => .unfoldS (eraseLettMulti e)
@@ -480,8 +484,10 @@ def eraseLettMultiBindings : LetBindings → LetBindings
 /-- `eraseLettMulti`'s sibling for a handler clause list: erase `.lettMulti` in every clause
 body. -/
 def eraseLettMultiHClauses : HClauses → HClauses
-  | .nil              => .nil
-  | .cons op x b rest => .cons op x (eraseLettMulti b) (eraseLettMultiHClauses rest)
+  | .nil                      => .nil
+  | .cons op x b rest         => .cons op x (eraseLettMulti b) (eraseLettMultiHClauses rest)
+  | .consUpdating op x b rest =>
+      .consUpdating op x (eraseLettMulti b) (eraseLettMultiHClauses rest)
 /-- `eraseLettMulti`'s sibling for a mutual `let rec … and …` binding list: erase `.lettMulti`
 in every sibling's RHS. -/
 def eraseLettMultiLRBindings : LetRecBindings → LetRecBindings
@@ -572,6 +578,7 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .lett x e b => do return .letC (← lowerC env e) (← lowerC (x :: env) b)
   | .lam x b    => do return .lam (← lowerC (x :: env) b)
   | .annotS e _ => lowerC env e          -- ascription erased: types never reach the kernel term
+  | .pledgeS _ e => lowerC env e         -- ADR-0112: row-only checked ascription; no runtime meaning
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
   -- `raise`/`put`/stm ops resolve the enclosing handler's cap binder by sentinel `lookup`, then
   -- `perform` on that `vvar` (ADR-0054). The ARGUMENT is value-position, but issue #26 A-NORMALIZES it:
@@ -792,19 +799,24 @@ def lowerC (env : List String) : Surf → Except String Comp
           return .letC cw (.perform (.vcap hostCapId ℓ) op (.pair (Val.shift rref) (.vvar 0)))
 
 /-- ADR-0095 D1/#21 s7probe (#87: `param` now a REAL surface binder, not a sentinel): lower a
-`handleCustomS` clause list to the kernel's `List (OpId × Comp)` (ADR-0087 finite rep). Each
+`handleCustomS` clause list to the kernel's `List (ClauseKey × Comp)` (ADR-0087 finite rep,
+ADR-0114 explicit update mode). Each
 clause body lowers under `arg :: "param" :: env` — the `HasClauses.cons` binder order (`opArg` at
 idx 0, `P` at idx 1) — regardless of ITS OWN op's arity (v1 is single-arg only, so `arg` is always
 exactly one name). `"param"` is pushed as the LITERAL identifier (not `#`-prefixed) so a clause
 body's bare `param` reference resolves via `lowerV`'s ordinary `lookup` — safe by construction
 because `pIdent` reserves `param` as a keyword at every binder position (#87), so no OTHER name
 bound here can ever collide with it. -/
-def lowerHClauses (env : List String) : HClauses → Except String (List (OpId × Comp))
-  | .nil              => .ok []
-  | .cons op x b rest => do
+def lowerHClauses (env : List String) : HClauses → Except String (List (ClauseKey × Comp))
+  | .nil                      => .ok []
+  | .cons op x b rest         => do
       let bc ← lowerC (x :: "param" :: env) b
       let restC ← lowerHClauses env rest
-      return (op, bc) :: restC
+      return (.plain op, bc) :: restC
+  | .consUpdating op x b rest => do
+      let bc ← lowerC (x :: "param" :: env) b
+      let restC ← lowerHClauses env rest
+      return (.updating op, bc) :: restC
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -962,6 +974,7 @@ def pIdent : P String
           || t = "do" || t = ";"
           || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
           || t = "effect"
+          || t = "pledge"
           || t = "import" || t = "use" || t = "pub"
           || t = "as" || t = "." || t = "where"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
@@ -1248,6 +1261,11 @@ def pExpr : Nat → P Surf
       match bindings with
       | [] => .ok (.lett name e body, ts)
       | _  => .ok (.lettMulti (toLetBindings ((name, e) :: bindings)) body, ts)
+  | f + 1, "pledge" :: "{" :: ts => do
+      let (allowed, ts) ← pEffRow ts
+      let (_, ts) ← expect "in" ts
+      let (body, ts) ← pExpr f ts
+      .ok (.pledgeS allowed body, ts)
   -- ADR-0095 D1 (RULED): `handle e with Name as h { op(x) => body, … }` (param-less) or
   -- `handle e with (Name init) as h { … }` (param-carrying). A BESPOKE arm (not `keywordRule`):
   -- the clause list is a repeated group, the same "0-or-more" shape `let`-multi/`match` already
@@ -1274,12 +1292,18 @@ def pExpr : Nat → P Surf
           let ((nm, p?), ts) ← pHandlerName f ts
           let (_, ts) ← expect "as" ts
           let (h, ts) ← pIdent ts
-          let (_, ts) ← expect "{" ts
-          let (cls, ts) ← pHClauses f ts
-          -- constructed tuple order matches `handleCustomS`'s DECLARED field order (label?,
-          -- effName, paramInit?, h, cls, body) — NOT the surface's textual order (`e` prints
-          -- FIRST; the constructor's own doc comment explains why).
-          .ok (.handleCustomS none (.var nm) p? h cls e, ts)
+          match ts with
+          | "{" :: ts => do
+              let (cls, ts) ← pHClauses f ts
+              -- constructed tuple order matches `handleCustomS`'s DECLARED field order (label?,
+              -- effName, paramInit?, h, cls, body) — NOT the surface's textual order (`e` prints
+              -- FIRST; the constructor's own doc comment explains why).
+              .ok (.handleCustomS none (.var nm) p? h cls e, ts)
+          | _ =>
+              -- No clause block means `nm` names a static `handler` declaration. `.nil` is an
+              -- unambiguous parser marker because an inline custom handler requires ≥1 clause;
+              -- elaboration replaces it with the declaration's effect name + clauses.
+              .ok (.handleCustomS none (.var nm) p? h .nil e, ts)
       -- no `with`: this is the plain AMBIENT `handle e` form (unnamed throws-handler install) —
       -- re-drive `keywordRule`'s `handle` entry over the FULL original token stream so its own
       -- `refE` re-parses `e` (never guess by reusing the `e`/`ts` already parsed here: the two
@@ -1632,6 +1656,7 @@ def pAtom : Nat → P Surf
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
               || t = "effect"
+              || t = "pledge"
               || t = "import" || t = "use" || t = "pub"
               || t = "as" || t = "."
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
@@ -1707,28 +1732,39 @@ implication operator: this arm `expect`s the token directly (never routes throug
 Pratt loop for the arrow itself), matching `fun x => body`'s own `keywordRule` entry. The `op`
 name reads via `pOpName` (issue #130 — a raw token, NOT `pIdent`: an op name is a label, never a
 bound variable); `x` (the clause's ARGUMENT binder) stays `pIdent` unchanged — it IS a genuine
-binder, so `resume`/`param`'s reservation correctly still applies to it. -/
-def pHClause : Nat → P (String × String × Surf)
+binder, so `resume`/`param`'s reservation correctly still applies to it.
+
+ADR-0114 adds the explicit updating spelling `update op(x) => (resumeValue, nextParam)`. A plain
+operation literally named `update` remains available as `update(x) => body`: the parser treats the
+keyword as a modifier only when it is not immediately followed by `(`. -/
+def pHClause : Nat → P (Bool × String × String × Surf)
   | 0,     _ => .error "parser out of fuel"
   | f + 1, ts => do
+      let (updating, ts) := match ts with
+        | "update" :: "(" :: _ => (false, ts)
+        | "update" :: rest     => (true, rest)
+        | _                    => (false, ts)
       let (op, ts) ← pOpName ts
       let (_, ts) ← expect "(" ts
       let (x, ts) ← pIdent ts
       let (_, ts) ← expect ")" ts
       let (_, ts) ← expect "=>" ts
       let (body, ts) ← pExpr f ts
-      .ok ((op, x, body), ts)
+      .ok ((updating, op, x, body), ts)
 
 /-- #21 s7probe: clause list up to and including `}` (≥ 1 clause; `,` separators optional, the
 `pArms` precedent). -/
 def pHClauses : Nat → P HClauses
   | 0,     _ => .error "parser out of fuel"
   | f + 1, ts => do
-      let ((op, x, b), ts) ← pHClause f ts
+      let ((updating, op, x, b), ts) ← pHClause f ts
       let ts := (match ts with | "," :: r => r | _ => ts)
       match ts with
-      | "}" :: r => .ok (.cons op x b .nil, r)
-      | _        => do let (rest, ts) ← pHClauses f ts; .ok (.cons op x b rest, ts)
+      | "}" :: r =>
+          .ok (if updating then .consUpdating op x b .nil else .cons op x b .nil, r)
+      | _        => do
+          let (rest, ts) ← pHClauses f ts
+          .ok (if updating then .consUpdating op x b rest else .cons op x b rest, ts)
 end
 
 /-- Parse a whole program: tokenize, parse one expression, require all tokens
@@ -2015,13 +2051,19 @@ inductive Decl where
   | fnD    : String → List String → Ty → String → String → Surf → Decl
     -- `fn name(params) : declaredTy where Trait tyVar = body` — a BOUNDED generic function
     -- (`fold : Monoid a => List a -> a`); monomorphized per concrete use (bite-2, ADR-0080).
-  | effectD : String → List (String × Ty) → Decl
+  | effectD : String → List (String × Ty) → List LawDecl → Decl
     -- `effect N { op1 : ArgTy -> ResTy, op2 : ResTy2, … }` (ADR-0092 D1) — a NAMED interface; each
     -- op's declared `Ty` is EITHER a bare result type (0-ary, `Unit` is Rust-`fn()`'s analogue —
     -- v1 requires an explicit arrow for any op taking an argument, no 0-ary sugar beyond a bare
     -- type) or a single `ArgTy -> ResTy` arrow (v1 monomorphic single-arg ops, matching the
     -- ADR-0085 D4 sketch `read : Int -> Str`). Multi-arg ops are OUT of v1 scope (not sketched by
     -- the ADR; a later bite can generalize the same way `capOpSig`'s ≤2-arity does for built-ins).
+    -- Laws use an explicit capability as their FIRST parameter: `law roundtrip(codec, x): ...`.
+    -- A handler realization supplies that capability; the remaining parameters are test inputs.
+  | handlerD : String → String → HClauses → Decl
+    -- `handler H implements Effect { op(x) => body, … }`: a NAMED STATIC realization. It is not a
+    -- new kernel value; elaboration expands an installation of `H` to the existing custom-handler
+    -- form, preserving the five-primitive kernel boundary.
   | letD    : String → Option Ty → Surf → Decl
     -- `let name = expr` or `let name : Ty = expr` (NO trailing `in`) — a top-level PLAIN BINDING
     -- (ADR-0093 D5 operator ruling, 2026-07-09: the GENERAL form, not a main-only special case).
@@ -2051,7 +2093,8 @@ def Decl.name : Decl → String
                                 -- uniformly across every decl keyword, per the ADR's decl-prefix grammar)
   | .dataD n _ _       => n
   | .fnD n _ _ _ _ _   => n
-  | .effectD n _       => n
+  | .effectD n _ _     => n
+  | .handlerD n _ _    => n
   | .letD n _ _        => n
   | .letRecD n _ _     => n
 
@@ -2186,20 +2229,29 @@ def pImplMembers : Nat → P (List OpDef)
 `effect` block are a parse-time LOUD error (ADR-0046) — caught here, before elaboration ever sees
 them, so the error names the effect immediately rather than surfacing later as a silent overwrite
 in the elaborator's op table. -/
-def pEffectMembers : Nat → P (List (String × Ty))
+def pEffectMembers : Nat → P (List (String × Ty) × List LawDecl)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "}" :: ts => .ok ([], ts)
+    | "}" :: ts => .ok (([], []), ts)
     | ";" :: ts => pEffectMembers f ts
     | "," :: ts => pEffectMembers f ts
+    | "law" :: ts => do
+        let (n, ts) ← pIdent ts
+        let (ps, ts) ← pParams f ts
+        if ps.isEmpty then
+          .error ⟨s!"effect law '{n}' needs an explicit capability as its first parameter", ts⟩
+        let (_, ts) ← expect ":" ts
+        let (b, ts) ← pExpr f ts
+        let ((ops, laws), ts) ← pEffectMembers f ts
+        .ok ((ops, ⟨n, ps, b⟩ :: laws), ts)
     | n :: ":" :: ts => do
         let (t, ts) ← pTy f ts
-        let (rest, ts) ← pEffectMembers f ts
+        let ((rest, laws), ts) ← pEffectMembers f ts
         if rest.any (fun (n', _) => n' == n) then
           .error ⟨s!"effect: duplicate operation '{n}'", ts⟩
-        else .ok ((n, t) :: rest, ts)
-    | t :: r => .error ⟨s!"expected a `name : Ty` operation signature or '}' in an effect body, got '{t}'", t :: r⟩
+        else .ok (((n, t) :: rest, laws), ts)
+    | t :: r => .error ⟨s!"expected a `name : Ty` operation signature, 'law', or '}' in an effect body, got '{t}'", t :: r⟩
     | []     => .error "unterminated effect body"
 
 /-- The comma-separated payload types of a constructor, up to and including `)`. -/
@@ -2314,8 +2366,15 @@ def pDecl : Nat → P (Decl × List String)
   | f + 1, "effect" :: ts => do                -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }`
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect "{" ts
-      let (ops, ts) ← pEffectMembers f ts
-      .ok ((.effectD n ops, []), ts)
+      let ((ops, laws), ts) ← pEffectMembers f ts
+      .ok ((.effectD n ops laws, []), ts)
+  | f + 1, "handler" :: ts => do
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "implements" ts
+      let (eff, ts) ← pIdent ts
+      let (_, ts) ← expect "{" ts
+      let (cls, ts) ← pHClauses f ts
+      .ok ((.handlerD n eff cls, []), ts)
   | f + 1, "let" :: "rec" :: ts => do          -- ADR-0093 D5 (operator ruling): `let rec name : T = expr`
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect ":" ts
@@ -2335,7 +2394,7 @@ def pDecl : Nat → P (Decl × List String)
           let (_, ts) ← expect "=" ts
           let (e, ts) ← pExpr f ts
           .ok ((.letD n none e, []), ts)
-  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', 'effect', or 'let', got '{t}'", t :: r⟩
+  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', 'effect', 'handler', or 'let', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
 /-- Is `t` a decl-leading keyword (with or without a `pub` prefix already stripped)? Named once so
@@ -2344,7 +2403,7 @@ accepted before every decl keyword). `let` is DELIBERATELY excluded here — it 
 script-mode `let x = e in body` form, so its decl-vs-body disambiguation is `pDecls`'s OWN job
 (`isLetDecl`, below), not a static membership test. -/
 def isDeclStart : String → Bool
-  | "trait" | "impl" | "data" | "fn" | "effect" => true
+  | "trait" | "impl" | "data" | "fn" | "effect" | "handler" => true
   | _ => false
 
 /-- Does a `let`/`let rec` at the HEAD of `ts` parse as a top-level DECL (no trailing `in`), or is it
@@ -2522,7 +2581,8 @@ def eraseLettMultiDecl : Decl → Decl
   | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := eraseLettMulti l.body }))
   | .implD n t ops        => .implD n t (ops.map (fun o => { o with body := eraseLettMulti o.body }))
   | .dataD n ps cs        => .dataD n ps cs
-  | .effectD n ops        => .effectD n ops
+  | .effectD n ops laws   => .effectD n ops (laws.map (fun l => { l with body := eraseLettMulti l.body }))
+  | .handlerD n eff cls   => .handlerD n eff (eraseLettMultiHClauses cls)
   | .fnD n ps ty tr tv b  => .fnD n ps ty tr tv (eraseLettMulti b)
   | .letD n ty e          => .letD n ty (eraseLettMulti e)
   | .letRecD n t e        => .letRecD n t (eraseLettMulti e)
@@ -3063,6 +3123,10 @@ def parsesTo (src : String) (e : Surf) : Bool :=
   (.stateS (.lit 0) (.lett "z" (.putS (.lit 7)) .getS))
 #guard parsesTo "state 5 in get" (.stateS (.lit 5) .getS)
 #guard parsesTo "fun x => x" (.lam "x" (.var "x"))
+-- ADR-0112: `pledge` is a lowest-precedence, row-only checked ascription. Pin the row and body
+-- tree independently of type checking so `{…}` cannot regress into thunk syntax.
+#guard parsesTo "pledge {Audit, Secret} in audit.record(41)"
+  (.pledgeS ["Audit", "Secret"] (.dotPerform (.var "audit") "record" (.one (.lit 41))))
 -- STM forms (rung 3): `atomically`/`new`/`read`/`write` parse to their `Surf` constructors.
 #guard parsesTo "atomically (let r = new 100 in (let z = write r 70 in read r))"
   (.atomS (.lett "r" (.newS (.lit 100))
@@ -3222,6 +3286,21 @@ so `a.get`/`b.get` hit their own cells. Runs via the untyped path (parse→lower
   (.handleCustomS none (.var "KV") (SurfArgs.none) "kv"
     (.cons "get" "n" (.var "n") .nil)
     (.dotPerform (.var "kv") "get" (.one (.lit 7))))
+
+-- ADR-0114: `update` before a clause head is an explicit parameter-transition marker. It is
+-- represented in the surface tree (and subsequently lowers to `ClauseKey.updating`), never
+-- inferred from the returned pair's value shape.
+#guard parsesTo "handle kv.get(7) with (KV 1) as kv { update get(n) => (param, 0) }"
+  (.handleCustomS none (.var "KV") (.one (.lit 1)) "kv"
+    (.consUpdating "get" "n" (.pairS (.var "param") (.lit 0)) .nil)
+    (.dotPerform (.var "kv") "get" (.one (.lit 7))))
+-- `update` remains a legal OPERATION NAME. The modifier is recognized only when a second token
+-- follows it before `(`, so `update(x) => ...` is an ordinary/plain clause and product-valued
+-- operations cannot be accidentally reinterpreted as state transitions.
+#guard parsesTo "handle kv.update(7) with KV as kv { update(n) => (n, n) }"
+  (.handleCustomS none (.var "KV") SurfArgs.none "kv"
+    (.cons "update" "n" (.pairS (.var "n") (.var "n")) .nil)
+    (.dotPerform (.var "kv") "update" (.one (.lit 7))))
 
 -- implication sugar (#39): `P => Q` desugars to `let #p = P in if #p then Q else 0 == 0`.
 #guard parsesTo "a < b => c"

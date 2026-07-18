@@ -70,7 +70,16 @@ amendment ③ ruled: (β) fuel-reindex proceeds as a background lane). Emission:
 throws→try_table · state→locals; 66 programs wasmtime==Source.eval; rung 3 = the journal/rollback novelty,
 named). #95 fixed (~115×, knot sharing); #96 fixed (the missing printer tier); #97 partially (use-hoist;
 Mod_Eff mechanism traced). The 013 ergonomics menu: S1 grammar (site highlights bang) · S5 codes+explain ·
-S7/8/9 new/update/watch LANDED. **In flight**: nothing.
+S7/8/9 new/update/watch LANDED. **In flight**: semantic contracts now span law-bearing effects,
+named static handler realizations, resolver-aware law facts, runtime-selectable stage installers,
+erased row ceilings (`pledge`, ADR-0112), and runtime-configured value policy in ordinary handler
+installers (`policy-host-allowlist`, ADR-0113). `PATH-semantic-contracts` is complete; the next
+consumer-gated stressor is stateful quota/revocation policy. ADR-0114 resolved the core protocol with
+explicit per-clause `plain`/`updating` keys: the source semantics, CalcVM, environment machine,
+abstract Wasm machine, and concrete WasmGC emitter now install the next private parameter before
+resumption. The two-call raw-IR differential yields `10` on both `Source.eval` and Wasmtime. The
+public `update op(x) => (resumeValue, nextParam)` syntax, diagnostics, formatter support, and
+`examples/stateful-quota/` now close `PATH-stateful-handler-policy`; ordinary clauses remain plain.
 **The 2026-07-10/11 mega-session landed the LANGUAGE-CAPABILITY wave**: mutual `let rec … and …`
 (N-way, ADR-0102; two compiler bugs root-caused en route incl. the #119 subsumption-asymmetry class) ·
 `deriving (Eq, Ord)` with recursive carriers + auto-checked laws (ADR-0097 Accepted; the #112

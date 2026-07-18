@@ -95,7 +95,7 @@ done
 # scratch exe can't resolve them. These go through `bang emit` (which shares the runner's module
 # resolution) → wasmtime → diffed vs `bang run`'s OWN stdout (the live oracle, not a checked-in
 # expected.txt — a multi-module program's answer is `bang run`'s output by construction).
-MODULE_CORPUS=( json calc )   # calc (#133 C3): 5 modules + a first-class Cap Trace → 11021193 on wasmtime.
+MODULE_CORPUS=( json calc codec-contract pledged-plugin policy-host-allowlist stage-swap )
 echo ""
 echo "── module-aware (bang emit → wasmtime) vs bang run ──"
 lake build bang >/dev/null 2>&1

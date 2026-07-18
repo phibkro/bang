@@ -167,7 +167,7 @@ abbrev ESStore := List (Nat × MVal)                                    -- state
 abbrev ETHeap  := List (Nat × List MVal)                               -- txn heaps  (τ image)
 /-- The env-shaped custom store: `evalD`'s `CStore` with `MVal` payloads, additionally
 carrying each frame's install-time environment for its clause bodies. -/
-abbrev ECStore := List (Nat × (MVal × List (Bang.OpId × Comp) × MEnv)) -- custom frames (κ image): (param, clauses, install-env)
+abbrev ECStore := List (Nat × (MVal × List (Bang.ClauseKey × Comp) × MEnv)) -- custom frames (κ image): (param, clauses, install-env)
 
 /-- Nearest stored state cell for identity `n` (innermost wins; ids are globally fresh ⇒ unique). -/
 def ESStore.get? (σ : ESStore) (n : Nat) : Option MVal := (σ.find? (·.1 = n)).map (·.2)
@@ -184,8 +184,15 @@ def ETHeap.put : ETHeap → Nat → List MVal → ETHeap
   | (n0, w) :: τ, n, Θ => if n0 = n then (n0, Θ) :: τ else (n0, w) :: ETHeap.put τ n Θ
 
 /-- Nearest stored custom frame `(param, clauses, install-env)` for identity `n`. -/
-def ECStore.get? (κ : ECStore) (n : Nat) : Option (MVal × List (Bang.OpId × Comp) × MEnv) :=
+def ECStore.get? (κ : ECStore) (n : Nat) : Option (MVal × List (Bang.ClauseKey × Comp) × MEnv) :=
   (κ.find? (·.1 = n)).map (·.2)
+
+/-- Update the nearest custom frame's parameter while preserving its clauses and install environment. -/
+def ECStore.put : ECStore → Nat → MVal → ECStore
+  | [], _, _ => []
+  | (n0, (p, cls, ρ)) :: κ, n, next =>
+      if n0 = n then (n0, (next, cls, ρ)) :: κ
+      else (n0, (p, cls, ρ)) :: ECStore.put κ n next
 
 /-- Read a TVar index (an `mvint i`) out of a machine value (`mtvarIdx`; the `MVal` image of
 `tvarIdx`). Malformed ⇒ `none`. -/
@@ -268,10 +275,19 @@ def evalE : Nat → Nat → ESStore → ETHeap → ECStore → MEnv → Comp →
           match κ.get? n with
           -- CUSTOM frame: INLINE-SERVICE the clause under the frame's INSTALL-ENV (the closure over
           -- ρ_install captured at handle-install), binding op-arg at idx 0, param at idx 1 — the env
-          -- image of evalD's `subst p (subst (shift v) clause.2)`. κ unchanged (frame stays live).
+          -- image of evalD's substitutions. Plain clauses leave κ unchanged; updating clauses replace
+          -- the matching parameter while preserving clauses and the captured installation environment.
           | some (p, cls, ρ_inst) =>
-              match cls.find? (·.1 == op) with
-              | some clause => evalE f g σ τ κ (arg ∷ₑ p ∷ₑ ρ_inst) clause.2
+              match cls.find? (fun clause => clause.1.op == op) with
+              | some clause =>
+                  if clause.1.updates then
+                    match clause.2 with
+                    | .ret (.pair resume next) =>
+                        let ρ_clause := arg ∷ₑ p ∷ₑ ρ_inst
+                        some (.mterm (.mret (evalV ρ_clause resume)), g, σ, τ,
+                          κ.put n (evalV ρ_clause next))
+                    | _ => none
+                  else evalE f g σ τ κ (arg ∷ₑ p ∷ₑ ρ_inst) clause.2
               | none        => some (.mraised n op arg, g, σ, τ, κ)          -- op unserviced by this custom frame ⇒ raise
           | none => some (.mraised n op arg, g, σ, τ, κ)                     -- n in no store ⇒ raise
       | _ => none                                                            -- ill-typed: perform on a non-cap
@@ -638,7 +654,7 @@ so their `substEnv` image keeps `Θ`/`(p, cls)` verbatim. -/
   | nil => rfl
   | cons v γ ih => simp only [substEnvH, Handler.substFrom]; exact ih
 @[simp] theorem substEnvH_custom (γ : List Val) (ℓ : Bang.EffectRow.Label) (p : Val)
-    (cls : List (Bang.OpId × Comp)) :
+    (cls : List (Bang.ClauseKey × Comp)) :
     substEnvH γ (Handler.custom ℓ p cls) = Handler.custom ℓ p cls := by
   induction γ with
   | nil => rfl
@@ -952,7 +968,7 @@ def Val.HandlerWF : Nat → Val → Prop
 Recurses STRUCTURALLY on the list (destructures `(_, body) :: cs`), which exposes `body` as a direct
 subterm — the termination-safe way to require `Comp.HandlerWF 2` of each clause body (a direct recursive
 `HandlerWF` call inside the `custom` obligation is not a structural subterm of the `handle`). -/
-def Comp.HandlerWFClauses : List (Bang.OpId × Comp) → Prop
+def Comp.HandlerWFClauses : List (Bang.ClauseKey × Comp) → Prop
   | []             => True
   | (_, body) :: cs => Comp.HandlerWF 2 body ∧ Comp.HandlerWFClauses cs
 end
@@ -993,14 +1009,14 @@ theorem Comp.HandlerWF.handle_txn {n : Nat} {ℓ : Bang.EffectRow.Label} {Θ : L
     ∀ θ ∈ Θ, Val.ClosedE θ ∧ ∀ m, Val.HandlerWF m θ := by
   simp only [Comp.HandlerWF] at h; exact h.1
 theorem Comp.HandlerWF.handle_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {p : Val}
-    {cls : List (Bang.OpId × Comp)} {M : Comp}
+    {cls : List (Bang.ClauseKey × Comp)} {M : Comp}
     (h : Comp.HandlerWF n (Comp.handle (Handler.custom ℓ p cls) M)) :
     (Val.ScopedV 0 p ∧ Val.HandlerWF 0 p) ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2)
       ∧ Comp.HandlerWFClauses cls := by
   simp only [Comp.HandlerWF] at h; exact h.1
 
 /-- Per-CLAUSE `HandlerWF 2` from the clause-list invariant `Comp.HandlerWFClauses cls` (walk the list). -/
-theorem Comp.HandlerWFClauses.get {cls : List (Bang.OpId × Comp)}
+theorem Comp.HandlerWFClauses.get {cls : List (Bang.ClauseKey × Comp)}
     (h : Comp.HandlerWFClauses cls) : ∀ c ∈ cls, Comp.HandlerWF 2 c.2 := by
   induction cls with
   | nil => intro c hc; simp only [List.not_mem_nil] at hc
@@ -1933,7 +1949,7 @@ theorem StoresGood.get_state {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n :
 
 /-- A custom frame fetched from a `StoresGood` κ carries its `(param, clauses, install-env)` goodness. -/
 theorem StoresGood.get_custom {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n : Nat}
-    {p : MVal} {cls : List (Bang.OpId × Comp)} {ρ_inst : MEnv}
+    {p : MVal} {cls : List (Bang.ClauseKey × Comp)} {ρ_inst : MEnv}
     (hG : StoresGood eσ eτ eκ) (hget : eκ.get? n = some (p, cls, ρ_inst)) :
     (MVal.WF p ∧ MVal.WFClos p) ∧ MEnv.WF ρ_inst ∧ MEnv.WFClos ρ_inst
       ∧ (∀ c ∈ cls, Comp.ScopedC ((readbackEnv ρ_inst).length + 2) c.2
@@ -1964,6 +1980,38 @@ theorem StoresGood.put_state {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n :
     (hG : StoresGood eσ eτ eκ) (harg : MVal.WF arg ∧ MVal.WFClos arg) :
     StoresGood (eσ.put n arg) eτ eκ :=
   ⟨sstore_put_good harg hG.1, hG.2.1, hG.2.2⟩
+
+private theorem cstore_put_good {n : Nat} {next : MVal}
+    (hnext : MVal.WF next ∧ MVal.WFClos next) :
+    ∀ {eκ : ECStore},
+      (∀ q ∈ eκ, (MVal.WF q.2.1 ∧ MVal.WFClos q.2.1) ∧
+        MEnv.WF q.2.2.2 ∧ MEnv.WFClos q.2.2.2 ∧
+        (∀ c ∈ q.2.2.1, Comp.ScopedC ((readbackEnv q.2.2.2).length + 2) c.2 ∧
+          Comp.HandlerWF ((readbackEnv q.2.2.2).length + 2) c.2)) →
+      ∀ q ∈ eκ.put n next,
+        (MVal.WF q.2.1 ∧ MVal.WFClos q.2.1) ∧
+          MEnv.WF q.2.2.2 ∧ MEnv.WFClos q.2.2.2 ∧
+          (∀ c ∈ q.2.2.1, Comp.ScopedC ((readbackEnv q.2.2.2).length + 2) c.2 ∧
+            Comp.HandlerWF ((readbackEnv q.2.2.2).length + 2) c.2)
+  | [], _, q, hq => by simp only [ECStore.put, List.not_mem_nil] at hq
+  | (k, (p, cls, ρ)) :: eκ, hκ, q, hq => by
+      simp only [ECStore.put] at hq
+      by_cases hk : k = n
+      · simp only [hk, if_true, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · have hold := hκ (k, (p, cls, ρ)) List.mem_cons_self
+          exact ⟨hnext, hold.2⟩
+        · exact hκ q (List.mem_cons_of_mem _ hq)
+      · simp only [hk, if_false, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · exact hκ (k, (p, cls, ρ)) List.mem_cons_self
+        · exact cstore_put_good hnext (fun q hq => hκ q (List.mem_cons_of_mem _ hq)) q hq
+
+theorem StoresGood.put_custom {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore}
+    {n : Nat} {next : MVal} (hG : StoresGood eσ eτ eκ)
+    (hnext : MVal.WF next ∧ MVal.WFClos next) :
+    StoresGood eσ eτ (eκ.put n next) :=
+  ⟨hG.1, hG.2.1, cstore_put_good hnext hG.2.2⟩
 
 /-- The stm service output heap is `WF ∧ WFClos` cell-wise when the input heap and arg are (txn `put`). -/
 theorem mtxnService_good {op : Bang.OpId} {arg : MVal} {Θ : List MVal}
@@ -2147,6 +2195,24 @@ theorem CStore.get?_readback (eκ : ECStore) (n : Nat) :
     · simp only [h, decide_true, Option.map_some]
     · simp only [h, decide_false]
       simpa only [Bang.CalcVM.CStore.get?, ECStore.get?] using ih
+
+/-- Updating a custom parameter commutes with the custom-store readback image. -/
+theorem CStore.put_readback (eκ : ECStore) (n : Nat) (next : MVal) :
+    Bang.CalcVM.CStore.put
+        (eκ.map (fun p => (p.1, (readback p.2.1,
+          p.2.2.1.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv p.2.2.2) c.2))))))
+        n (readback next) =
+      (eκ.put n next).map (fun p => (p.1, (readback p.2.1,
+        p.2.2.1.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv p.2.2.2) c.2))))) := by
+  induction eκ with
+  | nil => rfl
+  | cons entry eκ ih =>
+      obtain ⟨k, payload⟩ := entry
+      obtain ⟨p, cls, ρ⟩ := payload
+      simp only [List.map_cons, Bang.CalcVM.CStore.put, ECStore.put]
+      by_cases hk : k = n
+      · simp only [hk, if_true, List.map_cons]
+      · simp only [hk, if_false, List.map_cons, ih]
 
 /-! ### W2 — the stm service agrees under readback (`mtxnService` ⟺ `txnService`, envm3) -/
 
@@ -2700,7 +2766,7 @@ theorem evalE_agrees_evalD_gen :
                   = some (readback p, cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))) := by
                 rw [hκeq, hκget]; rfl
               obtain ⟨hpGood, hWFρinst, hWCρinst, hclsScope⟩ := hG.get_custom hκget
-              cases hclsfind : cls.find? (·.1 == op) with
+              cases hclsfind : cls.find? (fun clause => clause.1.op == op) with
               | some clause =>
                 rw [hclsfind] at h
                 -- evalE runs clause.2 under (arg ∷ p ∷ ρ_inst); evalD runs its CLOSED image via the crux.
@@ -2719,11 +2785,6 @@ theorem evalE_agrees_evalD_gen :
                   simpa only [List.length_cons] using hclScope
                 have hHWN : Comp.HandlerWF (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length clause.2 := by
                   simpa only [List.length_cons] using hclHW
-                obtain ⟨dσ', dτ', dκ', hdN, hC', hG', hWt', hRt'⟩ :=
-                  ih (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst) clause.2 out
-                    (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) g g' eσ eσ' eτ eτ' eκ eκ'
-                    dσ dτ dκ hagN hWFN hWCN hScN hHWN hG ⟨hCσ, hCτ, hCκ⟩ h
-                refine ⟨dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
                 -- the crux: substEnv (arg :: p :: rbEnv ρ_inst) clause.2
                 --   = subst (readback p) (subst (shift (readback arg)) (closeUnderBindersE 2 (rbEnv ρ_inst) clause.2)).
                 have hγinst : ∀ u ∈ readbackEnv ρ_inst, Val.ClosedE u := hWFρinst
@@ -2732,15 +2793,76 @@ theorem evalE_agrees_evalD_gen :
                         (closeUnderBindersE 2 (readbackEnv ρ_inst) clause.2)) := by
                   rw [substEnv_cons2_subst hγinst hWFp hWFarg clause.2]; simp only [substEnv, Comp.subst]
                 -- evalD find? on the CLOSED cls returns the closed clause.
-                have hfindD : (cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))).find? (·.1 == op)
+                have hfindD : (cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))).find? (fun clause => clause.1.op == op)
                     = some (clause.1, closeUnderBindersE 2 (readbackEnv ρ_inst) clause.2) := by
                   rw [List.find?_map,
-                    show ((fun x => x.1 == op) ∘ fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))
-                      = (fun x : Bang.OpId × Comp => x.1 == op) from rfl, hclsfind]; rfl
-                rw [hsubst]
-                simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, hfindD]
-                rw [hcrux] at hdN
-                exact hdN
+                    show ((fun x => x.1.op == op) ∘ fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))
+                      = (fun x : Bang.ClauseKey × Comp => x.1.op == op) from rfl, hclsfind]; rfl
+                by_cases hupd : clause.1.updates = true
+                · simp only [hupd, if_true] at h
+                  split at h
+                  · rename_i resume next hbody
+                    simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+                    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
+                    have hScPair : Val.ScopedV
+                        (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length
+                        (.pair resume next) := by
+                      have hs := hScN
+                      rw [hbody] at hs
+                      exact hs.ret_inv
+                    have hHWPair : Val.HandlerWF
+                        (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length
+                        (.pair resume next) := by
+                      have hw := hHWN
+                      rw [hbody] at hw
+                      exact hw.ret_inv
+                    have hScResume := hScPair.pair_inv.1
+                    have hScNext := hScPair.pair_inv.2
+                    have hHWParts :
+                        Val.HandlerWF
+                            (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length resume ∧
+                          Val.HandlerWF
+                            (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length next := by
+                      simpa only [Val.HandlerWF] using hHWPair
+                    have hHWResume := hHWParts.1
+                    have hHWNext := hHWParts.2
+                    have hResumeGood : MVal.WF (evalV (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) resume) ∧
+                        MVal.WFClos (evalV (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) resume) :=
+                      ⟨evalV_WF hWFN hScResume,
+                        evalV_WFClos hWFN hWCN hScResume hHWResume⟩
+                    have hNextGood : MVal.WF (evalV (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) next) ∧
+                        MVal.WFClos (evalV (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) next) :=
+                      ⟨evalV_WF hWFN hScNext,
+                        evalV_WFClos hWFN hWCN hScNext hHWNext⟩
+                    have hrbResume := readback_evalV hWFN hScResume
+                    have hrbNext := readback_evalV hWFN hScNext
+                    refine ⟨dσ, dτ,
+                      dκ.put n (readback (evalV (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) next)), ?_,
+                      ?_, hG.put_custom hNextGood, ?_, by rintro n' op' mv' ⟨⟩⟩
+                    · rw [hsubst]
+                      simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, hfindD, hupd, if_true]
+                      rw [← hcrux, hbody]
+                      simp only [substEnv_ret, substEnvV_pair, readbackTermS, readbackTerm]
+                      rw [hrbResume, hrbNext, show readbackEnv (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) =
+                        readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst from rfl]
+                    · refine ⟨hCσ, hCτ, ?_⟩
+                      rw [hCκ]
+                      exact (CStore.put_readback eκ n
+                        (evalV (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) next)).symm ▸ rfl
+                    · rintro t ⟨rfl⟩; exact hResumeGood
+                  · simp_all
+                · have hupd0 := Bool.eq_false_of_not_eq_true hupd
+                  simp only [hupd0, Bool.false_eq_true, if_false] at h
+                  obtain ⟨dσ', dτ', dκ', hdN, hC', hG', hWt', hRt'⟩ :=
+                    ih (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst) clause.2 out
+                      (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) g g' eσ eσ' eτ eτ' eκ eκ'
+                      dσ dτ dκ hagN hWFN hWCN hScN hHWN hG ⟨hCσ, hCτ, hCκ⟩ h
+                  refine ⟨dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+                  rw [hsubst]
+                  simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, hfindD, hupd0,
+                    Bool.false_eq_true, if_false]
+                  rw [hcrux] at hdN
+                  exact hdN
               | none =>
                 rw [hclsfind] at h
                 simp only [Option.some.injEq, Prod.mk.injEq] at h
@@ -2748,10 +2870,10 @@ theorem evalE_agrees_evalD_gen :
                 subst hout hgc hσ' hτ' hκ'
                 refine ⟨dσ, dτ, dκ, ?_, ⟨hCσ, hCτ, hCκ⟩, hG, by rintro t ⟨⟩, ?_⟩
                 · rw [hsubst]
-                  have hfindD : (cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))).find? (·.1 == op) = none := by
+                  have hfindD : (cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))).find? (fun clause => clause.1.op == op) = none := by
                     rw [List.find?_map,
-                      show ((fun x => x.1 == op) ∘ fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))
-                        = (fun x : Bang.OpId × Comp => x.1 == op) from rfl, hclsfind, Option.map_none]
+                      show ((fun x => x.1.op == op) ∘ fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))
+                        = (fun x : Bang.ClauseKey × Comp => x.1.op == op) from rfl, hclsfind, Option.map_none]
                   simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, hfindD, readbackTermS]
                 · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact hArgGood
             | none =>
@@ -3360,7 +3482,7 @@ def evalEHost (hostLabels : List Nat) :
           | none =>
           match κ.get? n with
           | some (p, cls, ρ_inst) =>
-              match cls.find? (·.1 == op) with
+              match cls.find? (fun clause => clause.1.op == op) with
               | some clause => evalEHost hostLabels f g σ τ κ (arg ∷ₑ p ∷ₑ ρ_inst) rs clause.2
               | none        => some (.mraised n op arg, g, σ, τ, κ, rs, none)
           -- ── THE HOST SEAM (the ONLY arm that differs from evalE) ──
@@ -3549,7 +3671,7 @@ private def txnAbortWitness : Comp :=
 -- the letC continuation `105 + 1 = 106`. The env analog runs the clause under the INSTALL-ENV (arg@0,
 -- param@1, ρ_install) — the closure-of-the-clause the slice-2 custom store carries.
 private def customWitness : Comp :=
-  .handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
+  .handle (.custom 1 (.vint 100) [(.plain "read", .binop .add (.vvar 0) (.vvar 1))])
     (.letC (.perform (.vvar 0) "read" (.vint 5)) (.binop .add (.vvar 0) (.vint 1)))
 #guard yieldsIntE (runE 200 customWitness) 106
 #guard yieldsIntE (Bang.Source.eval 200 customWitness) 106
@@ -3559,7 +3681,7 @@ private def customWitness : Comp :=
 -- break a coexisting built-in's zero-shot abort — the id-first σ→τ→κ order + throws catch, together.
 private def customAbortWitness : Comp :=
   .handle (.throws 2)
-    (.handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
+    (.handle (.custom 1 (.vint 100) [(.plain "read", .binop .add (.vvar 0) (.vvar 1))])
       (.letC (.perform (.vvar 1) "raise" (.vint 42)) (.perform (.vvar 0) "read" (.vint 5))))
 #guard yieldsIntE (runE 200 customAbortWitness) 42
 #guard yieldsIntE (Bang.Source.eval 200 customAbortWitness) 42

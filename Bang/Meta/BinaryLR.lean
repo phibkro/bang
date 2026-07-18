@@ -500,11 +500,20 @@ theorem dispatchOn_append_outer (n : Nat) (op : OpId) (v : Val) (Kᵢ : Stack) (
       -- custom (ADR-0085 stage 2, ADR-0087 finite rep): ONE-SHOT resume reinstalls over `Kᵢ ++ custom :: Kₒ`,
       -- the SAME append shape as state/txn — appending `T` to the outer stack commutes with the reinstall.
       simp only [dispatchOn] at hd ⊢
-      cases hcl : cl.find? (·.1 == op) with
+      cases hcl : cl.find? (fun clause => clause.1.op == op) with
       | none => simp only [hcl, reduceCtorEq] at hd
       | some clause =>
           simp only [hcl] at hd ⊢
-          obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp [List.append_assoc]
+          by_cases hupdate : clause.1.updates = true
+          · rw [if_pos hupdate] at hd ⊢
+            split at hd
+            · obtain rfl := (Option.some.injEq _ _).mp hd.symm
+              simp [List.append_assoc]
+            · obtain rfl := (Option.some.injEq _ _).mp hd.symm
+              simp [List.append_assoc]
+          · rw [if_neg hupdate] at hd ⊢
+            obtain rfl := (Option.some.injEq _ _).mp hd.symm
+            simp [List.append_assoc]
 
 /-- ◊4.5b-strengthen the krel-carrying resume CONCLUSION → `CoApproxC_le`. The strengthened handleF
 resume conjunct concludes a DECOMPOSITION `cfgⱼ = (Sᵢ, ret rⱼ)` with `r₁~r₂` (VrelK) + `Sᵢ~Sᵢ'` (KrelS
@@ -608,9 +617,15 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
         -- reinstalls over `Kᵢ ++ custom :: Kₒ`; the `Kₒ` half never gates the `some`/`none` decision.)
         | custom ℓ' p cl =>
             simp only [dispatchOn] at hd₁ ⊢
-            cases hf : cl.find? (·.1 == op) with
+            cases hf : cl.find? (fun clause => clause.1.op == op) with
             | none => simp only [hf, reduceCtorEq] at hd₁
-            | some clause => simp only [hf]; exact ⟨_, rfl⟩
+            | some clause =>
+                simp only [hf]
+                by_cases hupdate : clause.1.updates = true
+                · rw [if_pos hupdate]
+                  split <;> exact ⟨_, rfl⟩
+                · rw [if_neg hupdate]
+                  exact ⟨_, rfl⟩
       obtain ⟨cfgᵢ₂, hdi₂⟩ : ∃ c, Bang.dispatchOn mh₁ op w₂ (Kⱼ', hh₂, Kᵢ'rest) = some c := by
         cases hh₂ with
         | throws _ => exact ⟨_, rfl⟩
@@ -619,9 +634,15 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
         -- custom (symmetric): the RHS outer dispatch `hd₂` forced `find?` some — the inner one succeeds.
         | custom ℓ' p cl =>
             simp only [dispatchOn] at hd₂ ⊢
-            cases hf : cl.find? (·.1 == op) with
+            cases hf : cl.find? (fun clause => clause.1.op == op) with
             | none => simp only [hf, reduceCtorEq] at hd₂
-            | some clause => simp only [hf]; exact ⟨_, rfl⟩
+            | some clause =>
+                simp only [hf]
+                by_cases hupdate : clause.1.updates = true
+                · rw [if_pos hupdate]
+                  split <;> exact ⟨_, rfl⟩
+                · rw [if_neg hupdate]
+                  exact ⟨_, rfl⟩
       have hlift₁ := dispatchOn_append_outer mh₁ op w₁ Kⱼ hh₁ Kᵢrest (Frame.handleF nh h₁ :: K₁) hdi₁
       have hlift₂ := dispatchOn_append_outer mh₁ op w₂ Kⱼ' hh₂ Kᵢ'rest (Frame.handleF nh h₂ :: K₂) hdi₂
       rw [hd₁] at hlift₁; rw [hd₂] at hlift₂
@@ -1214,34 +1235,74 @@ theorem HasVTy.scopedIn {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A 
 inversion (`ret w` shape + arg/res sig + `w`'s open typing). Local public twin of Soundness' private
 `HasClauses.mem_typed`. vrelK_fund-free, so before the mutual block. -/
 theorem hasClauses_mem_typed {ℓ : Label} {P : VTy Eff Mult} :
-    ∀ {cl : List (OpId × Comp)}, HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl →
-    ∀ {op' : OpId} {body : Comp}, (op', body) ∈ cl →
+    ∀ {cl : List (ClauseKey × Comp)}, HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl →
+    ∀ {key : ClauseKey} {body : Comp}, (key, body) ∈ cl → key.updates = false →
     ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (w : Val),
       body = Comp.ret w
-      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op' = some opA
-      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op' = some opR
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ key.op = some opA
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ key.op = some opR
       ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) w opR
-  | [], _, _, _, hmem => by simp at hmem
-  | (_ :: _), h, op', body, hmem => by
+  | [], _, _, _, hmem, _ => by simp at hmem
+  | (_ :: _), h, key, body, hmem, hplain => by
     cases h with
     | @cons _ _ op w rest opA opR qa qp hoa hor hw htail =>
       rcases List.mem_cons.mp hmem with heq | htl
       · obtain ⟨ho, hb⟩ := Prod.mk.injEq .. ▸ heq
         subst ho; subst hb; exact ⟨opA, opR, qa, qp, w, rfl, hoa, hor, hw⟩
-      · exact hasClauses_mem_typed htail htl
+      · exact hasClauses_mem_typed htail htl hplain
+    | @consUpdating _ _ op resume next rest opA opR qa qp hoa hor hpair htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, _⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; simp [ClauseKey.updates] at hplain
+      · exact hasClauses_mem_typed htail htl hplain
+
+theorem hasClauses_mem_typed_updating {ℓ : Label} {P : VTy Eff Mult} :
+    ∀ {cl : List (ClauseKey × Comp)}, HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl →
+    ∀ {key : ClauseKey} {body : Comp}, (key, body) ∈ cl → key.updates = true →
+    ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (resume next : Val),
+      body = Comp.ret (.pair resume next)
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ key.op = some opA
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ key.op = some opR
+      ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) (.pair resume next) (.prod opR P)
+  | [], _, _, _, hmem, _ => by simp at hmem
+  | (_ :: _), h, key, body, hmem, hupdate => by
+    cases h with
+    | @cons _ _ op w rest opA opR qa qp hoa hor hw htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, _⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; simp [ClauseKey.updates] at hupdate
+      · exact hasClauses_mem_typed_updating htail htl hupdate
+    | @consUpdating _ _ op resume next rest opA opR qa qp hoa hor hpair htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, hb⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; subst hb; exact ⟨opA, opR, qa, qp, resume, next, rfl, hoa, hor, hpair⟩
+      · exact hasClauses_mem_typed_updating htail htl hupdate
 
 /-- `find?`-flavoured wrapper of `hasClauses_mem_typed`: a `find? (·.1==op)`-matched clause is typed, and
 its op IS `op` (the `find?` predicate). -/
-theorem hasClauses_find?_typed {ℓ : Label} {P : VTy Eff Mult} {cl : List (OpId × Comp)}
-    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) {op : OpId} {clause : OpId × Comp}
-    (hf : cl.find? (·.1 == op) = some clause) :
+theorem hasClauses_find?_typed {ℓ : Label} {P : VTy Eff Mult} {cl : List (ClauseKey × Comp)}
+    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) {op : OpId} {clause : ClauseKey × Comp}
+    (hf : cl.find? (fun clause => clause.1.op == op) = some clause)
+    (hplain : clause.1.updates = false) :
     ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (w : Val),
       clause.2 = Comp.ret w
-      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ clause.1 = some opA
-      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ clause.1 = some opR
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ clause.1.op = some opA
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ clause.1.op = some opR
       ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) w opR := by
   obtain ⟨op', body⟩ := clause
-  exact hasClauses_mem_typed hcl (List.mem_of_find?_eq_some hf)
+  exact hasClauses_mem_typed hcl (List.mem_of_find?_eq_some hf) hplain
+
+theorem hasClauses_find?_typed_updating {ℓ : Label} {P : VTy Eff Mult} {cl : List (ClauseKey × Comp)}
+    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) {op : OpId} {clause : ClauseKey × Comp}
+    (hf : cl.find? (fun clause => clause.1.op == op) = some clause)
+    (hupdate : clause.1.updates = true) :
+    ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (resume next : Val),
+      clause.2 = Comp.ret (.pair resume next)
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ clause.1.op = some opA
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ clause.1.op = some opR
+      ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) (.pair resume next) (.prod opR P) := by
+  obtain ⟨op', body⟩ := clause
+  exact hasClauses_mem_typed_updating hcl (List.mem_of_find?_eq_some hf) hupdate
 
 /-- #44 STAGE 5 (debt 2, sub-proof W-c) — the RESUME-VALUE PRODUCER, parameterized by the fundamental
 lemma `vf` (= `vrelK_fund`). Taking `vf` as a hypothesis (rather than referencing `vrelK_fund` directly)
@@ -1250,108 +1311,199 @@ application (`vf := @vrelK_fund …`, the recursive self-reference) — keeping 
 clean — while `krelS_refl`/`custom_clause_resume` (after the block) pass the same `vf`. From `HasClauses ℓ
 P cl` + `HasVTy [] [] p P`: every matched clause's double-`subst` resume focus is a `ret` of related
 closed values at the op's result type (`custom_resume_is_ret` + `closeV_closed_scoped` + `vf`). -/
-theorem custom_clause_resume_of {ℓ : Label} {P : VTy Eff Mult} {cl : List (OpId × Comp)} {p : Val}
+theorem custom_clause_resume_of {ℓ : Label} {P : VTy Eff Mult} {cl : List (ClauseKey × Comp)}
     (vf : ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult},
       HasVTy γ Γ v A → ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
         VrelK n A (closeV δ₁ v) (closeV δ₂ v))
-    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl)
-    (hp : HasVTy (Eff := Eff) (Mult := Mult) [] [] p P) :
-    ∀ (k : Nat) (op : OpId) (clause : OpId × Comp) (v₁ v₂ : Val),
-      cl.find? (·.1 == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) :
+    ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+      cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+      Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+      clause.1.updates = false →
       (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
       ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val),
         EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
-        Comp.subst p (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
-        Comp.subst p (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
+        Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
+        Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
         Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ := by
-  intro k op clause v₁ v₂ hf hcv₁ hcv₂ hVarg
-  obtain ⟨opA, opR, qa, qp, w, hbody, hoa, hor, hw⟩ := hasClauses_find?_typed hcl hf
-  have hop : clause.1 = op := by have := List.find?_some hf; simpa using this
+  intro k op clause v₁ v₂ p₁ p₂ hf hcv₁ hcv₂ hcp₁ hcp₂ hpv hplain hVarg
+  obtain ⟨opA, opR, qa, qp, w, hbody, hoa, hor, hw⟩ :=
+    hasClauses_find?_typed hcl hf hplain
+  have hop : clause.1.op = op := by have := List.find?_some hf; simpa using this
   rw [hop] at hoa hor
-  have hcp : Val.Closed p := fun j => hp.shift_closed j (Nat.zero_le j)
   have hsv₁ : Val.shift v₁ = v₁ := hcv₁.shift
   have hsv₂ : Val.shift v₂ = v₂ := hcv₂.shift
   have hcsv₁ : Val.Closed (Val.shift v₁) := by rw [hsv₁]; exact hcv₁
   have hcsv₂ : Val.Closed (Val.shift v₂) := by rw [hsv₂]; exact hcv₂
   have hwsc : Val.ScopedIn 2 w := by simpa using hw.scopedIn
-  have hclosed : ∀ v', Val.Closed (Val.shift v') →
-      Val.Closed (Val.subst p (Val.subst (Val.shift v') w)) := fun v' hcv' => by
-    have := closeV_closed_scoped (δ := [Val.shift v', p]) (v := w)
+  have hclosed : ∀ v' p', Val.Closed (Val.shift v') → Val.Closed p' →
+      Val.Closed (Val.subst p' (Val.subst (Val.shift v') w)) := fun v' p' hcv' hcp' => by
+    have := closeV_closed_scoped (δ := [Val.shift v', p']) (v := w)
       (by intro u hu; rcases List.mem_cons.mp hu with rfl | hu; exact hcv'
-          rcases List.mem_cons.mp hu with rfl | hu; exact hcp; simp at hu)
+          rcases List.mem_cons.mp hu with rfl | hu; exact hcp'; simp at hu)
       (by simpa using hwsc)
     simpa only [closeV, closeV_nil] using this
-  refine ⟨opR, Val.subst p (Val.subst (Val.shift v₁) w), Val.subst p (Val.subst (Val.shift v₂) w),
-    hor, ?_, ?_, hclosed v₁ hcsv₁, hclosed v₂ hcsv₂, ?_⟩
+  refine ⟨opR, Val.subst p₁ (Val.subst (Val.shift v₁) w),
+    Val.subst p₂ (Val.subst (Val.shift v₂) w),
+    hor, ?_, ?_, hclosed v₁ p₁ hcsv₁ hcp₁, hclosed v₂ p₂ hcsv₂ hcp₂, ?_⟩
   · rw [hbody]; simp only [Comp.subst, Comp.substFrom]
   · rw [hbody]; simp only [Comp.subst, Comp.substFrom]
-  · have hpv : VrelK (Eff := Eff) (Mult := Mult) k P p p := by
-      have := vf hp k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
-      rwa [closeV_closed hcp] at this
-    have hδ : EnvRelK (Eff := Eff) (Mult := Mult) k (opA :: P :: [])
-        [Val.shift v₁, p] [Val.shift v₂, p] := by
+  · have hδ : EnvRelK (Eff := Eff) (Mult := Mult) k (opA :: P :: [])
+        [Val.shift v₁, p₁] [Val.shift v₂, p₂] := by
       rw [EnvRelK]
-      refine ⟨hcsv₁, hcsv₂, ?_, hcp, hcp, hpv, EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
+      refine ⟨hcsv₁, hcsv₂, ?_, hcp₁, hcp₂, hpv, EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
       rw [hsv₁, hsv₂]; exact hVarg opA hoa
-    have := vf hw k [Val.shift v₁, p] [Val.shift v₂, p] hδ
+    have := vf hw k [Val.shift v₁, p₁] [Val.shift v₂, p₂] hδ
     simpa only [closeV, closeV_nil] using this
+
+/-- ADR-0114 sibling of `custom_clause_resume_of`: an updating clause produces related operation
+results and related next parameters from its typed product envelope. -/
+theorem custom_clause_update_of {ℓ : Label} {P : VTy Eff Mult} {cl : List (ClauseKey × Comp)}
+    (vf : ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult},
+      HasVTy γ Γ v A → ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
+        VrelK n A (closeV δ₁ v) (closeV δ₂ v))
+    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) :
+    ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+      cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+      Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+      clause.1.updates = true →
+      (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
+      ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ next₁ next₂ : Val),
+        EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
+        Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret (.pair r₁ next₁) ∧
+        Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret (.pair r₂ next₂) ∧
+        Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.Closed next₁ ∧ Val.Closed next₂ ∧
+        VrelK k Aᵣ r₁ r₂ ∧ VrelK k P next₁ next₂ := by
+  intro k op clause v₁ v₂ p₁ p₂ hf hcv₁ hcv₂ hcp₁ hcp₂ hpv hupdate hVarg
+  obtain ⟨opA, opR, qa, qp, resume, next, hbody, hoa, hor, hpair⟩ :=
+    hasClauses_find?_typed_updating hcl hf hupdate
+  have hop : clause.1.op = op := by have := List.find?_some hf; simpa using this
+  rw [hop] at hoa hor
+  have hsv₁ : Val.shift v₁ = v₁ := hcv₁.shift
+  have hsv₂ : Val.shift v₂ = v₂ := hcv₂.shift
+  have hcsv₁ : Val.Closed (Val.shift v₁) := by rw [hsv₁]; exact hcv₁
+  have hcsv₂ : Val.Closed (Val.shift v₂) := by rw [hsv₂]; exact hcv₂
+  have hδ : EnvRelK (Eff := Eff) (Mult := Mult) k (opA :: P :: [])
+      [Val.shift v₁, p₁] [Val.shift v₂, p₂] := by
+    rw [EnvRelK]
+    refine ⟨hcsv₁, hcsv₂, ?_, hcp₁, hcp₂, hpv, EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
+    rw [hsv₁, hsv₂]; exact hVarg opA hoa
+  let r₁ := Val.subst p₁ (Val.subst (Val.shift v₁) resume)
+  let r₂ := Val.subst p₂ (Val.subst (Val.shift v₂) resume)
+  let next₁ := Val.subst p₁ (Val.subst (Val.shift v₁) next)
+  let next₂ := Val.subst p₂ (Val.subst (Val.shift v₂) next)
+  have hrelPair : VrelK k (.prod opR P) (.pair r₁ next₁) (.pair r₂ next₂) := by
+    have := vf hpair k [Val.shift v₁, p₁] [Val.shift v₂, p₂] hδ
+    simpa only [closeV, closeV_nil, r₁, r₂, next₁, next₂] using this
+  rw [VrelK] at hrelPair
+  obtain ⟨a₁, a₂, b₁, b₂, heq₁, heq₂, hrr, hnn⟩ := hrelPair
+  simp only [Val.pair.injEq] at heq₁ heq₂
+  obtain ⟨rfl, rfl⟩ := heq₁
+  obtain ⟨rfl, rfl⟩ := heq₂
+  have hclosedPair : ∀ v' p', Val.Closed (Val.shift v') → Val.Closed p' →
+      Val.Closed (Val.subst p' (Val.subst (Val.shift v') (.pair resume next))) :=
+      fun v' p' hcv' hcp' => by
+    have := closeV_closed_scoped (δ := [Val.shift v', p']) (v := .pair resume next)
+      (by intro u hu; rcases List.mem_cons.mp hu with rfl | hu; exact hcv'
+          rcases List.mem_cons.mp hu with rfl | hu; exact hcp'; simp at hu)
+      (by simpa using hpair.scopedIn)
+    simpa only [closeV, closeV_nil] using this
+  have hc₁ := (hclosedPair v₁ p₁ hcsv₁ hcp₁).pair_inv
+  have hc₂ := (hclosedPair v₂ p₂ hcsv₂ hcp₂).pair_inv
+  refine ⟨opR, r₁, r₂, next₁, next₂, hor, ?_, ?_, hc₁.1, hc₂.1, hc₁.2, hc₂.2, ?_, ?_⟩
+  · rw [hbody]; simp only [Comp.subst, Comp.substFrom, Val.substFrom, r₁, next₁]
+  · rw [hbody]; simp only [Comp.subst, Comp.substFrom, Val.substFrom, r₂, next₂]
+  · exact hrr
+  · exact hnn
 
 /-- #44 STAGE 5 (debt 2) — the CUSTOM-reinstall lemma, the user-effect resumptive heart. A `custom ℓ p cl`
 frame over a `KrelS`-related tail self-relates at every index; the resume conjunct is supplied by GUARDED
-RECURSION on the index — the exact skeleton of `krelS_state_reinstall`, STRICTLY SIMPLER (the reinstall
-diagonal is `p=p, cl=cl`: v1 is a READ-ONLY param, so the reinstalled frame is the SAME handler, unlike
-state's `put`, which reinstalls a *changed* value). The resume value is `subst pⱼ (subst (shift vⱼ)
-clause.2)`, a `ret`-of-closed-value by the ADR-0092 §D3 ret-shape; the value relation + ret-decomposition
-are supplied by the `hclause` premise (proven at the call site via `clause_resume_vrel` + `custom_resume_is_ret`,
-which need `vrelK_fund` — hence threaded IN, mirroring `state`'s `hsv`). shape: biernacki-popl18 §5.4. -/
+RECURSION on the index — the exact skeleton of `krelS_state_reinstall`. Plain clauses reinstall the
+related current parameters; updating clauses return a related `(resume, nextParam)` envelope and the
+recursive call reinstalls the related next parameters. The producers derive ret shape, closedness, and
+both value relations from `HasClauses`; they need `vrelK_fund`, hence are threaded in just as the state
+proof threads its stored-value relation. Shape: biernacki-popl18 §5.4. -/
 theorem krelS_custom_reinstall {q : Mult} {A P : VTy Eff Mult} {D : CTy Eff Mult} {φ : Eff}
-    {ℓ : Label} {g : Nat} {cl : List (OpId × Comp)}
+    {ℓ : Label} {g : Nat} {cl : List (ClauseKey × Comp)}
     (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl)
     (hrestrict : ∀ op p', Bang.handlesOp (Handler.custom ℓ p' cl) ℓ op = true →
-      (cl.find? (·.1 == op)).isSome) :
+      (cl.find? (fun clause => clause.1.op == op)).isSome) :
     ∀ (nh : Nat) m (p₁ p₂ : Val), Val.Closed p₁ → Val.Closed p₂ →
       VrelK (Eff := Eff) (Mult := Mult) m P p₁ p₂ →
       -- the resume-value producer: for the matched clause + related closed op-args, the double-subst
       -- resume focus is a `ret` of related closed values at the op's result type (ret-shape + clause_resume_vrel).
-      (∀ (k : Nat) (op : OpId) (clause : OpId × Comp) (v₁ v₂ : Val),
-        cl.find? (·.1 == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+      (∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁' p₂' : Val),
+        cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+        Val.Closed p₁' → Val.Closed p₂' → VrelK k P p₁' p₂' →
+        clause.1.updates = false →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
         ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val),
           EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
-          Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
-          Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
+          Comp.subst p₁' (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
+          Comp.subst p₂' (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
           Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂) →
+      (∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁' p₂' : Val),
+        cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+        Val.Closed p₁' → Val.Closed p₂' → VrelK k P p₁' p₂' →
+        clause.1.updates = true →
+        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
+        ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ next₁ next₂ : Val),
+          EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
+          Comp.subst p₁' (Comp.subst (Val.shift v₁) clause.2) = Comp.ret (.pair r₁ next₁) ∧
+          Comp.subst p₂' (Comp.subst (Val.shift v₂) clause.2) = Comp.ret (.pair r₂ next₂) ∧
+          Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.Closed next₁ ∧ Val.Closed next₂ ∧
+          VrelK k Aᵣ r₁ r₂ ∧ VrelK k P next₁ next₂) →
       ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ g K₁ K₂ →
       KrelS m (CTy.F q A) D φ g (Frame.handleF nh (Handler.custom ℓ p₁ cl) :: K₁)
                               (Frame.handleF nh (Handler.custom ℓ p₂ cl) :: K₂) := by
   intro nh m
   induction m using Nat.strong_induction_on with
   | _ m ih =>
-    intro p₁ p₂ hcp₁ hcp₂ hpv hclause K₁ K₂ hK
+    intro p₁ p₂ hcp₁ hcp₂ hpv hclause hclauseUpdate K₁ K₂ hK
     refine krelS_handleF_intro
       (show HandlerRel Eff Mult m (Handler.custom ℓ p₁ cl) (Handler.custom ℓ p₂ cl) from
         ⟨rfl, rfl, P, hpv, hcl⟩) hK ?_
     intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
     -- find? some (from hcatch via hrestrict), then the reinstall + resume.
-    have hfs : (cl.find? (·.1 == op)).isSome := hrestrict op p₁ hcatch
+    have hfs : (cl.find? (fun clause => clause.1.op == op)).isSome := hrestrict op p₁ hcatch
     obtain ⟨clause, hf⟩ := Option.isSome_iff_exists.mp hfs
-    obtain ⟨Aᵣ, r₁, r₂, hRes, hr₁, hr₂, hcr₁, hcr₂, hvr⟩ :=
-      hclause m' op clause w₁ w₂ hf hcw₁ hcw₂ hVrel
-    obtain ⟨qᵣ, rfl⟩ := hCᵢ Aᵣ (by rw [Handler.label]; exact hRes)
-    simp only [Handler.label, dispatchOn, hf] at hd₁ hd₂
-    rw [hr₁] at hd₁; rw [hr₂] at hd₂
-    obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
-    obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
-    -- the reinstalled `custom ℓ p₁/p₂ cl` over the tail relates at m' (IH, SAME frame — read-only param).
-    have hreinst := ih m' hm' p₁ p₂ hcp₁ hcp₂ (VrelK_mono (le_of_lt hm') hpv)
-      (fun k op' clause' v₁' v₂' hf' hcv₁' hcv₂' hVr' =>
-        hclause k op' clause' v₁' v₂' hf' hcv₁' hcv₂' hVr') K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
-    rw [krelS_handleF] at hreinst
-    have happ := krelS_append (Dᵢ := CTy.F q A) hKi
-      (show HandlerRel Eff Mult m' (Handler.custom ℓ p₁ cl) (Handler.custom ℓ p₂ cl) from
-        ⟨rfl, rfl, P, VrelK_mono (le_of_lt hm') hpv, hcl⟩)
-      (KrelS_mono (le_of_lt hm') hK) hreinst.2.2.2
-    exact ⟨qᵣ, Aᵣ, r₁, r₂, _, _, εᵢ, rfl, rfl, hcr₁, hcr₂, hvr, happ⟩
+    by_cases hupdate : clause.1.updates = true
+    · obtain ⟨Aᵣ, r₁, r₂, next₁, next₂, hRes, hr₁, hr₂, hcr₁, hcr₂,
+          hcn₁, hcn₂, hvr, hvnext⟩ :=
+        hclauseUpdate m' op clause w₁ w₂ p₁ p₂ hf hcw₁ hcw₂ hcp₁ hcp₂
+          (VrelK_mono (le_of_lt hm') hpv) hupdate hVrel
+      obtain ⟨qᵣ, rfl⟩ := hCᵢ Aᵣ (by rw [Handler.label]; exact hRes)
+      simp only [Handler.label, dispatchOn, hf, hupdate, if_true] at hd₁ hd₂
+      rw [hr₁] at hd₁; rw [hr₂] at hd₂
+      simp only [Option.some.injEq] at hd₁ hd₂
+      obtain rfl := hd₁.symm
+      obtain rfl := hd₂.symm
+      have hreinst := ih m' hm' next₁ next₂ hcn₁ hcn₂ hvnext hclause hclauseUpdate
+        K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
+      rw [krelS_handleF] at hreinst
+      have happ := krelS_append (Dᵢ := CTy.F q A) hKi
+        (show HandlerRel Eff Mult m' (Handler.custom ℓ next₁ cl) (Handler.custom ℓ next₂ cl) from
+          ⟨rfl, rfl, P, hvnext, hcl⟩)
+        (KrelS_mono (le_of_lt hm') hK) hreinst.2.2.2
+      exact ⟨qᵣ, Aᵣ, r₁, r₂, _, _, εᵢ, rfl, rfl, hcr₁, hcr₂, hvr, happ⟩
+    · have hplain : clause.1.updates = false := Bool.eq_false_of_not_eq_true hupdate
+      obtain ⟨Aᵣ, r₁, r₂, hRes, hr₁, hr₂, hcr₁, hcr₂, hvr⟩ :=
+        hclause m' op clause w₁ w₂ p₁ p₂ hf hcw₁ hcw₂ hcp₁ hcp₂
+          (VrelK_mono (le_of_lt hm') hpv) hplain hVrel
+      obtain ⟨qᵣ, rfl⟩ := hCᵢ Aᵣ (by rw [Handler.label]; exact hRes)
+      simp only [Handler.label, dispatchOn, hf, hplain, Bool.false_eq_true, if_false] at hd₁ hd₂
+      rw [hr₁] at hd₁; rw [hr₂] at hd₂
+      obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
+      obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
+      have hreinst := ih m' hm' p₁ p₂ hcp₁ hcp₂ (VrelK_mono (le_of_lt hm') hpv)
+        hclause hclauseUpdate
+        K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
+      rw [krelS_handleF] at hreinst
+      have happ := krelS_append (Dᵢ := CTy.F q A) hKi
+        (show HandlerRel Eff Mult m' (Handler.custom ℓ p₁ cl) (Handler.custom ℓ p₂ cl) from
+          ⟨rfl, rfl, P, VrelK_mono (le_of_lt hm') hpv, hcl⟩)
+        (KrelS_mono (le_of_lt hm') hK) hreinst.2.2.2
+      exact ⟨qᵣ, Aᵣ, r₁, r₂, _, _, εᵢ, rfl, rfl, hcr₁, hcr₂, hvr, happ⟩
 
 /-- #44 STAGE 5 (debt 1) — the `handleCustom` compat core at `CrelK`. The direct analogue of
 `compatK_handleState`: MINT `(g, K, handle (custom ℓ p cl) M) ↦ (g+1, handleF g (custom ℓ p cl)::K,
@@ -1361,19 +1513,32 @@ producer `hclause` are threaded from the caller (built via `vrelK_fund`/`clause_
 `crelK_fund` call site — inside the mutual block, self-referencing `vrelK_fund`, exactly as the state arm
 supplies `hsv`). No induction of its own; risk lives in debt 2. -/
 theorem compatK_handleCustom {n : Nat} {q : Mult} {A P : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
-    {p : Val} {cl : List (OpId × Comp)} {M₁ M₂ : Comp}
+    {p : Val} {cl : List (ClauseKey × Comp)} {M₁ M₂ : Comp}
     (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl)
     (hrestrict : ∀ op p', Bang.handlesOp (Handler.custom ℓ p' cl) ℓ op = true →
-      (cl.find? (·.1 == op)).isSome)
+      (cl.find? (fun clause => clause.1.op == op)).isSome)
     (hpv : ∀ k, VrelK (Eff := Eff) (Mult := Mult) k P p p)
-    (hclause : ∀ (k : Nat) (op : OpId) (clause : OpId × Comp) (v₁ v₂ : Val),
-        cl.find? (·.1 == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+    (hclause : ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+        cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+        Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+        clause.1.updates = false →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
         ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val),
           EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
-          Comp.subst p (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
-          Comp.subst p (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
+          Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
+          Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
           Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂)
+    (hclauseUpdate : ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+        cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+        Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+        clause.1.updates = true →
+        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
+        ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ next₁ next₂ : Val),
+          EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
+          Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret (.pair r₁ next₁) ∧
+          Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret (.pair r₂ next₂) ∧
+          Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.Closed next₁ ∧ Val.Closed next₂ ∧
+          VrelK k Aᵣ r₁ r₂ ∧ VrelK k P next₁ next₂)
     (hcp : Val.Closed p)
     (hbody : ∀ gid, CrelK n (CTy.F q A) e
       (Comp.subst (Val.vcap gid ℓ) M₁) (Comp.subst (Val.vcap gid ℓ) M₂)) :
@@ -1389,7 +1554,7 @@ theorem compatK_handleCustom {n : Nat} {q : Mult} {A P : VTy Eff Mult} {e φ : E
   rw [CrelK] at hb
   exact hb (g + 1) D (Frame.handleF g (Handler.custom ℓ p cl) :: K₁)
     (Frame.handleF g (Handler.custom ℓ p cl) :: K₂)
-    (krelS_custom_reinstall hcl hrestrict g n p p hcp hcp (hpv n) hclause K₁ K₂
+    (krelS_custom_reinstall hcl hrestrict g n p p hcp hcp (hpv n) hclause hclauseUpdate K₁ K₂
       (KrelS_g_cast n g (g + 1) K₁ K₂ (KrelS_eff_cast hK)))
 
 
@@ -1648,34 +1813,33 @@ theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e :
         rwa [closeV_closed hcp] at this
       -- coverage restriction (custom analogue of state's get/put)
       have hrestrict : ∀ op p', Bang.handlesOp (Handler.custom ℓ p' cl) ℓ op = true →
-          (cl.find? (·.1 == op)).isSome := fun op p' hc => by
+          (cl.find? (fun clause => clause.1.op == op)).isSome := fun op p' hc => by
         simp only [handlesOp, Bool.and_eq_true] at hc
         exact hc.2
       -- the resume producer, in-block: vf = vrelK_fund_at (v/A explicit → adapt to implicit)
-      have hclause : ∀ (k : Nat) (op : OpId) (clause : OpId × Comp) (v₁ v₂ : Val),
-          cl.find? (·.1 == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+      have hclause : ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+          cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+          Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+          clause.1.updates = false →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
           ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val),
             EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
-            Comp.subst p (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
-            Comp.subst p (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
+            Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
+            Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
             Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ := by
-        intro k op clause v₁ v₂ hf hcv₁ hcv₂ hVarg
-        obtain ⟨opA, opR, qa, qp, w, hbodyeq, hoa, hor, hw⟩ := hasClauses_find?_typed hcl hf
+        intro k op clause v₁ v₂ p₁ p₂ hf hcv₁ hcv₂ hcp₁ hcp₂ hpv' hplain hVarg
+        obtain ⟨opA, opR, qa, qp, w, hbodyeq, hoa, hor, hw⟩ :=
+          hasClauses_find?_typed hcl hf hplain
         -- the clause value VrelK, via the IN-BLOCK recursion on w:
-        have hcp : Val.Closed p := fun j => hp.shift_closed j (Nat.zero_le j)
         have hsv₁ : Val.shift v₁ = v₁ := hcv₁.shift
         have hsv₂ : Val.shift v₂ = v₂ := hcv₂.shift
         have hcsv₁ : Val.Closed (Val.shift v₁) := by rw [hsv₁]; exact hcv₁
         have hcsv₂ : Val.Closed (Val.shift v₂) := by rw [hsv₂]; exact hcv₂
-        have hop : clause.1 = op := by have := List.find?_some hf; simpa using this
+        have hop : clause.1.op = op := by have := List.find?_some hf; simpa using this
         rw [hop] at hoa hor
-        have hpv : VrelK k P p p := by
-          have := vrelK_fund_at p hp k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
-          rwa [closeV_closed hcp] at this
-        have hδcl : EnvRelK k (opA :: P :: []) [Val.shift v₁, p] [Val.shift v₂, p] := by
+        have hδcl : EnvRelK k (opA :: P :: []) [Val.shift v₁, p₁] [Val.shift v₂, p₂] := by
           rw [EnvRelK]
-          refine ⟨hcsv₁, hcsv₂, ?_, hcp, hcp, hpv, EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
+          refine ⟨hcsv₁, hcsv₂, ?_, hcp₁, hcp₂, hpv', EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
           rw [hsv₁, hsv₂]; exact hVarg opA hoa
         have hmem : clause ∈ cl := List.mem_of_find?_eq_some hf
         have hszcl : sizeOf clause < sizeOf cl := List.sizeOf_lt_of_mem hmem
@@ -1683,22 +1847,81 @@ theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e :
           calc sizeOf w < sizeOf clause.2 := by rw [hbodyeq]; simp only [Comp.ret.sizeOf_spec]; omega
             _ ≤ sizeOf clause := by
                 obtain ⟨c1, c2⟩ := clause; simp only [Prod.mk.sizeOf_spec]; omega
-        have hwv : VrelK k opR (Val.subst p (Val.subst (Val.shift v₁) w))
-                              (Val.subst p (Val.subst (Val.shift v₂) w)) := by
-          have := vrelK_fund_at w hw k [Val.shift v₁, p] [Val.shift v₂, p] hδcl
+        have hwv : VrelK k opR (Val.subst p₁ (Val.subst (Val.shift v₁) w))
+                              (Val.subst p₂ (Val.subst (Val.shift v₂) w)) := by
+          have := vrelK_fund_at w hw k [Val.shift v₁, p₁] [Val.shift v₂, p₂] hδcl
           simpa only [closeV, closeV_nil] using this
-        have hclosed : ∀ v', Val.Closed (Val.shift v') →
-            Val.Closed (Val.subst p (Val.subst (Val.shift v') w)) := fun v' hcv' => by
-          have := closeV_closed_scoped (δ := [Val.shift v', p]) (v := w)
+        have hclosed : ∀ v' p', Val.Closed (Val.shift v') → Val.Closed p' →
+            Val.Closed (Val.subst p' (Val.subst (Val.shift v') w)) := fun v' p' hcv' hcp' => by
+          have := closeV_closed_scoped (δ := [Val.shift v', p']) (v := w)
             (by intro u hu; rcases List.mem_cons.mp hu with rfl | hu; exact hcv'
-                rcases List.mem_cons.mp hu with rfl | hu; exact hcp; simp at hu)
+                rcases List.mem_cons.mp hu with rfl | hu; exact hcp'; simp at hu)
             (by simpa using hw.scopedIn)
           simpa only [closeV, closeV_nil] using this
-        refine ⟨opR, Val.subst p (Val.subst (Val.shift v₁) w), Val.subst p (Val.subst (Val.shift v₂) w),
-          hor, ?_, ?_, hclosed v₁ hcsv₁, hclosed v₂ hcsv₂, hwv⟩
+        refine ⟨opR, Val.subst p₁ (Val.subst (Val.shift v₁) w),
+          Val.subst p₂ (Val.subst (Val.shift v₂) w),
+          hor, ?_, ?_, hclosed v₁ p₁ hcsv₁ hcp₁, hclosed v₂ p₂ hcsv₂ hcp₂, hwv⟩
         · rw [hbodyeq]; simp only [Comp.subst, Comp.substFrom]
         · rw [hbodyeq]; simp only [Comp.subst, Comp.substFrom]
-      refine compatK_handleCustom (e := e) hcl hrestrict hpv hclause hcp (fun gid => ?_)
+      have hclauseUpdate : ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+          cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+          Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+          clause.1.updates = true →
+          (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
+          ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ next₁ next₂ : Val),
+            EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
+            Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret (.pair r₁ next₁) ∧
+            Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret (.pair r₂ next₂) ∧
+            Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.Closed next₁ ∧ Val.Closed next₂ ∧
+            VrelK k Aᵣ r₁ r₂ ∧ VrelK k P next₁ next₂ := by
+        intro k op clause v₁ v₂ p₁ p₂ hf hcv₁ hcv₂ hcp₁ hcp₂ hpv' hupdate hVarg
+        obtain ⟨opA, opR, qa, qp, resume, next, hbodyeq, hoa, hor, hpair⟩ :=
+          hasClauses_find?_typed_updating hcl hf hupdate
+        have hsv₁ : Val.shift v₁ = v₁ := hcv₁.shift
+        have hsv₂ : Val.shift v₂ = v₂ := hcv₂.shift
+        have hcsv₁ : Val.Closed (Val.shift v₁) := by rw [hsv₁]; exact hcv₁
+        have hcsv₂ : Val.Closed (Val.shift v₂) := by rw [hsv₂]; exact hcv₂
+        have hop : clause.1.op = op := by have := List.find?_some hf; simpa using this
+        rw [hop] at hoa hor
+        have hδcl : EnvRelK k (opA :: P :: []) [Val.shift v₁, p₁] [Val.shift v₂, p₂] := by
+          rw [EnvRelK]
+          refine ⟨hcsv₁, hcsv₂, ?_, hcp₁, hcp₂, hpv', EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
+          rw [hsv₁, hsv₂]; exact hVarg opA hoa
+        have hmem : clause ∈ cl := List.mem_of_find?_eq_some hf
+        have hszcl : sizeOf clause < sizeOf cl := List.sizeOf_lt_of_mem hmem
+        have hszpair : sizeOf (Val.pair resume next) < sizeOf clause := by
+          calc sizeOf (Val.pair resume next) < sizeOf clause.2 := by
+                rw [hbodyeq]; simp only [Comp.ret.sizeOf_spec]; omega
+            _ ≤ sizeOf clause := by
+                obtain ⟨c1, c2⟩ := clause; simp only [Prod.mk.sizeOf_spec]; omega
+        let r₁ := Val.subst p₁ (Val.subst (Val.shift v₁) resume)
+        let r₂ := Val.subst p₂ (Val.subst (Val.shift v₂) resume)
+        let next₁ := Val.subst p₁ (Val.subst (Val.shift v₁) next)
+        let next₂ := Val.subst p₂ (Val.subst (Val.shift v₂) next)
+        have hpwv : VrelK k (.prod opR P) (.pair r₁ next₁) (.pair r₂ next₂) := by
+          have := vrelK_fund_at (.pair resume next) hpair k
+            [Val.shift v₁, p₁] [Val.shift v₂, p₂] hδcl
+          simpa only [closeV, closeV_nil, r₁, r₂, next₁, next₂] using this
+        rw [VrelK] at hpwv
+        obtain ⟨a₁, a₂, b₁, b₂, heq₁, heq₂, hrr, hnn⟩ := hpwv
+        simp only [Val.pair.injEq] at heq₁ heq₂
+        obtain ⟨rfl, rfl⟩ := heq₁
+        obtain ⟨rfl, rfl⟩ := heq₂
+        have hclosedPair : ∀ v' p', Val.Closed (Val.shift v') → Val.Closed p' →
+            Val.Closed (Val.subst p' (Val.subst (Val.shift v') (.pair resume next))) :=
+            fun v' p' hcv' hcp' => by
+          have := closeV_closed_scoped (δ := [Val.shift v', p']) (v := .pair resume next)
+            (by intro u hu; rcases List.mem_cons.mp hu with rfl | hu; exact hcv'
+                rcases List.mem_cons.mp hu with rfl | hu; exact hcp'; simp at hu)
+            (by simpa using hpair.scopedIn)
+          simpa only [closeV, closeV_nil] using this
+        have hc₁ := (hclosedPair v₁ p₁ hcsv₁ hcp₁).pair_inv
+        have hc₂ := (hclosedPair v₂ p₂ hcsv₂ hcp₂).pair_inv
+        refine ⟨opR, r₁, r₂, next₁, next₂, hor, ?_, ?_, hc₁.1, hc₂.1,
+          hc₁.2, hc₂.2, hrr, hnn⟩
+        · rw [hbodyeq]; simp only [Comp.subst, Comp.substFrom, Val.substFrom, r₁, next₁]
+        · rw [hbodyeq]; simp only [Comp.subst, Comp.substFrom, Val.substFrom, r₂, next₂]
+      refine compatK_handleCustom (e := e) hcl hrestrict hpv hclause hclauseUpdate hcp (fun gid => ?_)
       have hclosed : Val.Closed (Val.vcap gid ℓ) := fun k => rfl
       rw [closeC_subst_comm hδ.closed_left hclosed, closeC_subst_comm hδ.closed_right hclosed]
       have hδ' : EnvRelK n (VTy.cap ℓ :: Γ) (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) := by
@@ -1713,7 +1936,10 @@ theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e :
 termination_by sizeOf c
 decreasing_by
   all_goals simp_wf
-  all_goals omega
+  all_goals first
+    | omega
+    | (change sizeOf (Val.pair resume next) < _
+       exact lt_trans (lt_trans hszpair hszcl) (by omega))
 end
 
 /-- ◊4.5b fundamental theorem (value), frozen-signature wrapper over the term-measured
@@ -1740,18 +1966,34 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
 `ret` of related closed values at the op's result type. Uses `custom_resume_is_ret` (ret-shape),
 `closeV_closed_scoped` (closedness), and `vrelK_fund` on the clause value + param (via `EnvRelK k [opA, P]
 [shift v₁, p] [shift v₂, p]`) — hence AFTER the mutual block. -/
-theorem custom_clause_resume {ℓ : Label} {P : VTy Eff Mult} {cl : List (OpId × Comp)} {p : Val}
-    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl)
-    (hp : HasVTy (Eff := Eff) (Mult := Mult) [] [] p P) :
-    ∀ (k : Nat) (op : OpId) (clause : OpId × Comp) (v₁ v₂ : Val),
-      cl.find? (·.1 == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+theorem custom_clause_resume {ℓ : Label} {P : VTy Eff Mult} {cl : List (ClauseKey × Comp)}
+    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) :
+    ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+      cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+      Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+      clause.1.updates = false →
       (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
       ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val),
         EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
-        Comp.subst p (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
-        Comp.subst p (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
+        Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
+        Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
         Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ :=
-  custom_clause_resume_of (vf := vrelK_fund) hcl hp
+  custom_clause_resume_of (vf := vrelK_fund) hcl
+
+theorem custom_clause_update {ℓ : Label} {P : VTy Eff Mult} {cl : List (ClauseKey × Comp)}
+    (hcl : HasClauses (Eff := Eff) (Mult := Mult) ℓ P cl) :
+    ∀ (k : Nat) (op : OpId) (clause : ClauseKey × Comp) (v₁ v₂ p₁ p₂ : Val),
+      cl.find? (fun clause => clause.1.op == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+      Val.Closed p₁ → Val.Closed p₂ → VrelK k P p₁ p₂ →
+      clause.1.updates = true →
+      (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
+      ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ next₁ next₂ : Val),
+        EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
+        Comp.subst p₁ (Comp.subst (Val.shift v₁) clause.2) = Comp.ret (.pair r₁ next₁) ∧
+        Comp.subst p₂ (Comp.subst (Val.shift v₂) clause.2) = Comp.ret (.pair r₂ next₂) ∧
+        Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.Closed next₁ ∧ Val.Closed next₂ ∧
+        VrelK k Aᵣ r₁ r₂ ∧ VrelK k P next₁ next₂ :=
+  custom_clause_update_of (vf := vrelK_fund) hcl
 
 /-! ### B.6′ ◊4.5b — `krelS_refl` (the answer-typed `lr_sound` capstone)
 
@@ -1835,19 +2077,19 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       exact krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' nh n Θ Θ
         (heapRel_self_of_cells_int n Θ hcells) K K (KrelS_eff_cast (ihK hCo))
   | @customF K nh ℓ p cl e φ eo q P A Co _hcl _hcov _hp _hle _hBocc hK ihK =>
-      -- ◊4.5b-append #44 STAGE 5 (debt 2): the custom-frame self-relation IS `krelS_custom_reinstall` at
-      -- `p = p` (the SAME read-only param both sides — strictly simpler than state's `put`). The tail
-      -- self-relates via `ihK` (cast `φ → e`); the interface + clause typing come from the `customF` binder;
-      -- the resume-value producer `hclause` from `custom_clause_resume` (`vrelK_fund` on each clause value).
+      -- ◊4.5b-append #44 STAGE 5 (debt 2): the custom-frame self-relation starts at `p = p` and
+      -- `krelS_custom_reinstall` preserves it across plain clauses or advances it to the related next
+      -- parameters returned by updating clauses. The tail self-relates via `ihK` (cast `φ → e`);
+      -- interface and clause typing come from the `customF` binder.
       have hcpp : Val.Closed p := fun k => _hp.shift_closed k (Nat.zero_le k)
       have hpv : VrelK n P p p := by
         have := vrelK_fund _hp n [] [] (EnvRelK_nil_iff n [] [] |>.mpr ⟨rfl, rfl⟩)
         rwa [closeV_closed hcpp] at this
       have hrestrict' : ∀ op p', Bang.handlesOp (Handler.custom ℓ p' cl) ℓ op = true →
-          (cl.find? (·.1 == op)).isSome := fun op p' hc => by
+          (cl.find? (fun clause => clause.1.op == op)).isSome := fun op p' hc => by
         simp only [handlesOp, Bool.and_eq_true, beq_iff_eq] at hc; exact hc.2
       exact krelS_custom_reinstall _hcl hrestrict' nh n p p hcpp hcpp hpv
-        (custom_clause_resume _hcl _hp) K K (KrelS_eff_cast (ihK hCo))
+        (custom_clause_resume _hcl) (custom_clause_update _hcl) K K (KrelS_eff_cast (ihK hCo))
 
 end -- public section
 end Bang

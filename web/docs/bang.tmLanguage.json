@@ -44,7 +44,7 @@
     },
     "keywords": {
       "name": "keyword.control.bang",
-      "match": "\\b(?:atomically|effect|handle|import|resume|Right|match|param|raise|state|trait|where|write|Left|data|else|impl|read|then|with|and|for|fun|get|law|let|new|pub|put|use|as|do|fn|if|in)\\b"
+      "match": "\\b(?:atomically|effect|handle|import|pledge|resume|update|Right|match|param|raise|state|trait|where|write|Left|data|else|impl|read|then|with|and|for|fun|get|law|let|new|pub|put|use|as|do|fn|if|in)\\b"
     },
     "effect-labels": {
       "name": "support.type.effect.bang",
