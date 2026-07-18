@@ -36,9 +36,10 @@ AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
                                  grade-0 erasure and the joined evidence card are concrete on Wasm.
 ✓  ▸ EVIDENCE-SEAM INTEGRITY     operation/subject validity split, stable declaration IDs, resolved
                                  B018 parity/location, quiet route, and frozen-packet replay are green.
-0  ▸ ORGANIC CORRECTION          ← LIVE EDGE: one unfamiliar developer runs the repaired public journey
-     unassisted; route evidence is adjudicated before feature work (`PATH-organic-resource-validation`).
-1  ▸ SPREADSHEET (reactivity)     next project — lights up the distinctive DORMANT feature. NB the
+   ↷ ORGANIC CORRECTION          DEFERRED BY OPERATOR 2026-07-18, not completed: one unfamiliar developer
+     still must run the repaired public journey before ◊6/release (`PATH-organic-resource-validation`).
+0  ▸ SPREADSHEET (reactivity)     ← LIVE EDGE: the first live/stale tracer lights up the distinctive
+     DORMANT feature. NB the
      reactive MECHANISM is already proven (`reactiveCell` runs + a liveness law in the Audit gate,
      ADR-0005); the project EXTENDS it to a reactive-programming surface (not build-from-scratch).
      Rehearses incremental compilation (same hash-staleness shape, ADR-0076).
@@ -97,16 +98,16 @@ COMPLETED SEAM — the resource description is safe to consume (PATH-contract-qu
   evidence integrity    subject validity · stable qualified IDs · B018       automation + outsider recovery;
                         parity/location · quiet documented route              fixed before compatibility hardened
 
-LIVE LOOP — let real unfamiliar use correct the next move (PATH-organic-resource-validation)
+DEFERRED LOOP — real unfamiliar use remains required before ◊6 (PATH-organic-resource-validation)
   organic validation    goal-only public journey · chronological trace ·      external correction before another
-                        consent · adjudicated findings                         internally selected feature slice
+                        consent · adjudicated findings                         release claim; no validation credit yet
 
 FRONTIER — next projects that pull new capability
   JSON codec             recursive ADTs · Outcome/error handling · strings    grounds the SCHEMA/contract story (Q37)
   2048 (logic)           polymorphic List · refinement types (2^x invariant)  make-illegal-states-unrepresentable
                          · randomness (state capability)                       (the exponent = a power-of-2 by construction)
 
-KERNEL-EXERCISERS — pull UNDER-USED kernel features
+LIVE PROJECT / KERNEL-EXERCISER — pull an UNDER-USED kernel feature
   key-value store        STM (the ONE privileged primitive — under-exercised   stresses STM/transactions directly
     w/ transactions      in v1) · concurrency · persistence
   spreadsheet /          REACTIVITY (`=`, ADR-0005/6 — the distinctive         stresses the reactivity operator;
@@ -138,15 +139,16 @@ when the project at its left produces evidence for the feature work at its right
 | horizon | project evidence | capability it earns | systemic-review posture |
 |---|---|---|---|
 | **paved** | tokenizer, parser combinators, semantic contracts, one-shot permit, compiled examples | real surface; polymorphism; laws and swappable realizations; local quantities; verified/tested execution chain to Wasm | preserve these as the stable semantic-description substrate |
-| **now** | first unassisted outsider run against repaired contract evidence | external correction loop over a trustworthy machine view | prevent leakage/overclaiming; adjudicate observed friction before feature work |
-| **next project** | spreadsheet/reactive dataflow | dependency DAG, incremental recomputation, stage-policy UX | extend the proven reactive mechanism; do not invent a second reactivity core |
+| **deferred pre-◊6 loop** | first unassisted outsider run against repaired contract evidence | external correction loop over a trustworthy machine view | consciously deferred, not complete; prevent leakage/overclaiming and adjudicate observed friction before release claims |
+| **now** | spreadsheet live/stale tracer, then reactive dataflow increments | static formula DAG and pull recomputation first; dependency observation and measured incremental recomputation next | extend the proven reactive mechanism; do not invent a second reactivity core or call pull recomputation incremental |
 | **toolchain project** | BANG tools consume the compiler fact graph | incremental/content-addressed compilation, module graph, LSP/MCP/CLI as views | preserve schema evolution and observation points now; build the scheduler when this consumer measures it |
 | **systems wedge** | allocator → cooperative scheduler → filesystem → driver | resource protocols, one-shot scheduling, persistence/location, least-authority IO | scope each rung only when reached; local quantities preserve the allocator door without pre-building ownership |
 | **distributed branch** | actor/chat system → replicated log/Raft | sendability, message passing, network capability security, deterministic replay | stays beside the cooperative-OS path until a project requires actor transfer or multi-shot behavior |
 | **north star** | verified xv6/unikernel running real workloads | the description/realization thesis at OS scale: effects as syscalls, handlers as runtimes/drivers, grades as resource/capability boundaries | success is an evidence chain, not feature count |
 
-The immediate ordering is therefore **external correction → spreadsheet**; evidence repair is paved. The
-systems ladder is the destination-bearing branch; the toolchain and distributed projects are
+The operator consciously changed the immediate ordering to **spreadsheet tracer now**, while retaining
+external correction as an open pre-◊6/release obligation rather than pretending it happened. Evidence
+repair is paved. The systems ladder is the destination-bearing branch; the toolchain and distributed projects are
 rehearsals for its dependency, authority, observability, and concurrency problems rather than a
 detour into completeness.
 

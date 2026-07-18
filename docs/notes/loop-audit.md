@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: the first fresh-context agentic inspection's evidence-seam defects are repaired and under frozen-packet replay; the next edge move is organic outsider exposure, not another internal simulation._
+_Position: the evidence seam is repaired; organic outsider exposure remains the weakest loop but was consciously deferred by the operator while the spreadsheet tracer advances, so no human-validation credit is claimed._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
@@ -26,7 +26,7 @@ _Position: the first fresh-context agentic inspection's evidence-seam defects ar
 | prospective systemic review | per-PATH / checkpoint | ◑ INSTITUTIONALIZED 2026-07-18 — expected-regret dispositions now separate implement-now, option-preserving, triggered deferral, and rejection; first live application scopes the evidence-integrity path |
 | **— the desk's edge —** | | |
 | CI on main (`.github/workflows/verify.yml`) | per-push | ✔ Verify, Site, and Pages green through the 2026-07-16 remediation wave |
-| a user running bang | per-◊ (stranger test) | ◑ OPEN — five earlier internal rounds plus one explicit three-session agentic inspection fed concrete fixes, but still no ORGANIC outside user; another internal round cannot satisfy the validation gate |
+| a user running bang | per-◊ (stranger test) | ◑ OPEN / DEFERRED 2026-07-18 — five earlier internal rounds plus one explicit three-session agentic inspection fed concrete fixes, but still no ORGANIC outside user; spreadsheet work does not satisfy this gate, which must reopen before ◊6/release |
 | external review (paper, peers) | — | ◑ ◊6 paper skeletons drafted; no external peer read yet |
 | performance measurement | — | ✘ absent (invariant #7 defers it) — first instrument in flight: `lake exe pole` wiring + critical-path report (plan 007) |
 
@@ -38,7 +38,8 @@ _Position: the first fresh-context agentic inspection's evidence-seam defects ar
 4. The deliverable is the ONE sentence answer to: which loop is now the weakest, and does the
    next arc feed it? (If three ◊ in a row answer "the same outer loop", that's the escalation.)
 
-**2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk.
-The agentic inspection's F1–F4 evidence defects are repaired; after the frozen packet and standing
-gates pass, publish the slice, invite an unassisted run, and capture outsider-filed feedback instead
-of adding another internal simulation.
+**2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk. The
+operator explicitly deferred it and released the spreadsheet tracer; that is a sequencing ruling, not
+evidence that the loop ran. Keep the prepared packet reachable and reopen it before ◊6/release or when an
+unfamiliar participant becomes available. Meanwhile, do not describe agentic inspection or spreadsheet
+journey gates as organic validation.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=examples/calc,examples/json runs-in=verify
+# tool: role=test couples=examples/calc,examples/json,examples/reactive-spreadsheet runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-compiled-dogfood.sh — the --compiled DIFFERENTIAL gate for the dogfood programs (#135).
 #
@@ -14,9 +14,10 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 #   1. `--compiled` stdout == expected.txt  (the run-oracle SoT, same shape as check-examples).
 #   2. `--compiled` stdout == `--engine=env` stdout  (the DIFFERENTIAL — the compiled machine and the
 #      default env machine must agree on the same program; a divergence is a compiled-path bug).
-# These are the two dogfood programs the diagnosis PROVED pass compiled (calc = recursive traversal
-# with a first-class-cap effect; json = pure parse+print). Both are multi-module, so they exercise
-# module resolution → checkAndLowerProg → runComp on the compiled engine end-to-end.
+# Calc and JSON retain the original diagnosis contract (recursive first-class-cap traversal and pure
+# multi-module parse). The reactive spreadsheet additionally keeps the first actor-visible reactivity
+# tracer honest on the compiled route: named State inputs, thunk recomputation, and early sampling must
+# agree with the same oracle.
 #
 # GOTCHA (set -euo pipefail): an unguarded `$(cmd)` capture dies SILENTLY on a nonzero exit (a
 # truncated false-green). Every run below captures standalone with `&& … || …` around the exit, and
@@ -41,7 +42,7 @@ TIMEOUT="${COMPILED_DOGFOOD_TIMEOUT:-90}"
 # The dogfood programs the diagnosis proved pass --compiled. calc's first-class-cap EFFECT and
 # json's pure parse are BOTH covered; hostio-echo is excluded (host-IO needs the driver, not a
 # pure compiled run — ADR-0104).
-PROGRAMS=(calc json)
+PROGRAMS=(calc json reactive-spreadsheet)
 
 pass=0
 fail=0
@@ -74,8 +75,8 @@ done
 
 echo "──────────────────────────────"
 echo "compiled-dogfood: $pass passed, $fail failed"
-# COUNT ASSERTION (false-green defense): 2 programs × 2 checks = 4. A silently-truncated run that
-# skipped a check would leave pass+fail < 4 and fail loud here rather than reading as green.
+# COUNT ASSERTION (false-green defense): each program contributes two checks. A silently-truncated run
+# that skipped a check leaves pass+fail below the derived count and fails loud rather than reading green.
 expected_checks=$(( ${#PROGRAMS[@]} * 2 ))
 if [ "$((pass + fail))" -ne "$expected_checks" ]; then
   echo "✗ INTERNAL: ran $((pass + fail)) checks, expected $expected_checks — a run was silently skipped/truncated" >&2

@@ -1,0 +1,23 @@
+-- A tiny spreadsheet over BANG's existing reactive substrate.
+--
+-- Input cells are named State capabilities. Formulas are unmemoized thunks:
+--   subtotal = price * quantity
+--   tax      = subtotal / 10
+--   total    = subtotal + tax
+--
+-- With price=10 and quantity=2, total is 22. After price becomes 12, forcing
+-- the live total re-samples the inputs and returns 26. `snapshot` deliberately
+-- captures the already-forced value 22, so it stays 22: forcing at the formula
+-- boundary is BANG's explicit sample/untrack operation (ADR-0005).
+state 10 as price in
+state 2 as quantity in
+let subtotal = {let p = price.get in let q = quantity.get in p * q} in
+let tax = {($subtotal) / 10} in
+let total = {($subtotal) + ($tax)} in
+let before = $total in
+let sampled = $total in
+let snapshot = {sampled} in
+let updated = price.put(12) in
+let liveAfter = $total in
+let staleAfter = $snapshot in
+((before, liveAfter), (sampled, staleAfter))

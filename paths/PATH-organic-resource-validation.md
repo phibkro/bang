@@ -2,7 +2,9 @@
 
 > Put the repaired resource-contract journey in front of an unfamiliar developer without solution
 > leakage, capture what the real route changes, then let that evidence—not another internal persona—
-> determine whether the project proceeds to the spreadsheet/reactivity checkpoint.
+> determine whether the project proceeds to the spreadsheet/reactivity checkpoint. On 2026-07-18 the
+> operator consciously deferred this outside run and released the spreadsheet tracer; that sequencing
+> decision does not count as validation or close this path.
 
 ## Seam
 
@@ -26,7 +28,8 @@
   B018 recovery, stable machine validity/identity, and concrete grade-0 emission consequences.
 - **Adverse / recovery route**: duplicate a one-shot permit, recover while retaining both uses, and
   judge the invalid contract card without moderator hints.
-- **Downstream journey released**: this journey; adjudication then releases spreadsheet/reactivity.
+- **Downstream journey released**: this journey; the spreadsheet tracer has been released by an explicit
+  operator sequencing decision, while organic adjudication remains required before ◊6/release claims.
 
 ## Feeds the constraint
 
@@ -73,20 +76,23 @@
    in the participant's own words; do not collapse them into a synthetic score.
 6. [ ] Adjudicate findings against the pinned product, compare them with agent-only findings and false
    positives, and apply the prospective systemic-review heuristic to every proposed correction.
-7. [ ] Land any binding correction, refresh the loop audit, then either open the spreadsheet/reactivity
-   PATH or record the concrete reason this outside loop remains open.
+7. [x] Record the 2026-07-18 operator ruling to defer the run and open the spreadsheet tracer without
+   relabelling the missing evidence as complete.
+8. [ ] Land any binding correction and refresh the loop audit before ◊6/release; reopen earlier if an
+   unfamiliar participant becomes available.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [ ] In flight: repaired revision `fe01ad60` is published and the human packet is ready; operator
-  recruitment/consent is next
+- [ ] In flight: deferred by operator on 2026-07-18; repaired revision `fe01ad60` is published and the
+  human packet is ready, but recruitment/consent has not occurred
 - [x] Blockers: an organic participant and consent cannot be manufactured by repository work
 - [ ] Completed YYYY-MM-DD
 - Retained failed gates / successors: none yet; contaminated/moderated runs remain recorded and create a
   fresh successor session rather than being relabelled unassisted
-- Reopen / observe: compare the first organic trace with round 6, then reopen any evidence disposition
-  that the participant contradicts
+- Reopen / observe: resume before ◊6/release, or immediately when an unfamiliar participant is
+  available; compare the first organic trace with round 6, then reopen any evidence disposition that the
+  participant contradicts
 
 ## Owner
 

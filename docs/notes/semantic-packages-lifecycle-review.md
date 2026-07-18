@@ -79,15 +79,17 @@ Calling all three “E2E user testing” would erase exactly the claim boundary 
 
 ## Canary, observation, and rollback
 
-`PATH-organic-resource-validation` is the first canary for the expanded template. The next actor-visible
-feature—the spreadsheet/reactivity project—is the second. The experiment succeeds if both PATHs can name
+`PATH-organic-resource-validation` is the first canary for the expanded template. The actor-visible
+`PATH-reactive-spreadsheet-tracer` is the second; it made the early-sampling mistake part of the same
+executable artifact instead of leaving recovery as prose. The experiment succeeds if both PATHs can name
 one public terminal outcome, one realistic adverse/recovery route, exact evidence, and a reopen trigger;
 if a material failed review occurs, its successor remains visible.
 
 After those two PATHs, compare planning overhead, escaped route defects, recovery findings, and handoff
 clarity. Keep the actor/evidence fields if they expose otherwise-missed work. Collapse or remove fields
 that only duplicate plans or create ceremony without changing a decision. Protected proof, compatibility,
-security, and organic-validation gates remain unchanged throughout the experiment.
+security, and organic-validation gates remain unchanged throughout the experiment. The operator's
+2026-07-18 deferral changes sequencing only: it does not convert the first canary into a completed run.
 
 ## Multi-provider observation
 
