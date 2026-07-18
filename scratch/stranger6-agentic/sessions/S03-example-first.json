@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "study_id": "bang-resource-contract-2026-07-18",
+  "session_id": "S03",
+  "claim_boundary": "agentic usability inspection",
+  "participant_profile": "example-first programming-language practitioner, no BANG experience",
+  "instrument": {
+    "provider": "openai",
+    "model": null,
+    "version": null,
+    "prompt_ref": "../participant-packet.md"
+  },
+  "target": {
+    "revision": "d48b7d33",
+    "build": ".lake/build/bin/bang",
+    "source_boundary": ["README.md", "ONBOARDING.md", "docs/reference/language.md", "examples/**", "CLI help"]
+  },
+  "contaminated": false,
+  "contamination_notes": ["A setup listing exposed forbidden directory names but no contents or answer-bearing artifacts; the session remained included."],
+  "tasks": [
+    {"id":"T01","outcome":"success","first_attempt":true,"actions":3,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["located and explained resource-contract"],"trace":["S03-example-first.md#t01--orient"]},
+    {"id":"T02","outcome":"success","first_attempt":true,"actions":4,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["run 7","laws 2/2","complete contract card"],"trace":["S03-example-first.md#t02--establish-the-examples-evidence"]},
+    {"id":"T03","outcome":"success","first_attempt":true,"actions":7,"errors":1,"detours":0,"interventions":0,"recovered":true,"oracle_evidence":["human B018 message without stable code","reference search led to omega recovery"],"trace":["S03-example-first.md#t03--make-and-recover-from-a-realistic-mistake"]},
+    {"id":"T04","outcome":"success","first_attempt":true,"actions":5,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["predicted and observed -7","laws 2/2"],"trace":["S03-example-first.md#t04--transfer-the-semantic-model"]},
+    {"id":"T05","outcome":"success","first_attempt":true,"actions":3,"errors":0,"detours":1,"interventions":0,"recovered":true,"oracle_evidence":["WAT constructs and drops 99 without env-cell retention"],"trace":["S03-example-first.md#t05--inspect-a-concrete-compilation-consequence"]},
+    {"id":"T06","outcome":"success","first_attempt":true,"actions":1,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["exit 0 and ok true coexist with typeChecked false"],"trace":["S03-example-first.md#t06--judge-machine-readable-invalidity"]}
+  ],
+  "findings": [
+    {"key":"contract-query-validity-signal","severity":"high","evidence_grade":"A","observation":"Invalid source returns query exit 0 and top-level ok true while evidence.typeChecked is false.","evidence":["S03-example-first.md#high--query-operation-success-can-be-confused-with-program-validity"],"interpretation":"A conventional machine gate can admit invalid input.","alternative_explanation":"The behavior is documented as operation success."},
+    {"key":"b018-human-code-loss","severity":"medium","evidence_grade":"A","observation":"Human-readable check of a resolved multi-file quantity error omits B018 although check --json retains explainCode B018.","evidence":["S03-example-first.md#medium--quantity-diagnostics-lack-the-advertised-stable-codeexplain-recovery-route"],"interpretation":"Recovery quality depends on output mode and the public claim that codes appear in human output is false here.","alternative_explanation":"Single-file checks do retain B018, so the loss is resolver-path-specific."},
+    {"key":"realization-id-churn","severity":"low","evidence_grade":"A","observation":"Both realization names change qualification across a selection-only swap.","evidence":["S03-example-first.md#low--realization-names-in-joined-cards-depend-on-the-selected-import-alias"],"interpretation":"Machine consumers need stable declared identities.","alternative_explanation":"Names may intentionally reflect local resolver aliases."},
+    {"key":"wat-source-navigation","severity":"low","evidence_grade":"C","observation":"Finding the grade-0 consequence required a broad manual WAT search.","evidence":["S03-example-first.md#low--emitted-evidence-is-strong-but-source-to-artifact-navigation-is-manual"],"interpretation":"Source mapping would help larger programs.","alternative_explanation":"The joined query already provides higher-level evidence."}
+  ]
+}

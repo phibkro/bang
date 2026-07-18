@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "study_id": "bang-resource-contract-2026-07-18",
+  "session_id": "S02",
+  "claim_boundary": "agentic usability inspection",
+  "participant_profile": "help-first CLI automation engineer, no BANG experience",
+  "instrument": {
+    "provider": "openai",
+    "model": null,
+    "version": null,
+    "prompt_ref": "../participant-packet.md"
+  },
+  "target": {
+    "revision": "d48b7d33",
+    "build": ".lake/build/bin/bang",
+    "source_boundary": ["README.md", "ONBOARDING.md", "docs/reference/language.md", "examples/**", "CLI help"]
+  },
+  "contaminated": false,
+  "contamination_notes": [],
+  "tasks": [
+    {"id":"T01","outcome":"success","first_attempt":true,"actions":1,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["located resource-contract and explained the contract/realization/quantity model"],"trace":["S02-help-first.md#t01--orient"]},
+    {"id":"T02","outcome":"success","first_attempt":true,"actions":4,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["run 7","laws 2/2","complete contract JSON"],"trace":["S02-help-first.md#t02--establish-the-examples-evidence"]},
+    {"id":"T03","outcome":"success","first_attempt":false,"actions":6,"errors":3,"detours":1,"interventions":0,"recovered":true,"oracle_evidence":["B018 JSON diagnosis","omega recovery after correcting an independent value/computation error"],"trace":["S02-help-first.md#t03--make-and-recover-from-a-realistic-mistake"]},
+    {"id":"T04","outcome":"success","first_attempt":true,"actions":4,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["predicted and observed -7","laws 2/2"],"trace":["S02-help-first.md#t04--transfer-the-semantic-model"]},
+    {"id":"T05","outcome":"success","first_attempt":true,"actions":1,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["WAT constructs and drops 99 without env-cell retention"],"trace":["S02-help-first.md#t05--inspect-a-concrete-compilation-consequence"]},
+    {"id":"T06","outcome":"success","first_attempt":true,"actions":1,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["query ok true and exit 0 despite typeChecked false"],"trace":["S02-help-first.md#t06--judge-machine-readable-invalidity"]}
+  ],
+  "findings": [
+    {"key":"contract-query-validity-signal","severity":"high","evidence_grade":"A","observation":"Invalid source returns query exit 0 and top-level ok true while evidence.typeChecked is false.","evidence":["S02-help-first.md#1-high--query-success-is-easy-to-confuse-with-subject-validity"],"interpretation":"A naive machine consumer can accept invalid input.","alternative_explanation":"The public query contract documents operation success."},
+    {"key":"b018-null-span","severity":"medium","evidence_grade":"A","observation":"Resolved multi-file B018 JSON diagnostics contain span null.","evidence":["S02-help-first.md#2-medium--the-structured-multi-file-diagnosis-has-no-source-location"],"interpretation":"Tools cannot navigate directly to the assertion.","alternative_explanation":"The CLI documents this v1 limitation and quotes the assertion."},
+    {"key":"realization-id-churn","severity":"low","evidence_grade":"A","observation":"Both serialized realization names change qualification across a selection-only swap.","evidence":["S02-help-first.md#3-low--realization-identifiers-are-not-stable-across-an-installation-only-swap"],"interpretation":"Machine diffs require import-aware normalization.","alternative_explanation":"Names consistently reflect resolver qualification."}
+  ]
+}

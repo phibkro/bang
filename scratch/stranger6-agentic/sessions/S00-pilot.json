@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "study_id": "bang-resource-contract-2026-07-18",
+  "session_id": "S00",
+  "claim_boundary": "agentic usability inspection",
+  "participant_profile": "pilot developer-experience explorer",
+  "instrument": {
+    "provider": "openai",
+    "model": null,
+    "version": null,
+    "prompt_ref": "lead-agent pilot prompt"
+  },
+  "target": {
+    "revision": "d48b7d33",
+    "build": ".lake/build/bin/bang",
+    "source_boundary": ["public docs and CLI"]
+  },
+  "contaminated": true,
+  "contamination_notes": [
+    "The participant inherited conversation context containing project intent and was used only to pilot the frozen packet."
+  ],
+  "tasks": [
+    {
+      "id": "PILOT",
+      "outcome": "excluded",
+      "first_attempt": false,
+      "actions": 0,
+      "errors": 0,
+      "detours": 0,
+      "interventions": 0,
+      "recovered": false,
+      "oracle_evidence": [],
+      "trace": ["Excluded from aggregate evidence; retained as study-design input."]
+    }
+  ],
+  "findings": []
+}

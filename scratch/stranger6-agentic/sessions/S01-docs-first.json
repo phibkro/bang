@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "study_id": "bang-resource-contract-2026-07-18",
+  "session_id": "S01",
+  "claim_boundary": "agentic usability inspection",
+  "participant_profile": "documentation-first functional programmer, no BANG experience",
+  "instrument": {
+    "provider": "openai",
+    "model": null,
+    "version": null,
+    "prompt_ref": "../participant-packet.md"
+  },
+  "target": {
+    "revision": "d48b7d33",
+    "build": ".lake/build/bin/bang",
+    "source_boundary": ["README.md", "ONBOARDING.md", "docs/reference/language.md", "examples/**", "CLI help"]
+  },
+  "contaminated": false,
+  "contamination_notes": [],
+  "tasks": [
+    {"id":"T01","outcome":"success","first_attempt":true,"actions":5,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["located examples/resource-contract and explained descriptions-before-realizations"],"trace":["S01-docs-first.md#t01--orient"]},
+    {"id":"T02","outcome":"success","first_attempt":true,"actions":7,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["three engines returned 7","two laws passed","joined contract card complete"],"trace":["S01-docs-first.md#t02--establish-the-examples-evidence"]},
+    {"id":"T03","outcome":"success","first_attempt":true,"actions":4,"errors":1,"detours":0,"interventions":0,"recovered":true,"oracle_evidence":["B018 observed omega","explain led to omega recovery","recovered program returned 15"],"trace":["S01-docs-first.md#t03--make-and-recover-from-a-realistic-mistake"]},
+    {"id":"T04","outcome":"success","first_attempt":true,"actions":6,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["predicted and observed -7","both laws still passed"],"trace":["S01-docs-first.md#t04--transfer-the-semantic-model"]},
+    {"id":"T05","outcome":"success","first_attempt":false,"actions":4,"errors":1,"detours":1,"interventions":0,"recovered":true,"oracle_evidence":["WAT constructs and drops 99 without env-cell retention"],"trace":["S01-docs-first.md#t05--inspect-a-concrete-compilation-consequence"]},
+    {"id":"T06","outcome":"success","first_attempt":true,"actions":1,"errors":0,"detours":0,"interventions":0,"recovered":false,"oracle_evidence":["exit 0 and ok true coexist with evidence.typeChecked false"],"trace":["S01-docs-first.md#t06--judge-machine-readable-invalidity"]}
+  ],
+  "findings": [
+    {"key":"contract-query-validity-signal","severity":"high","evidence_grade":"A","observation":"Invalid source returns query exit 0 and top-level ok true while evidence.typeChecked is false.","evidence":["S01-docs-first.md#1-high--joined-query-operation-success-is-easy-to-confuse-with-program-validity"],"interpretation":"A conventional automation gate can accept an invalid program.","alternative_explanation":"Operation success is documented separately from subject validity."},
+    {"key":"realization-id-churn","severity":"medium","evidence_grade":"A","observation":"Selected realization is short-named and the unselected sibling qualified, so both names change across a selection-only swap.","evidence":["S01-docs-first.md#2-medium--realization-identifiers-in-joined-output-change-qualification-when-selection-changes"],"interpretation":"Machine consumers lack stable realization identities across swaps.","alternative_explanation":"Names may intentionally reflect in-scope resolver aliases."},
+    {"key":"wat-source-navigation","severity":"low","evidence_grade":"C","observation":"Dead-cell omission is visible but must be inferred manually from WAT.","evidence":["S01-docs-first.md#3-low--proving-dead-cell-omission-from-wat-requires-structural-inference"],"interpretation":"Larger programs may need source-to-artifact navigation.","alternative_explanation":"The contract query already supplies higher-level evidence."}
+  ]
+}

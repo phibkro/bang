@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "study_id": "replace-me",
+  "session_id": "S01",
+  "claim_boundary": "agentic usability inspection",
+  "participant_profile": "replace-me",
+  "instrument": {
+    "provider": null,
+    "model": null,
+    "version": null,
+    "prompt_ref": "replace-me"
+  },
+  "target": {
+    "revision": "replace-me",
+    "build": "replace-me",
+    "source_boundary": []
+  },
+  "contaminated": false,
+  "contamination_notes": [],
+  "tasks": [
+    {
+      "id": "T01",
+      "outcome": "success",
+      "first_attempt": true,
+      "actions": 0,
+      "errors": 0,
+      "detours": 0,
+      "interventions": 0,
+      "recovered": false,
+      "oracle_evidence": [],
+      "trace": []
+    }
+  ],
+  "findings": [
+    {
+      "key": "replace-me",
+      "severity": "low",
+      "evidence_grade": "C",
+      "observation": "replace-me",
+      "evidence": [],
+      "interpretation": "replace-me",
+      "alternative_explanation": "replace-me"
+    }
+  ]
+}
