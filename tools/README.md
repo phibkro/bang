@@ -108,7 +108,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-onboarding-journey.sh`](test-onboarding-journey.sh) | `verify` | `onboarding_journey.py` | Public verify battery for the common contributor journey |
 | [`test-onboarding-preflight.sh`](test-onboarding-preflight.sh) | `fitness` | `onboarding-preflight.sh` | Known-good/known-bad poles for the read-only newcomer preflight |
 | [`test-out-of-fuel-naming.sh`](test-out-of-fuel-naming.sh) | `verify` | `Bang/Core/Semantics/Eval.lean`, `Bang/Core/IR.lean`, `Bang/Core/Fingerprint.lean`, `Bang/Frontend/Surface.lean`, `Bang/Frontend/NamedCore.lean`, `Bang/Witness/ProofExport.lean`, `web/run-service/README.md`, `docs/notes/questions/Q32-memoization-combinator.md` | Falsification poles for #172's semantic rename. The fuel-bounded Result/Outcome |
-| [`test-query.sh`](test-query.sh) | `verify` | `Bang/Core/Fingerprint.lean`, `Bang/Frontend/Query.lean`, `Main.lean`, `examples/*/main.bang`, `examples/calc`, `examples/reactive-spreadsheet/Formulas.bang`, `examples/reactive-spreadsheet/expected-dependencies.json`, `examples/reactive-recomputation/Workload.bang`, `examples/reactive-observation-reuse/CachedWorkload.bang`, `tools/module-impact.py` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
+| [`test-query.sh`](test-query.sh) | `verify` | `Bang/Core/Fingerprint.lean`, `Bang/Frontend/Query.lean`, `Main.lean`, `examples/*/main.bang`, `examples/calc`, `examples/reactive-spreadsheet/Formulas.bang`, `examples/reactive-spreadsheet/expected-dependencies.json`, `examples/reactive-recomputation/Workload.bang`, `examples/reactive-observation-reuse/CachedWorkload.bang`, `tools/module-impact.py`, `tools/interface-diff.py` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
 | [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
 | [`test-release-integrity.sh`](test-release-integrity.sh) | `verify` | `tools/install.sh`, `tools/release-manifest.sh`, `.github/workflows/release.yml` | Local, network-free falsification poles for release manifest generation and atomic, |
 | [`test-release-version.sh`](test-release-version.sh) | `verify` | `check-release-version.sh` | Known-good/known-bad poles for the exact release identity gate |
@@ -176,13 +176,14 @@ __
 | [`bench/g2-components/run.sh`](bench/g2-components/run.sh) | `manual` | `docs/notes/wasm-concurrency-survey.md` | the G2 measurement harness (issue #116) |
 | [`bench/wasi-async/run.sh`](bench/wasi-async/run.sh) | `manual` | `docs/notes/wasm-concurrency-survey.md` | the WASI-0.3 async spike (Q(conc-3) / G8, the ADR-0101 backend gate) |
 
-## analysis (2)
+## analysis (3)
 
 __
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
 | [`clone-report.py`](clone-report.py) | `manual` | `Bang/**/*.lean`, `tools/leanlex.py` | rank duplicated code windows in Lean sources |
+| [`interface-diff.py`](interface-diff.py) | `manual` | `tools/module-impact.py`, `Bang/Frontend/Query.lean`, `Main.lean` | Compare two BANG dump files without pretending that an artifact can be reused |
 | [`module-impact.py`](module-impact.py) | `manual` | `Bang/Frontend/Query.lean`, `Main.lean` | Measure structural rebuild fanout from `bang query dump` module facts |
 
 ## release (1)

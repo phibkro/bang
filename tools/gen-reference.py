@@ -1607,6 +1607,38 @@ def render():
     L.append("permission to skip lowering, linking, or unchecked cache validation.")
     L.append("")
     L.append(
+        "`python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external"
+    )
+    L.append(
+        "consumer of this view. It compares complete projected exports (using the digest only as a consistency"
+    )
+    L.append(
+        "check), joins moved/added/removed/topology-changed modules to the validated reverse dependency closure,"
+    )
+    L.append(
+        "and reports structural type/shape recheck candidates. Its JSON always says"
+    )
+    L.append(
+        "`actualChecksSkipped:false` and `artifactReuseAuthorized:false`. Exit 2 means the comparison succeeded"
+    )
+    L.append(
+        "but a complete invalidation decision is indeterminate: currently a changed global law fact cannot be"
+    )
+    L.append(
+        "attributed through a stable module-owned public-law identity in dump v1. That gap is not permission to"
+    )
+    L.append("infer ownership from qualified display names.")
+    L.append(
+        "The table contains discovered law **instances**, so a declared public law with no realization is"
+    )
+    L.append(
+        "currently invisible to this comparison. Public-export source order is also significant in the producer"
+    )
+    L.append(
+        "payload, so declaration reordering can conservatively invalidate an otherwise equal interface."
+    )
+    L.append("")
+    L.append(
         "Every `DeclFact` key is **always present** — `null` means absent, never a missing key —"
     )
     L.append(

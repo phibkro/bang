@@ -1035,6 +1035,18 @@ This presentation stability does not create stable lowered identities, normalize
 markers, or define a module body/link contract. Treat the digest as an invalidation-analysis probe, not
 permission to skip lowering, linking, or unchecked cache validation.
 
+`python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external
+consumer of this view. It compares complete projected exports (using the digest only as a consistency
+check), joins moved/added/removed/topology-changed modules to the validated reverse dependency closure,
+and reports structural type/shape recheck candidates. Its JSON always says
+`actualChecksSkipped:false` and `artifactReuseAuthorized:false`. Exit 2 means the comparison succeeded
+but a complete invalidation decision is indeterminate: currently a changed global law fact cannot be
+attributed through a stable module-owned public-law identity in dump v1. That gap is not permission to
+infer ownership from qualified display names.
+The table contains discovered law **instances**, so a declared public law with no realization is
+currently invisible to this comparison. Public-export source order is also significant in the producer
+payload, so declaration reordering can conservatively invalidate an otherwise equal interface.
+
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
 nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that

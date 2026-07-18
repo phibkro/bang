@@ -157,3 +157,30 @@ numbering, whole-program environments, and the single lexical `Comp` remain. Equ
 spellings are not yet promised to canonicalize to one module identity. Therefore
 `separateCompilationReady=false` remains correct and the next tracer must target a concrete lowered
 module-body/link constraint—not a cache, store, scheduler, or cryptographic-key implementation.
+
+## Consumer input (2026-07-18): type/shape fanout is decidable; public-law ownership is not
+
+`PATH-interface-diff-consumer` finally consumes the accumulated facts from the build-tool author's
+seat. `tools/interface-diff.py old.json new.json` compares complete projected module exports rather
+than trusting the cache-unsafe 64-bit digest, composes the validated reverse closure from
+`tools/module-impact.py`, and handles moved, added, removed, and dependency-changed modules. A
+three-deep signature edit marks `Lib`, `Mid`, and `@entry`; a body-only edit marks none. Every result
+keeps `actualChecksSkipped=false` and `artifactReuseAuthorized=false` because no reusable checked/code
+artifact exists.
+
+The strongest falsifier sharpened fork 5. `Lib` owns a public effect law and `Mid` owns its handler.
+Changing only the law body preserves `Lib`'s interface because `declShapeJson` includes law names, not
+bodies. The dump's global `laws` row does move, but its compatibility tuple has no stable module
+relation key. The consumer therefore returns exit 2/`indeterminate` with gap
+`module-owned-public-law-contract`; it does not guess from qualified presentation names or claim a
+dependent can skip.
+
+**Decision:** the dump is decision-shaped for checked public type/shape plus coarse resolver topology,
+but not for complete public semantic contracts. Choose between law identity in exports and stable
+module ownership on law facts in a separate additive-schema/systemic-review increment. Do not fold
+that field into this consumer tracer. The result narrows—rather than removes—the later body/link/store
+work: even a complete interface invalidation answer still would not create an independently validated
+artifact. The successor must cover **declared** public laws, not only realized instances: without any
+handler, a declaration-law edit is absent even from the global `laws` table. Separately, source-order
+permutation of public exports still moves the ordered interface payload; that safe false invalidation
+is recorded rather than locally canonicalized away from the producer's digest semantics.

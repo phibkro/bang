@@ -304,6 +304,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **core** — distinguish fuel exhaustion from out-of-memory (`change:0a29d3d55516becac67fb36829c7fcc92a987dc5eab2db11a3ea2909afc20b2a`)
 - integrate handler policies with current main (`change:2147816f0cb1e8eebb1cb01115b2b511c62bfdda0118c78783ba98cd0b4be367`)
 - harden contract evidence integrity (`change:e8b0be444169a0f5091862ec900afe7a0ad35a4384bb79d292e8f610771ae893`)
-- **query** — stabilize interface effect rendering (`change:4f386afae100a71ce06e3bc3f95af2df91943eb953c90dc0685682390ad18512`)
+- **query** — stabilize interface effect rendering (`change:c1a5b7c9386b1610f2d4fbaf0355c61a777560acb6ffe9c30ad740982fc3f271`)
 
 <!-- END GENERATED changelog -->

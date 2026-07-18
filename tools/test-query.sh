@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,Main.lean,examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py runs-in=verify
+# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,Main.lean,examples/*/main.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py,tools/interface-diff.py runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -235,6 +235,68 @@ import Lib
 0
 BANG
 
+# A public effect-law body is a contract change, but the checked module interface currently carries
+# law names only. Keep a realization present so dump's global law-evidence table moves and the first
+# invalidation consumer can refuse a falsely complete dependent-check decision.
+for variant in interface-law-base interface-law-changed; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Mid
+0
+BANG
+  cat > "$tmpdir/$variant/Mid.bang" <<'BANG'
+import Lib
+pub handler Identity implements Lib_Gate { check(n) => n }
+BANG
+done
+cat > "$tmpdir/interface-law-base/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(0) == 0
+}
+BANG
+cat > "$tmpdir/interface-law-changed/Lib.bang" <<'BANG'
+pub effect Gate {
+  check : Int -> Int
+  law preserves(gate): gate.check(1) == 1
+}
+BANG
+
+# The positive consumer journey uses a real three-deep graph: entry -> Mid -> Lib. Mid imports Lib
+# without depending on its concrete export shape, isolating graph fanout from type-check failure when
+# Lib's public signature moves.
+for variant in interface-diff-base interface-diff-body interface-diff-signature; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Mid
+0
+BANG
+  cat > "$tmpdir/$variant/Mid.bang" <<'BANG'
+import Lib
+pub let relay : Int = 0
+BANG
+done
+cat > "$tmpdir/interface-diff-base/Lib.bang" <<'BANG'
+pub let answer : Int = 41
+BANG
+cat > "$tmpdir/interface-diff-body/Lib.bang" <<'BANG'
+pub let answer : Int = 42
+BANG
+cat > "$tmpdir/interface-diff-signature/Lib.bang" <<'BANG'
+pub let answer : Int * Int = (41, 0)
+BANG
+mkdir -p "$tmpdir/interface-diff-added"
+cp "$tmpdir/interface-diff-base/Lib.bang" "$tmpdir/interface-diff-added/Lib.bang"
+cp "$tmpdir/interface-diff-base/Mid.bang" "$tmpdir/interface-diff-added/Mid.bang"
+cat > "$tmpdir/interface-diff-added/Side.bang" <<'BANG'
+pub let marker : Int = 1
+BANG
+cat > "$tmpdir/interface-diff-added/main.bang" <<'BANG'
+import Mid
+import Side
+0
+BANG
+
 # `pub`/divergence-tainted fixture — the composed-query demo's own corpus: ONE decl is both `pub`
 # AND recursive (its type carries `Thunk!{Div}`, the ONLY place a v1 program's decl-level effect
 # taint is visible — a top-level decl's OUTER `row` cannot yet carry a genuine user/custom label,
@@ -423,6 +485,134 @@ print("|".join([str(libs[0]["digest"]==libs[1]["digest"]),str(types[0]==types[1]
 $iface_two_ba_dump"
 check "module-interface-two-row-extractor-exit" "$iface_two_rows_exit" "0"
 check "module-interface-two-row-order-invariance" "$iface_two_rows" "True|True|Thunk!{EffA_A, EffB_B} Cap EffA_A -> Cap EffB_B -> Int -> Int|Thunk!{EffA_A, EffB_B} Cap EffA_A -> Cap EffB_B -> Int -> Int"
+
+# First consumer of the interface facts: compare complete export records, then join moved modules to
+# the already-validated reverse dependency closure. This is a measurement view only—no compiler work
+# is skipped and no artifact reuse is authorized.
+capture iface_diff_base_dump iface_diff_base_exit "$bang" query dump "$tmpdir/interface-diff-base/main.bang" 2>/dev/null
+capture iface_diff_body_dump iface_diff_body_exit "$bang" query dump "$tmpdir/interface-diff-body/main.bang" 2>/dev/null
+capture iface_diff_signature_dump iface_diff_signature_exit "$bang" query dump "$tmpdir/interface-diff-signature/main.bang" 2>/dev/null
+check "interface-diff-base-dump-exit" "$iface_diff_base_exit" "0"
+check "interface-diff-body-dump-exit" "$iface_diff_body_exit" "0"
+check "interface-diff-signature-dump-exit" "$iface_diff_signature_exit" "0"
+printf '%s' "$iface_diff_base_dump" > "$tmpdir/interface-base.json"
+printf '%s' "$iface_diff_body_dump" > "$tmpdir/interface-public-body.json"
+printf '%s' "$iface_diff_signature_dump" > "$tmpdir/interface-signature.json"
+capture iface_body_diff iface_body_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-base.json" "$tmpdir/interface-public-body.json" 2>/dev/null
+check "interface-diff-body-exit" "$iface_body_diff_exit" "0"
+capture iface_body_view iface_body_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({"status":d["decision"]["status"],"moved":d["typeShapeInvalidation"]["moved"],"candidates":d["typeShapeInvalidation"]["recheckCandidates"],"skipped":d["decision"]["actualChecksSkipped"],"authorized":d["decision"]["artifactReuseAuthorized"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_body_diff"
+check "interface-diff-body-extractor-exit" "$iface_body_view_exit" "0"
+check "interface-diff-body-preserved" "$iface_body_view" '{"status":"measured","moved":[],"candidates":[],"skipped":false,"authorized":false}'
+
+capture iface_signature_diff iface_signature_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-base.json" "$tmpdir/interface-signature.json" 2>/dev/null
+check "interface-diff-signature-exit" "$iface_signature_diff_exit" "0"
+capture iface_signature_view iface_signature_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({"moved":d["typeShapeInvalidation"]["moved"],"candidates":d["typeShapeInvalidation"]["recheckCandidates"],"modules":d["modules"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_signature_diff"
+check "interface-diff-signature-extractor-exit" "$iface_signature_view_exit" "0"
+check "interface-diff-signature-fanout" "$iface_signature_view" '{"moved":["Lib"],"candidates":["@entry","Lib","Mid"],"modules":[{"module":"@entry","interface":"preserved","recheckCandidate":true,"invalidatedBy":["Lib"]},{"module":"Lib","interface":"moved","recheckCandidate":true,"invalidatedBy":["Lib"]},{"module":"Mid","interface":"preserved","recheckCandidate":true,"invalidatedBy":["Lib"]}]}'
+
+# Added/removed modules and dependency-edge movement are ordinary diff inputs, not a reason to make
+# the consumer unusable. Added Side invalidates itself and @entry; removing it leaves only the
+# surviving @entry as a recheck candidate.
+capture iface_diff_added_dump iface_diff_added_exit "$bang" query dump "$tmpdir/interface-diff-added/main.bang" 2>/dev/null
+check "interface-diff-added-dump-exit" "$iface_diff_added_exit" "0"
+printf '%s' "$iface_diff_added_dump" > "$tmpdir/interface-added.json"
+capture iface_added_diff iface_added_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-base.json" "$tmpdir/interface-added.json" 2>/dev/null
+check "interface-diff-added-exit" "$iface_added_diff_exit" "0"
+capture iface_added_view iface_added_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)["typeShapeInvalidation"]
+print(json.dumps({"added":d["added"],"removed":d["removed"],"topology":d["topologyChanged"],"candidates":d["recheckCandidates"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_added_diff"
+check "interface-diff-added-extractor-exit" "$iface_added_view_exit" "0"
+check "interface-diff-added-fanout" "$iface_added_view" '{"added":["Side"],"removed":[],"topology":["@entry"],"candidates":["@entry","Side"]}'
+capture iface_removed_diff iface_removed_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-added.json" "$tmpdir/interface-base.json" 2>/dev/null
+check "interface-diff-removed-exit" "$iface_removed_diff_exit" "0"
+capture iface_removed_view iface_removed_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)["typeShapeInvalidation"]
+print(json.dumps({"added":d["added"],"removed":d["removed"],"topology":d["topologyChanged"],"candidates":d["recheckCandidates"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_removed_diff"
+check "interface-diff-removed-extractor-exit" "$iface_removed_view_exit" "0"
+check "interface-diff-removed-fanout" "$iface_removed_view" '{"added":[],"removed":["Side"],"topology":["@entry"],"candidates":["@entry"]}'
+
+# Strong adverse case: the public law body moves while Lib's name-only checked interface does not.
+# The consumer notices global law evidence but cannot soundly attribute a stable public-law contract
+# to a module in dump v1, so it exits 2 with a schema gap instead of saying the dependent can skip.
+capture iface_law_base_dump iface_law_base_exit "$bang" query dump "$tmpdir/interface-law-base/main.bang" 2>/dev/null
+capture iface_law_changed_dump iface_law_changed_exit "$bang" query dump "$tmpdir/interface-law-changed/main.bang" 2>/dev/null
+check "interface-diff-law-base-dump-exit" "$iface_law_base_exit" "0"
+check "interface-diff-law-changed-dump-exit" "$iface_law_changed_exit" "0"
+capture iface_law_premise iface_law_premise_exit python3 -c '
+import json,sys
+a,b=[json.loads(line) for line in sys.stdin if line.strip()]
+lib=lambda d: next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
+print("|".join([str(lib(a)["digest"]==lib(b)["digest"]),str(a["laws"]!=b["laws"])]))
+' 2>/dev/null <<< "$iface_law_base_dump
+$iface_law_changed_dump"
+check "interface-diff-law-premise-extractor-exit" "$iface_law_premise_exit" "0"
+check "interface-diff-law-falsifier-fires" "$iface_law_premise" "True|True"
+printf '%s' "$iface_law_base_dump" > "$tmpdir/interface-law-base.json"
+printf '%s' "$iface_law_changed_dump" > "$tmpdir/interface-law-changed.json"
+capture iface_law_diff iface_law_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-law-base.json" "$tmpdir/interface-law-changed.json" 2>/dev/null
+check "interface-diff-law-indeterminate-exit" "$iface_law_diff_exit" "2"
+capture iface_law_view iface_law_view_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({"moved":d["typeShapeInvalidation"]["moved"],"lawsMoved":d["lawFactsMoved"],"status":d["decision"]["status"],"skipped":d["decision"]["actualChecksSkipped"],"gap":d["gap"]["code"]},separators=(",",":")))
+' 2>/dev/null <<< "$iface_law_diff"
+check "interface-diff-law-extractor-exit" "$iface_law_view_exit" "0"
+check "interface-diff-law-refuses-false-skip" "$iface_law_view" '{"moved":[],"lawsMoved":true,"status":"indeterminate","skipped":false,"gap":"module-owned-public-law-contract"}'
+
+# Forward-compatibility belongs to the consumer too: additive unknown fields at dump, interface, and
+# export levels do not manufacture a change under schemaVersion 1.
+capture iface_future_fixture iface_future_fixture_exit python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+d["futureTop"]={"ignored":True}
+d["moduleInterfaces"][0]["futureInterface"]=1
+if d["moduleInterfaces"][1]["exports"]: d["moduleInterfaces"][1]["exports"][0]["futureExport"]="ignored"
+json.dump(d,open(sys.argv[2],"w"),separators=(",",":"))
+print("ok")
+' "$tmpdir/interface-base.json" "$tmpdir/interface-future.json" 2>/dev/null
+check "interface-diff-additive-fixture-exit" "$iface_future_fixture_exit" "0"
+capture iface_future_diff iface_future_diff_exit python3 tools/interface-diff.py \
+  "$tmpdir/interface-base.json" "$tmpdir/interface-future.json" 2>/dev/null
+check "interface-diff-ignore-unknown-exit" "$iface_future_diff_exit" "0"
+capture iface_future_view iface_future_view_exit python3 -c 'import json,sys; d=json.load(sys.stdin)["typeShapeInvalidation"]; print(str(d["moved"]==[] and d["recheckCandidates"]==[]))' 2>/dev/null <<< "$iface_future_diff"
+check "interface-diff-ignore-unknown-fields" "$iface_future_view" "True"
+
+# `cacheKeySafe:false` has executable teeth: if a digest and the complete exports disagree (collision,
+# corruption, or producer bug), refuse rather than choosing whichever signal is convenient.
+capture iface_tamper_fixture iface_tamper_fixture_exit python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+lib=next(x for x in d["moduleInterfaces"] if x["module"]=="Lib")
+lib["digest"]=("0" if lib["digest"][0]!="0" else "1")+lib["digest"][1:]
+json.dump(d,open(sys.argv[2],"w"),separators=(",",":"))
+print("ok")
+' "$tmpdir/interface-public-body.json" "$tmpdir/interface-tampered.json" 2>/dev/null
+check "interface-diff-tamper-fixture-exit" "$iface_tamper_fixture_exit" "0"
+capture iface_tamper_error iface_tamper_exit python3 -c '
+import subprocess,sys
+p=subprocess.run([sys.executable,"tools/interface-diff.py",sys.argv[1],sys.argv[2]],text=True,capture_output=True)
+print(p.stderr.strip())
+raise SystemExit(p.returncode)
+' "$tmpdir/interface-base.json" "$tmpdir/interface-tampered.json"
+check "interface-diff-digest-export-disagreement-exit" "$iface_tamper_exit" "1"
+check "interface-diff-digest-export-disagreement-refused" "$iface_tamper_error" "interface-diff: module 'Lib' digest and complete export comparison disagree"
 
 # EVERY curated verb's answer is a PROJECTION of `dump` — the layering claim, checked directly:
 # `symbols`'s "decls" entries equal `dump`'s "decls" entries byte-for-byte (same DeclFact.toJson).
@@ -861,7 +1051,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (160 — dependency observation, recomputation, reuse, module graph, structural
+# always runs (189 — dependency observation, recomputation, reuse, module graph, structural
 # invalidation-fanout, resolved-core fingerprint, and resolved-module-interface checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
@@ -871,7 +1061,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=160
+want_total=189
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))
