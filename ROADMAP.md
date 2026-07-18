@@ -17,9 +17,11 @@
 
 ## North star
 
-bang-lang is a small effect-typed language whose **paradigm and runtime are
-values, not language features**. The contribution is a **verified two-hop
-architecture** (ADR-0016 as revised by ADR-0059):
+bang-lang is a language of **semantic descriptions**: computation, effects, and resource
+obligations are stated independently of their realization. The compiler calculates progressively
+concrete executions that preserve those descriptions. “Paradigm and runtime are values, not
+language features” is one consequence of that larger frame (ADR-0115). The implementation spine is
+a **verified two-hop architecture** (ADR-0016 as revised by ADR-0059):
 
 ```
   source ─►  graded-CBPV semantics  ─Bahr-Hutton calc─►  CalcVM

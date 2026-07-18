@@ -21,14 +21,18 @@
 
 ## Thesis
 
-bang-lang is a small core on which paradigms, runtimes, and abstractions are built as ordinary library code.
+bang-lang is a language of semantic descriptions: computation, effects, and resource obligations are
+stated independently of their realizations, then calculated into progressively more concrete executions.
+Its small core lets paradigms, runtimes, and abstractions remain ordinary library code.
 
 - The **kernel** is thunks, effects, and STM.
 - A function's **paradigm** is determined by which effects are in its effect row.
 - A program's **runtime** is a value installed at the use site, not a property baked into the language.
 - The choice of either is the programmer's, made explicit at the type level and at the call site.
 
-Most languages bake paradigm and runtime into the syntax. bang-lang makes them parameters. The result: the same function can run pure, imperative, reactive, or concurrent depending on which effects are in scope and which handlers are installed.
+Most languages bake paradigm and runtime into the syntax. bang-lang makes them realizations of a
+description. The same function can run pure, imperative, reactive, or concurrent depending on which
+effects are in scope and which handlers are installed, without changing the contract it describes.
 
 ---
 
@@ -404,4 +408,6 @@ The kernel is small enough to specify formally. The library is large but uniform
 
 ## In one sentence
 
-> *bang-lang's distinguishing claim is that paradigm and runtime are both values, not language features — and that a kernel of thunks, effects, and STM is enough to build everything else as ordinary library code.*
+> *bang-lang's distinguishing claim is that programs are semantic descriptions whose progressively
+> concrete realizations are calculated and checked — making paradigm and runtime values rather than
+> language features over a small kernel of thunks, effects, handlers, and STM.*

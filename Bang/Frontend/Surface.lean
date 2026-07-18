@@ -5,7 +5,9 @@ module
 -- runtime values — could NOT live in a module; it was extracted to the non-module
 -- `Bang/Surface/PropTest.lean`, the documented tested-superset seam. Phase-1a finding.)
 meta import Bang.Core.Semantics
+meta import Bang.Core.Grade
 public import Bang.Core.Semantics
+public import Bang.Core.Grade
 
 /-!
   Bang/Surface.lean — the tracer-bullet surface layer (PATH-tracer-bullet).
@@ -214,6 +216,7 @@ inductive Surf where
   | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e   (sugar over case on Bool = 1+1)
   | annotS : Surf → Ty → Surf             -- (e : T)   type ascription (ADR-0066 ②); erased at lowering
   | pledgeS : List String → Surf → Surf    -- pledge {E₁, …} in e   checked row upper bound; erased at lowering
+  | useS : QTT → String → Surf → Surf      -- use [q] x in e   checked value-use assertion; erased at lowering
   -- ── ADR-0069 (data declarations) ──
   | unitS  : Surf                         -- ()   the unit value literal
   | foldS  : Surf → Surf                  -- μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)
@@ -453,6 +456,7 @@ def eraseLettMulti : Surf → Surf
   | .ifS c t e     => .ifS (eraseLettMulti c) (eraseLettMulti t) (eraseLettMulti e)
   | .annotS e t    => .annotS (eraseLettMulti e) t
   | .pledgeS row e => .pledgeS row (eraseLettMulti e)
+  | .useS q n e    => .useS q n (eraseLettMulti e)
   | .unitS         => .unitS
   | .foldS e       => .foldS (eraseLettMulti e)
   | .unfoldS e     => .unfoldS (eraseLettMulti e)
@@ -579,6 +583,7 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .lam x b    => do return .lam (← lowerC (x :: env) b)
   | .annotS e _ => lowerC env e          -- ascription erased: types never reach the kernel term
   | .pledgeS _ e => lowerC env e         -- ADR-0112: row-only checked ascription; no runtime meaning
+  | .useS _ _ e => lowerC env e          -- ADR-0116: checked value-use assertion; no runtime meaning
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
   -- `raise`/`put`/stm ops resolve the enclosing handler's cap binder by sentinel `lookup`, then
   -- `perform` on that `vvar` (ADR-0054). The ARGUMENT is value-position, but issue #26 A-NORMALIZES it:
@@ -832,6 +837,7 @@ def lowerV (env : List String) : Surf → Except String Val
   | .unitS      => .ok .vunit
   | .foldS e    => do return .fold (← lowerV env e)   -- μ intro is a value former (ADR-0069)
   | .annotS e _ => lowerV env e          -- ascription erased; lower the inner value
+  | .useS _ _ e => lowerV env e          -- quantity assertion erases around value-shaped bodies too
   | _           => .error "expected a value (wrap a computation in braces)"
 end
 
@@ -1266,6 +1272,17 @@ def pExpr : Nat → P Surf
       let (_, ts) ← expect "in" ts
       let (body, ts) ← pExpr f ts
       .ok (.pledgeS allowed body, ts)
+  | f + 1, "use" :: qtok :: ts => do
+      let q ← match qtok with
+        | "[0]"     => pure QTT.zero
+        | "[1]"     => pure QTT.one
+        | "[omega]" => pure QTT.omega
+        | "[ω]"     => pure QTT.omega
+        | _ => throw (⟨s!"use: expected quantity [0], [1], or [omega], got '{qtok}'", qtok :: ts⟩ : PErr)
+      let (name, ts) ← pIdent ts
+      let (_, ts) ← expect "in" ts
+      let (body, ts) ← pExpr f ts
+      .ok (.useS q name body, ts)
   -- ADR-0095 D1 (RULED): `handle e with Name as h { op(x) => body, … }` (param-less) or
   -- `handle e with (Name init) as h { … }` (param-carrying). A BESPOKE arm (not `keywordRule`):
   -- the clause list is a repeated group, the same "0-or-more" shape `let`-multi/`match` already
@@ -2548,10 +2565,16 @@ def pHeader : Nat → P (List ImportDecl × List UseDecl)
       let (imp, ts) ← pImport ("import" :: ts)
       let ((imps, uses), ts) ← pHeader f ts
       .ok ((imp :: imps, uses), ts)
-  | f + 1, "use" :: ts => do
-      let (u, ts) ← pUse ("use" :: ts)
-      let ((imps, uses), ts) ← pHeader f ts
-      .ok ((imps, u :: uses), ts)
+  | f + 1, "use" :: qtok :: ts =>
+      -- `use` also introduces the expression-level quantity assertion. A quantity token
+      -- disambiguates it from a module-header `use mod (names)` without backtracking.
+      if qtok = "[0]" || qtok = "[1]" || qtok = "[omega]" || qtok = "[ω]" then
+        .ok (([], []), "use" :: qtok :: ts)
+      else do
+        let (u, ts) ← pUse ("use" :: qtok :: ts)
+        let ((imps, uses), ts) ← pHeader f ts
+        .ok ((imps, u :: uses), ts)
+  | _ + 1, ["use"] => .error "expected module name or quantity after 'use'"
   | _ + 1, ts => .ok (([], []), ts)
 
 /-- Parse a whole PROGRAM: the `import`/`use` header (ADR-0093 D1/D2), the `pub`-prefixable decl
@@ -3127,6 +3150,9 @@ def parsesTo (src : String) (e : Surf) : Bool :=
 -- tree independently of type checking so `{…}` cannot regress into thunk syntax.
 #guard parsesTo "pledge {Audit, Secret} in audit.record(41)"
   (.pledgeS ["Audit", "Secret"] (.dotPerform (.var "audit") "record" (.one (.lit 41))))
+#guard parsesTo "use [1] permit in permit.spend(7)"
+  (.useS .one "permit" (.dotPerform (.var "permit") "spend" (.one (.lit 7))))
+#guard parsesTo "use [omega] shared in shared" (.useS .omega "shared" (.var "shared"))
 -- STM forms (rung 3): `atomically`/`new`/`read`/`write` parse to their `Surf` constructors.
 #guard parsesTo "atomically (let r = new 100 in (let z = write r 70 in read r))"
   (.atomS (.lett "r" (.newS (.lit 100))

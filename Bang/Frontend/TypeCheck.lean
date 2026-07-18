@@ -1075,6 +1075,7 @@ def isValueSurf : Surf → Bool
   | .inlS e | .inrS e | .foldS e        => isValueSurf e
   | .pairS a b                          => isValueSurf a && isValueSurf b
   | .annotS e _                         => isValueSurf e
+  | .useS _ _ e                         => isValueSurf e
   | _                                   => false
 
 /-- Post-hoc error location, cheap tier (issue #52 Stage B, option-2 sweep): when the offending
@@ -1130,6 +1131,73 @@ def enforcePledge (allowed : List String) (actual : Row) : Infer Unit := do
   let resolved ← resolveRow bigFuel actual
   throw s!"pledge violation: inferred row {showRow resolved.labels effects} exceeds allowed row {showRow bound effects}"
 
+/-! ADR-0116 quantity assertions. Sequential subterms add in QTT and saturate at `omega`;
+alternative branches must agree, matching the kernel case rule's shared branch grade. These walkers
+respect lexical shadowing, unlike the deliberately free-ish `surfUsesVar` query later in this file. -/
+mutual
+public def surfaceUsage (name : String) : Surf → QTT
+  | .lit _ | .unitS | .getS => .zero
+  | .var n => if n == name then .one else .zero
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ | .pledgeS _ e
+  | .useS _ _ e => surfaceUsage name e
+  | .lett n a b => surfaceUsage name a + if n == name then .zero else surfaceUsage name b
+  | .lam n b => if n == name then .zero else surfaceUsage name b
+  | .app a b | .stateS a b | .writeS a b | .pairS a b | .binopS _ a b =>
+      surfaceUsage name a + surfaceUsage name b
+  | .matchS s xl l xr r =>
+      let lu := if xl == name then .zero else surfaceUsage name l
+      let ru := if xr == name then .zero else surfaceUsage name r
+      surfaceUsage name s + usageAlternative lu ru
+  | .splitS a b p body =>
+      surfaceUsage name p + if a == name || b == name then .zero else surfaceUsage name body
+  | .ifS c t e => surfaceUsage name c + usageAlternative (surfaceUsage name t) (surfaceUsage name e)
+  | .matchD s arms => surfaceUsage name s + dArmsUsage name arms
+  | .withCapS _ init cap body =>
+      surfaceUsage name init + if cap == name then .zero else surfaceUsage name body
+  | .dotPerform recv _ args => surfaceUsage name recv + surfArgsUsage name args
+  | .letRecS n _ rhs body =>
+      (if n == name then .zero else surfaceUsage name rhs) +
+        (if n == name then .zero else surfaceUsage name body)
+  | .letRecMultiS binds body => letRecBindingsUsage name binds + surfaceUsage name body
+  | .lettMulti binds body => letBindingsUsage name binds + surfaceUsage name body
+  | .handleCustomS _ eff init cap clauses body =>
+      surfaceUsage name eff + surfArgsUsage name init + hClausesUsage name clauses +
+        (if cap == name then .zero else surfaceUsage name body)
+  | .hostPerformS _ eff _ args => surfaceUsage name eff + surfArgsUsage name args
+public def usageAlternative (a b : QTT) : QTT := if a == b then a else .omega
+public def surfArgsUsage (name : String) : SurfArgs → QTT
+  | .none => .zero
+  | .one a => surfaceUsage name a
+  | .two a b => surfaceUsage name a + surfaceUsage name b
+public def dArmsUsage (name : String) : DArms → QTT
+  | .nil => .zero
+  | .cons _ binders body .nil =>
+      if binders.contains name then .zero else surfaceUsage name body
+  | .cons _ binders body rest =>
+      usageAlternative (if binders.contains name then .zero else surfaceUsage name body)
+        (dArmsUsage name rest)
+public def letBindingsUsage (name : String) : LetBindings → QTT
+  | .nil => .zero
+  | .cons binder rhs rest =>
+      surfaceUsage name rhs + if binder == name then .zero else letBindingsUsage name rest
+public def hClausesUsage (name : String) : HClauses → QTT
+  | .nil => .zero
+  | .cons _ binder body rest | .consUpdating _ binder body rest =>
+      (if binder == name then .zero else surfaceUsage name body) + hClausesUsage name rest
+public def letRecBindingsUsage (name : String) : LetRecBindings → QTT
+  | .nil => .zero
+  | .cons binder _ rhs rest =>
+      (if binder == name then .zero else surfaceUsage name rhs) + letRecBindingsUsage name rest
+end
+
+/-- Enforce one local quantity assertion. `omega` is the compatible unrestricted ceiling. -/
+def enforceUse (Γ : NCtx) (q : QTT) (name : String) (body : Surf) : Infer Unit := do
+  let _ ← lookupInst Γ name
+  let actual := surfaceUsage name body
+  if q == .omega || q == actual then return ()
+  throw s!"quantity mismatch: 'use {Bang.Format.quantityTok q} {name}' requires {Bang.Format.quantityTok q}, but the body has {Bang.Format.quantityTok actual}"
+
 /-- The first operation implemented more than once in a custom clause list. Dispatch is
 first-match, but the typed surface must not let textual order choose between two implementations;
 in particular, ADR-0114 forbids a plain and an updating key for the same operation. -/
@@ -1151,6 +1219,7 @@ def synthSV (Γ : NCtx) (e : Surf) : Infer IVTy :=
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
   | .unitS     => return .unit
   | .annotS b t => do let A ← embVInst t; let _ ← checkSV Γ b A; return A
+  | .useS q name b => do enforceUse Γ q name b; synthSV Γ b
   -- HM (#53): a bare anonymous injection SYNTHESIZES with a fresh hole for the UNFILLED variant.
   -- `Left(e) : A + ?b` (`e : A`), `Right(e) : ?a + B` (`e : B`); unification resolves the hole from
   -- context (match arms / annotation / use site). Check mode (with an expected sum) is still preferred.
@@ -1186,6 +1255,7 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : IVTy) : Infer Unit :=
       let A ← embVInst t
       let _ ← checkSV Γ b A
       unifyV bigFuel A expected                         -- HM subsumption (was structural `A = expected`)
+  | .useS q name b, expected => do enforceUse Γ q name b; checkSV Γ b expected
   | e, expected => do
       let A ← synthSV Γ e
       unifyV bigFuel A expected                         -- HM subsumption (was structural `A = expected`)
@@ -1281,6 +1351,9 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
       let (C, φ) ← synthSC Γ b
       enforcePledge allowed φ
       return (C, φ)
+  | .useS q name b => do
+      enforceUse Γ q name b
+      synthSC Γ b
   -- ── effects (ADR-0066 ④): each op ADDS its label to the row; handlers DISCHARGE it (`Finset.erase`).
   -- v1 simplification (marked): operation payload/result types are fixed to the surface convention
   -- (state cell + TVar contents + exn payload are `Int`, ADR-0030) — no payload-type threading yet.
@@ -1504,6 +1577,9 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
       let φ ← checkSC Γ b expected
       enforcePledge allowed φ
       return φ
+  | .useS q name b, expected => do
+      enforceUse Γ q name b
+      checkSC Γ b expected
   -- #119 fork-1: a `.lett`-chain's TAIL can be a value-constructor shape (`.pairS`, `.thunk`, …)
   -- carrying its OWN declared row bound (e.g. `buildLetRecMulti`'s pair-of-thunks) — without this
   -- arm, `.lett` falls to the catch-all below, which `synthSC`s the WHOLE chain (losing the tail's
@@ -2639,6 +2715,7 @@ def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : N
   | .var g          => g != name                    -- a bare `name` (used as a value) is non-structural
   | .thunk e        => structOK fuel name slots targetIdx e
   | .pledgeS _ e    => structOK fuel name slots targetIdx e
+  | .useS _ _ e     => structOK fuel name slots targetIdx e
   | .force (.var g) => g != name                    -- `$name` NOT immediately applied to args → reject
   | .force e        => structOK fuel name slots targetIdx e
   | .app f a        => structOK fuel name slots targetIdx f && structOK fuel name slots targetIdx a
@@ -3246,6 +3323,7 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   | f + 1, .unfoldS e => do return .unfoldS (← expandBFns env carrier? f e)
   | f + 1, .divMark e => do return .divMark (← expandBFns env carrier? f e)
   | f + 1, .pledgeS row e => do return .pledgeS row (← expandBFns env carrier? f e)
+  | f + 1, .useS q n e => do return .useS q n (← expandBFns env carrier? f e)
   | f + 1, .lam x b   => do return .lam x (← expandBFns env carrier? f b)
   | f + 1, .lett x e b   => do return .lett x (← expandBFns env carrier? f e) (← expandBFns env carrier? f b)
   | f + 1, .app g a      => do
@@ -3522,7 +3600,8 @@ partial def callSitesOf (name : String) (domains : List Ty) (resultDom : Ty) (e 
   here ++ match e with
     | .lit _ | .var _ | .getS | .unitS => []
     | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .pledgeS _ e =>
+    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .pledgeS _ e
+    | .useS _ _ e =>
         callSitesOf name domains resultDom e
     -- ADR-0103 Amendment ②: `e`'s OWN annotation `t` is a RESULT-position discovery anchor when
     -- the annotated expression is EXACTLY `name`'s call spine — merged into THAT spine's binding
@@ -3704,6 +3783,7 @@ partial def redirectCalls (name : String) (domains : List Ty) (resultDom : Ty) (
     | .unfoldS e => .unfoldS (redirectCalls name domains resultDom tvs residues self? e)
     | .divMark e => .divMark (redirectCalls name domains resultDom tvs residues self? e)
     | .pledgeS row e => .pledgeS row (redirectCalls name domains resultDom tvs residues self? e)
+    | .useS q n e => .useS q n (redirectCalls name domains resultDom tvs residues self? e)
     | .lam x e   => .lam x   (redirectCalls name domains resultDom tvs residues self? e)
     -- ADR-0103 Amendment ②: when the ANNOTATED inner expression is `name`'s own call spine, the
     -- fresh residue must be looked up using the SAME merged (argument ++ result) binding
@@ -3818,6 +3898,7 @@ def substTyVarInSurf (qTy : Ty → Ty) : Surf → Surf
   | .unfoldS e   => .unfoldS (substTyVarInSurf qTy e)
   | .divMark e   => .divMark (substTyVarInSurf qTy e)
   | .pledgeS row e => .pledgeS row (substTyVarInSurf qTy e)
+  | .useS q n e => .useS q n (substTyVarInSurf qTy e)
   | .lam x e     => .lam x (substTyVarInSurf qTy e)
   | .annotS e t  => .annotS (substTyVarInSurf qTy e) (qTy t)
   | .lett x a b  => .lett x (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
@@ -3896,6 +3977,7 @@ partial def inlineVarAliases : Surf → Surf
   | .unfoldS e   => .unfoldS (inlineVarAliases e)
   | .divMark e   => .divMark (inlineVarAliases e)
   | .pledgeS row e => .pledgeS row (inlineVarAliases e)
+  | .useS q n e => .useS q n (inlineVarAliases e)
   | .lam x e     => .lam x (inlineVarAliases e)
   | .annotS e t  => .annotS (inlineVarAliases e) t
   | .lett n (.var m) rest =>
@@ -3967,6 +4049,7 @@ partial def renameVarTo (n m : String) : Surf → Surf
   | .unfoldS e   => .unfoldS (renameVarTo n m e)
   | .divMark e   => .divMark (renameVarTo n m e)
   | .pledgeS row e => .pledgeS row (renameVarTo n m e)
+  | .useS q target e => .useS q (if target == n then m else target) (renameVarTo n m e)
   | .lam x e     => if x == n then .lam x e else .lam x (renameVarTo n m e)
   | .annotS e t  => .annotS (renameVarTo n m e) t
   | .lett x a b  => if x == n then .lett x (renameVarTo n m a) b else .lett x (renameVarTo n m a) (renameVarTo n m b)
@@ -4114,6 +4197,7 @@ def monomorphizeLetRec (gen : List (String × GenData)) (aliases : List (String 
   | f + 1, .unfoldS e => do return .unfoldS (← monomorphizeLetRec gen aliases f e)
   | f + 1, .divMark e => do return .divMark (← monomorphizeLetRec gen aliases f e)
   | f + 1, .pledgeS row e => do return .pledgeS row (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .useS q n e => do return .useS q n (← monomorphizeLetRec gen aliases f e)
   | f + 1, .lam x b   => do return .lam x (← monomorphizeLetRec gen aliases f b)
   | f + 1, .lett x e b   => do return .lett x (← monomorphizeLetRec gen aliases f e) (← monomorphizeLetRec gen aliases f b)
   | f + 1, .app g a      => do return .app (← monomorphizeLetRec gen aliases f g) (← monomorphizeLetRec gen aliases f a)
@@ -4224,6 +4308,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .unitS => .ok .unitS
   | Γ, .thunk b  => do return .thunk (← elabS env Γ b)
   | Γ, .pledgeS allowed b => do return .pledgeS allowed (← elabS env Γ b)
+  | Γ, .useS q name b => do return .useS q name (← elabS env Γ b)
   | Γ, .force b  => do return .force (← elabS env Γ b)
   -- A-normalize a computation ARGUMENT (#26 part-2), as `.pairS` does: an effect op's arg is
   -- VALUE-position (`checkSV … .int`), so `put (get + 1)` ⟹ `let #anf = get + 1 in put #anf`. A bare
@@ -5061,6 +5146,9 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
   | .pledgeS row e =>
       .pledgeS (row.map fun n => if names.contains n then qualifyName modName n else n)
         (qualifyVars modName names e)
+  | .useS q n e =>
+      .useS q (if names.contains n then qualifyName modName n else n)
+        (qualifyVars modName names e)
   | .unitS         => .unitS
   | .foldS e       => .foldS (qualifyVars modName names e)
   | .unfoldS e     => .unfoldS (qualifyVars modName names e)
@@ -5332,6 +5420,7 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
   | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
   | .pledgeS _ e => firstPrivateDotAccess resolved e
+  | .useS _ _ e => firstPrivateDotAccess resolved e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => firstPrivateDotAccess resolved a <|> firstPrivateDotAccess resolved b
   | .matchS s _ l _ r              => firstPrivateDotAccess resolved s <|> firstPrivateDotAccess resolved l <|> firstPrivateDotAccess resolved r
@@ -5477,6 +5566,7 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
   | .ifS c t e                 => .ifS (qualifyDotAccess imports ctorOwners effectOps qTy c) (qualifyDotAccess imports ctorOwners effectOps qTy t) (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .annotS e t                => .annotS (qualifyDotAccess imports ctorOwners effectOps qTy e) (qTy t)
   | .pledgeS row e             => .pledgeS row (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .useS q n e                => .useS q n (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .unitS                    => .unitS
   | .foldS e                  => .foldS (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .unfoldS e                => .unfoldS (qualifyDotAccess imports ctorOwners effectOps qTy e)
@@ -5841,6 +5931,7 @@ public def surfUsesVar (nm : String) : Surf → Bool
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
   | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
   | .pledgeS _ e => surfUsesVar nm e
+  | .useS _ n e => n == nm || surfUsesVar nm e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => surfUsesVar nm a || surfUsesVar nm b
   | .matchS s _ l _ r              => surfUsesVar nm s || surfUsesVar nm l || surfUsesVar nm r
@@ -5906,6 +5997,7 @@ def letRecBoundNames : Surf → List String
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
   | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
   | .pledgeS _ e => letRecBoundNames e
+  | .useS _ _ e => letRecBoundNames e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => letRecBoundNames a ++ letRecBoundNames b
   | .matchS s _ l _ r              => letRecBoundNames s ++ letRecBoundNames l ++ letRecBoundNames r
@@ -6972,6 +7064,7 @@ def firstBareOpCallStep (opNames : List String) : Surf → Option String
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
   | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _
   | .pledgeS _ e => firstBareOpCall opNames e
+  | .useS _ _ e => firstBareOpCall opNames e
   | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
   | .binopS _ a b                  => firstBareOpCall opNames a <|> firstBareOpCall opNames b
   | .matchS s _ l _ r              => firstBareOpCall opNames s <|> firstBareOpCall opNames l <|> firstBareOpCall opNames r

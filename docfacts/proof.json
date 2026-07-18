@@ -942,7 +942,7 @@
       "claimRole": "supporting",
       "claimStrength": "bounded",
       "definitionSource": {
-        "line": 2897,
+        "line": 2920,
         "path": "Bang/Frontend/Surface.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "982c9ad4aaa2bd2805b8a7bc0847cd6dcc4deba95b9abab33c29cc0150014b6b",
+    "digest": "06d849ff8f001fd49680e2afab235704f417792580877b34a1e318fb7db60149",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

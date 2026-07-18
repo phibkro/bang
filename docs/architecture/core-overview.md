@@ -64,7 +64,7 @@ _Generated from validated committed architecture and proof facts. The JSON is th
 | Source equivalence | binary biorthogonal LR: `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; `Bang/Spec.lean`, `Bang/Meta/LR.lean`, `Bang/Meta/BinaryLR.lean`, `Bang/Audit.lean`; validate: `lake env lean Bang/Audit.lean` |
 | Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`, `docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md`; validate: `lake env lean Bang/Audit.lean` |
 | CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases `compiled` | `Bang/Backend/EnvMachine.lean`, `Main.lean`, `docs/decisions/0094-env-semantics-in-the-machine-layer.md` |
-| Module graph | 58 modules · 117 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 58 serialized module records in `docfacts/architecture.json` |
+| Module graph | 58 modules · 118 internal edges · Apex 4 · Backend 6 · Core 12 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 58 serialized module records in `docfacts/architecture.json` |
 | Architecture lineage | ADR-0016 two-hop shape; product target refined by ADR-0059; evidence boundary amended by ADR-0110 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented), [ADR-0110](../decisions/0110-wasm-proof-model-concrete-emitter-boundary.md) (Accepted; implemented) |
 <!-- END GENERATED architecture-assertions -->
 
@@ -131,7 +131,7 @@ Axiom trust and semantic strength are independent axes. `trusted` means only tha
 | `Bang.evalTrace_dispatches_within_recorded_live_bound`<br>`Bang/Spec.lean:207` | trusted<br>`Quot.sound`, `propext` | bounded · runtime-invariant · kernel-checked-theorem · role canonical | source-trace-runtime<br>load-bearing: successful instrumented run; unused: source typing | Every recorded dispatch label lies within the runtime live bound recorded beside that dispatch. Scope: Successful runs of the instrumented source CK trace evaluator. Limitations: Not static effect soundness.; The checked bound is runtime instrumentation stored in each trace event. Statement: `HasCTy [] [] c e (F q A) -> evalTrace fuel c e = done (v, t) -> traceWithin t` |
 | `Bang.effect_sound`<br>`Bang/Spec.lean:220` | trusted<br>`Quot.sound`, `propext` | alias · compatibility-alias · deprecated-theorem-alias · role deprecated-alias of `evalTrace_dispatches_within_recorded_live_bound` | source-trace-runtime<br>load-bearing: successful instrumented run; unused: source typing | Compatibility name for the runtime-recorded-live-bound invariant. Scope: Exactly the scope of evalTrace_dispatches_within_recorded_live_bound. Limitations: Must not be described as static effect soundness. Statement: `Same proposition as evalTrace_dispatches_within_recorded_live_bound` |
 | `Bang.zero_usage_erasable`<br>`Bang/Spec.lean:170` | flagged<br>`propext`, `sorryAx` | conjectural · conjecture · conjectural-kernel-declaration · role canonical | typed-contextual-semantics<br>load-bearing: intended grade-zero source typing premise; unused: none | Conjectures observational irrelevance of substitutions for a zero-graded binder. Scope: Typed contextual equivalence at every observation type. Limitations: The proof body is sorry and depends on sorryAx.; Must not be presented as established grade erasure. Statement: `HasCTy (0 :: gamma) (A :: Gamma) c e B -> NotEvaluated 0 c` |
-| `Bang.Surface.cell_reflects_latest`<br>`Bang/Frontend/Surface.lean:2897` | trusted<br>`propext` | bounded · example-law · kernel-checked-theorem · role supporting | surface-example<br>load-bearing: none; unused: none | The canonical cell example returns the latest written integer under the fixed evaluator bound. Scope: One fixed cellComp program family at fuel 80. Limitations: Example-level regression law, not a universal theorem about reactive cells. Statement: `forall s0 v, Source.eval 80 (cellComp s0 v) = done (vint v)` |
+| `Bang.Surface.cell_reflects_latest`<br>`Bang/Frontend/Surface.lean:2920` | trusted<br>`propext` | bounded · example-law · kernel-checked-theorem · role supporting | surface-example<br>load-bearing: none; unused: none | The canonical cell example returns the latest written integer under the fixed evaluator bound. Scope: One fixed cellComp program family at fuel 80. Limitations: Example-level regression law, not a universal theorem about reactive cells. Statement: `forall s0 v, Source.eval 80 (cellComp s0 v) = done (vint v)` |
 | `Bang.CalcVM.compile_correct`<br>`Bang/Backend/AbstractMachine.lean:3706` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role canonical | calcvm<br>load-bearing: terminating evalD term result; unused: none | A terminating evalD term result is reproduced by compiled CalcVM code. Scope: Successful term outcomes from empty initial machine state. Limitations: One-way convergent result theorem and does not directly mention Source.eval. Statement: `evalD n 0 [] [] [] M = some (term t, ...) -> exists F, exec F 0 (compile M []) [] [] = some [t]` |
 | `Bang.CalcVM.evalD_agrees_source`<br>`Bang/Backend/AbstractMachine.lean:7562` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role canonical | calcvm-to-source-ck-machine<br>load-bearing: literal-capability freedom, successful evalD return; unused: none | A literal-capability-free terminating evalD return is reproduced by Source.eval. Scope: Successful returned values from empty initial state. Limitations: One-way success correspondence and excludes literal capabilities. Statement: `VcapFree M -> evalD f 0 [] [] [] M = some (term (ret v), ...) -> exists F, Source.eval F M = done v` |
 | `Bang.CalcVM.sim`<br>`Bang/Backend/AbstractMachine.lean:2521` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role supporting | calcvm<br>load-bearing: evalD result, store correspondence, handler-stack correspondence, freshness and disjointness invariants; unused: none | The invariant-rich calculation theorem relates evalD outcomes to CalcVM execution. Scope: Term and raised outcomes under the stated machine invariants. Limitations: Internal proof infrastructure rather than a direct end-user compiler equation. Statement: `evalD result plus store and handler-stack invariants -> matching exec behavior and preserved invariants` |
@@ -153,7 +153,7 @@ BANG uses the [C4 abstraction hierarchy](https://c4model.com/abstractions) to ch
 | Software system | BANG implementation and toolchain | Shown as the outer boundary |
 | Container | Lean compiler/reference toolchain | Shown as the application boundary |
 | Component | 7 repository tiers (`Frontend`, `Core`, …) | Dependency nodes below |
-| Code | 58 Lean modules and 117 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
+| Code | 58 Lean modules and 118 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
 
 A C4 [component](https://c4model.com/abstractions/component) is related functionality behind a defined interface and is not separately deployable. That matches these tiers better than C4's application/data-store [container](https://c4model.com/abstractions/container) term.
 
@@ -161,16 +161,16 @@ A C4 [component](https://c4model.com/abstractions/component) is related function
 flowchart LR
   subgraph system_BANG["Software system: BANG implementation"]
     subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
-      component_Frontend["Frontend<br/>12 modules · 17682 LOC"]
+      component_Frontend["Frontend<br/>12 modules · 17934 LOC"]
       component_Core["Core<br/>12 modules · 8449 LOC"]
-      component_Backend["Backend<br/>6 modules · 17971 LOC"]
+      component_Backend["Backend<br/>6 modules · 18005 LOC"]
       component_Meta["Meta<br/>2 modules · 4094 LOC"]
       component_Witness["Witness<br/>19 modules · 3730 LOC"]
       component_Reify["Reify<br/>3 modules · 1883 LOC"]
       component_Apex["Apex<br/>4 modules · 1060 LOC"]
     end
   end
-  component_Frontend -->|4 code imports| component_Core
+  component_Frontend -->|5 code imports| component_Core
   component_Backend -->|8 code imports| component_Core
   component_Meta -->|7 code imports| component_Core
   component_Witness -->|5 code imports| component_Frontend
@@ -182,13 +182,13 @@ flowchart LR
   component_Apex -->|2 code imports| component_Meta
 ```
 
-**Reading the diagram:** arrows are dependencies between C4 components; edge labels aggregate the 69 code-level imports that cross a component boundary. Internal module-to-module imports are deliberately omitted from the visual.
+**Reading the diagram:** arrows are dependencies between C4 components; edge labels aggregate the 70 code-level imports that cross a component boundary. Internal module-to-module imports are deliberately omitted from the visual.
 
 | Component (repository tier) | Responsibility | Modules | LOC | Depends on |
 |---|---|---:|---:|---|
-| `Frontend` | text → typed core | 12 | 17682 | `Core` (4) |
+| `Frontend` | text → typed core | 12 | 17934 | `Core` (5) |
 | `Core` | IR · typing · semantics · soundness | 12 | 8449 | — |
-| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 6 | 17971 | `Core` (8) |
+| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 6 | 18005 | `Core` (8) |
 | `Meta` | contextual-equivalence metatheory | 2 | 4094 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3730 | `Frontend` (5), `Core` (27), `Backend` (4) |
 | `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |

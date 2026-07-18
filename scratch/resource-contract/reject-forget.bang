@@ -1,0 +1,9 @@
+effect Permit { spend : Int -> Int }
+
+handler PermitIdentity implements Permit {
+  spend(n) => n
+}
+
+handle
+  use [1] permit in 7
+with PermitIdentity as permit

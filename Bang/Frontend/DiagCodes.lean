@@ -250,7 +250,16 @@ def registry : List DiagEntry := [
         ++ "refused loud rather than silently picking one annotation over the other. Annotate "
         ++ "consistently, or drop whichever annotation is redundant."
     example? := some
-      "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)" }
+      "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)" },
+  { code := "B018"
+    anchors := ["quantity mismatch", "requires", "use"]
+    summary := "a local value-use assertion does not match the body's quantitative use"
+    teaching :=
+      "`use [0] x in body` requires no free use of `x`; `use [1] x in body` requires one use "
+        ++ "on every alternative path. Sequential uses add and saturate at `omega`. Either remove "
+        ++ "the duplicate/forgotten use or widen the local assertion to `[omega]`. Quantities are "
+        ++ "a value axis beside effect rows, never weights inside a row (ADR-0116)."
+    example? := some "let x = 1 in use [1] x in 7" }
 ]
 
 /-! ## 3. The two total functions over the registry. -/
@@ -302,6 +311,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "let-binding 'double': a bare function is a computation (a \"returner\"), not a value — a top-level `let` binds a VALUE, so wrap it in a thunk: `let double = {fun … => …}` (see `examples/caesar`)" == some "B015"
 #guard codeForMsg "app: callee is not a function — '4' is a literal, never a callable; the next line's `x` looks like it was folded in as an application argument. A top-level `let` needs `in` to end its RHS on the SAME line" == some "B016"
 #guard codeForMsg "'passThroughOpt': conflicting instantiations for type variable 'a' — one call site names both 'Int' and 'Char' (an argument annotation and the call's own result annotation disagree, or two arguments disagree) — annotate consistently, or drop the redundant annotation" == some "B017"
+#guard codeForMsg "quantity mismatch: 'use [1] x' requires one use, but the body has zero" == some "B018"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none
@@ -312,6 +322,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard (explain "B999").isNone
 #guard (explain "B015").map (·.code) == some "B015"
 #guard (explain "B016").map (·.code) == some "B016"
+#guard (explain "B018").map (·.code) == some "B018"
 
 -- codes are UNIQUE (a duplicate would make `explain` ambiguous).
 #guard (registry.map (·.code)).eraseDups.length == registry.length

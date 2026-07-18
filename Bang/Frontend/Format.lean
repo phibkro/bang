@@ -96,6 +96,12 @@ def binOpTok : Bang.BinOp → String
   | .lt  => "<"
   | .eq  => "=="
 
+/-- Canonical ASCII spelling for a surfaced QTT quantity. -/
+public def quantityTok : Bang.QTT → String
+  | .zero  => "[0]"
+  | .one   => "[1]"
+  | .omega => "[omega]"
+
 /-! ## 2. Type printer
 
 Mirrors `pTy`'s precedence exactly (loosest → tightest: `->` (right-assoc) > `+` (left-assoc) >
@@ -386,6 +392,11 @@ partial def fmtSurf (need : SPrec) : Surf → Format
       fParenIf need .cmp <|
         Format.group
           (Format.text "pledge {" ++ Format.text (String.intercalate ", " allowed) ++ Format.text "}" ++ Format.line ++
+            Format.text "in " ++ fmtSurf .cmp e)
+  | .useS q name e =>
+      fParenIf need .cmp <|
+        Format.group
+          (Format.text s!"use {quantityTok q} {name}" ++ Format.line ++
             Format.text "in " ++ fmtSurf .cmp e)
   | .foldS e   => Format.text "(fold " ++ fmtSurf .atom e ++ Format.text ")"                              -- INTERNAL; printed defensively
   | .unfoldS e => Format.text "(unfold " ++ fmtSurf .atom e ++ Format.text ")"                           -- INTERNAL; ditto
@@ -1161,6 +1172,9 @@ open Bang.Format in
 open Bang.Format in
 #guard roundTripsOn "handle q.connect(7) with (Quota 1) as q { update connect(host) => (param, 0) }" &&
        idempotentOn "handle q.connect(7) with (Quota 1) as q { update connect(host) => (param, 0) }"
+open Bang.Format in
+#guard roundTripsOn "use [1] permit in permit.spend(7)" &&
+       idempotentOn "use [1] permit in permit.spend(7)"
 open Bang.Format in
 #guard fmtExpr "handle q.update(7) with Q as q { update(x) => (x, x) }" ==
        .ok "handle q.update(7) with Q as q { update(x) => (x, x) }"

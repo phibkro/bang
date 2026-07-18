@@ -1,6 +1,10 @@
 # BANG
 
-A small effect-typed language whose **paradigm and runtime are values, not language features**. The kernel is thunks, effect rows, handlers, and STM; state, user-defined effects, host IO, and runtime policy use that common substrate.
+A small language of **semantic descriptions**. Programs describe computation, effects, and resource
+obligations independently of their realization; the compiler calculates progressively concrete
+executions while preserving those descriptions through a graded-CBPV kernel to WebAssembly.
+Paradigms and runtimes are therefore values rather than language features: state, user-defined
+effects, host IO, and runtime policy all use the same thunks, rows, and handlers.
 
 ```bang
 let c = {7} in $c

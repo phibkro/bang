@@ -1769,6 +1769,16 @@ def runQueryLaws (file : Option String) : IO UInt32 := do
         | .error code => pure code
         | .ok p       => printQueryOk (Bang.Query.lawsJsonP p)
 
+/-- `bang query contract <file>` — the focused semantic-description card: effect contracts,
+handler realizations, quantities, laws, and compiler evidence in one JSON answer. -/
+def runQueryContract (file : Option String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.contractJsonP p)
+
 /-- `bang query def <name> <file>` — the decl defining `name`. -/
 def runQueryDef (file : Option String) (name : String) : IO UInt32 := do
   match ← readQuerySrc file with
@@ -2528,7 +2538,9 @@ def usage : String :=
   "                                             (dump's own \"decls\" field, narrowed)\n" ++
   "    bang query type <file.bang> <name>      the checked type ! row of one top-level binding\n" ++
   "    bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding\n" ++
-  "    bang query laws [<file.bang>]           every trait×impl and effect×handler law instance\n" ++
+    "    bang query laws [<file.bang>]           every trait×impl and effect×handler law instance\n" ++
+    "    bang query contract [<file.bang>]       semantic contract card: contracts, realizations,\n" ++
+    "                                             quantities, laws, and compiler evidence\n" ++
   "    bang query def <name> <file.bang>       the decl that defines <name>\n" ++
   "    bang query refs <name> <file.bang>      every decl whose body mentions <name>\n" ++
   "                                             (dump's own \"refs\" edge list, filtered to <name>)\n" ++
@@ -2922,6 +2934,8 @@ def main (args : List String) : IO UInt32 := do
         | ["effects", name]       => runQueryEffects none name
         | ["laws", file]          => runQueryLaws (some file)
         | ["laws"]                => runQueryLaws none
+        | ["contract", file]      => runQueryContract (some file)
+        | ["contract"]            => runQueryContract none
         | ["def", name, file]     => runQueryDef (some file) name
         | ["refs", name, file]    => runQueryRefs (some file) name
         | ["hover", file, lineS, colS] =>

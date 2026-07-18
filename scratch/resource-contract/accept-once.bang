@@ -1,0 +1,16 @@
+effect Permit {
+  spend : Int -> Int
+  law preservesZero(permit): permit.spend(0) == 0
+}
+
+handler PermitIdentity implements Permit {
+  spend(n) => n
+}
+
+handler PermitNegate implements Permit {
+  spend(n) => 0 - n
+}
+
+handle
+  use [1] permit in permit.spend(7)
+with PermitIdentity as permit

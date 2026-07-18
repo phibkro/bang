@@ -133,6 +133,7 @@ def renameVars (old new : String) : Surf → Surf
   | .ifS c t e     => .ifS (renameVars old new c) (renameVars old new t) (renameVars old new e)
   | .annotS e t    => .annotS (renameVars old new e) t
   | .pledgeS row e => .pledgeS row (renameVars old new e)
+  | .useS q n e    => .useS q (if n == old then new else n) (renameVars old new e)
   | .unitS         => .unitS
   | .foldS e       => .foldS (renameVars old new e)
   | .unfoldS e     => .unfoldS (renameVars old new e)

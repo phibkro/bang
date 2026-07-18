@@ -6,9 +6,10 @@
 
 ## 1. What bang-lang is
 
-A **multi-paradigm programming language whose paradigms and runtime are values, not language
-features** — built on one small kernel (thunks · effects · handlers · STM), formally verified in
-Lean, and compiled through a verified two-hop pipeline to WebAssembly.
+A language of **semantic descriptions**: programs state computation, effects, and resource
+obligations independently of how they are realized. The compiler calculates progressively concrete
+executions that preserve those descriptions through one small kernel (thunks · effects · handlers ·
+STM), a Lean-checked semantic spine, and a WebAssembly product backend.
 
 ```
 source(.bang) → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (Benton-Hur LR)
@@ -17,18 +18,23 @@ source(.bang) → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (Ben
 
 Imperative, reactive, actor, transactional — each is **ordinary library code** over the kernel, not
 a built-in. A program is a **description** until forced (`$`); a paradigm is **which effects are in
-a function's row**; a runtime is **a handler installed at the use site**.
+a function's row**; a runtime is **a handler installed at the use site**. Those are consequences of
+the description/realization separation, not the whole product identity (ADR-0115).
 
 ## 2. The differentiator (the moat)
 
 Three claims, in increasing distance-from-done:
 
-1. **Paradigms are values.** One kernel; mutability/reactivity/actors/transactions are libraries.
+1. **Descriptions precede realizations.** Contracts, laws, effects, and resources say what must hold;
+   handlers and compiler calculations choose how it runs. Named effect contracts and swappable
+   handler realizations demonstrate the effect axis; surfaced quantities are the next resource-axis
+   tracer.
+2. **Paradigms are values.** One kernel; mutability/reactivity/actors/transactions are libraries.
    (Partially demonstrated in v0.1.)
-2. **Evaluation stage & location are tunable** (§5). "Everything is a thunk" means *when* a value is
+3. **Evaluation stage & location are tunable** (§5). "Everything is a thunk" means *when* a value is
    forced — compile-time · runtime · dev-time — and *where* — local · at-the-data — are developer-
    controlled dimensions of the same model. Multi-stage programming unified through force, not bolted on.
-3. **Proof by construction.** Correctness you get *structurally*, like Rust's memory safety —
+4. **Proof by construction.** Correctness you get *structurally*, like Rust's memory safety —
    generalized to the **laws/relations between operations** on user-defined data objects. The
    verified kernel makes this real rather than asserted. **This is the north star; it is the
    least-built thing** (absent in v0.1; lang-bang has a verified kernel but no user-facing
@@ -36,7 +42,7 @@ Three claims, in increasing distance-from-done:
    user-facing demonstration** — a verified data structure whose operation-laws are load-bearing
    (§6 rung 2); the *full* law-language is post-v1.
 
-bang-lang is **not** "another effect-typed language." The moat is (2)+(3): a verified substrate that
+bang-lang is **not** "another effect-typed language." The moat is the combination above: a verified substrate that
 turns paradigm-and-stage flexibility into *guarantees*, not conventions.
 
 ## 3. Users & use case

@@ -796,6 +796,33 @@ def boxInt (n : Int) : String :=
 def tyEnv : String := "(ref null $env)"
 def tyVal : String := "(ref null $val)"
 
+/-! A manifestly unused `letC` result needs no runtime `$env` cell. The occurrence test follows
+`Comp.substFrom`'s binder structure exactly: handler parameters/heaps/clauses that substitution
+treats as closed are ignored here too. This is intentionally a syntactic backend optimization;
+the surface `use [0] x in ...` assertion is checked earlier and erased before lowering. -/
+mutual
+def usesBinderV (k : Nat) : Val → Bool
+  | .vunit | .vint _ | .vcap _ _ => false
+  | .vvar i => i == k
+  | .vthunk m => usesBinderC k m
+  | .inl v | .inr v | .fold v => usesBinderV k v
+  | .pair a b => usesBinderV k a || usesBinderV k b
+def usesBinderC (k : Nat) : Comp → Bool
+  | .ret v | .force v | .unfold v => usesBinderV k v
+  | .letC m n => usesBinderC k m || usesBinderC (k + 1) n
+  | .lam m => usesBinderC (k + 1) m
+  | .app m v => usesBinderC k m || usesBinderV k v
+  | .perform cap _ arg => usesBinderV k cap || usesBinderV k arg
+  | .handle h m => usesBinderH k h || usesBinderC (k + 1) m
+  | .case v l r => usesBinderV k v || usesBinderC (k + 1) l || usesBinderC (k + 1) r
+  | .split v n => usesBinderV k v || usesBinderC (k + 2) n
+  | .binop _ a b => usesBinderV k a || usesBinderV k b
+  | .oom | .wrong _ => false
+def usesBinderH (k : Nat) : Handler → Bool
+  | .state _ s => usesBinderV k s
+  | .throws _ | .transaction _ _ | .custom _ _ _ => false
+end
+
 mutual
 /-- Emit a `Val` as a `(ref null $val)` expression under env-local `envL`. `caps` is the compile-time
 capability context (§`CapSlot`), threaded ALONGSIDE the runtime `$env` so a nested closure body knows
@@ -1203,16 +1230,23 @@ partial def emitClauses (pEnvL : Nat) (caps : List CapSlot) (pos : Nat) :
               (.ok ((op, pos) :: restMap, s!"(struct.new $env {cloE} {restList})"), st2)
 
 /-- `letC m n`: compute m, bind its value at index 0 in a fresh env local, run n. n's index-0 binder
-is a VALUE (m's result) ⇒ push `.none` in the cap context. -/
+is a VALUE (m's result) ⇒ push `.none` in the cap context. When index 0 is absent, still evaluate
+`m` (it may have effects), drop only its result, substitute away the dead binder to renumber outer
+indices, and emit `n` under the original environment. -/
 partial def emitLetGC (envL : Nat) (caps : List CapSlot) (m n : Comp) (st : GCState) : EmitGC × GCState :=
   match emitCompGC envL caps m st with
   | (.unsup r, st') => (.unsup r, st')
   | (.ok em, st1) =>
-      let (e2L, st2) := st1.fresh tyEnv
-      match emitCompGC e2L (CapSlot.none :: caps) n st2 with
-      | (.unsup r, st') => (.unsup r, st')
-      | (.ok en, st3) =>
-          (.ok (seqBlock s!"(local.set {e2L} (struct.new $env {em} (local.get {envL})))\n    {en}"), st3)
+      if usesBinderC 0 n then
+        let (e2L, st2) := st1.fresh tyEnv
+        match emitCompGC e2L (CapSlot.none :: caps) n st2 with
+        | (.unsup r, st') => (.unsup r, st')
+        | (.ok en, st3) =>
+            (.ok (seqBlock s!"(local.set {e2L} (struct.new $env {em} (local.get {envL})))\n    {en}"), st3)
+      else
+        match emitCompGC envL caps (Comp.subst .vunit n) st1 with
+        | (.unsup r, st') => (.unsup r, st')
+        | (.ok en, st2) => (.ok (seqBlock s!"(drop {em})\n    {en}"), st2)
 
 /-- Call closure `cloE` with arg `argE` (both `(ref null $val)`): stash the cast closure in temp
 local `clL`, dispatch `call_ref` on its `$code` with its captured `$env` + the arg. Wrapped in a

@@ -1,0 +1,7 @@
+use Permit (Identity)
+
+let ghost = 99 in
+use [0] ghost in
+handle
+  use [1] permit in permit.spend(7)
+with Identity as permit

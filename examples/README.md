@@ -44,6 +44,7 @@ examples/<project>/
 | [pledged-plugin](pledged-plugin/) | **row attenuation as a type boundary** — `pledge {Audit} in …` admits an audited plugin while statically rejecting any extra `Secret` effect (ADR-0112) | 1 |
 | [policy-host-allowlist](policy-host-allowlist/) | **value-level resource policy at the handler boundary** — one pledged `{Net}` plugin runs unchanged under two runtime host allowlists carried by an ordinary handler parameter | 1001 |
 | [stateful-quota](stateful-quota/) | **handler-owned evolving policy (ADR-0114)** — one stable capability is called twice while an `update` clause atomically advances its private quota parameter | 10 |
+| [resource-contract](resource-contract/) | **semantic contract tracer** — an effect contract with two realizations and laws, plus erased `[0]`/exactly-once `[1]` local resource obligations and one joined `query contract` card | 7 |
 
 ## Running
 
@@ -60,9 +61,9 @@ runs (ADR-0076).
 ## Notes / limitations
 
 bang HAS a line-comment syntax (`--` to end-of-line) and a module system (ADR-0093:
-`import`/`use`/`pub`, one file per module) — see `docs/reference/language.md`'s Lexical
-notes and Modules sections for the full grammar. `json/` is the one multi-file example;
-every other project here is still a single comment-free `.bang` file (comments are
+`import`/module-`use`/`pub`, one file per module) — see `docs/reference/language.md`'s Lexical
+notes and Modules sections for the full grammar. `json/`, `codec-contract/`, and
+`resource-contract/` are multi-file examples; most other projects use one `.bang` file (comments are
 stripped before parsing regardless, so they carry no meaning to `check`/`run` — see the
 reference's Lexical notes for why `bang fmt` doesn't preserve them). The
 parser-combinators README documents the annotation-driven-generic-data wall that

@@ -11,7 +11,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 #
 # Corpus (whole example PROGRAMS with an `expected.txt` oracle):
 #   json (import-ing multi-module) · factorial (bignum print path) · logger-counting (EFFECTFUL —
-#   an in-program handler the GC path lowers) · stateful-quota (ADR-0114 updating custom clause).
+#   an in-program handler the GC path lowers) · stateful-quota (ADR-0114 updating custom clause) ·
+#   resource-contract (ADR-0116 checked `[0]` erasure + one-shot `[1]`).
 # Each is built to a module, run on wasmtime, and diffed.
 # The --component leg additionally wraps json as a WASI component (via the pinned preview1 adapter,
 # fetched to a cache) and asserts the component prints the same value — the full static story.
@@ -52,7 +53,9 @@ if [ -z "$WT_BIN" ] || [ -z "$WASMTIME_BIN" ] || [ ! -x "$WT_BIN" ] || [ ! -x "$
 fi
 # `bang build` shells to a BARE `wasm-tools` on $PATH — so put the resolved tool dirs on PATH for
 # every `bang build` invocation below (the nix-shell store paths, when we resolved via nix).
-export PATH="$(dirname "$WT_BIN"):$(dirname "$WASMTIME_BIN"):$PATH"
+wt_dir="$(dirname "$WT_BIN")"
+wasmtime_dir="$(dirname "$WASMTIME_BIN")"
+export PATH="$wt_dir:$wasmtime_dir:$PATH"
 
 WT_FLAGS="-W gc=y,function-references=y,exceptions=y"
 outdir="$(mktemp -d)"
@@ -104,6 +107,7 @@ build_and_run json            # import-ing multi-module  → 163
 build_and_run factorial       # bignum print path         → 25!
 build_and_run logger-counting # EFFECTFUL (in-prog handler) → 3
 build_and_run stateful-quota  # EFFECTFUL updating custom clause → 10
+build_and_run resource-contract # quantity obligations + dead result-cell erasure → 7
 
 # ── default output name: `bang build <file>` with no -o writes <stem>.wasm in CWD ──
 echo "── default output name (<stem>.wasm) ──"
@@ -136,7 +140,6 @@ if [ "$have_adapter" = yes ]; then
   check "component-build-rc0" "$comp_build_rc" "0"
   set +e
   comp_got="$("$WASMTIME_BIN" run $WT_FLAGS "$comp" 2>/dev/null)"
-  comp_run_rc=$?
   set -e
   check "component-run-value" "$comp_got" "$(cat examples/json/expected.txt | head -1)"
 else
@@ -159,8 +162,8 @@ fi
 echo "──────────────────────────────"
 echo "bang build: $pass passed, $fail failed"
 # The count varies by the --component branch (both branches emit exactly 2 checks), so the module
-# legs (4×2=8) + default-out (2) + component branch (2) = 12 is invariant across online/offline.
-want_total=12
+# legs (5×2=10) + default-out (2) + component branch (2) = 14 is invariant across online/offline.
+want_total=14
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks, only $got_total ran (script truncated?)"

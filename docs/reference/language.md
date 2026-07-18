@@ -36,6 +36,7 @@ nothing here can drift from what the language actually does.
 | `if c then t else e` | (sugar over case on Bool = 1+1) |
 | `(e : T)` | type ascription (ADR-0066 ②); erased at lowering |
 | `pledge {E₁, …} in e` | checked row upper bound; erased at lowering |
+| `use [q] x in e` | checked value-use assertion; erased at lowering |
 | `()` | the unit value literal |
 | `μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)` |  |
 | `μ elim` | (INTERNAL: emitted by named-match elaboration) |
@@ -335,6 +336,7 @@ with Net as net {
 | `update op(x) => (resumeValue, nextParam)` | marks one custom clause as parameter-updating: resume with the first value and atomically install the second before the continuation runs (ADR-0114) |
 | `h.op(arg)` | performs `op` on the named capability `h` — the SAME `$h.op` bare-call convention the built-in named-cap surface uses (`state … as h`); NOT `$h.op arg` (`h` is already a value, not a thunk) |
 | `pledge {E₁, E₂, …} in e` | checks that `e`'s inferred row is a subset of the named closed row, retains the actual inferred row, and erases before lowering (ADR-0112) |
+| `use [0|1|omega] x in e` | asserts local value usage: zero, exactly once on every branch, or unrestricted; checked before and erased during lowering (ADR-0116) |
 
 **Clause bodies are CURRIED, matching the perform site** (`op(x, y) => body` desugars to a
 curried clause, mirroring `h.op(x)(y)`'s own curried call shape) — a deliberate divergence
@@ -408,6 +410,14 @@ This is a compile-time assertion, not a grant or runtime filter: the body still 
 the relevant capability, handlers still define admitted operations, and lowering erases
 the pledge node. Rows restrict WHICH effect labels may occur; value-level policy such as
 filesystem paths or hostnames remains handler-enforced. See `examples/pledged-plugin/`.
+
+**`use [q] x in e` is a local resource obligation, separate from effect rows.**
+`[0]` requires no occurrence, `[1]` requires exactly one occurrence on every branch,
+and `[omega]` is unrestricted. Sequential uses add and saturate at omega; differing
+branch counts are omega, matching the kernel case rule's shared branch grade. The name
+must already be bound. The assertion has no runtime meaning and erases before lowering.
+A `[0]` let still evaluates its right-hand side (effects are preserved); Wasm discards
+the result and omits the dead environment cell. See `examples/resource-contract/`.
 
 **Value-level resource policy is ordinary handler configuration (ADR-0113).**
 `examples/policy-host-allowlist/` runs one unchanged pledged `{Net}` plugin under two
@@ -931,7 +941,7 @@ capability types (#21) make the escape unrepresentable rather than merely detect
 JSON — the cheapest "LSP for agents": no server, no protocol, one process per call.
 Every op's Lean-side implementation is `Bang/Frontend/Query.lean`, a **public library
 API** (every fact-producing function is `public`, documented as reusable outside the
-CLI — a Lean script can call `declFactsOf`/`nameRefEdgesOf`/`lawInstancesOf{,Prog}` directly).
+CLI — a Lean script can call `declFactsOf`/`nameRefEdgesOf`/`quantityFactsOf` directly).
 
 **`bang query dump [<file.bang>]` is the key operation**: the COMPLETE fact base in one
 export, so you compose *arbitrary* queries (`jq`, `python`, a Lean script) instead of
@@ -1026,6 +1036,7 @@ instances appear in both `dump` and `query laws` (qualified by the module merge)
 | `type` | `<file.bang> <name>` | one `DeclFact`'s `type`+`row`, looked up by name |
 | `effects` | `<name> [<file.bang>]` | one `DeclFact`'s `row` alone |
 | `laws` | `[<file.bang>]` | every discovered trait×impl and effect×handler law instance |
+| `contract` | `[<file.bang>]` | one semantic card joining effect contracts, handler realizations, quantity obligations, laws, and compiler evidence |
 | `def` | `<name> <file.bang>` | the one decl DEFINING `name`, as a `DeclFact` |
 | `refs` | `<name> <file.bang>` | `dump`'s own `"refs"` edges, filtered to `<name>` |
 | `hover` | `[<file.bang>] <line> <col>` | the decl at 1-indexed `<line>:<col>` — nearest-enclosing, DECL granularity (issue #52 slice 5) |
@@ -1039,6 +1050,14 @@ naming a decl that doesn't exist — the tool succeeded, the ANSWER is negative)
 op could not run at all (a parse or import-resolution failure, still `"ok":false` on
 stdout); `2` a tool error (e.g. unreadable file) — reported on stderr, nothing on stdout,
 never folded into the JSON (mirrors `check --json`'s own tool-error convention exactly).
+
+### `contract` — the semantic-description card
+
+`bang query contract [<file.bang>]` focuses the read model on the project's semantic
+contracts. Its `contracts`, `realizations`, `quantities`, and `laws` arrays expose the
+description and its interchangeable implementations together; `evidence` records whether
+the merged program type-checks and names the quantity/lowering/backend erasure stages.
+This is the queryable compiler view used by `examples/resource-contract/`.
 
 ### `hover` — decl-granularity position query (issue #52 slice 5)
 
@@ -1328,6 +1347,7 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 | `bang query type` | — | `bang query type <file.bang> <name>      the checked type ! row of one top-level binding` |
 | `bang query effects` | — | `bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding` |
 | `bang query laws` | — | `bang query laws [<file.bang>]           every trait×impl and effect×handler law instance` |
+| `bang query contract` | — | `bang query contract [<file.bang>]       semantic contract card: contracts, realizations,` |
 | `bang query def` | — | `bang query def <name> <file.bang>       the decl that defines <name>` |
 | `bang query refs` | — | `bang query refs <name> <file.bang>      every decl whose body mentions <name>` |
 | `bang query hover` | — | `bang query hover [<file.bang>] <line> <col>` |
@@ -1395,4 +1415,5 @@ and docs can reference it durably.
 | `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
 | `B016` | a top-level `let` with no `in` absorbed the next line as an application (issue #129) | yes |
 | `B017` | a bound-free generic's call site names two different types for the same type variable | yes |
+| `B018` | a local value-use assertion does not match the body's quantitative use | yes |
 

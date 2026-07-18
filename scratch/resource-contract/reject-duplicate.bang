@@ -1,0 +1,10 @@
+effect Permit { spend : Int -> Int }
+
+handler PermitIdentity implements Permit {
+  spend(n) => n
+}
+
+handle
+  use [1] permit in
+    let first = permit.spend(7) in permit.spend(first)
+with PermitIdentity as permit

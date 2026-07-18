@@ -2,7 +2,13 @@
 
 ## What BANG is
 
-A small language whose **paradigm and runtime are values, not language features**. The kernel is thunks + effects + STM; everything else (mutability, IO, async, actors, signals) is ordinary library code over it. Programs are **descriptions** until forced with `$` (ADR-0007; `!` is actor-send); a function's **paradigm** is which effects are in its row; a program's **runtime** is a handler installed at the use site.
+A small language of **semantic descriptions**. Computation, effects, and resource obligations are
+described independently of realization; the compiler calculates progressively concrete executions
+that preserve those descriptions through the graded-CBPV kernel to WebAssembly (ADR-0115).
+Paradigm and runtime are consequently values, not language features: everything else (mutability,
+IO, async, actors, signals) is ordinary library code over thunks + effects + STM. Programs are
+descriptions until forced with `$` (ADR-0007; `!` is actor-send); a function's paradigm is which
+effects are in its row; a program's runtime is a handler installed at the use site.
 
 **First time in this repo?** Read `ONBOARDING.md` for setup + a tighter reference index.
 

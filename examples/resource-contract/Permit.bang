@@ -1,0 +1,12 @@
+pub effect Permit {
+  spend : Int -> Int
+  law preserves_zero(permit): permit.spend(0) == 0
+}
+
+pub handler Identity implements Permit {
+  spend(n) => n
+}
+
+pub handler Negate implements Permit {
+  spend(n) => 0 - n
+}

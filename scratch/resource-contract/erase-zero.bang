@@ -1,0 +1,2 @@
+let ghost = 99 in
+use [0] ghost in 7

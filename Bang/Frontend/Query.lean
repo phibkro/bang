@@ -379,6 +379,113 @@ def lawInstanceJson (inst : String × String × List String × String) : String 
 #guard lawInstanceJson ("Codec@Shift7", "roundtrip", ["x"], "handle body with Shift7 as codec") ==
   "{\"trait\":\"Codec@Shift7\",\"contract\":\"Codec\",\"realization\":\"Shift7\",\"law\":\"roundtrip\",\"params\":[\"x\"],\"body\":\"handle body with Shift7 as codec\"}"
 
+/-! ## Semantic contract cards
+
+The ordinary dump remains the complete relational fact base. A contract card is its focused
+semantic-description view: declared effect contracts, handler realizations, quantitative use
+obligations, law instances, and the compiler evidence attached to those facts. -/
+
+public structure QuantityFact where
+  owner    : String
+  name     : String
+  declared : QTT
+  observed : QTT
+  deriving Repr
+
+def QuantityFact.toJson (f : QuantityFact) : String :=
+  jsonObj [jsonStrField "owner" f.owner, jsonStrField "name" f.name,
+           jsonStrField "declared" (Bang.Format.quantityTok f.declared),
+           jsonStrField "observed" (Bang.Format.quantityTok f.observed),
+           jsonStrField "enforcement" "exact-local-usage",
+           jsonStrField "erasure" "before-lowering"]
+
+mutual
+def quantityFactsSurf (owner : String) : Surf → List QuantityFact
+  | .lit _ | .var _ | .unitS | .getS => []
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ | .pledgeS _ e =>
+      quantityFactsSurf owner e
+  | .useS q name body =>
+      ⟨owner, name, q, Bang.TypeCheck.surfaceUsage name body⟩ :: quantityFactsSurf owner body
+  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .binopS _ a b =>
+      quantityFactsSurf owner a ++ quantityFactsSurf owner b
+  | .lam _ body => quantityFactsSurf owner body
+  | .matchS s _ l _ r =>
+      quantityFactsSurf owner s ++ quantityFactsSurf owner l ++ quantityFactsSurf owner r
+  | .splitS _ _ p body => quantityFactsSurf owner p ++ quantityFactsSurf owner body
+  | .ifS c t e => quantityFactsSurf owner c ++ quantityFactsSurf owner t ++ quantityFactsSurf owner e
+  | .matchD s arms => quantityFactsSurf owner s ++ quantityFactsDArms owner arms
+  | .withCapS _ init _ body => quantityFactsSurf owner init ++ quantityFactsSurf owner body
+  | .dotPerform recv _ args => quantityFactsSurf owner recv ++ quantityFactsArgs owner args
+  | .letRecS _ _ rhs body => quantityFactsSurf owner rhs ++ quantityFactsSurf owner body
+  | .letRecMultiS binds body => quantityFactsLetRec owner binds ++ quantityFactsSurf owner body
+  | .lettMulti binds body => quantityFactsLets owner binds ++ quantityFactsSurf owner body
+  | .handleCustomS _ eff init _ clauses body =>
+      quantityFactsSurf owner eff ++ quantityFactsArgs owner init ++
+        quantityFactsHClauses owner clauses ++ quantityFactsSurf owner body
+  | .hostPerformS _ eff _ args => quantityFactsSurf owner eff ++ quantityFactsArgs owner args
+def quantityFactsArgs (owner : String) : SurfArgs → List QuantityFact
+  | .none => []
+  | .one a => quantityFactsSurf owner a
+  | .two a b => quantityFactsSurf owner a ++ quantityFactsSurf owner b
+def quantityFactsDArms (owner : String) : DArms → List QuantityFact
+  | .nil => []
+  | .cons _ _ body rest => quantityFactsSurf owner body ++ quantityFactsDArms owner rest
+def quantityFactsLets (owner : String) : LetBindings → List QuantityFact
+  | .nil => []
+  | .cons _ rhs rest => quantityFactsSurf owner rhs ++ quantityFactsLets owner rest
+def quantityFactsLetRec (owner : String) : LetRecBindings → List QuantityFact
+  | .nil => []
+  | .cons _ _ rhs rest => quantityFactsSurf owner rhs ++ quantityFactsLetRec owner rest
+def quantityFactsHClauses (owner : String) : HClauses → List QuantityFact
+  | .nil => []
+  | .cons _ _ body rest | .consUpdating _ _ body rest =>
+      quantityFactsSurf owner body ++ quantityFactsHClauses owner rest
+end
+
+public def quantityFactsOf (p : Prog) : List QuantityFact :=
+  p.decls.flatMap (fun d => (declBodies d).flatMap (quantityFactsSurf d.name)) ++
+    quantityFactsSurf "<body>" p.body
+
+def contractDeclJson : Decl → Option String
+  | .effectD name ops laws =>
+      some <| jsonObj [jsonStrField "name" name,
+        jsonField "operations" (jsonStrArr (ops.map (·.1))),
+        jsonField "laws" (jsonStrArr (laws.map (·.name)))]
+  | _ => none
+
+def realizationDeclJson : Decl → Option String
+  | .handlerD name eff clauses =>
+      some <| jsonObj [jsonStrField "name" name, jsonStrField "contract" eff,
+        jsonField "operations" (jsonStrArr ((Bang.Surface.hClausesToList clauses).map (·.1)))]
+  | _ => none
+
+/-- **PUBLIC entry, `Prog`-taking:** the focused semantic-description read model. -/
+public def contractJsonP (p : Prog) : String :=
+  let laws := match Bang.TypeCheck.lawInstancesOfProg p with
+    | .ok xs => xs.map lawInstanceJson
+    | .error _ => []
+  let evidence := match Bang.TypeCheck.checkAndLowerProg p with
+    | .ok _ => jsonObj [jsonField "typeChecked" "true",
+        jsonStrField "quantityChecking" "exact-local",
+        jsonStrField "quantityErasure" "before-lowering",
+        jsonStrField "backendErasure" "manifest-unused-let-result"]
+    | .error e => jsonObj [jsonField "typeChecked" "false", jsonStrField "error" e]
+  jsonObj [jsonField "ok" "true", jsonField "schemaVersion" "1",
+    jsonField "contracts" (jsonArr (p.decls.filterMap contractDeclJson)),
+    jsonField "realizations" (jsonArr (p.decls.filterMap realizationDeclJson)),
+    jsonField "quantities" (jsonArr ((quantityFactsOf p).map QuantityFact.toJson)),
+    jsonField "laws" (jsonArr laws), jsonField "evidence" evidence]
+
+/-- **PUBLIC entry:** source-taking twin of `contractJsonP`. -/
+public def contractJson (src : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p0 => contractJsonP ((Bang.TypeCheck.expandDerives p0).toOption.getD p0)
+
+#guard (contractJson "let x = 1 in use [1] x in x" |>.splitOn "\"declared\":\"[1]\"").length == 2
+#guard (contractJson "let x = 1 in use [1] x in x" |>.splitOn "\"observed\":\"[1]\"").length == 2
+
 /-! ## 2. TIER 2 — `bang query dump <file>`: the COMPLETE fact base in one export.
 
 Assembles `declFactsOf` + `nameRefEdgesOf` + `lawInstancesOf` + the program's own `import`/`use`

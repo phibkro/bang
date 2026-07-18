@@ -26,13 +26,16 @@ no project pulling it is a signal to question the feature, not schedule it.
 generated DAG; bang's own roadmap is bang-shaped). A project is DONE when its required features land
 AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
 
-## Committed sequence (decided 2026-07-07)
+## Committed sequence (updated 2026-07-18)
 
 ```
-1  ▸ PARSER-COMBINATOR LIBRARY   ← THE NEXT MILESTONE. The acceptance test for the polymorphism in
-     flight — commits the plan to: finish the ICTy re-rep (bare higher-order) + bite-1 generic data,
-     with a parser-combinator library as the proof. The tokenizer's generalization (retires its own
-     #50 mono-limit finding). Self-hosting payoff: bang's parser as a bang library.
+✓  ▸ PARSER-COMBINATOR LIBRARY   higher-order composition + polymorphism now run as a corpus example.
+✓  ▸ SEMANTIC CONTRACTS          named effect contracts, laws, swappable handlers, pledges, and
+                                 stateful quota policy run across the execution routes.
+1  ▸ ONE-SHOT PERMIT             ← THE NEXT MILESTONE. A tiny resource-contract tracer that surfaces
+     one opt-in value quantity, rejects duplicate/forgotten consumption, and makes grade-0 erasure
+     observable in concrete Wasm. This is the narrow hinge into the PRD's allocator rung, not an
+     allocator or ownership system built speculatively.
 2  ▸ SPREADSHEET (reactivity)     next candidate — lights up the distinctive DORMANT feature. NB the
      reactive MECHANISM is already proven (`reactiveCell` runs + a liveness law in the Audit gate,
      ADR-0005); the project EXTENDS it to a reactive-programming surface (not build-from-scratch).
@@ -83,9 +86,13 @@ spectrum, cheapest first:
 ```
 DONE ─────────────────────────────────────────────────────────────────────────────────────
   ✓ tokenizer            strings · recursion · termination-checking          (examples/tokenizer.bang)
+  ✓ parser combinators   higher-order · polymorphism · generic data          (examples/parser-combinators/)
+  ✓ semantic contracts  laws · named/swappable handlers · policy state      (examples/codec-contract/,
+                                                                                stage-swap/, stateful-quota/)
 
-FRONTIER — pull POLYMORPHISM / HIGHER-ORDER (being built now: the IVTy/ICTy re-rep, PATH-polymorphism)
-  parser-combinator lib  higher-order (compose) · polymorphism · row-poly     stresses the CURRENT frontier
+FRONTIER — surface RESOURCE DESCRIPTIONS (PATH-resource-contract-tracer)
+  one-shot permit       opt-in value grade · exact consumption · concrete    the smallest QTT payoff;
+                        grade-0 erasure · contract/evidence query             precursor to allocator/FBIP
   JSON codec             recursive ADTs · Outcome/error handling · strings    grounds the SCHEMA/contract story (Q37)
   2048 (logic)           polymorphic List · refinement types (2^x invariant)  make-illegal-states-unrepresentable
                          · randomness (state capability)                       (the exponent = a power-of-2 by construction)

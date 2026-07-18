@@ -197,6 +197,15 @@
         "parserOptionFamilies": [],
         "path": [
           "query",
+          "contract"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query contract [<file.bang>]       semantic contract card: contracts, realizations,"
+      },
+      {
+        "parserOptionFamilies": [],
+        "path": [
+          "query",
           "def"
         ],
         "principalFlags": [],
@@ -587,6 +596,17 @@
         "example": "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)",
         "summary": "a bound-free generic's call site names two different types for the same type variable",
         "teaching": "ADR-0103's monomorphization pass discovers a bound-free `let rec`'s (e.g. `mapOpt : (a -> b) -> Option a -> Option b`) concrete instantiation from EITHER an argument's own annotation or (Amendment ②) the call's own result annotation — but never guesses: if one call site names the SAME type variable at two different concrete types (an argument says `Int`, the result says `Char`, or two arguments disagree), that is a genuinely contradictory program, refused loud rather than silently picking one annotation over the other. Annotate consistently, or drop whichever annotation is redundant."
+      },
+      {
+        "anchors": [
+          "quantity mismatch",
+          "requires",
+          "use"
+        ],
+        "code": "B018",
+        "example": "let x = 1 in use [1] x in 7",
+        "summary": "a local value-use assertion does not match the body's quantitative use",
+        "teaching": "`use [0] x in body` requires no free use of `x`; `use [1] x in body` requires one use on every alternative path. Sequential uses add and saturate at `omega`. Either remove the duplicate/forgotten use or widen the local assertion to `[omega]`. Quantities are a value axis beside effect rows, never weights inside a row (ADR-0116)."
       }
     ]
   },
@@ -1052,6 +1072,11 @@
         "form": "pledge {E₁, …} in e",
         "name": "pledgeS",
         "notes": "checked row upper bound; erased at lowering"
+      },
+      {
+        "form": "use [q] x in e",
+        "name": "useS",
+        "notes": "checked value-use assertion; erased at lowering"
       },
       {
         "form": "()",
