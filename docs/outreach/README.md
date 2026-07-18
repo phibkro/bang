@@ -49,24 +49,24 @@ tag and the site are live.
 ## Claims-trace table (every load-bearing claim → its source)
 
 Each row: the claim as it appears in the copy · the source that makes it true ·
-verified-how (all commands run 2026-07-11, dev shell, `draft-announcement @ 0425b925`,
+verified-how (claims re-audited 2026-07-18 against the current release worktree;
 `wasmtime 45.0.0`).
 
 | claim in the copy | source | verified |
 |---|---|---|
 | "the reference is generated from the verified source; every example is build-gated" | `docs/reference/language.md` header; `tools/gen-reference.py` (`--check` is a `just fitness` leg, justfile:229) | read the header + the fitness leg |
-| "96 examples in the 1165-line generated reference" | `docs/reference/language.md` | `grep -c '^\`' → 96`; `wc -l → 1165` |
-| "over a thousand `#guard`s across the source" | `Bang/**` | `grep -rc '#guard' Bang/` sums to 1115 |
+| "195 verified examples in the 1,331-line generated reference" | `docs/reference/language.md`; `tools/gen-reference.py` | generator reports `195 verified examples`; `wc -l` → `1331` |
+| "1,118 `#guard`s across the source" | `Bang/**` | `rg -n '^#guard' Bang -g '*.lean' \| wc -l` → `1118` |
 | the `#guard runYieldsInt 30 "…x*x+y*y" 25` line (verbatim) | `Bang/Examples.lean:129` | quoted verbatim from source |
 | "drift → `lake build` goes red" | `tools/gen-reference.py --check` exits 1 if committed ≠ regenerated (fitness leg) | read the generator + fitness recipe |
-| "verified kernel: thunks, effect rows, handlers, STM; headline theorems reduce to a 3-axiom base gated on every commit" | CLAUDE.md invariants #1/#3/#5; "how to verify"; `CONTEXT.md` proof-state (18 headlines ⊆ trusted-3) | read CLAUDE.md + CONTEXT proof-state block |
+| "verified kernel; 22 clean audited headlines within trusted-three, 5 explicitly flagged" | CLAUDE.md invariants #1/#3/#5; `CONTEXT.md` generated proof-state | read CLAUDE.md + CONTEXT proof-state block; `lake build` replays `Bang.Audit` |
 | "tested superset: parser, elaborator, Turing-complete Div fragment, differential-tested; seam is type-visible" | CLAUDE.md the stratification principle; `copy-kit.md` §4 | read CLAUDE.md |
-| "v0.2, not production-ready; multi-op user effects still rough; stranger test 8/10" | `copy-kit.md` §4 Q1; `CONTEXT.md` (stranger round 4 = 8/10, #86 multi-op) | read both |
+| "v0.2, not production-ready; latest published cold audit 7/10 and not yet rerun after fixes" | `stranger-test-5.md`; `CONTEXT.md` (round-5 fixes landed afterward) | read both; wording distinguishes the measured score from current inference |
 | "paradigms are values you swap — one `logic`, two handlers → 30005" | `examples/stage-swap/main.bang` + `README.md` | `bang run examples/stage-swap/main.bang` → `30005` |
 | "trait laws are checked; `bang test` reports PASS / a counterexample" | `tools/test-law.sh` (issue #60 seam) | ran `bang test` on the true+bogus fixtures → `✓ … PASS (30 samples)` / `✗ … FAIL — counterexample [(0 - 10), 0]` |
 | "`deriving (Eq, Ord)` generates impl + laws" | ADR-0097 (Accepted); `CONTEXT.md` mega-session wave | read ADR + CONTEXT |
-| "whole programs compile to WebAssembly — nqueens → WasmGC → wasmtime → 21004" | `tools/emit-rung4-diff.sh`; `scratch/Rung4Shape.lean`; `docs/notes/emission-rung4-design.md`; `examples/nqueens/` | `lake exe rung4-shape …` → oracle 21004; `wasmtime run … --invoke main nqueens.wat` → 21004 |
-| "one command reproduces the whole rung — 10 programs, real engine vs kernel oracle" | `tools/emit-rung4-diff.sh` | ran it → `PASS — all 10 programs … (nqueens = 21004)` |
+| "whole programs compile to WebAssembly — `bang build` nqueens → WasmGC → Wasmtime → 21004" | `Main.lean`; `tools/test-bang-build.sh`; `examples/nqueens/` | built and ran `/tmp/bang-nqueens-v02.wasm` on Wasmtime → `21004` |
+| "one command reproduces 45 emitted programs, 23 effectful, real engine vs kernel oracle" | `tools/emit-rung5-effects-diff.sh` | ran it → all 45 emitted programs matched; ADR-0114 `stateful-quota` included |
 | "that agreement is the point / proof rides the reference" | CLAUDE.md invariant #1 | read CLAUDE.md |
 | "safe to generate into; illegal states structurally unrepresentable; built by agent teams" | `docs/PRD.md` §3; the moat §2 | read PRD |
 | "`bang query hover` — LSP-class op, JSON, agent-facing; `{Div}` row in the type" | `Bang/Frontend/Query.lean`; issue #52 slice 5; `bang --help` | `bang query hover examples/nqueens/main.bang 12 9` → `{"ok":true,…"row":"{Div}"…}` |
@@ -87,7 +87,8 @@ Per `copy-kit.md` §5 — recorded so a future editor doesn't "helpfully" add th
 - **No closed contextual-equivalence claim.** The binary LR (◊4) is parked; the live
   theorem is forward-simulation (compile correctness). The post claims neither by name —
   it claims the *observable* fact (wasmtime == kernel oracle) instead.
-- **No "production-ready / stable / 1.0."** It's v0.2, 8/10 stranger-test, said plainly.
+- **No "production-ready / stable / 1.0."** It's v0.2; the latest published stranger-test is
+  7/10 and has not been rerun after the pre-release fixes, said plainly.
 - **No "proof-by-construction for your data structures, today."** The user-facing
   law-language is the north star, least-built. The post leads with docs-that-can't-lie
   (shipped) and shows checked *trait laws* (real today), not proof-by-construction.

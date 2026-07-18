@@ -3,11 +3,11 @@
 
 > The exact terminal sequence for the launch recording. **Every command was run
 > against the repo binary and the outputs below are the REAL captured frames**
-> (built `2026-07-11` off `draft-announcement @ 0425b925`, `wasmtime 45.0.0`) —
+> (re-audited `2026-07-18` against the current release worktree, `wasmtime 45.0.0`) —
 > a recording whose outputs are fictional is the green-stub lie in demo form.
 > Re-run before recording; if a frame drifts, the demo is wrong, not the doc.
 >
-> Grounding: outputs captured from `lake exe bang` / `lake exe rung4-shape` +
+> Grounding: outputs captured from the `bang` binary / `bang build` +
 > `wasmtime run` in the dev shell. Claims trace table: `README.md`.
 
 ## The through-line (why these five beats, in this order)
@@ -31,8 +31,9 @@ Estimated runtime: **~85–95 seconds** at a readable typing pace (see per-beat 
 
 ```bash
 nix develop                       # enter the dev shell (lake on PATH)
-lake build bang rung4-shape       # warm the binaries so no build scrolls on camera
+lake build bang                   # warm the binary so no build scrolls on camera
 export PATH="$(pwd)/$(dirname "$(find .lake/build/bin -name bang)"):$PATH"
+# Ensure wasm-tools + wasmtime are on PATH (the release transcript uses both).
 ```
 
 On camera, `bang` is the installed binary. For the recording we alias the freshly
@@ -71,19 +72,37 @@ $ bang eval "let double = {fun x => x + x} in ($double) 21"
 
 ## Beat 3 — the handler-swap: paradigms are values (≈22s)
 
-THE conceptual beat. One shared effectful `logic` function; two handler installers
-(`test` maps `fetch(n) => n*10`, `prod` maps `fetch(n) => n+1`); same code, two
-runtimes, two answers, combined so both are legible: `30*1000 + 5 = 30005`.
+THE conceptual beat. One shared effectful `logic` function; two named handler realizations
+(`Test` maps `fetch(n) => n*10`, `Prod` maps `fetch(n) => n+1`) wrapped by ordinary installer
+functions; same logic, two runtimes, two answers, combined so both are legible:
+`30*1000 + 5 = 30005`.
 
 Show the source, then run it.
 
 ```console
+$ sed -n '9,15p' examples/stage-swap/Stage.bang
+pub handler Test implements Net {
+  fetch(n) => n * 10
+}
+
+pub handler Prod implements Net {
+  fetch(n) => n + 1
+}
+
 $ cat examples/stage-swap/main.bang
-effect Net { fetch : Int -> Int }
-let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in
-let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in
-let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in
-(($test) logic) * 1000 + (($prod) logic)
+import Stage
+
+let logic =
+  ( {fun net => (net.fetch(1)) + (net.fetch(2))}
+    : Thunk (Cap Stage_Net -> Int ! {Stage_Net}) ) in
+let test =
+  ( {fun body => handle (($body)(net)) with Stage_Test as net}
+    : Thunk (Thunk (Cap Stage_Net -> Int ! {Stage_Net}) -> Int) ) in
+let prod =
+  ( {fun body => handle (($body)(net)) with Stage_Prod as net}
+    : Thunk (Thunk (Cap Stage_Net -> Int ! {Stage_Net}) -> Int) ) in
+let selected = if 1 == 1 then test else prod in
+(($selected) logic) * 1000 + (($prod) logic)
 
 $ bang run examples/stage-swap/main.bang
 30005
@@ -146,12 +165,10 @@ the verified kernel computes. `21004` encodes 4-, 5-, 6-queens counts (2·10000 
 10·100 + 4).
 
 ```console
-$ lake exe rung4-shape examples/nqueens/main.bang nqueens.wat
-oracle: Source.eval = 21004
-wat written: nqueens.wat
+$ bang build examples/nqueens/main.bang -o nqueens.wasm
+built nqueens.wasm (WASI command module — run: wasmtime run nqueens.wasm)
 
-$ wasmtime run -W gc=y,function-references=y,exceptions=y --invoke main nqueens.wat
-warning: using `--invoke` with a function that returns values is experimental and may break in the future
+$ wasmtime run -W gc=y,function-references=y,exceptions=y nqueens.wasm
 21004
 ```
 
@@ -159,20 +176,14 @@ Then the one-command repro (the differential harness — the whole rung-4 corpus
 engine vs kernel oracle):
 
 ```console
-$ bash tools/emit-rung4-diff.sh
-── differential: wasmtime (WasmGC, real engine)  vs  Source.eval (kernel oracle) ──
-example                      wasmtime         oracle   verdict
-nqueens                         21004          21004   OK
-list-basics                       302            302   OK
-mutual-parity                    1101           1101   OK
-parser-combinators                 35             35   OK
-wildcard-match                      2              2   OK
-tokenizer                           3              3   OK
-string-stdlib                       1              1   OK
-derive-eq-ord                       1              1   OK
-trait-recursive-eq                  1              1   OK
-trait-recursive-ord                 1              1   OK
-PASS — all 10 programs ran on wasmtime with a value matching Source.eval (nqueens = 21004).
+$ bash tools/emit-rung5-effects-diff.sh | tail -7
+── stateful custom-clause differential (raw typed IR) ──
+custom-param-update        OK (stateful custom)
+
+corpus: 45 whole programs → WasmGC → wasmtime == expected.txt
+        (of which 23 are EFFECTFUL — handle/perform/atomically, the rung-5 S0-S4 win)
+        10 named frontend/host-IO refusals
+PASS — all emitted programs' READBACK matched bang run; every refusal is a NAMED wall.
 ```
 
 > Caption: *"same answer from a stock Wasm engine and the verified kernel — that
@@ -199,7 +210,7 @@ bang — a verified language whose docs are generated from the proof.
 | 2 | `bang eval` → 42 | 12 |
 | 3 | `cat` stage-swap + `bang run` → 30005 | 22 |
 | 4 | `bang query hover` → the `{Div}` row | 14 |
-| 5 | `rung4-shape` + `wasmtime` → 21004, then the diff harness | 25 |
+| 5 | `bang build` + `wasmtime` → 21004, then the rung-5 diff footer | 25 |
 | — | closing static frame | 3 |
 | | **total** | **~88s** |
 
@@ -207,10 +218,7 @@ bang — a verified language whose docs are generated from the proof.
 
 - Use `asciinema rec` with an idle-time cap (`--idle-time-limit=2`) so pauses don't
   bloat the runtime; keep the typing pace readable, not rushed.
-- The `--invoke` experimental warning is REAL wasmtime output — leave it in, it's
-  honest (we're using a bleeding-edge Wasm 3.0 feature). Don't edit it out.
-- Frame 5's harness output is trimmed here to the verdict table; the full run also
-  prints a build line and the corpus footer — let those scroll or cut with the
-  `--idle-time-limit`.
+- Frame 5 deliberately pipes the full differential through `tail -7`; the displayed footer is
+  real command output, while the 55-row emitted/refused table scrolls off-camera by construction.
 - If recording for a GIF instead, drop beat 4 (the JSON reads dense in a loop) and
   keep 1-2-3-5; that lands at ~65s.

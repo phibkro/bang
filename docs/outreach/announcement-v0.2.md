@@ -26,8 +26,8 @@ assertion. Here's what that looks like in the source:
 
 That `#guard` runs the program through the kernel semantics at build time. If the
 language ever stopped evaluating that expression to `25`, `lake build` goes red — and
-the reference row derived from it never ships. There are 96 such examples in the
-1165-line generated reference, and over a thousand `#guard`s across the source. The
+the reference row derived from it never ships. There are 195 verified examples in the
+1,331-line generated reference, and 1,118 `#guard`s across the source. The
 documentation cannot drift from the language because it is *derived* from it, not
 maintained alongside it.
 
@@ -35,18 +35,19 @@ maintained alongside it.
 
 bang is v0.2. It is a small, formally-verified kernel with a larger tested surface on
 top, and the seam between them is marked, not hidden. The kernel — thunks, effect rows,
-handlers, and STM — is proven correct in Lean 4, with the headline theorems reducing to
-a three-axiom trusted base the build gates on every commit. Everything else (the parser,
-the elaborator, the Turing-complete fragment) is *differential-tested* against that
+handlers, and STM — is proven correct in Lean 4. The audit currently reports 22 clean
+headline theorems within a three-axiom trusted base and five explicitly flagged residuals;
+the build gates that boundary on every commit. Everything else (the parser, the elaborator,
+the Turing-complete fragment) is *differential-tested* against that
 verified kernel, never assumed. When we say "verified" we mean a specific, auditable set
 of theorems; when we say "tested" we say that too. A language that tells you exactly
 where the proof stops is more trustworthy than one that says "verified" and means "we
 have a lot of tests."
 
-It is not production-ready and we will tell you exactly how not: the compiler is young,
-the multi-operation user-effect surface is still rough, and the outsider usability score
-from our "stranger tests" (a fresh person, cold, with a stopwatch) sits at 8/10, published.
-Use it to explore the ideas, not to run your payroll.
+It is not production-ready and we will tell you exactly how not: the compiler and on-ramp
+are young. The latest published "stranger test"—a fresh person, cold, with a stopwatch—scored
+it 7/10. Several concrete findings were fixed before this release, but that audit has not yet
+been rerun. Use it to explore the ideas, not to run your payroll.
 
 ## Three things that work today
 
@@ -60,8 +61,9 @@ $ bang run examples/stage-swap/main.bang
 30005     # test handler: fetch(n) => n*10 gives 30000; prod: fetch(n) => n+1 gives 5
 ```
 
-Same code. Two runtimes. Two answers. Nothing about `logic` changed — the behavior lives
-in the handler, which is an ordinary value.
+Same logic. Two installed realizations. Two answers. Nothing about `logic` changed; ordinary
+value-level control flow selects the installer. Handlers themselves are not first-class values
+in v0.2—the binding-time claim is narrower and more useful: behavior stays outside the logic.
 
 **Laws you declare get checked.** A trait law is a first-class object, not a comment.
 Declare one and `bang test` sample-checks it and reports a counterexample when it breaks:
@@ -81,15 +83,17 @@ closures, algebraic data types, recursion — lowers to a WasmGC module and runs
 `wasmtime`, returning the exact value the verified kernel computes:
 
 ```
-$ lake exe rung4-shape examples/nqueens/main.bang nqueens.wat
-oracle: Source.eval = 21004
-$ wasmtime run -W gc=y,function-references=y,exceptions=y --invoke main nqueens.wat
+$ bang build examples/nqueens/main.bang -o nqueens.wasm
+built nqueens.wasm (WASI command module — run: wasmtime run nqueens.wasm)
+$ wasmtime run -W gc=y,function-references=y,exceptions=y nqueens.wasm
 21004
 ```
 
-One command reproduces the whole rung against a real engine: `bash tools/emit-rung4-diff.sh`
-runs ten complete programs through WasmGC on wasmtime and diffs every result against the
-kernel oracle. That agreement — stock Wasm engine equals verified reference — is the point.
+One command reproduces the effect-capable emission corpus against a real engine:
+`bash tools/emit-rung5-effects-diff.sh` currently runs 45 complete programs—23 effectful—
+through WasmGC on Wasmtime and diffs every emitted result against the kernel oracle. That
+includes the stateful-quota example's handler-private `1 → 0` transition. Stock Wasm engine
+equals verified reference: that agreement is the point.
 
 ## Why we built it this way
 

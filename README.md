@@ -1,6 +1,6 @@
 # BANG
 
-A small effect-typed language whose **paradigm and runtime are values, not language features**. The kernel is thunks, effect rows, handlers, and STM; mutability, IO, async, actors, and signals are library-defined effects and handlers.
+A small effect-typed language whose **paradigm and runtime are values, not language features**. The kernel is thunks, effect rows, handlers, and STM; state, user-defined effects, host IO, and runtime policy use that common substrate.
 
 ```bang
 let c = {7} in $c

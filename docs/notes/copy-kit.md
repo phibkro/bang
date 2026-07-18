@@ -8,7 +8,8 @@
 >
 > Grounding: `traction-survey.md` §4 (wedge) · `PRD.md` §2–§3 (moat, agent-first) ·
 > `docs/reference/language.md` (what's REAL) · ADR-0101 (deterministic replay) ·
-> `stranger-test-{1,2,3}.md` (the HONEST current experience — copy must not pitch past it).
+> `stranger-test-{1,2,3,4,5}.md` (the HONEST measured experience — copy must distinguish the
+> latest published score from fixes landed after that run).
 
 ## 1 · The one-liner — 5 candidates, ranked
 
@@ -83,8 +84,8 @@ arithmetic is browser-runnable (`traction-survey.md` §5; §5 below).
 > a *seeded, deterministic* one, so concurrent programs replay byte-for-byte; production
 > nondeterminism is an explicit opt-in, not the default you're stuck with.
 >
-> It's early — v0.1, a real surface that runs rungs 0–4 through the verified kernel, honest about
-> what's tested vs proven. But the honesty *is* the pitch: this is a language designed to be safe
+> It's early — v0.2, a real surface plus a public Wasm build path, honest about what's tested vs
+> proven. But the honesty *is* the pitch: this is a language designed to be safe
 > to generate into (its illegal states are unrepresentable, not linted), and it's being built by
 > agent teams as the proof. If you've ever wanted a language where "the docs are wrong" is
 > structurally impossible, this is that experiment.
@@ -92,12 +93,13 @@ arithmetic is browser-runnable (`traction-survey.md` §5; §5 below).
 ## 4 · The skeptic's FAQ (the 6 questions an HN thread WILL ask)
 
 **Q1. Is it production-ready?**
-No — and we'll tell you exactly how not. bang is v0.1. The surface runs rungs 0–4 (state, STM,
-reactivity, user types) through the verified kernel from real `.bang` source, but the compiler is
-young, the multi-op user-effect surface is broken today (issue #86), and the full compile-to-wasm
-pipeline is landing incrementally. Stranger tests score current ship-ability at **7/10** and say so
-publicly (`stranger-test-3.md`). Public-early is deliberate: every checkpoint ships a v0.x tag. Use
-it to explore the ideas, not to run your payroll.
+No — and we'll tell you exactly how not. bang is v0.2. The surface runs state, STM, reactivity,
+user effects, and user types through the verified kernel from real `.bang` source, and whole
+programs compile through the public `bang build` path, but the compiler and on-ramp are young.
+The latest published cold audit scored **7/10** (`stranger-test-5.md`). Its concrete high-impact
+findings were fixed before release, but the audit has not yet been rerun, so copy must not silently
+upgrade the score. Public-early is deliberate: every checkpoint ships a v0.x tag. Use it to explore
+the ideas, not to run your payroll.
 
 **Q2. Why Lean?**
 Because the claim is "verified," and verified means machine-checked by a kernel you can audit, not
@@ -157,7 +159,8 @@ hype without substrate decays; this audience of proof people *will* catch a gree
   is post-v1 (`PRD.md` §2, §6: "this is the north star; it is the least-built thing"). v1 ships the
   *kernel's* guarantees + one minimal verified-data-structure demo. Lead with docs-that-can't-lie
   (shipped), let the moat be the roadmap.
-- **NO "production-ready" / "stable" / "1.0".** It's v0.1, 7/10 stranger-test. Public-early ≠ done.
+- **NO "production-ready" / "stable" / "1.0".** It's v0.2; the latest published stranger-test is
+  7/10 and has not been rerun after the pre-release fixes. Public-early ≠ done.
 - **NO closed contextual-equivalence claim.** The binary LR (◊4 contextual equivalence) is parked;
   don't claim it. The forward-simulation (compile correctness) is the live theorem — cite that.
 - **NO "deterministic concurrency, today."** Concurrency is post-v1 (ADR-0101 records *direction*;
