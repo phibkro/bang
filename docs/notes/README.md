@@ -86,7 +86,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`wasm-concurrency-survey.md`](wasm-concurrency-survey.md) — Wasm components + concurrency — how bang should model concurrent execution (design survey)
 - [`wgcexec-calculation-plan.md`](wgcexec-calculation-plan.md) — The calculated `wgcexec` machine — calculation plan + tractability spike (Wave D, 2026-07-12)
 
-## archival (12)
+## archival (13)
 
 _Spike / experiment / pivot record — input to a specific ADR; preserved, not current._
 
@@ -101,6 +101,7 @@ _Spike / experiment / pivot record — input to a specific ADR; preserved, not c
 - [`kernel-shell-library.md`](kernel-shell-library.md) — Kernel / Shell / Library — the layering of bang-lang
 - [`monadic-recast-spike-findings.md`](monadic-recast-spike-findings.md) — Feasibility spike: recasting CalcReify's bisimulation into the Bahr–Hutton 2022 monadic frame
 - [`scoped-capabilities-for-vcapfree-drop.md`](scoped-capabilities-for-vcapfree-drop.md) — Scoped capabilities — the #18 (drop-VcapFree) design record
+- [`semantic-packages-lifecycle-review.md`](semantic-packages-lifecycle-review.md) — Semantic-packages lifecycle review — selective adoption into bang-lang
 - [`typed-static-pivot-scope.md`](typed-static-pivot-scope.md) — Scoping the typed + static-dispatch pivot
 
 ## historical (5)

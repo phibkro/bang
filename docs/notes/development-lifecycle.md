@@ -45,6 +45,46 @@ built.
 A typical PATH-*.md unit cycles through 2-3 of these phases. ◊-checkpoints
 in `ROADMAP.md` are stable poses at the end of an integration phase.
 
+## Product increments — actor-terminal tracer bullets
+
+The phases above describe kinds of work; they do not define product completion. An actor-visible
+feature advances through the smallest **vertical tracer bullet** that reaches a terminal user
+observation through the real public surface:
+
+```text
+actor need → public entrypoint → parse/check/lower → semantic + execution route
+           → visible result/evidence → realistic mistake → diagnosis/recovery
+```
+
+Each product PATH names:
+
+- the actor and starting public surface;
+- the terminal observation that changes what the actor can accomplish;
+- the smallest adverse or mistake-and-recovery case that could falsify usability of the route;
+- the proof, differential, schema, CLI, or artifact evidence that supports the observation; and
+- assumptions, exclusions, and the observation that would reopen acceptance.
+
+Internal layers going green are necessary evidence, not product acceptance. A feature closes only
+when its actor reaches the terminal outcome end-to-end; proof-only or infrastructure work instead
+names the downstream actor journey it releases. Begin with the thinnest coherent bullet, then thicken
+coverage, performance, and generality when observations demand them.
+
+Maps and plans label each material claim **executable**, **designed**, or **planned**. A precise future
+journey is still planned until its public gate exists and runs; design detail is not delivery evidence.
+
+An executable journey test and user research are different evidence. The journey test deterministically
+checks a public terminal outcome and recovery route. Agentic usability inspection probes discovery and
+workflow hypotheses. Organic user testing supplies human behavior and context. None may be silently
+renamed as another; the current calibration method lives in `.claude/skills/agentic-user-testing/`.
+
+This makes the product lifecycle:
+
+```text
+intent + actor outcome → baseline/falsifier → design + systemic review
+  → vertical tracer bullet → evidence + independent convergence
+  → observe/maintain → explicit successor when inputs or findings change
+```
+
 ## Feedback loops (macro → micro)
 
 Tight inner loops; staged outer loops. The aim is **silence has meaning** at
@@ -61,6 +101,7 @@ per-build            seconds (warm)   just verify                    selfcheck +
                      minutes (cold)
 per-audit            seconds          just axioms                    #print axioms per theorem
 per-PATH scope       hours to days    prospective systemic review    future debt classified before scope freezes
+per-product PATH     hours to days    public journey + adverse case  actor reaches a terminal outcome and can recover
 per-PATH             hours to days    PATH-*.md status block         checkpoint definition met
 per-checkpoint       days to weeks    ROADMAP.md ◊ progression       architecture coherent
 per-OPEN_QUESTION    weeks            OPEN_QUESTIONS.md revisits     design pivot ready or not
@@ -101,6 +142,45 @@ there is no material future pressure.
 This is a judgment gate, not a new quality invariant or a completeness checklist. Project pull still
 decides what to build. The review catches preventative work whose later migration, authority, or
 cross-layer cost would otherwise be invisible.
+
+## Proportional evidence and retained successors
+
+Every change keeps an observable outcome, the cheapest useful falsifier, relevant evidence, exclusions,
+and a reopen or recovery condition. The evidence shape scales with the claim:
+
+| change | minimum path |
+|---|---|
+| actor-visible feature | public end-to-end journey, adverse/recovery case, narrower checks, docs, observation owner |
+| defect | reproducer first, minimal repair, regression plus adjacent route parity, release observation |
+| refactor | characterized behavior and a sensitivity control that would notice meaningful drift |
+| optimization | named workload and measured deficit before implementation; semantic/safety gates remain |
+| governance or methodology | bounded experiment with baseline, hypothesis, canary scope, safety invariants, independent review, observation window, and rollback |
+
+A failed gate or material review is not rewritten into an eventual pass. Retain the failed observation
+in the PATH and create a named successor step when correction changes the evidence boundary. Keep ordinary
+red/green/refactor moves inside one work package; promote them to explicit successor nodes only when they
+release another owner, change a shared contract, cross an authority boundary, or preserve a consequential
+failed review.
+
+## Recursive, multi-model project improvement
+
+The project lifecycle may improve itself, but cannot self-ratify by redefining its success criteria.
+Treat process changes as the governance experiments above. Compare observed cycle time, escaped defects,
+recovery quality, or review yield against a baseline; retain a rollback when added ceremony does not pay.
+
+Use model/provider diversity to probe correlated blind spots across research, design, implementation,
+maintenance, and skeptical review. Frame independent reviewers on the same governing question before
+showing them a preferred answer. Fuse propositions, counterexamples, and executable evidence—never votes,
+model reputation, or averaged confidence. Model identity grants neither authority nor assurance.
+
+Cross-provider delegation must use the operator-approved dispatcher and a bounded brief: observable
+outcome, governing artifacts, read/write and disclosure scope, required evidence, non-goals, falsifier,
+stop conditions, requested/runtime model provenance, and fallback. Read-only prevents mutation, not
+disclosure. A denied, stalled, substituted, or contradictory consultation remains an observation rather
+than disappearing behind the eventual result.
+
+The comparative evidence behind this adoption and its canary/rollback conditions are recorded in
+`semantic-packages-lifecycle-review.md`.
 
 ## Value alignment (soft invariants — preferences)
 

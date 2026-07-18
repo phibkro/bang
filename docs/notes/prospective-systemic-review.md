@@ -88,6 +88,7 @@ not to speculate about speed.
 | a public schema, stable diagnostic, identifier, syntax, persisted format, or authority boundary changes | full review of compatibility, security, toolability, and migration; an ADR if the choice is architectural |
 | a checkpoint or release boundary moves | review the full route, update the product map/current cursor, and re-grade the loop audit |
 | user/agent inspection, incident, benchmark, or repeated workaround produces evidence | reopen the affected disposition; evidence outranks the earlier estimate |
+| governance, delegation, or development-method change | treat it as a bounded experiment: baseline, hypothesis, canary, safety invariants, independent review, observation window, and rollback; it cannot ratify itself |
 | a routine local and reversible edit | answer the delta screen; no review artifact is needed when no material future pressure appears |
 
 The **delta screen** is five questions:

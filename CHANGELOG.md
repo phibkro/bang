@@ -294,5 +294,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **lean** — cover native runner warnings (`change:24b4c0ec7f37ee8d234c118ee53e88939f6cf238a962e419d56ac6cb2b1ba60c`)
 - **core** — distinguish fuel exhaustion from out-of-memory (`change:0a29d3d55516becac67fb36829c7fcc92a987dc5eab2db11a3ea2909afc20b2a`)
 - integrate handler policies with current main (`change:2147816f0cb1e8eebb1cb01115b2b511c62bfdda0118c78783ba98cd0b4be367`)
+- harden contract evidence integrity (`change:e8b0be444169a0f5091862ec900afe7a0ad35a4384bb79d292e8f610771ae893`)
 
 <!-- END GENERATED changelog -->

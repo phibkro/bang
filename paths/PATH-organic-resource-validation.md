@@ -16,6 +16,18 @@
 
 - [ ] Kernel  [ ] Compiler  [ ] Surface  [x] Meta (docs/process)
 
+## Actor journey / observable outcome
+
+- **Actor / need**: an unfamiliar developer needs to understand, run, deliberately break, recover,
+  swap, and inspect one semantic/resource contract without internal project knowledge.
+- **Public starting point**: the pinned public README, onboarding/reference pages, example tree, and
+  released CLI help—never implementation, internal notes, or the private score key.
+- **Terminal observation**: the participant independently establishes result, law/realization evidence,
+  B018 recovery, stable machine validity/identity, and concrete grade-0 emission consequences.
+- **Adverse / recovery route**: duplicate a one-shot permit, recover while retaining both uses, and
+  judge the invalid contract card without moderator hints.
+- **Downstream journey released**: this journey; adjudication then releases spreadsheet/reactivity.
+
 ## Feeds the constraint
 
 - **Binding constraint now**: `docs/notes/loop-audit.md` identifies the organic-outside-user loop as the
@@ -34,25 +46,47 @@
 | further internal simulation delays outside evidence | current loop audit | high / medium / compounding | **reject** another persona round as a substitute; use agents only to prepare or adjudicate artifacts | organic run completed or externally blocked with a named reason |
 | broad feature work begins before feedback is triaged | spreadsheet handoff | medium / medium / medium | **sequence** the smallest correction first; consciously defer findings that do not threaten the next project | adjudicated finding with high likelihood × impact × late cost |
 
+## Baseline, falsifier, and evidence
+
+- **Baseline / red observation**: the organic-user loop remains empty in `docs/notes/loop-audit.md`;
+  round 6 is calibrated agentic inspection, not human evidence.
+- **Smallest tracer bullet**: one consenting unfamiliar developer performs the frozen six-goal public
+  journey against the repaired revision without hints.
+- **Positive evidence**: chronological public-route trace, task terminal states, time to first evidence,
+  commands/artifacts, and the participant's own issue wording.
+- **Negative or recovery evidence**: inability to finish within the declared stop rule, moderator
+  intervention, reproduction of F1–F4, or a new mistaken-success/recovery path all falsify a clean handoff.
+- **Broader convergence gate**: automated frozen-packet replay remains green; every observed finding is
+  adjudicated and dispositioned before the spreadsheet PATH opens.
+- **Assumptions / exclusions**: one participant is not population evidence, agentic inspection is not a
+  human substitute, and this run does not close the broader three-outsider-issue ◊6 gate.
+
 ## Plan
 
-1. [ ] Freeze the tested revision and adapt the round-6 goals into a human-readable, solution-free packet.
-2. [ ] Recruit at least one developer unfamiliar with BANG; prefer one non-Lean developer first, then a
+1. [x] Freeze repaired revision `fe01ad60`.
+2. [x] Adapt the round-6 goals into the solution-free participant packet, private score key, consent/
+   moderator guide, study plan, and sanitized session template under `scratch/stranger7-human/`.
+3. [ ] Recruit at least one developer unfamiliar with BANG; prefer one non-Lean developer first, then a
    Lean/proof developer as a distinct route when available.
-3. [ ] Obtain consent for the chosen observation record and run the journey without hints or internal docs.
-4. [ ] Preserve the chronological trace, task outcomes, recovery route, time to first evidence, and issues
+4. [ ] Obtain consent for the chosen observation record and run the journey without hints or internal docs.
+5. [ ] Preserve the chronological trace, task outcomes, recovery route, time to first evidence, and issues
    in the participant's own words; do not collapse them into a synthetic score.
-5. [ ] Adjudicate findings against the pinned product, compare them with agent-only findings and false
+6. [ ] Adjudicate findings against the pinned product, compare them with agent-only findings and false
    positives, and apply the prospective systemic-review heuristic to every proposed correction.
-6. [ ] Land any binding correction, refresh the loop audit, then either open the spreadsheet/reactivity
+7. [ ] Land any binding correction, refresh the loop audit, then either open the spreadsheet/reactivity
    PATH or record the concrete reason this outside loop remains open.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [ ] In flight: repaired branch ready to publish; operator recruitment/consent is the next action
+- [ ] In flight: repaired revision `fe01ad60` is published and the human packet is ready; operator
+  recruitment/consent is next
 - [x] Blockers: an organic participant and consent cannot be manufactured by repository work
 - [ ] Completed YYYY-MM-DD
+- Retained failed gates / successors: none yet; contaminated/moderated runs remain recorded and create a
+  fresh successor session rather than being relabelled unassisted
+- Reopen / observe: compare the first organic trace with round 6, then reopen any evidence disposition
+  that the participant contradicts
 
 ## Owner
 
