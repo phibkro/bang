@@ -273,12 +273,33 @@ as the built-ins, extended over the program's OWN declared labels instead of a f
 with no `ElabEnv` in scope (`display`, the decl-free path) passes nothing and gets the pre-ADR-0092
 behavior byte-identical. -/
 def showRow (φ : EffRow) (effects : List (String × EffectInfo) := []) : String :=
+  let userNames :=
+    ((effects.filterMap (fun (n, ei) => if ei.label ∈ φ then some n else none)).toArray.qsort
+      (· < ·)).toList
   String.intercalate ", " <|
     (if exnLabel ∈ φ then [effName exnLabel] else []) ++
     (if stateLabel ∈ φ then [effName stateLabel] else []) ++
     (if stmLabel ∈ φ then [effName stmLabel] else []) ++
     (if divLabel ∈ φ then [effName divLabel] else []) ++
-    (effects.filterMap (fun (n, ei) => if ei.label ∈ φ then some n else none))
+    userNames
+
+#guard showRow {4, 5} [("Zed", ⟨4, []⟩), ("Alpha", ⟨5, []⟩)] == "Alpha, Zed"
+
+/-- Resolve a kernel effect label to the semantic name used by checked surface types. Built-ins
+use their established row spelling; declared effects use the exact name stored in the elaboration
+environment. `none` is deliberately meaningful: public checked rendering must reject a label that
+the environment cannot explain rather than leak a declaration-order-dependent numeral. -/
+def effectNameOfLabel? (effects : List (String × EffectInfo)) (ℓ : Label) : Option String :=
+  if ℓ = exnLabel then some (effName exnLabel)
+  else if ℓ = stateLabel then some (effName stateLabel)
+  else if ℓ = stmLabel then some (effName stmLabel)
+  else if ℓ = divLabel then some (effName divLabel)
+  else (effects.find? (fun (_, ei) => ei.label = ℓ)).map (fun (n, _) => n)
+
+/-- All labels the checked renderer may name for this elaboration environment. -/
+def knownEffectLabels (effects : List (String × EffectInfo)) : EffRow :=
+  effects.foldl (fun acc (_, ei) => insert ei.label acc)
+    (insert divLabel (insert stmLabel (insert stateLabel {exnLabel})))
 
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
@@ -2477,8 +2498,8 @@ partial def unifyDataTy (selfName : String) : Ty → VT → Option (List (String
 /-- Render a resolved param binding (from `unifyDataTy`) — recurses through `foldDataTy` so a
 NESTED data type (`Option (List Int)`) folds at every level, not just the outermost. -/
 partial def showBoundArg (ctors : List (String × CtorInfo)) (gen : List (String × GenData))
-    (v : VT) : String :=
-  foldDataTyOrRaw ctors gen v
+    (v : VT) (effects : List (String × EffectInfo) := []) : String :=
+  foldDataTyOrRaw ctors gen v effects
 
 /-- The actual fold: try every MONOMORPHIC `data` decl first (direct structural equality against
 `ci.dataTy`, deduped by `dataName` since every ctor of the same decl carries an identical
@@ -2489,8 +2510,8 @@ exists (an anonymous/kernel μ, e.g. `impl Add for (Int * Int)`'s product — ne
 correctly untouched). Monomorphic decls are tried BEFORE generic ones — a monomorphic decl's
 `dataTy` is a closed literal `VT`, cheaper and unambiguous to check first; a generic decl's
 unification is only attempted when nothing closed already matched. -/
-partial def foldDataTy (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (τ : VT) :
-    Option String :=
+partial def foldDataTy (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (τ : VT)
+    (effects : List (String × EffectInfo) := []) : Option String :=
   match τ with
   | .mu body =>
       -- monomorphic: any ctor's `dataTy` (params = []) that equals this μ names its decl.
@@ -2513,7 +2534,8 @@ partial def foldDataTy (ctors : List (String × CtorInfo)) (gen : List (String �
               -- (`Result Unit (List Int)`, not the ambiguous `Result Unit List Int`) — mirrors
               -- `Format.showTy`'s own `parenIf need .atom` convention for `.tApp` args.
               let parenArg (s : String) : String := if s.contains ' ' then s!"({s})" else s
-              args.map (fun vs => s!"{dname} " ++ String.intercalate " " (vs.map (fun v => parenArg (showBoundArg ctors gen v))))
+              args.map (fun vs => s!"{dname} " ++ String.intercalate " "
+                (vs.map (fun v => parenArg (showBoundArg ctors gen v effects))))
         )
   | _ => none
 
@@ -2529,19 +2551,19 @@ exactly `safeAt`'s case. `showVTy`/`showCTy` themselves stay UNCHANGED (the raw 
 printer; `display`'s decl-free source path and the internal `#guard`s asserting kernel-level
 shapes with no backing `data` decl keep their exact existing behavior — this function is the ONLY
 decl-aware entry, never called from `showVTy`/`showCTy`'s own recursion). -/
-partial def foldDataTyOrRaw (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (τ : VT) :
-    String :=
-  match foldDataTy ctors gen τ with
+partial def foldDataTyOrRaw (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (τ : VT)
+    (effects : List (String × EffectInfo) := []) : String :=
+  match foldDataTy ctors gen τ effects with
   | some name => name
   | none =>
     match τ with
     | .int      => "Int"
     | .unit     => "Unit"
-    | .sum a b  => s!"({foldDataTyOrRaw ctors gen a} + {foldDataTyOrRaw ctors gen b})"
-    | .prod a b => s!"({foldDataTyOrRaw ctors gen a} * {foldDataTyOrRaw ctors gen b})"
-    | .U φ b    => let r := showRow φ; s!"Thunk{if r.isEmpty then "" else s!"!\{{r}}"} {foldCTyOrRaw ctors gen b}"
-    | .cap ℓ    => s!"Cap {ℓ}"
-    | .mu a     => s!"(mu. {foldDataTyOrRaw ctors gen a})"   -- an unmatched μ (no backing decl) still folds its INSIDE
+    | .sum a b  => s!"({foldDataTyOrRaw ctors gen a effects} + {foldDataTyOrRaw ctors gen b effects})"
+    | .prod a b => s!"({foldDataTyOrRaw ctors gen a effects} * {foldDataTyOrRaw ctors gen b effects})"
+    | .U φ b    => let r := showRow φ effects; s!"Thunk{if r.isEmpty then "" else s!"!\{{r}}"} {foldCTyOrRaw ctors gen b effects}"
+    | .cap ℓ    => s!"Cap {(effectNameOfLabel? effects ℓ).getD s!"{ℓ}"}"
+    | .mu a     => s!"(mu. {foldDataTyOrRaw ctors gen a effects})"   -- an unmatched μ (no backing decl) still folds its INSIDE
     | .tvar n   => s!"#{n}"
 
 /-- `showCTy`'s DECL-AWARE sibling: recurses through the arrow/returner shape exactly like
@@ -2551,10 +2573,26 @@ buried inside an arrow (`List Int -> Int`, `safeAt`'s own signature) folds too, 
 returner. Lives in the SAME `mutual` group (calls `foldDataTyOrRaw` above, which calls this back
 for a `.U`-wrapped computation body — the two are mutually recursive, mirroring `showVTy`/
 `showCTy`'s own original mutual group exactly). -/
-partial def foldCTyOrRaw (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) :
-    CT → String
-  | .F _ a     => foldDataTyOrRaw ctors gen a
-  | .arr _ a b => s!"{foldDataTyOrRaw ctors gen a} -> {foldCTyOrRaw ctors gen b}"
+partial def foldCTyOrRaw (ctors : List (String × CtorInfo)) (gen : List (String × GenData))
+    (B : CT) (effects : List (String × EffectInfo) := []) : String :=
+  match B with
+  | .F _ a     => foldDataTyOrRaw ctors gen a effects
+  | .arr _ a b => s!"{foldDataTyOrRaw ctors gen a effects} -> {foldCTyOrRaw ctors gen b effects}"
+end
+
+mutual
+/-- Every effect label occurring anywhere inside a checked value type is explained by `effects`.
+This includes labels nested under thunk rows and capability types, not only the computation's outer
+row. -/
+partial def checkedEffectLabelsKnownV (known : EffRow) : VT → Bool
+  | .int | .unit | .tvar _ => true
+  | .sum a b | .prod a b   => checkedEffectLabelsKnownV known a && checkedEffectLabelsKnownV known b
+  | .U φ b                 => φ ⊆ known && checkedEffectLabelsKnownC known b
+  | .cap ℓ                 => ℓ ∈ known
+  | .mu a                  => checkedEffectLabelsKnownV known a
+partial def checkedEffectLabelsKnownC (known : EffRow) : CT → Bool
+  | .F _ a     => checkedEffectLabelsKnownV known a
+  | .arr _ a b => checkedEffectLabelsKnownV known a && checkedEffectLabelsKnownC known b
 end
 
 /-- `showType`'s DECL-AWARE sibling (issue #100): the SAME `! \{…}` row-suffix convention, but the
@@ -2563,8 +2601,25 @@ has an `ElabEnv` (or just its `ctors`/`gen` tables) in scope should call THIS, n
 def showTypeD (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (B : CT)
     (φ : EffRow) (effects : List (String × EffectInfo) := []) : String :=
   let r := showRow φ effects
-  let body := foldCTyOrRaw ctors gen B
+  let body := foldCTyOrRaw ctors gen B effects
   if r.isEmpty then body else s!"{body} ! \{{r}}"
+
+/-- Fail-loud public sibling of `showTypeD`: a checked/query/interface type is not emitted when its
+kernel labels cannot be mapped back through the elaboration environment. This guards against both
+numeric identity leaks and `showRow`'s finite-known-set renderer silently omitting an unknown label. -/
+def showTypeDChecked (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (B : CT)
+    (φ : EffRow) (effects : List (String × EffectInfo) := []) : Except String String :=
+  let known := knownEffectLabels effects
+  if φ ⊆ known && checkedEffectLabelsKnownC known B then
+    .ok (showTypeD ctors gen B φ effects)
+  else
+    .error "checked type contains an effect label absent from the elaboration environment"
+
+#guard showTypeDChecked [] [] (.F .omega (.cap 4)) ∅ [("Trace", ⟨4, []⟩)] == .ok "Cap Trace"
+#guard showTypeDChecked [] [] (.F .omega (.U {4} (.F .omega .int))) ∅ [("Trace", ⟨4, []⟩)] ==
+  .ok "Thunk!{Trace} Int"
+#guard showTypeDChecked [] [] (.F .omega (.cap 4)) ∅ [] ==
+  .error "checked type contains an effect label absent from the elaboration environment"
 
 /-- Inject a payload at ctor position `i` of `n` (right-nested sum; `n = 1` ⇒ no sum wrapper). -/
 def injSum : Nat → Nat → Surf → Surf
@@ -6744,7 +6799,10 @@ def displayProg (src : String) : String :=
       let (e, effects, ctors, gen) ← Bang.Surface.parseProg src >>= elabProg
       let (B, φ) ← runInferC (synthSC [] e) effects
       return (B, φ, effects, ctors, gen)) with
-  | .ok (B, φ, effects, ctors, gen) => showTypeD ctors gen B φ effects
+  | .ok (B, φ, effects, ctors, gen) =>
+      match showTypeDChecked ctors gen B φ effects with
+      | .ok rendered => rendered
+      | .error e     => s!"error: {e}"
   | .error e                        => s!"error: {e}"
 
 /-- TEST-ONLY (ADR-0092 D1/D2, no surface syntax): type `perform` (`.dotPerform`) against a
@@ -6779,7 +6837,7 @@ to recover `ctors`/`gen` for the fold. -/
 public def typeStringOfProg (src : String) : Except String String := do
   let (e, effects, ctors, gen) ← Bang.Surface.parseProg src >>= elabProg
   let (B, φ) ← runInferC (synthSC [] e) effects
-  return showTypeD ctors gen B φ effects
+  showTypeDChecked ctors gen B φ effects
 
 /-- Prog-taking sibling of `typeStringOfProg` (mirrors `checkAndLowerProg` beside
 `checkAndLower`) — the per-declaration query seam `bang query type`/`effects`/`symbols` (#80)
@@ -6792,7 +6850,7 @@ the DIRECT path `bang query type`/hover/`symbols` ride, so it is the highest-val
 public def typeStringOfProgP (prog : Prog) : Except String String := do
   let (e, effects, ctors, gen) ← elabProg prog
   let (B, φ) ← runInferC (synthSC [] e) effects
-  return showTypeD ctors gen B φ effects
+  showTypeDChecked ctors gen B φ effects
 
 
 /-! ### The TYPED face of the `Outcome` layer (issue #54).

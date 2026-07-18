@@ -132,8 +132,9 @@ cat > "$tmpdir/interface-shape-changed/Lib.bang" <<'BANG'
 pub data Signal = One(Int) | Pair(Int, Int)
 BANG
 
-# Whole-program effect-label allocation is an intentional falsifier for independent artifacts:
-# adding an unrelated earlier effect shifts Lib's rendered `Cap` label even though Lib is unchanged.
+# Runtime effect-label allocation remains whole-program and dense, but checked public rendering must
+# project semantic names: adding an unrelated earlier effect may shift the lowered label without
+# invalidating Lib's unchanged source interface.
 for variant in interface-label-base interface-label-shifted; do
   mkdir -p "$tmpdir/$variant"
   cat > "$tmpdir/$variant/Lib.bang" <<'BANG'
@@ -154,6 +155,83 @@ cat > "$tmpdir/interface-label-shifted/main.bang" <<'BANG'
 import Noise
 import Lib
 use Lib (Trace)
+0
+BANG
+
+# Nested effect rows are part of the public type. The old renderer failed to thread the effect table
+# below `.U`, so `{Trace}` silently disappeared and a real signature change could preserve a digest.
+for variant in interface-nested-row-base interface-nested-row-changed; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+use Lib (Trace)
+0
+BANG
+done
+cat > "$tmpdir/interface-nested-row-base/Lib.bang" <<'BANG'
+pub effect Trace { log : Int -> Int }
+pub let deferred : Thunk (Cap Trace -> Int -> Int ! {Trace}) =
+  {fun tr => fun x => tr.log(x)}
+BANG
+cat > "$tmpdir/interface-nested-row-changed/Lib.bang" <<'BANG'
+pub effect Trace { log : Int -> Int }
+pub let deferred : Thunk (Cap Trace -> Int -> Int) =
+  {fun tr => fun x => x}
+BANG
+
+# Two modules may declare the same local effect name. Their qualified semantic identities must stay
+# distinct, and swapping import order must not move either module's public-interface digest.
+for variant in interface-same-name-ab interface-same-name-ba; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/LibA.bang" <<'BANG'
+pub effect Net { ping : Int -> Int }
+pub let deferredA : Thunk (Cap LibA_Net -> Int -> Int ! {LibA_Net}) =
+  {fun net => fun x => net.ping(x)}
+BANG
+  cat > "$tmpdir/$variant/LibB.bang" <<'BANG'
+pub effect Net { ping : Int -> Int }
+pub let deferredB : Thunk (Cap LibB_Net -> Int -> Int ! {LibB_Net}) =
+  {fun net => fun x => net.ping(x)}
+BANG
+done
+cat > "$tmpdir/interface-same-name-ab/main.bang" <<'BANG'
+import LibA
+import LibB
+0
+BANG
+cat > "$tmpdir/interface-same-name-ba/main.bang" <<'BANG'
+import LibB
+import LibA
+0
+BANG
+
+# Rows are sets. A dependency interface mentioning two imported effects must not inherit the global
+# effect-table order when entry-side imports are reversed.
+for variant in interface-two-row-ab interface-two-row-ba; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/EffA.bang" <<'BANG'
+pub effect A { ping : Int -> Int }
+BANG
+  cat > "$tmpdir/$variant/EffB.bang" <<'BANG'
+pub effect B { ping : Int -> Int }
+BANG
+  cat > "$tmpdir/$variant/Lib.bang" <<'BANG'
+import EffA
+import EffB
+pub let deferred : Thunk (Cap EffA_A -> Cap EffB_B -> Int -> Int ! {EffA_A, EffB_B}) =
+  {fun a => fun b => fun x => x}
+BANG
+done
+cat > "$tmpdir/interface-two-row-ab/main.bang" <<'BANG'
+import EffA
+import EffB
+import Lib
+0
+BANG
+cat > "$tmpdir/interface-two-row-ba/main.bang" <<'BANG'
+import EffB
+import EffA
+import Lib
 0
 BANG
 
@@ -282,9 +360,9 @@ $iface_shape_changed_dump"
 check "module-interface-shape-extractor-exit" "$iface_shape_rows_exit" "0"
 check "module-interface-shape-discrimination" "$iface_shape_rows" "True|True|True"
 
-# An unchanged module's interface still moves when an unrelated earlier effect shifts its global
-# label. This is a retained negative pole: the view is module-grouped but not separate-compilation
-# ready, exactly as its machine-readable metadata says.
+# An unchanged module's checked interface is now invariant when an unrelated earlier effect shifts
+# its runtime label. `separateCompilationReady` remains false: lowered bodies still carry the dense
+# labels, and there is still no independent code artifact or linker contract.
 capture iface_label_base_dump iface_label_base_exit "$bang" query dump "$tmpdir/interface-label-base/main.bang" 2>/dev/null
 capture iface_label_shifted_dump iface_label_shifted_exit "$bang" query dump "$tmpdir/interface-label-shifted/main.bang" 2>/dev/null
 check "module-interface-label-base-exit" "$iface_label_base_exit" "0"
@@ -294,11 +372,57 @@ import json,sys
 ds=[json.loads(line) for line in sys.stdin if line.strip()]
 libs=[next(x for x in d["moduleInterfaces"] if x["module"]=="Lib") for d in ds]
 types=[next(x for x in lib["exports"] if x["name"]=="identity")["type"] for lib in libs]
-print("|".join([str(libs[0]["digest"]!=libs[1]["digest"]),str(types[0]!=types[1]),types[0],types[1]]))
+print("|".join([str(libs[0]["digest"]==libs[1]["digest"]),str(types[0]==types[1]),types[0],types[1]]))
 ' 2>/dev/null <<< "$iface_label_base_dump
 $iface_label_shifted_dump"
 check "module-interface-label-extractor-exit" "$iface_label_rows_exit" "0"
-check "module-interface-global-label-coupling" "$iface_label_rows" "True|True|Thunk Cap 4 -> Int -> Int|Thunk Cap 5 -> Int -> Int"
+check "module-interface-semantic-label-invariance" "$iface_label_rows" "True|True|Thunk!{Trace} Cap Trace -> Int -> Int|Thunk!{Trace} Cap Trace -> Int -> Int"
+
+capture iface_nested_base_dump iface_nested_base_exit "$bang" query dump "$tmpdir/interface-nested-row-base/main.bang" 2>/dev/null
+capture iface_nested_changed_dump iface_nested_changed_exit "$bang" query dump "$tmpdir/interface-nested-row-changed/main.bang" 2>/dev/null
+check "module-interface-nested-row-base-exit" "$iface_nested_base_exit" "0"
+check "module-interface-nested-row-changed-exit" "$iface_nested_changed_exit" "0"
+capture iface_nested_rows iface_nested_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+libs=[next(x for x in d["moduleInterfaces"] if x["module"]=="Lib") for d in ds]
+types=[next(x for x in lib["exports"] if x["name"]=="deferred")["type"] for lib in libs]
+print("|".join([str(libs[0]["digest"]!=libs[1]["digest"]),types[0],types[1]]))
+' 2>/dev/null <<< "$iface_nested_base_dump
+$iface_nested_changed_dump"
+check "module-interface-nested-row-extractor-exit" "$iface_nested_rows_exit" "0"
+check "module-interface-nested-row-sensitivity" "$iface_nested_rows" "True|Thunk!{Trace} Cap Trace -> Int -> Int|Thunk Cap Trace -> Int -> Int"
+
+capture iface_same_ab_dump iface_same_ab_exit "$bang" query dump "$tmpdir/interface-same-name-ab/main.bang" 2>/dev/null
+capture iface_same_ba_dump iface_same_ba_exit "$bang" query dump "$tmpdir/interface-same-name-ba/main.bang" 2>/dev/null
+check "module-interface-same-name-ab-exit" "$iface_same_ab_exit" "0"
+check "module-interface-same-name-ba-exit" "$iface_same_ba_exit" "0"
+capture iface_same_rows iface_same_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+def module(d,n): return next(x for x in d["moduleInterfaces"] if x["module"]==n)
+mods=[[module(d,"LibA"),module(d,"LibB")] for d in ds]
+types=[[next(x for x in m["exports"] if x["name"].startswith("deferred"))["type"] for m in pair] for pair in mods]
+print("|".join([str(mods[0][0]["digest"]==mods[1][0]["digest"]),str(mods[0][1]["digest"]==mods[1][1]["digest"]),str(types[0][0]!=types[0][1]),types[0][0],types[0][1]]))
+' 2>/dev/null <<< "$iface_same_ab_dump
+$iface_same_ba_dump"
+check "module-interface-same-name-extractor-exit" "$iface_same_rows_exit" "0"
+check "module-interface-same-name-separation" "$iface_same_rows" "True|True|True|Thunk!{LibA_Net} Cap LibA_Net -> Int -> Int|Thunk!{LibB_Net} Cap LibB_Net -> Int -> Int"
+
+capture iface_two_ab_dump iface_two_ab_exit "$bang" query dump "$tmpdir/interface-two-row-ab/main.bang" 2>/dev/null
+capture iface_two_ba_dump iface_two_ba_exit "$bang" query dump "$tmpdir/interface-two-row-ba/main.bang" 2>/dev/null
+check "module-interface-two-row-ab-exit" "$iface_two_ab_exit" "0"
+check "module-interface-two-row-ba-exit" "$iface_two_ba_exit" "0"
+capture iface_two_rows iface_two_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+libs=[next(x for x in d["moduleInterfaces"] if x["module"]=="Lib") for d in ds]
+types=[next(x for x in lib["exports"] if x["name"]=="deferred")["type"] for lib in libs]
+print("|".join([str(libs[0]["digest"]==libs[1]["digest"]),str(types[0]==types[1]),types[0],types[1]]))
+' 2>/dev/null <<< "$iface_two_ab_dump
+$iface_two_ba_dump"
+check "module-interface-two-row-extractor-exit" "$iface_two_rows_exit" "0"
+check "module-interface-two-row-order-invariance" "$iface_two_rows" "True|True|Thunk!{EffA_A, EffB_B} Cap EffA_A -> Cap EffB_B -> Int -> Int|Thunk!{EffA_A, EffB_B} Cap EffA_A -> Cap EffB_B -> Int -> Int"
 
 # EVERY curated verb's answer is a PROJECTION of `dump` — the layering claim, checked directly:
 # `symbols`'s "decls" entries equal `dump`'s "decls" entries byte-for-byte (same DeclFact.toJson).
@@ -737,7 +861,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (148 — dependency observation, recomputation, reuse, module graph, structural
+# always runs (160 — dependency observation, recomputation, reuse, module graph, structural
 # invalidation-fanout, resolved-core fingerprint, and resolved-module-interface checks included);
 # jq's three guarded blocks
 # contribute five `check()` calls in total when jq is present (the composed query checks both
@@ -747,7 +871,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=148
+want_total=160
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

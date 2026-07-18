@@ -1587,14 +1587,24 @@ def render():
         "`false`: types are produced after whole-program module merge, top-level values still lower into one"
     )
     L.append(
-        "lexical chain, and user-effect labels are allocated in global declaration order. An unrelated earlier"
+        "lexical chain, and runtime user-effect labels are still allocated in global declaration order. Checked"
     )
     L.append(
-        "effect can therefore move an otherwise unchanged module's rendered interface. Treat the digest as an"
+        "types render those labels back through the elaboration environment as semantic effect names—including"
     )
     L.append(
-        "invalidation-analysis probe, not permission to skip lowering, linking, or unchecked cache validation."
+        "capability types and rows nested under `Thunk`—so an unrelated earlier effect no longer moves an"
     )
+    L.append(
+        "unchanged rendered interface. Same-named effects from different modules retain distinct qualified names."
+    )
+    L.append(
+        "This presentation stability does not create stable lowered identities, normalize global type-hole"
+    )
+    L.append(
+        "markers, or define a module body/link contract. Treat the digest as an invalidation-analysis probe, not"
+    )
+    L.append("permission to skip lowering, linking, or unchecked cache validation.")
     L.append("")
     L.append(
         "Every `DeclFact` key is **always present** — `null` means absent, never a missing key —"

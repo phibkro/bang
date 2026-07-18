@@ -1027,9 +1027,13 @@ reports `null`, as the view is checked rather than a parse-only export inventory
 This is deliberately **not** a separately compiled artifact. Its scope says
 `resolved-program-module-interface`, and both `cacheKeySafe` and `separateCompilationReady` are
 `false`: types are produced after whole-program module merge, top-level values still lower into one
-lexical chain, and user-effect labels are allocated in global declaration order. An unrelated earlier
-effect can therefore move an otherwise unchanged module's rendered interface. Treat the digest as an
-invalidation-analysis probe, not permission to skip lowering, linking, or unchecked cache validation.
+lexical chain, and runtime user-effect labels are still allocated in global declaration order. Checked
+types render those labels back through the elaboration environment as semantic effect names—including
+capability types and rows nested under `Thunk`—so an unrelated earlier effect no longer moves an
+unchanged rendered interface. Same-named effects from different modules retain distinct qualified names.
+This presentation stability does not create stable lowered identities, normalize global type-hole
+markers, or define a module body/link contract. Treat the digest as an invalidation-analysis probe, not
+permission to skip lowering, linking, or unchecked cache validation.
 
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on

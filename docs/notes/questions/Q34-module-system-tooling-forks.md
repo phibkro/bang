@@ -137,3 +137,23 @@ symbolic cross-module type/effect identities, followed by an explicit independen
 link/validation contract. Continue to defer a persistent store, scheduler, cryptographic key choice,
 and cache-hit path: implementing those now would automate invalidation at a boundary the tracer has
 shown to be globally coupled and artifact-incomplete.
+
+## Stable-rendering input (2026-07-18): effect identity stopped leaking into the view, not the core
+
+`PATH-stable-interface-effect-rendering` followed the first retained coupling and found a smaller,
+more dangerous presentation bug than runtime allocation itself: checked rendering named `.cap` by its
+dense numeral and failed to thread the effect table into rows nested under `.U`. Consequently an
+unrelated effect caused false invalidation, while a real nested-row change could be hidden.
+
+The shared decl-aware renderer now reverses checked labels through the elaboration environment,
+including capability types, nested thunk rows, and generic folded arguments. Public checked rendering
+refuses a label the environment cannot explain, and sorts semantic user-effect names because rows are
+sets rather than resolver-ordered lists. CLI fixtures establish that an unrelated earlier effect
+preserves the dependency interface, `{Trace}` add/drop moves it, and `LibA.Net`/`LibB.Net` remain distinct
+across import-order swaps; a cross-module two-effect row remains stable under the same reversal.
+
+This closes only the **checked presentation identity** leak. Dense runtime labels, global type-hole
+numbering, whole-program environments, and the single lexical `Comp` remain. Equivalent import/use
+spellings are not yet promised to canonicalize to one module identity. Therefore
+`separateCompilationReady=false` remains correct and the next tracer must target a concrete lowered
+module-body/link constraint—not a cache, store, scheduler, or cryptographic-key implementation.

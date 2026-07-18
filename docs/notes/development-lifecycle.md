@@ -179,6 +179,35 @@ stop conditions, requested/runtime model provenance, and fallback. Read-only pre
 disclosure. A denied, stalled, substituted, or contradictory consultation remains an observation rather
 than disappearing behind the eventual result.
 
+### Small-project default: continuous owner + strategic advisor
+
+For a project small enough that one implementation context can still hold its map, prefer **one
+continuous implementation owner** across end-to-end tracer bullets. Persist the high-level state in
+`CONTEXT.md`, the active `PATH`, and the governing Q/ADR between bullets; do not make handoff summaries
+the only project memory. Add one persistent **read-only strategic advisor** (ideally a different model
+provider) when its independent map-level challenge is worth the coordination cost. In Herdr, keep that
+advisor observable in a secondary tab rather than spawning opaque consultations repeatedly.
+
+The cadence is:
+
+```text
+owner orients from durable map → scopes one tracer + falsifiers → implements through the public journey
+→ converges and persists evidence → reports landed facts, exclusions, and residual coupling to advisor
+→ advisor ranks/challenges the next constraint → owner verifies that advice against artifacts and repeats
+```
+
+The advisor does not edit, approve, or supply delivery evidence. Its report contains a ranked next move,
+the strongest counterargument, likely scope creep, and the observation that would change its ranking.
+The owner remains accountable for inspecting code, running gates, updating the map, and deciding whether
+the recommendation follows from evidence. Delegate additional workers only when work is genuinely
+separable and their expected parallel gain exceeds merge, waiting, and context-transfer cost.
+
+This is a bounded governance experiment, not a permanent role topology. Observe context pressure,
+cycle time, escaped defects, review yield, and time spent waiting or reconciling summaries. Fall back to
+one owner with bounded consultations when the advisor becomes low-yield or cumbersome; widen to explicit
+feature owners only when the repo no longer fits one continuous context. No advisor agreement counts as
+organic user evidence or independent verification.
+
 The comparative evidence behind this adoption and its canary/rollback conditions are recorded in
 `semantic-packages-lifecycle-review.md`.
 

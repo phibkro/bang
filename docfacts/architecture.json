@@ -9691,7 +9691,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Surface"
       ],
-      "loc": 9856,
+      "loc": 9914,
       "name": "Bang.Frontend.TypeCheck",
       "path": "Bang/Frontend/TypeCheck.lean",
       "publicSymbols": [
@@ -9715,235 +9715,235 @@
         },
         {
           "kind": "def",
-          "line": 1138,
+          "line": 1159,
           "name": "surfaceUsage",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1168,
+          "line": 1189,
           "name": "usageAlternative",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1169,
+          "line": 1190,
           "name": "surfArgsUsage",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1173,
+          "line": 1194,
           "name": "dArmsUsage",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1180,
+          "line": 1201,
           "name": "letBindingsUsage",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1184,
+          "line": 1205,
           "name": "hClausesUsage",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1188,
+          "line": 1209,
           "name": "letRecBindingsUsage",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2086,
+          "line": 2107,
           "name": "Inst",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "abbrev",
-          "line": 2106,
+          "line": 2127,
           "name": "InstEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2119,
+          "line": 2140,
           "name": "PendingOpKnot",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2155,
+          "line": 2176,
           "name": "CtorInfo",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2181,
+          "line": 2202,
           "name": "GenData",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2193,
+          "line": 2214,
           "name": "BoundedFn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2212,
+          "line": 2233,
           "name": "RawOp",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2225,
+          "line": 2246,
           "name": "RawImpl",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2238,
+          "line": 2259,
           "name": "HktImpl",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2250,
+          "line": 2271,
           "name": "NamedHandler",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2261,
+          "line": 2282,
           "name": "ElabEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 4852,
+          "line": 4907,
           "name": "buildEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5691,
+          "line": 5746,
           "name": "mergeModules",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5928,
+          "line": 5983,
           "name": "surfUsesVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6423,
+          "line": 6478,
           "name": "expandDerives",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6559,
+          "line": 6614,
           "name": "lawTestSourceOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6663,
+          "line": 6718,
           "name": "elaborateToComp",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6678,
+          "line": 6733,
           "name": "checkAndLower",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6699,
+          "line": 6754,
           "name": "checkAndLowerProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6710,
+          "line": 6765,
           "name": "checkAndLowerProgWithEffects",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6720,
+          "line": 6775,
           "name": "elaborateToCompProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6732,
+          "line": 6787,
           "name": "checkProgRow",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6779,
+          "line": 6837,
           "name": "typeStringOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6792,
+          "line": 6850,
           "name": "typeStringOfProgP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6838,
+          "line": 6896,
           "name": "assertTypedOutOfFuel",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6843,
+          "line": 6901,
           "name": "assertTypedOom",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6969,
+          "line": 7027,
           "name": "sampleVT",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6992,
+          "line": 7050,
           "name": "checkLawOn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7157,
+          "line": 7215,
           "name": "lawInstancesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7165,
+          "line": 7223,
           "name": "lawInstancesOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7177,
+          "line": 7235,
           "name": "lawInstanceOpCallDiagnostics",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7220,
+          "line": 7278,
           "name": "unreachableIntImplDiagnostics",
           "visibilityBasis": "public-modifier"
         }
@@ -12814,7 +12814,7 @@
       "name": "Core"
     },
     {
-      "loc": 18219,
+      "loc": 18277,
       "moduleCount": 12,
       "name": "Frontend"
     },

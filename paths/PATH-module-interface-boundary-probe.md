@@ -78,7 +78,9 @@
 - [x] Completed 2026-07-18
 - Focused evidence: `tools/test-query.sh` — **153 passed, 0 failed** in the standard dev shell.
 - Retained failed gates / successors: global effect-label allocation and the flat top-level body are
-  deliberate falsifiers; stabilize identities before specifying a module code artifact.
+  deliberate falsifiers. `PATH-stable-interface-effect-rendering` subsequently repaired the checked
+  presentation leak while preserving this original failed observation here; runtime labels and the flat
+  code artifact remain successor constraints.
 - Convergence evidence: `just verify` completed the 1452-job build and **31/31 batteries** before its
   stale proof-source projection refused; regeneration plus exact-tree audit/fitness then passed.
 - Reopen / observe: set `separateCompilationReady:true` only after an unchanged dependency interface
