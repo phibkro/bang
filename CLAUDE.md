@@ -27,6 +27,7 @@ its trigger arises.
 | **How to contribute** (workflow · where docs live · agent write-discipline) | `CONTRIBUTING.md` |
 | **How work flows** (lifecycle + feedback loops + quality gates) | `docs/notes/development-lifecycle.md` |
 | **What an `incN` is** (the increment unit: scoped→de-risked→ground→done→merged) | `docs/notes/increment-lifecycle.md` |
+| **Prospective systemic review** (expected-regret gate: implement now · preserve the door · defer with trigger · reject) | `docs/notes/prospective-systemic-review.md` |
 | **Codebase maintenance** (objects · rungs · cadence · debt-prevention) | `.claude/codebase-maintenance.md` |
 | **Active in-flight work** | `paths/PATH-*.md` |
 | **Architecture in force** (ADR-0016 as revised by ADR-0059; proof-method split ADR-0035) | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |

@@ -46,7 +46,7 @@ leaf-first, each a clean seam to commit and resume at (see PATH-inc6 §3).
 
 | stage | what happens | evidence it is real |
 |---|---|---|
-| **scoped** | write `PATH-*.md`: the frozen statement, unit plan, wall-risk | the PATH exists + names the gated theorem |
+| **scoped** | write `PATH-*.md`: the frozen statement, unit plan, wall-risk, and prospective systemic review | the PATH exists + names the gated theorem and dispositions future pressure as implement/preserve/defer/reject |
 | **de-risked** | refute-first — try to break the statement *before* investing; a machine-checked `False` is a first-class deliverable (e.g. ADR-0056 found the inc-5 diagonal FALSE) | a green de-risk probe / a refuted alternative |
 | **ground** | turn opaques → defs, discharge sorrys, across sessions; commit at every clean seam (the build arbitrates the def shape — invariant #4) | commits banked at green frontiers |
 | **done** | the gated statement closes on a **green seam** with an **axiom-clean** gate | `#print axioms ⊆ {propext, Classical.choice, Quot.sound}` |
@@ -55,6 +55,11 @@ leaf-first, each a clean seam to commit and resume at (see PATH-inc6 §3).
 **Done = green seam + axiom-clean gate** — never a summary, never a quiet tree.
 Gate the *committed* content (`gate-committed-content-not-worktree`), via the
 axiom set, never `grep sorry` (`gate-sorries-via-axioms-not-grep`).
+
+The prospective review is deliberately front-loaded at **scoped**, then reopened only when evidence
+changes: a refute-first probe, user/agent trace, incident, benchmark, or newly named downstream
+consumer. See `prospective-systemic-review.md`; it prevents both corner-cutting at hardening seams and
+speculative mechanisms with no project pulling them.
 
 ## Numbering
 

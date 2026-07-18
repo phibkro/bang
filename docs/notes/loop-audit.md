@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: the semantic-description north star now has one complete resource-contract tracer: local `[0|1|omega]` obligations, refusal diagnostics, erased Wasm consequences, laws, and a joined contract query; fitness and Verify are green through 2026-07-18._
+_Position: the resource-contract tracer is complete and its first fresh-context agentic inspection has exposed three evidence-seam integrity defects; the active arc repairs those seams before organic outsider exposure._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
@@ -19,13 +19,14 @@ _Position: the semantic-description north star now has one complete resource-con
 | refute-first witnesses (`Bang/Witness/`) | hours | ✔ institutionalized |
 | differential fuzz (`Bang/Witness/Fuzz.lean`, #14) | per-build | ✔ 200 seeded samples, handler-fragment-biased, `#guard`-gated |
 | commit integrity (pre-commit hook) | per-commit | ✔ REPAIRED 2026-07-10 — the 11-incident worktree-index ghost ROOT-CAUSED (hook leaked `GIT_INDEX_FILE` into lake's git-in-mathlib) and fixed (plan 008 `env -u` sanitization, exercised live) |
-| test batteries (`just verify` / `lake test`) | minutes | ✔ 29/29 batteries; resource acceptance/refusals/query/Wasm erasure, concrete Wasm build/engine checks, and explicit host-authority cases run in the standing gate |
+| test batteries (`just verify` / `lake test`) | minutes | ✔ 31/31 batteries; resource acceptance/refusals/query/Wasm erasure, concrete Wasm build/engine checks, and explicit host-authority cases run in the standing gate |
 | increment gate · banking discipline | days | ✔ caught #44 Stage-2 pre-land |
 | doc fitness (`just fitness` generated legs) | days | ✔ caught stale proof-dashboard consumption, abstract/concrete target collapse, and this ROADMAP-coupled loop-audit refresh in the 2026-07-16 wave |
 | advisor audit → plan → executor → review (plans/) | days | ✔ 11 plans, 9 landed; exact-head independent review caught residual Route-B overclaims before publication |
+| prospective systemic review | per-PATH / checkpoint | ◑ INSTITUTIONALIZED 2026-07-18 — expected-regret dispositions now separate implement-now, option-preserving, triggered deferral, and rejection; first live application scopes the evidence-integrity path |
 | **— the desk's edge —** | | |
 | CI on main (`.github/workflows/verify.yml`) | per-push | ✔ Verify, Site, and Pages green through the 2026-07-16 remediation wave |
-| a user running bang | per-◊ (stranger test) | ◑ OPEN — five internal roleplay-strict rounds have fed concrete fixes, but still no ORGANIC outside user; another internal round cannot satisfy the validation gate |
+| a user running bang | per-◊ (stranger test) | ◑ OPEN — five earlier internal rounds plus one explicit three-session agentic inspection fed concrete fixes, but still no ORGANIC outside user; another internal round cannot satisfy the validation gate |
 | external review (paper, peers) | — | ◑ ◊6 paper skeletons drafted; no external peer read yet |
 | performance measurement | — | ✘ absent (invariant #7 defers it) — first instrument in flight: `lake exe pole` wiring + critical-path report (plan 007) |
 
@@ -38,7 +39,7 @@ _Position: the semantic-description north star now has one complete resource-con
    next arc feed it? (If three ◊ in a row answer "the same outer loop", that's the escalation.)
 
 **2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk.
-The resource-contract tracer makes the newly clarified product thesis runnable and inspectable, but
-that is enabling evidence rather than external validation. The next arc should publish this slice,
-invite an unassisted run, and capture outsider-filed feedback instead of adding another internal
+The agentic inspection found evidence-contract defects that would contaminate that outer loop, so the
+next bounded arc repairs F1–F3 and replays the frozen packet; immediately after, publish the repaired
+slice, invite an unassisted run, and capture outsider-filed feedback instead of adding another internal
 simulation.

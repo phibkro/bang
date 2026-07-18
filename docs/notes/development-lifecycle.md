@@ -60,6 +60,7 @@ per-commit           tens of sec      git pre-commit hook            no admit / 
 per-build            seconds (warm)   just verify                    selfcheck + build + audit
                      minutes (cold)
 per-audit            seconds          just axioms                    #print axioms per theorem
+per-PATH scope       hours to days    prospective systemic review    future debt classified before scope freezes
 per-PATH             hours to days    PATH-*.md status block         checkpoint definition met
 per-checkpoint       days to weeks    ROADMAP.md ◊ progression       architecture coherent
 per-OPEN_QUESTION    weeks            OPEN_QUESTIONS.md revisits     design pivot ready or not
@@ -84,6 +85,22 @@ verify` when `just check Bang/Spec.lean` would have caught it in 2 seconds.
 | ADR for reversible decisions | discipline + PR review | `docs/decisions/README.md` |
 | Open questions tracked (not silently dodged) | proof-engineer discipline | `docs/notes/OPEN_QUESTIONS.md` |
 | Single source of truth (no fact duplicated) | discipline + code review | this doc |
+
+## Prospective systemic review (the expected-regret judgment gate)
+
+Before a PATH plan freezes, ask: **how likely is it that not doing this work now will become an
+issue, and how much more expensive will correction be after the seam hardens?** The detailed method,
+lenses, evidence standard, and lifecycle triggers live in `prospective-systemic-review.md`.
+
+Every material concern receives one disposition: **implement now**, **preserve the smallest useful
+door**, **defer with an observable trigger**, or **reject**. Public schemas/IDs/diagnostics, persisted
+formats, security boundaries, and checkpoint/release changes require the full review. Routine local,
+reversible edits need only the five-question delta screen; do not manufacture process artifacts when
+there is no material future pressure.
+
+This is a judgment gate, not a new quality invariant or a completeness checklist. Project pull still
+decides what to build. The review catches preventative work whose later migration, authority, or
+cross-layer cost would otherwise be invisible.
 
 ## Value alignment (soft invariants — preferences)
 
@@ -194,6 +211,7 @@ SESSION START
 WORKING SESSION
 ───────────────
   Pick the right loop: file-level / build-level / audit-level
+  When scoping a PATH: record its prospective systemic review before freezing the plan
   When a design Q surfaces: log to OPEN_QUESTIONS.md (don't silently mutate)
   When a reversible decision is made: write an ADR
   When stuck: try `just loogle "..."` or invoke the right subagent
@@ -259,6 +277,7 @@ This is the FRAMEWORK. Concrete artifacts that implement each piece:
 | Active work | `paths/PATH-*.md` |
 | Design memory | `docs/decisions/` (ADRs) |
 | Open questions | `docs/notes/OPEN_QUESTIONS.md` |
+| Prospective systemic review | `docs/notes/prospective-systemic-review.md` |
 | Proof discipline | `docs/notes/spec-proof-discipline.md` |
 | Subagent roles | `.claude/agents/*.md` |
 | Build / verify | `justfile` + `tools/*.sh` |

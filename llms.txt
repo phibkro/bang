@@ -17,6 +17,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute (workflow · where docs live · agent write-discipline)
 - [docs/notes/development-lifecycle.md](docs/notes/development-lifecycle.md) — How work flows (lifecycle + feedback loops + quality gates)
 - [docs/notes/increment-lifecycle.md](docs/notes/increment-lifecycle.md) — What an incN is (the increment unit: scoped→de-risked→ground→done→merged)
+- [docs/notes/prospective-systemic-review.md](docs/notes/prospective-systemic-review.md) — Prospective systemic review (expected-regret gate: implement now · preserve the door · defer with trigger · reject)
 - [.claude/codebase-maintenance.md](.claude/codebase-maintenance.md) — Codebase maintenance (objects · rungs · cadence · debt-prevention)
 - `paths/PATH-*.md` — Active in-flight work
 - [docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md](docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) — Architecture in force (ADR-0016 as revised by ADR-0059; proof-method split ADR-0035)

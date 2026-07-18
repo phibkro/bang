@@ -18,6 +18,15 @@
 - **Binding constraint now**: <what limits progress, with citation>
 - **How this path feeds it**: <the mechanism>
 
+## Prospective systemic review
+
+<!-- Use docs/notes/prospective-systemic-review.md. Review the changed seam, cite
+     evidence, and remove rows that are immaterial. -->
+
+| concern | horizon + evidence | likelihood / impact / late cost | disposition now | reopen trigger |
+|---|---|---|---|---|
+| <future pressure> | <named horizon + evidence> | <reasoned assessment> | implement / preserve / defer / reject | <observable event, or closed> |
+
 ## Plan
 1. <substep>
 2. <substep>

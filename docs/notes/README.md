@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (74)
+## active (75)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -57,6 +57,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`os-inspiration-survey.md`](os-inspiration-survey.md) — OS-inspiration survey — what operating systems teach bang about resources, scheduling, and access policy
 - [`proof-assets.md`](proof-assets.md) — Reusable proof assets (generated inventory)
 - [`proof-export-survey.md`](proof-export-survey.md) — Proof export (Q43) — design survey: a bang `law` becomes a Lean proof goal, proved once, cached
+- [`prospective-systemic-review.md`](prospective-systemic-review.md) — Prospective systemic review — expected regret before debt hardens
 - [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
 - [`refinement-types-survey.md`](refinement-types-survey.md) — Refinement types vs grades — design survey (R5, ROADMAP §Pre-v1 research ladder)
 - [`rung5-s5-proofgrade-refutation.md`](rung5-s5-proofgrade-refutation.md) — Rung-5 S5 proof-grade — the obligation, RE-FRAMED (one half done, one half unstateable in v1)
