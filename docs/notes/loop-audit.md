@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: ◊5.5 concrete emission is productized through `bang build` and real-engine differential batteries; the project-abstract proof target and separate Wasm 3.0 emitter boundary is explicit in ADR-0110; Verify, Site, and Pages are green through the 2026-07-16 remediation wave._
+_Position: the semantic-description north star now has one complete resource-contract tracer: local `[0|1|omega]` obligations, refusal diagnostics, erased Wasm consequences, laws, and a joined contract query; fitness and Verify are green through 2026-07-18._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
@@ -19,7 +19,7 @@ _Position: ◊5.5 concrete emission is productized through `bang build` and real
 | refute-first witnesses (`Bang/Witness/`) | hours | ✔ institutionalized |
 | differential fuzz (`Bang/Witness/Fuzz.lean`, #14) | per-build | ✔ 200 seeded samples, handler-fragment-biased, `#guard`-gated |
 | commit integrity (pre-commit hook) | per-commit | ✔ REPAIRED 2026-07-10 — the 11-incident worktree-index ghost ROOT-CAUSED (hook leaked `GIT_INDEX_FILE` into lake's git-in-mathlib) and fixed (plan 008 `env -u` sanitization, exercised live) |
-| test batteries (`just verify` / `lake test`) | minutes | ✔ 28/28 batteries; concrete Wasm build/engine checks and explicit host-authority cases now run in the standing gate |
+| test batteries (`just verify` / `lake test`) | minutes | ✔ 29/29 batteries; resource acceptance/refusals/query/Wasm erasure, concrete Wasm build/engine checks, and explicit host-authority cases run in the standing gate |
 | increment gate · banking discipline | days | ✔ caught #44 Stage-2 pre-land |
 | doc fitness (`just fitness` generated legs) | days | ✔ caught stale proof-dashboard consumption, abstract/concrete target collapse, and this ROADMAP-coupled loop-audit refresh in the 2026-07-16 wave |
 | advisor audit → plan → executor → review (plans/) | days | ✔ 11 plans, 9 landed; exact-head independent review caught residual Route-B overclaims before publication |
@@ -37,7 +37,8 @@ _Position: ◊5.5 concrete emission is productized through `bang build` and real
 4. The deliverable is the ONE sentence answer to: which loop is now the weakest, and does the
    next arc feed it? (If three ◊ in a row answer "the same outer loop", that's the escalation.)
 
-**2026-07-16 answer:** the weakest loop is still the organic-outside-user one. Five internal stranger
-rounds have extracted useful fixes but cannot provide external validation, so the three-refresh
-escalation is active: the next arc must publish, invite an unassisted run, and capture outsider-filed
-feedback rather than substituting another internal simulation.
+**2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk.
+The resource-contract tracer makes the newly clarified product thesis runnable and inspectable, but
+that is enabling evidence rather than external validation. The next arc should publish this slice,
+invite an unassisted run, and capture outsider-filed feedback instead of adding another internal
+simulation.

@@ -52,15 +52,15 @@ check from `docs/notes/scoped-cap-types-design.md`.
 5. [x] Implement parsing, formatting, checking, diagnostics, lowering, and reference documentation.
 6. [x] Demonstrate grade-0 erasure in the concrete emitter with structural and differential gates.
 7. [x] Extend the query fact model with a contract card and generate the public evidence view.
-8. [ ] Run `just fitness`, `just verify`, the full battery set, and the proof-claim audit.
+8. [x] Run `just fitness`, `just verify`, the full battery set, and the proof-claim audit.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [x] In flight: full repository verification
+- [x] Verified: fitness, full build/audit, example corpus, CLI batteries, and real Wasmtime differential
 - [x] Blockers: none for this tracer; capability lifetime remains a deliberately separate downstream
   problem until a capture-aware checker design clears the scheduler falsifier
-- [ ] Completed YYYY-MM-DD
+- [x] Completed 2026-07-18
 
 ## Owner
 
