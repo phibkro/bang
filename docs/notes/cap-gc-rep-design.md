@@ -7,6 +7,11 @@
 > corpus also remains green at 46 emitted whole programs (23 effectful), and the module-aware
 > readback corpus is green at 23. Older counts below are retained as dated implementation snapshots.
 
+> **Multi-operation successor (2026-07-18):** the single-operation guard described in §8.3 has now
+> been replaced by exact module-local operation interning and runtime clause records carrying
+> `(operation id, update mode, closure)`. The mixed plain/updating first-class tracer returns 255 on
+> source/env/compiled/Wasm; the effects differential is green at 47 emitted programs, 24 effectful.
+
 > **Design-probe deliverable, no emitter change lands here** (probe phase = docs/notes + scratch
 > only; implementation only after the operator's ack). Measured on a clean clone of `main @
 > 412a7f88`, 2026-07-11T22:11Z, `nix develop`, `lake build` EXIT 0 (760 jobs), `wasmtime 45.0.0`
@@ -366,6 +371,15 @@ sourced from the runtime value — gate the `$id` (#134 stamp), then `$clausecel
 
 `lake build` EXIT 0 · `just fitness` EXIT 0 · both emission harnesses green. #133 headline DONE for
 the single-op first-class case (the whole current corpus).
+
+#### 8.3.1 · Multi-operation successor landed
+
+The retained guard did its job: the first natural two-operation consumer trapped rather than silently
+calling clause 0. The successor stores an exact interned operation id and the clause's own update bit
+beside every closure. A runtime capability perform now searches that cap's records with `$clausefind`;
+lexical dispatch keeps `$clauseat` by compile-time position. Hashing was rejected because even a remote
+collision would turn effect dispatch into a silent wrong-clause bug. IDs remain internal to one emitted
+whole-program module; separate compilation must design a linking identity rather than inherit them.
 
 ### 8.4 · C3 LANDED — calc emits (the capstone: a 5-module program with a first-class cap on wasm)
 

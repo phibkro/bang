@@ -2,10 +2,12 @@
 <!-- describes: Bang/Backend/WasmEmit.lean tools/emit-rung5-print-diff.sh tools/emit-rung5-effects-diff.sh @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
 # Emission rung-5 design — unifying effects onto the GC path (the "closures + handlers" rung)
 
-> **Re-audit (2026-07-18, `569cca42`):** `emit-rung5-effects-diff.sh` reports 46 emitted whole
-> programs matching `bang run`, 23 of them effectful, plus the raw typed-IR stateful custom update
+> **Re-audit (2026-07-18):** `emit-rung5-effects-diff.sh` reports 47 emitted whole
+> programs matching `bang run`, 24 of them effectful, plus the raw typed-IR stateful custom update
 > witness. `emit-rung5-print-diff.sh` reports 23/23 readback and module-aware programs matching,
-> including `calc` and `json`. The four-case escape differential is also hard-green.
+> including `calc` and `json`. The four-case escape differential is also hard-green. First-class
+> custom capabilities now dispatch multiple operations by exact module-local id; update mode travels
+> with each runtime clause record.
 
 > **Verdict (one sentence).** Rung 5 unifies the two disjoint lowerings (inline rungs 1-3 for the
 > effect fragment, GC rung 4 for the closure fragment) onto **one `$val`/`$env` GC representation** —
@@ -122,13 +124,14 @@ S3  [DONE] transaction     TVar heap = a $txbox mutable pointer to an $env list 
 S4  [DONE] custom effects   clause body lifted to a lam-style $fn capturing (p :: handlerEnv); a custom
                           op call_refs its clause with the op-value ⇒ body env (v :: p :: handlerEnv) =
                           the image of subst p (subst (shift v) clause.2) — one-shot resume, no
-                          reification (design (c)). The clause closures live in a $txbox in the cap's
-                          ENV slot (env-reachable via $lookup + $clausecell), so a NESTED closure that
+                          reification (design (c)). Clause records (exact op id · update bit · closure)
+                          live in a $txbox in the cap's ENV slot (env-reachable via $lookup +
+                          $clauseat/$clausefind), so a NESTED closure that
                           performs the op works (dst-rounds). LANDED: logger-counting=3, logger-silent=0,
                           handle-custom-{resume=106,tracer=30,nested=210,abort-coexist=42}, dst-rounds-
                           {const=16,lcg=9}, ndet-{sim,replicated,rep}-kv all == bang run on wasmtime 45.
-                          NAMED REFUSAL: a cap threaded as a first-class runtime VALUE (vcap passed into
-                          a closure as an arg — stage-swap) has no GC $val rep in v1; refused loudly.
+                          First-class single- and multi-operation caps reuse the same stamped $txbox;
+                          lexical calls keep position dispatch, runtime calls search exact op ids.
 S5  proof-grade           extend the wexec≡Source.eval obligation with the $env-slot↔store bijection;
                           per-former, same seam as rungs 1-4 (tested stratum until then).
                           RE-FRAMED (`rung5-s5-proofgrade-refutation.md`): the obligation SPLITS —
@@ -163,13 +166,14 @@ SURVIVES      throws (try_table/throw) + rollback (catch_all_ref/throw_ref) are 
               verbatim, rep-agnostic. Only the VALUE/ENV rep merges.
 SLICES        S0 $ref slot · S1 state · S2 throws · S3 txn(GC heap) · S4 custom · S5 proof-grade.
               No frame-chain slice (post-v1, the ADR-0015 multi-shot frontier).
-LANDED        S0-S4 DONE (feat-rung5-effects): 46 whole programs → WasmGC → wasmtime == bang run, of
-              which 23 are EFFECTFUL (state/stm/throws/logger/custom/dst-rounds/ndet, including the
+LANDED        S0-S4 DONE (feat-rung5-effects + multi-op successor): 47 whole programs → WasmGC →
+              wasmtime == bang run, of which 24 are EFFECTFUL (state/stm/throws/logger/custom/
+              first-class multi-op/dst-rounds/ndet, including the
               ADR-0114 stateful-quota surface witness). The rung-4
               blanket effect-refusal is REPLACED — effectful corpus programs now compile via
               emitModuleGC. Gate = tools/emit-rung5-effects-diff.sh (auto-discovering, both-direction).
-NAMED WALLS   a first-class capability (vcap) threaded as a runtime VALUE (passed into a closure as an
-              arg — stage-swap) has no GC $val cap rep in v1: refused LOUDLY. Full bignum (i64 wrap,
-              inherited rung 4) and non-empty-start Θ (only atomically) stay named refusals. S5 proof-
-              grade (wexec≡Source.eval with the $env-slot↔store bijection) = the tested→verified lift.
+NAMED WALLS   host-IO and non-empty-start Θ (only atomically) stay named refusals. First-class custom
+              caps are supported within one emitted module; exchanging their module-local operation
+              ids across separately emitted modules is not an ABI. S5 proof-grade
+              (wexec≡Source.eval with the $env-slot↔store bijection) = the tested→verified lift.
 ```

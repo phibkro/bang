@@ -15,7 +15,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 #   resource-contract (ADR-0116 checked `[0]` erasure + one-shot `[1]`) · reactive-spreadsheet
 #   (named State inputs + pull-reactive thunk formulas + explicit stale snapshot) ·
 #   reactive-recomputation (100-line in-band full-DAG call measurement) · reactive-observation-reuse
-#   (scoped cache freshness plus deliberately retained stale-cache adverse route).
+#   (scoped cache freshness plus deliberately retained stale-cache adverse route) ·
+#   first-class-multi-operation-cap (exact runtime op dispatch + per-clause update mode).
 # Each is built to a module, run on wasmtime, and diffed.
 # The --component leg additionally wraps json as a WASI component (via the pinned preview1 adapter,
 # fetched to a cache) and asserts the component prints the same value — the full static story.
@@ -114,6 +115,7 @@ build_and_run resource-contract # quantity obligations + dead result-cell erasur
 build_and_run reactive-spreadsheet # live formula update + deliberately stale sample → ((22, 26), (22, 22))
 build_and_run reactive-recomputation # 100-line full-DAG measurement → ((7050, 401), (7450, 401))
 build_and_run reactive-observation-reuse # scoped freshness + retained stale-cache adverse route
+build_and_run first-class-multi-operation-cap # runtime custom-cap dispatch: plain + updating clauses
 
 # ── default output name: `bang build <file>` with no -o writes <stem>.wasm in CWD ──
 echo "── default output name (<stem>.wasm) ──"
@@ -168,8 +170,8 @@ fi
 echo "──────────────────────────────"
 echo "bang build: $pass passed, $fail failed"
 # The count varies by the --component branch (both branches emit exactly 2 checks), so the module
-# legs (8×2=16) + default-out (2) + component branch (2) = 20 is invariant across online/offline.
-want_total=20
+# legs (9×2=18) + default-out (2) + component branch (2) = 22 is invariant across online/offline.
+want_total=22
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks, only $got_total ran (script truncated?)"

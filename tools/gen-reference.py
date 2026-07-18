@@ -1065,9 +1065,12 @@ def render():
         "PAST a custom handler that is still installed — the two effect systems coexist) for worked,"
     )
     L.append(
-        "`check-examples`-gated single-op programs; `examples/stateful-quota/` demonstrates an"
+        "`check-examples`-gated programs; `examples/stateful-quota/` demonstrates an updating"
     )
-    L.append("updating clause across two calls.")
+    L.append(
+        "clause across two calls, and `examples/first-class-multi-operation-cap/` passes distinct"
+    )
+    L.append("plain and updating operations through one capability argument.")
     L.append("")
 
     L.append("## Effect channels")
@@ -2269,9 +2272,7 @@ def render():
     L.append(
         "fails LOUD with the tool's own stderr, never a silent or wrong artifact. A program the"
     )
-    L.append(
-        "GC fragment does not cover (a first-class-capability effect, or host-IO) refuses LOUDLY"
-    )
+    L.append("GC fragment does not cover (such as host-IO) refuses LOUDLY")
     L.append("at emit time (`EMIT-REFUSED`), exit 1.")
     L.append("")
     L.append(

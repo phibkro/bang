@@ -1,0 +1,21 @@
+-- A capability crosses a function boundary, then dispatches two distinct operations with distinct
+-- handler modes. `inspect` is plain; `advance` atomically updates the handler parameter.
+effect Register {
+  inspect : Int -> Int
+  advance : Int -> Int
+}
+
+let useRegister =
+  ( {fun register =>
+      let before = register.inspect(0) in
+      let advanced = register.advance(5) in
+      let after = register.inspect(0) in
+      before * 100 + advanced * 10 + after}
+    : Thunk (Cap Register -> Int ! {Register}) )
+in
+handle
+  (($useRegister) register)
+with (Register 2) as register {
+  inspect(ignored) => param,
+  update advance(next) => (next, next)
+}

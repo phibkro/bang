@@ -459,8 +459,9 @@ See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/` (now read
 carried param through `param` for real, issue #87), and
 `examples/handle-custom-abort-coexist/` (a `raise` inside a nested `handle` still aborts
 PAST a custom handler that is still installed — the two effect systems coexist) for worked,
-`check-examples`-gated single-op programs; `examples/stateful-quota/` demonstrates an
-updating clause across two calls.
+`check-examples`-gated programs; `examples/stateful-quota/` demonstrates an updating
+clause across two calls, and `examples/first-class-multi-operation-cap/` passes distinct
+plain and updating operations through one capability argument.
 
 ## Effect channels
 
@@ -1329,7 +1330,7 @@ This is the distribution story (`docs/notes/distribution-survey.md`): the compil
 module IS bang's static artifact — one file, zero runtime deps, runs on any WASI+GC
 engine. `bang build` needs `wasm-tools` on `PATH`; a missing tool or an invalid module
 fails LOUD with the tool's own stderr, never a silent or wrong artifact. A program the
-GC fragment does not cover (a first-class-capability effect, or host-IO) refuses LOUDLY
+GC fragment does not cover (such as host-IO) refuses LOUDLY
 at emit time (`EMIT-REFUSED`), exit 1.
 
 `--component` additionally wraps the module as a WASI **component** via `wasm-tools

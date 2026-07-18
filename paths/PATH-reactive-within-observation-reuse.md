@@ -88,6 +88,8 @@
   concrete build/Wasm 20/20.
 - Full convergence gate: `CHANGELOG_STABLE_REF=codex/reactive-recomputation-measurement just verify`
   passed.
+- Successor status: `PATH-wasm-first-class-multi-operation-caps` implements the exact runtime dispatch
+  and per-clause update metadata that the retained two-operation failure exposed.
 - Reopen / observe: general cache API only after typed keys/values and cache lifetime are designed;
   reopen the one-operation backend boundary at the next natural multi-operation capability consumer
 

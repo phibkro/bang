@@ -39,8 +39,8 @@ _Position: the evidence seam is repaired; organic outsider exposure remains the 
    next arc feed it? (If three ◊ in a row answer "the same outer loop", that's the escalation.)
 
 **2026-07-18 answer:** the weakest loop is still the organic-outside-user one, outside the desk. The
-operator explicitly deferred it and released the spreadsheet sequence; queryable formula facts and the
-observation-scoped reuse tracer improves the internal product/performance loop but is not evidence that
-the outside loop ran. Keep the prepared packet reachable and reopen it before ◊6/release or when an
+operator explicitly deferred it and released the spreadsheet sequence; the capability tracer that its
+natural interface exposed improves the internal product/backend-compatibility loop but is not evidence
+that the outside loop ran. Keep the prepared packet reachable and reopen it before ◊6/release or when an
 unfamiliar participant becomes available. Do not describe agentic inspection, query gates, or spreadsheet
 journey gates as organic validation.

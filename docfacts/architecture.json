@@ -5633,7 +5633,7 @@
       "directImports": [
         "Bang.Backend.AbstractMachine"
       ],
-      "loc": 1807,
+      "loc": 1831,
       "name": "Bang.Backend.WasmEmit",
       "path": "Bang/Backend/WasmEmit.lean",
       "publicSymbols": [
@@ -5747,241 +5747,247 @@
         },
         {
           "kind": "def",
-          "line": 688,
+          "line": 690,
           "name": "GCState.fresh",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 694,
+          "line": 696,
           "name": "GCState.freshTag",
           "visibilityBasis": "public-section"
         },
         {
+          "kind": "def",
+          "line": 702,
+          "name": "GCState.internOp",
+          "visibilityBasis": "public-section"
+        },
+        {
           "kind": "inductive",
-          "line": 706,
+          "line": 725,
           "name": "CapSlot",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 725,
+          "line": 745,
           "name": "seqBlock",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 731,
+          "line": 751,
           "name": "binopGCWat",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 737,
+          "line": 757,
           "name": "binopValHelper",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 744,
+          "line": 764,
           "name": "cmpGCWat",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 751,
+          "line": 771,
           "name": "cmpValCond",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 756,
+          "line": 776,
           "name": "unboxI",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 757,
+          "line": 777,
           "name": "boxI",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 763,
+          "line": 783,
           "name": "emitDivGCI",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 765,
+          "line": 785,
           "name": "lookupGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 772,
+          "line": 792,
           "name": "bigLimbs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 778,
+          "line": 798,
           "name": "fitsI64",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 784,
+          "line": 804,
           "name": "emitBigLit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 792,
+          "line": 812,
           "name": "boxInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 796,
+          "line": 816,
           "name": "tyEnv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 797,
+          "line": 817,
           "name": "tyVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 804,
+          "line": 824,
           "name": "usesBinderV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 810,
+          "line": 830,
           "name": "usesBinderC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 821,
+          "line": 841,
           "name": "usesBinderH",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 830,
+          "line": 850,
           "name": "emitValGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 864,
+          "line": 884,
           "name": "emitCloVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 891,
+          "line": 911,
           "name": "emitCompGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1216,
+          "line": 1233,
           "name": "emitClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1236,
+          "line": 1257,
           "name": "emitLetGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1254,
+          "line": 1275,
           "name": "callClosGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1261,
+          "line": 1282,
           "name": "gcTypes",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1304,
+          "line": 1329,
           "name": "gcHelpers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1385,
+          "line": 1409,
           "name": "bignumHelpers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1554,
+          "line": 1578,
           "name": "gcPreamble",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1559,
+          "line": 1583,
           "name": "renderImports",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1568,
+          "line": 1592,
           "name": "renderFns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1739,
+          "line": 1763,
           "name": "renderPreamble",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1743,
+          "line": 1767,
           "name": "declLocalsFromTys",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1747,
+          "line": 1771,
           "name": "renderFn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1751,
+          "line": 1775,
           "name": "elemDeclare",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1758,
+          "line": 1782,
           "name": "tagDecls",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1764,
+          "line": 1788,
           "name": "emitModuleGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1788,
+          "line": 1812,
           "name": "emitModuleGCPrint",
           "visibilityBasis": "public-section"
         }
@@ -12659,7 +12665,7 @@
       "name": "Apex"
     },
     {
-      "loc": 18005,
+      "loc": 18029,
       "moduleCount": 6,
       "name": "Backend"
     },

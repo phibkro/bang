@@ -28,9 +28,8 @@ fixture uses `0` as a miss sentinel, cache operations are not included in the fo
 and there is only one cached declaration. General keys, value types, eviction, cross-observation
 retention, invalidation, concurrency, and cost-based policy remain outside this tracer.
 
-A natural two-operation `lookup`/`store` version passed the source, environment, and compiled evaluators
-but trapped in concrete Wasm. The backend currently carries one runtime clause and one update flag for a
-first-class custom capability; its deliberate multi-operation guard traps rather than guessing a clause.
-Supporting multiple operations needs runtime operation identity plus per-clause update metadata, so that
-backend representation change is recorded as a separate successor instead of being hidden in this
-surface-semantics increment.
+The first natural two-operation `lookup`/`store` version passed the source, environment, and compiled
+evaluators but trapped in concrete Wasm. That failure became the separate
+`first-class-multi-operation-cap` successor: runtime clause records now carry exact operation identity
+and per-clause update metadata. Keeping the discovery separate from this surface-semantics increment
+preserves both the historical falsifier and the backend fix's own actor journey.

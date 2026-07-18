@@ -28,6 +28,8 @@ trap 'rm -rf "$outdir"' EXIT
 #               exe (no import resolution). They EMIT + run == bang run via `bang emit` (module-
 #               resolving); gated by emit-rung5-print-diff.sh's MODULE_CORPUS=( json calc ) (calc
 #               11021193, json 163). NOT an emitter wall — a harness-scope split (#133 C3).
+#   reactive-* / resource-contract / policy/pledged: newer multi-file examples have the same
+#               single-file-harness boundary and are covered by the module-aware `bang build` battery.
 #   hostio-echo : FRONTEND host-IO perform not lowered here (ADR-0104 boundary) — a real refusal.
 #   sched-*                : `drive`'s NINE-argument curried `let rec` (5 curried Step/Int params
 #                           plus round+acc) leaves a type variable unresolved for ADR-0103's
@@ -36,9 +38,10 @@ trap 'rm -rf "$outdir"' EXIT
 #                           unrelated polymorphic-use shapes, not a Sched-specific gap). Named here,
 #                           not investigated further — a compiler-side fix is out of this lane's
 #                           write scope (docs/notes/sched-library-demo.md §"the emission attempt").
-# NOTE (#133 C0): stage-swap (a capability threaded as a first-class arg) NO LONGER refuses — it emits
-# and runs 30005 == bang run (single-op first-class dispatch on the runtime $txbox cap, #134-stamped).
-# Removed from this list; it now gates like any other program.
+# NOTE (#133 C0 + multi-op successor): first-class custom capabilities NO LONGER refuse — stage-swap
+# runs 30005 and first-class-multi-operation-cap runs 255 through exact runtime clause records. Both
+# remain #134-stamped for liveness. Multi-file stage-swap is named below only because this harness does
+# not resolve imports; the module-aware build battery executes it.
 declare -A KNOWN_REFUSALS=(
   [calc]="frontend: unbound variable Ast"
   [codec-contract]="single-file harness: module/use resolution belongs to emit-rung5-print-diff"
@@ -46,6 +49,10 @@ declare -A KNOWN_REFUSALS=(
   [hostio-echo]="frontend: host-IO perform not lowered here"
   [pledged-plugin]="single-file harness: imported handler realization belongs to emit-rung5-print-diff"
   [policy-host-allowlist]="single-file harness: imported effect belongs to emit-rung5-print-diff"
+  [reactive-observation-reuse]="single-file harness: imported generated workload belongs to module-aware bang build"
+  [reactive-recomputation]="single-file harness: imported workload belongs to module-aware bang build"
+  [reactive-spreadsheet]="single-file harness: imported formulas belong to module-aware bang build"
+  [resource-contract]="single-file harness: imported handler realization belongs to module-aware bang build"
   [sched-roundrobin]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
   [sched-swap-dfs]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
   [sched-seeded-lcg]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
