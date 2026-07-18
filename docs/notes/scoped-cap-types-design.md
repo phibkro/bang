@@ -19,6 +19,14 @@ shown / suggests / can't-verify. Web/paper citations are in §8; `refs.bib` alre
 capability-safety papers (`boruch-gruszecki-22-scoped-capabilities`, `brachthauser-oopsla20/22`,
 `boruch-gruszecki-oopsla25-capless-reach-capabilities`, `tang-popl26-rows-capabilities-modal-effects`).
 
+**2026-07-18 research update.** System Capybara confirms the full post-v1 widening and makes its axes
+more precise: capture roots track reachability, access modes distinguish read/write/consume,
+existentials express freshness, alias roots are killed on consumption, and relational modalities retain
+separation through currying. This does not displace the zero-corpus-regression second-class v1.5 step;
+it supplies the endpoint when an allocator, mutable actor transfer, or parallel mutable-resource API
+actually needs ownership. Review and critique:
+`papers://xu-arxiv26-system-capybara/bang-lang/2026-07-18` (bibliography: `references/refs.bib`).
+
 ---
 
 ## 0 · The one-paragraph thesis

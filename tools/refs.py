@@ -28,12 +28,15 @@ Facet schema (a bib `keywords = {...}` field, space/comma-separated `facet:value
 Auto-derived (NEVER in keywords): hop (papers/<hop>/), ondisk (file exists),
   sha256 (computed), venue/year (from the entry type/fields).
 """
+
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+
+from genblock import splice as _splice  # the shared GEN-block primitive (#113)
 
 ROOT = os.path.abspath(os.environ.get("REFS_ROOT", "."))
 BIB = os.path.join(ROOT, "references/refs.bib")
@@ -48,10 +51,13 @@ GEN_END = "<!-- END GENERATED refs-index -->"
 # A `-- shape: <stem>` token is paper-like (validate it) iff it carries a venue tag
 # or a multi-hyphen author-venue shape; bare words (`shape: scratch/…`, `shape: the`)
 # are not paper citations and are skipped.
-VENUE_RE = re.compile(r"(popl|icfp|oopsla|pldi|esop|fscd|lics|jfp|haskell|mfps|csl|toplas|ppopp|concur|itp|cade)\d{2}")
+VENUE_RE = re.compile(
+    r"(popl|icfp|oopsla|pldi|esop|fscd|lics|jfp|haskell|mfps|csl|toplas|ppopp|concur|itp|cade)\d{2}"
+)
 
 
 # ── bibtex parse (brace-balanced, stdlib only) ──────────────────────────────
+
 
 def parse_bib(text):
     """Yield entry dicts: {key, type, fields:{lower→raw}, keywords:[facet:value]}."""
@@ -67,7 +73,6 @@ def parse_bib(text):
             continue
         etype, key = m.group(1).lower(), m.group(2)
         # find the brace-balanced body
-        body_start = at + m.end() - 1  # points at the comma; scan from the '{'
         depth, j = 0, at + len(f"@{m.group(1)}")
         while j < n and text[j] != "{":
             j += 1
@@ -81,12 +86,18 @@ def parse_bib(text):
                 if depth == 0:
                     break
             j += 1
-        body = text[start + 1:j]
+        body = text[start + 1 : j]
         fields = parse_fields(body)
         kw = fields.get("keywords", "")
         facets = re.split(r"[,\s]+", kw.strip()) if kw.strip() else []
-        entries.append({"key": key, "type": etype, "fields": fields,
-                        "keywords": [f for f in facets if ":" in f]})
+        entries.append(
+            {
+                "key": key,
+                "type": etype,
+                "fields": fields,
+                "keywords": [f for f in facets if ":" in f],
+            }
+        )
         i = j + 1
     return entries
 
@@ -95,7 +106,7 @@ def parse_fields(body):
     """field = {value} | field = "value" | field = bareword, brace-balanced."""
     fields, i, n = {}, 0, len(body)
     # drop the leading `key,` already consumed by caller; body begins after first comma
-    body = body[body.find(",") + 1:] if "," in body else body
+    body = body[body.find(",") + 1 :] if "," in body else body
     i, n = 0, len(body)
     while i < n:
         m = re.match(r"\s*(\w+)\s*=\s*", body[i:])
@@ -115,11 +126,11 @@ def parse_fields(body):
                     if depth == 0:
                         break
                 j += 1
-            val = body[i + 1:j]
+            val = body[i + 1 : j]
             i = j + 1
         elif body[i] == '"':
             j = body.find('"', i + 1)
-            val = body[i + 1:j]
+            val = body[i + 1 : j]
             i = j + 1
         else:
             j = i
@@ -135,6 +146,7 @@ def parse_fields(body):
 
 
 # ── filesystem facts ────────────────────────────────────────────────────────
+
 
 def pdf_map():
     """stem → relative path for every PDF under papers/."""
@@ -177,19 +189,28 @@ def build_index():
             "year": e["fields"].get("year", ""),
             "doi": e["fields"].get("doi", ""),
             "eprint": e["fields"].get("eprint", ""),
-            "topics": [f.split(":", 1)[1] for f in e["keywords"] if f.startswith("topic:")],
-            "grounds": [f.split(":", 1)[1] for f in e["keywords"] if f.startswith("grounds:")],
-            "role": next((f.split(":", 1)[1] for f in e["keywords"] if f.startswith("role:")), ""),
+            "topics": [
+                f.split(":", 1)[1] for f in e["keywords"] if f.startswith("topic:")
+            ],
+            "grounds": [
+                f.split(":", 1)[1] for f in e["keywords"] if f.startswith("grounds:")
+            ],
+            "role": next(
+                (f.split(":", 1)[1] for f in e["keywords"] if f.startswith("role:")), ""
+            ),
             "ondisk": path is not None,
             "hop": hop_of(path) if path else None,
             "path": path,
             "sha256_pinned": e["fields"].get("sha256", ""),
         }
+        if e["fields"].get("review"):
+            rec["review"] = e["fields"]["review"]
         index.append(rec)
     return entries, index
 
 
 # ── subcommands ─────────────────────────────────────────────────────────────
+
 
 def render(index):
     """Pure: (index) → (index.json text, README summary block). Shared by build + check
@@ -198,10 +219,16 @@ def render(index):
     json_text = json.dumps(index, indent=2, ensure_ascii=False) + "\n"
 
     def fmt(counter):
-        return ", ".join(f"{k} ({n})" for k, n in sorted(counter.items(), key=lambda x: -x[1])) or "—"
+        return (
+            ", ".join(
+                f"{k} ({n})" for k, n in sorted(counter.items(), key=lambda x: -x[1])
+            )
+            or "—"
+        )
 
     on = sum(1 for r in index if r["ondisk"])
     tagged = sum(1 for r in index if r["topics"] or r["grounds"])
+    reviewed = sum(1 for r in index if r.get("review"))
     topics, roles, hops = {}, {}, {}
     for r in index:
         for t in r["topics"]:
@@ -212,20 +239,22 @@ def render(index):
             hops[r["hop"]] = hops.get(r["hop"], 0) + 1
     # COMPACT SUMMARY only — the full records live in index.json + `just refs <q>`;
     # dumping 72 rows here would re-bloat the prose the whole design exists to avoid.
-    block = "\n".join([
-        GEN_BEGIN,
-        f"_Generated by `tools/refs.py build`. **{len(index)}** entries · **{on}** on-disk · "
-        f"**{tagged}** facet-tagged. Full records: `references/index.json`. Query: `just refs <term>`._",
-        "",
-        f"- **topics:** {fmt(topics)}",
-        f"- **roles:** {fmt(roles)}",
-        f"- **on-disk by hop:** {fmt(hops)}",
-        GEN_END,
-    ])
+    block = "\n".join(
+        [
+            GEN_BEGIN,
+            f"_Generated by `tools/refs.py build`. **{len(index)}** entries · **{on}** on-disk · "
+            f"**{tagged}** facet-tagged · **{reviewed}** review-linked. Full records: "
+            f"`references/index.json`. Query: `just refs <term>`._",
+            "",
+            f"- **topics:** {fmt(topics)}",
+            f"- **roles:** {fmt(roles)}",
+            f"- **on-disk by hop:** {fmt(hops)}",
+            GEN_END,
+        ]
+    )
     return json_text, block
 
 
-from genblock import splice as _splice  # the shared GEN-block primitive (#113)
 def splice_block(md, block):
     return _splice(md, GEN_BEGIN, GEN_END, block)
 
@@ -245,8 +274,10 @@ def cmd_build():
         note = "no README"
     on = sum(1 for r in index if r["ondisk"])
     tagged = sum(1 for r in index if r["topics"] or r["grounds"])
-    print(f"built index.json: {len(index)} entries, {on} on-disk, {tagged} tagged "
-          f"({len(index) - tagged} untagged). {note}.")
+    print(
+        f"built index.json: {len(index)} entries, {on} on-disk, {tagged} tagged "
+        f"({len(index) - tagged} untagged). {note}."
+    )
     return 0
 
 
@@ -264,7 +295,11 @@ def cmd_check():
             hard.append(f"orphan PDF (no bib key): {path}")
 
     # 2. grounds:ADR-NNNN names a real ADR
-    adrs = {f[:4] for f in os.listdir(DECISIONS) if re.match(r"\d{4}-", f)} if os.path.isdir(DECISIONS) else set()
+    adrs = (
+        {f[:4] for f in os.listdir(DECISIONS) if re.match(r"\d{4}-", f)}
+        if os.path.isdir(DECISIONS)
+        else set()
+    )
     for r in index:
         for g in r["grounds"]:
             m = re.match(r"ADR-(\d{4})$", g)
@@ -279,14 +314,25 @@ def cmd_check():
             elif sha256(r["path"]) != r["sha256_pinned"]:
                 hard.append(f"{r['key']}: sha256 MISMATCH (file != pinned)")
 
+    # 3b. review pointers are stable logical joins into the separate papers project.
+    for r in index:
+        if r.get("review") and not r["review"].startswith(f"papers://{r['key']}/"):
+            hard.append(f"{r['key']}: review must start papers://{r['key']}/")
+
     # 4. every Lean `-- shape: <stem>` paper-cite resolves to a key (prefix match)
-    lean = subprocess.run(["git", "ls-files", "*.lean"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+    lean = subprocess.run(
+        ["git", "ls-files", "*.lean"], cwd=ROOT, capture_output=True, text=True
+    ).stdout.split()
     cite_re = re.compile(r"shape:\s*([a-z][a-z0-9./-]+)")
     for f in lean:
         for ln, line in enumerate(open(os.path.join(ROOT, f), errors="replace"), 1):
             for m in cite_re.finditer(line):
                 stem = m.group(1).rstrip(".")
-                if stem.startswith("scratch") or "/" in stem or not VENUE_RE.search(stem):
+                if (
+                    stem.startswith("scratch")
+                    or "/" in stem
+                    or not VENUE_RE.search(stem)
+                ):
                     continue  # non-paper shape (scratch file, prose, module)
                 if not any(k.startswith(stem) for k in by_key):
                     hard.append(f"{f}:{ln}: `shape: {stem}` resolves to no bib key")
@@ -299,7 +345,9 @@ def cmd_check():
     if os.path.exists(README):
         md = open(README, encoding="utf-8").read()
         if GEN_BEGIN in md and splice_block(md, block) != md:
-            hard.append("references/README.md generated block is stale — run `just refs-index`")
+            hard.append(
+                "references/README.md generated block is stale — run `just refs-index`"
+            )
 
     # 6. soft: entries with no facet tags (incremental — warn, don't fail)
     for r in index:
@@ -312,8 +360,10 @@ def cmd_check():
     if soft:
         print(f"  ({len(soft)} untagged — incremental, not a failure)")
     if not hard:
-        print(f"PASS: {len(index)} entries; {len(pdfs)} PDFs all keyed; "
-              f"ADR/sha256/Lean-cite references all resolve.")
+        print(
+            f"PASS: {len(index)} entries; {len(pdfs)} PDFs all keyed; "
+            f"ADR/sha256/Lean-cite references all resolve."
+        )
         return 0
     for h in hard:
         print(f"FAIL  {h}")
@@ -324,22 +374,40 @@ def cmd_check():
 def cmd_query(q):
     _, index = build_index()
     ql = q.lower()
-    hits = [r for r in index if ql in r["key"].lower() or ql in r["title"].lower()
-            or any(ql in t for t in r["topics"]) or any(ql in g.lower() for g in r["grounds"])]
+    hits = [
+        r
+        for r in index
+        if ql in r["key"].lower()
+        or ql in r["title"].lower()
+        or any(ql in t for t in r["topics"])
+        or any(ql in g.lower() for g in r["grounds"])
+    ]
     if not hits:
         print(f"no refs match '{q}'")
         return 0
     for r in sorted(hits, key=lambda r: (r["hop"] or "~", r["key"])):
         loc = r["path"] or "(bib-only)"
         facets = " ".join(r["topics"] + r["grounds"])
-        print(f"{r['key']}\n    {r['title']}\n    {loc}  [{facets}]")
+        review = f"  review={r['review']}" if r.get("review") else ""
+        print(f"{r['key']}\n    {r['title']}\n    {loc}  [{facets}]{review}")
     print(f"\n{len(hits)} match(es).")
     return 0
 
 
 def main():
-    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
-    except Exception: pass
+    try:
+        __import__("subprocess").run(
+            [
+                "bash",
+                __import__("os").path.join(
+                    __import__("os").path.dirname(__file__), "tool-log.sh"
+                ),
+                __import__("os").path.basename(__file__),
+            ],
+            check=False,
+        )  # tool-log (plan 012)
+    except Exception:
+        pass
     args = sys.argv[1:]
     if not args or args[0] == "build":
         return cmd_build()

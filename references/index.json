@@ -1776,6 +1776,26 @@
     "sha256_pinned": ""
   },
   {
+    "key": "slattery-sterling-arxiv26-bidirectional-elaborators",
+    "title": "Bidirectional Elaborators à la Carte",
+    "year": "2026",
+    "doi": "",
+    "eprint": "2607.09564",
+    "topics": [
+      "surface-syntax",
+      "verified-typechecker"
+    ],
+    "grounds": [
+      "ADR-0075"
+    ],
+    "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": "",
+    "review": "papers://slattery-sterling-arxiv26-bidirectional-elaborators/bang-lang/2026-07-18"
+  },
+  {
     "key": "sozeau-popl20-metacoq",
     "title": "Coq Coq Correct! Verification of Type Checking and Erasure for Coq, in Coq",
     "year": "2020",
@@ -2005,5 +2025,27 @@
     "hop": null,
     "path": null,
     "sha256_pinned": ""
+  },
+  {
+    "key": "xu-arxiv26-system-capybara",
+    "title": "System Capybara: Tracking Capabilities for Separation and Freshness",
+    "year": "2026",
+    "doi": "",
+    "eprint": "2607.09383",
+    "topics": [
+      "capability-safety",
+      "memory",
+      "verified-semantics"
+    ],
+    "grounds": [
+      "ADR-0063",
+      "ADR-0116"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": "",
+    "review": "papers://xu-arxiv26-system-capybara/bang-lang/2026-07-18"
   }
 ]

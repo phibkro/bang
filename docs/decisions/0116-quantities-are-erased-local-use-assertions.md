@@ -72,6 +72,14 @@ directly to binders and arrows; this syntax remains useful as a local assertion 
 - **Use the answer-type capability-occurrence check** — rejected because the escaped-thunk witness
   already refuted that enforcement mechanism; lifetime/capture is a separate axis.
 
+## Research boundary
+
+System Capybara sharpens why this construct remains a local quantity assertion: one syntactic use does
+not kill aliases, establish a fresh footprint, or distinguish read/write/consume authority. Those are a
+separate capture-and-ownership axis (review:
+`papers://xu-arxiv26-system-capybara/bang-lang/2026-07-18`; bibliography: `references/refs.bib`). Do not
+widen `[1]` into an ownership claim.
+
 ## Revisit if
 
 Two consumers require quantity-polymorphic functions or exported resource contracts in signatures.

@@ -76,3 +76,7 @@ it DOESN'T (for bites 0-4), and so the type-establishment discipline is decidabl
 - Bite 5 (dependent) is reached → the type-level-computation / spine question.
 - A concrete need forces first-class polymorphic VALUES at runtime (would pressure the elaborate-away
   choice — but even then, defunctionalization keeps the kernel mono).
+- Implicit arguments, interactive metavariables, or a reproduced inference-order defect require genuine
+  suspension → prototype Slattery–Sterling's support-carrying elaboration-script model (review:
+  `papers://slattery-sterling-arxiv26-bidirectional-elaborators/bang-lang/2026-07-18`; bibliography:
+  `references/refs.bib`); do not infer that machinery from ordinary HM holes alone.
