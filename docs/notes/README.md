@@ -6,13 +6,12 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (75)
+## active (73)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
 - [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) — Open questions — the design-question ledger
 - [`actor-sendable-design.md`](actor-sendable-design.md) — Actor-send (`!`) sendable fragment — design (G7, POST-V1)
-- [`calcjson-compiled-diagnosis.md`](calcjson-compiled-diagnosis.md) — calc / json on the compiled + emitted paths — diagnosis
 - [`calculated-typer-survey.md`](calculated-typer-survey.md) — Calculated type CHECKING — design inputs for a future ADR
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`cap-gc-rep-design.md`](cap-gc-rep-design.md) — First-class-capability GC rep — design (#133)
@@ -69,7 +68,6 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`stage5-lr-design.md`](stage5-lr-design.md) — Stage-5 LR design map — the user-effect binary LR (#44 Stage 5)
 - [`stage6-soundness-design.md`](stage6-soundness-design.md) — Stage 6 (soundness composition) — design map
 - [`stage7-elab-probe.md`](stage7-elab-probe.md) — Stage-7 `handle … with` elaboration mechanics probe (#21 s7probe)
-- [`stateful-handler-policy-probe.md`](stateful-handler-policy-probe.md) — Stateful handler policy probe — quotas expose the read-only parameter boundary
 - [`stdlib-map.md`](stdlib-map.md) — Standard-library map — the third stratum
 - [`stdlib-prelude-survey.md`](stdlib-prelude-survey.md) — Prelude / standard-library survey — the common core
 - [`stranger-test-1.md`](stranger-test-1.md) — Stranger test — round 1 (2026-07-09)
@@ -103,10 +101,12 @@ _Spike / experiment / pivot record — input to a specific ADR; preserved, not c
 - [`scoped-capabilities-for-vcapfree-drop.md`](scoped-capabilities-for-vcapfree-drop.md) — Scoped capabilities — the #18 (drop-VcapFree) design record
 - [`typed-static-pivot-scope.md`](typed-static-pivot-scope.md) — Scoping the typed + static-dispatch pivot
 
-## historical (3)
+## historical (5)
 
 _Pre-pivot narrative, honestly labelled; kept for the story, superseded by present docs._
 
+- [`calcjson-compiled-diagnosis.md`](calcjson-compiled-diagnosis.md) — calc / json on the compiled + emitted paths — diagnosis
 - [`d5-param-handlers-design.md`](d5-param-handlers-design.md) — D5 — parameterised handlers (handler memory): design probe with HOLD (#44 rung-2 face)
 - [`k2-calculation-playbook.md`](k2-calculation-playbook.md) — K2 calculation — proof playbook
 - [`k3-historical-status.md`](k3-historical-status.md) — K3 historical status (pre-ADR-0016 narrative)
+- [`stateful-handler-policy-probe.md`](stateful-handler-policy-probe.md) — Stateful handler policy probe — quotas expose the read-only parameter boundary

@@ -1,6 +1,12 @@
-<!-- note-status: active -->
-<!-- describes: examples/calc examples/json Bang/Backend/WasmEmit.lean @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
+<!-- note-status: historical -->
+<!-- describes: none -->
 # calc / json on the compiled + emitted paths — diagnosis
+
+> **Outcome (2026-07-18):** this diagnosis is superseded implementation history. Both `calc` and
+> `json` now pass the module-aware `bang emit` → wasmtime differential in
+> `tools/emit-rung5-print-diff.sh` (`11021193` and `163` respectively). The measurements below are
+> retained to show how the former walls were separated and retired; they do not describe the
+> current emitter surface.
 
 > **DIAGNOSIS probe** (deliverable = root causes + fix plan; no code fixes this lane).
 > Measured on a clean clone of `main @ ccec47e9`, 2026-07-11T19:57Z, `nix develop`,

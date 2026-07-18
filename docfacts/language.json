@@ -138,7 +138,7 @@
           "test"
         ],
         "principalFlags": [],
-        "synopsis": "bang test [<file.bang>]            discover + sample-check every trait law (issue #60);"
+        "synopsis": "bang test [<file.bang>]            discover + sample-check every contract law (issue #60);"
       },
       {
         "parserOptionFamilies": [],
@@ -191,7 +191,7 @@
           "laws"
         ],
         "principalFlags": [],
-        "synopsis": "bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)"
+        "synopsis": "bang query laws [<file.bang>]           every trait×impl and effect×handler law instance"
       },
       {
         "parserOptionFamilies": [],
@@ -762,6 +762,7 @@
       "law",
       "data",
       "effect",
+      "pledge",
       "import",
       "use",
       "pub",
@@ -1046,6 +1047,11 @@
         "form": "(e : T)",
         "name": "annotS",
         "notes": "type ascription (ADR-0066 ②); erased at lowering"
+      },
+      {
+        "form": "pledge {E₁, …} in e",
+        "name": "pledgeS",
+        "notes": "checked row upper bound; erased at lowering"
       },
       {
         "form": "()",

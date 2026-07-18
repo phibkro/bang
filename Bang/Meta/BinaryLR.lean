@@ -620,7 +620,7 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
             cases hf : cl.find? (fun clause => clause.1.op == op) with
             | none => simp only [hf, reduceCtorEq] at hd₁
             | some clause =>
-                simp only [hf]
+                simp only
                 by_cases hupdate : clause.1.updates = true
                 · rw [if_pos hupdate]
                   split <;> exact ⟨_, rfl⟩
@@ -637,7 +637,7 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
             cases hf : cl.find? (fun clause => clause.1.op == op) with
             | none => simp only [hf, reduceCtorEq] at hd₂
             | some clause =>
-                simp only [hf]
+                simp only
                 by_cases hupdate : clause.1.updates = true
                 · rw [if_pos hupdate]
                   split <;> exact ⟨_, rfl⟩
@@ -1473,7 +1473,7 @@ theorem krelS_custom_reinstall {q : Mult} {A P : VTy Eff Mult} {D : CTy Eff Mult
         hclauseUpdate m' op clause w₁ w₂ p₁ p₂ hf hcw₁ hcw₂ hcp₁ hcp₂
           (VrelK_mono (le_of_lt hm') hpv) hupdate hVrel
       obtain ⟨qᵣ, rfl⟩ := hCᵢ Aᵣ (by rw [Handler.label]; exact hRes)
-      simp only [Handler.label, dispatchOn, hf, hupdate, if_true] at hd₁ hd₂
+      simp only [dispatchOn, hf, hupdate, if_true] at hd₁ hd₂
       rw [hr₁] at hd₁; rw [hr₂] at hd₂
       simp only [Option.some.injEq] at hd₁ hd₂
       obtain rfl := hd₁.symm
@@ -1491,7 +1491,7 @@ theorem krelS_custom_reinstall {q : Mult} {A P : VTy Eff Mult} {D : CTy Eff Mult
         hclause m' op clause w₁ w₂ p₁ p₂ hf hcw₁ hcw₂ hcp₁ hcp₂
           (VrelK_mono (le_of_lt hm') hpv) hplain hVrel
       obtain ⟨qᵣ, rfl⟩ := hCᵢ Aᵣ (by rw [Handler.label]; exact hRes)
-      simp only [Handler.label, dispatchOn, hf, hplain, Bool.false_eq_true, if_false] at hd₁ hd₂
+      simp only [dispatchOn, hf, hplain, Bool.false_eq_true, if_false] at hd₁ hd₂
       rw [hr₁] at hd₁; rw [hr₂] at hd₂
       obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm

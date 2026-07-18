@@ -817,11 +817,11 @@ theorem CStore.put_get?_eq_none : ∀ (κ : CStore) {n m : Nat} {next : Val},
       · simp only [if_pos hn]
         by_cases hm : n0 = m
         · simp [CStore.get?, List.find?, hm]
-        · simp only [CStore.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]
+        · simp only [CStore.get?, List.find?, hm, decide_false]
       · simp only [if_neg hn]
         by_cases hm : n0 = m
         · simp [CStore.get?, List.find?, hm]
-        · simp only [CStore.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]; exact ih
+        · simp only [CStore.get?, List.find?, hm, decide_false]; exact ih
 
 -- push `= none`: `m ≠ g` AND missed before.
 private theorem sstore_push_eq_none {σ : SStore} {g m : Nat} {v : Val}
@@ -1002,7 +1002,7 @@ def updateCustoms : HStack → CStore → HStack
   | [],       _ => []
   | fr :: hs, κ =>
       match fr.handler with
-      | .custom ℓ0 _ cls0 =>
+      | .custom ℓ0 _ _ =>
           match κ with
           | (_, (p, cls)) :: κ' => { fr with handler := .custom ℓ0 p cls } :: updateCustoms hs κ'
           | []                  => fr :: updateCustoms hs []     -- κ exhausted (unreachable under CCorr)
@@ -1855,7 +1855,7 @@ theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
         by_cases hid : fr.id = n
         · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
           obtain ⟨rfl, rfl⟩ := hc
-          simp only [customUpdate, hh, hid, ↓reduceIte, hcl, hupd, Bool.false_eq_true, if_false]
+          simp only [customUpdate, hh, hid, ↓reduceIte, hcl, hupd, Bool.false_eq_true]
         · simp only [hsCustom, hh, if_neg hid] at hc
           simp only [customUpdate, hh, if_neg hid, ih hc hcl hupd, Option.map_some]
     | state ℓ0 s =>
@@ -1890,7 +1890,7 @@ theorem customUpdate_service_updating {n : Nat} {op : Bang.OpId} {v p resume nex
             obtain ⟨rfl, rfl⟩ := hc
             let fr' : HFrame := { fr with handler := .custom ℓ0 next cls0 }
             refine ⟨fr' :: hs, ?_, ?_, ?_, ?_, ?_⟩
-            · simp only [customUpdate, hh, hid, ↓reduceIte, hcl, hupd, if_true, hbody,
+            · simp only [customUpdate, hh, hid, ↓reduceIte, hcl, hupd, hbody,
                 Handler.label, fr']
             · simp only [hsStates, hh, fr']
             · simp only [hsTxns, hh, fr']
@@ -4065,7 +4065,7 @@ theorem customCtxPut_split {K Kᵢ Kₒ : Bang.EvalCtx} {n : Nat} {ℓ : Bang.Ef
       | handleF m h =>
           simp only [Bang.splitAtId] at hsp
           by_cases hmn : m = n
-          · subst m; simp only [if_pos rfl, Option.some.injEq, Prod.mk.injEq] at hsp
+          · subst m; simp only at hsp
             obtain ⟨rfl, rfl, rfl⟩ := hsp; simp [customCtxPut]
           · rw [if_neg hmn] at hsp
             cases htail : Bang.splitAtId K n with

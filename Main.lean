@@ -1022,9 +1022,11 @@ def expectedHostSignature : KnownHostEffect → List (String × String)
                   ("exists", "Str -> Int")]
 
 def validateHostServiceDeclarations (prog : Prog) (trustedNames : List String) : Except String Unit := do
-  for (name, kind) in trustedNames.zip [.console, .clock, .fs] do
+  let hostKinds : List KnownHostEffect :=
+    [.console, .clock, .fs]
+  for (name, kind) in trustedNames.zip hostKinds do
     let declMatches := prog.decls.filterMap (fun
-      | .effectD declName ops => if declName == name then some ops else none
+      | .effectD declName ops _ => if declName == name then some ops else none
       | _ => none)
     match declMatches with
     | [ops] =>

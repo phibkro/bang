@@ -35,6 +35,7 @@ nothing here can drift from what the language actually does.
 | `a + b` | (arithmetic + - * /, comparison < ==) |
 | `if c then t else e` | (sugar over case on Bool = 1+1) |
 | `(e : T)` | type ascription (ADR-0066 ②); erased at lowering |
+| `pledge {E₁, …} in e` | checked row upper bound; erased at lowering |
 | `()` | the unit value literal |
 | `μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)` |  |
 | `μ elim` | (INTERNAL: emitted by named-match elaboration) |
@@ -1320,13 +1321,13 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 | `bang build` | `-o`, `--component`, `--adapter` | `bang build <file.bang> [-o out.wasm]  emit → `wasm-tools parse`/`validate` → a runnable Wasm` |
 | `bang explain` | — | `bang explain <CODE>                print the teaching entry for a stable diagnostic code` |
 | `bang new` | `--module` | `bang new <NAME> [--module]         scaffold examples/<NAME>/ — a runnable starter main.bang, a` |
-| `bang test` | — | `bang test [<file.bang>]            discover + sample-check every trait law (issue #60);` |
+| `bang test` | — | `bang test [<file.bang>]            discover + sample-check every contract law (issue #60);` |
 | `bang query` | — | `bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);` |
 | `bang query dump` | — | `bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/` |
 | `bang query symbols` | — | `bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row` |
 | `bang query type` | — | `bang query type <file.bang> <name>      the checked type ! row of one top-level binding` |
 | `bang query effects` | — | `bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding` |
-| `bang query laws` | — | `bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)` |
+| `bang query laws` | — | `bang query laws [<file.bang>]           every trait×impl and effect×handler law instance` |
 | `bang query def` | — | `bang query def <name> <file.bang>       the decl that defines <name>` |
 | `bang query refs` | — | `bang query refs <name> <file.bang>      every decl whose body mentions <name>` |
 | `bang query hover` | — | `bang query hover [<file.bang>] <line> <col>` |

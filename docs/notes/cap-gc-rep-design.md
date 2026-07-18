@@ -1,6 +1,11 @@
 <!-- note-status: active -->
-<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-escape-diff.sh @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
+<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-escape-diff.sh @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
 # First-class-capability GC rep — design (#133)
+
+> **Re-audit (2026-07-18, `569cca42`):** the current escape differential is hard-green: all four
+> raw/surface witnesses fail loud in wasmtime with rc 134, with no known-red exceptions. The effects
+> corpus also remains green at 46 emitted whole programs (23 effectful), and the module-aware
+> readback corpus is green at 23. Older counts below are retained as dated implementation snapshots.
 
 > **Design-probe deliverable, no emitter change lands here** (probe phase = docs/notes + scratch
 > only; implementation only after the operator's ack). Measured on a clean clone of `main @

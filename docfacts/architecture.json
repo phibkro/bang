@@ -1627,6 +1627,66 @@
       "status": "Accepted",
       "summary": "Route B preserves an explicit boundary between the project-defined Wasm-oriented abstract machine proved by `compile_forward_sim` and the separately implemented concrete WasmGC/WAT emitter. The product target remains Wasm 3.0, while emitted modules earn differential evidence from real-engine execution rather than inheriting the abstract model's theorem evidence.",
       "title": "Preserve the Wasm proof-model to concrete-emitter boundary"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0111",
+      "lifecycle": [],
+      "path": "docs/decisions/0111-effect-contracts-static-handler-realizations.md",
+      "relationships": {
+        "dependsOn": "[0040](0040-laws-as-algebraic-interfaces-proof-first.md) (law-bearing interfaces and the proof→test ladder), [0085](0085-general-handler-coexist-one-shot-v1.md) (the existing `Handler.custom` runtime meaning), [0095](0095-stage7-handler-surface.md) (inline custom-handler syntax and one-shot clause convention), [0106](0106-trait-op-name-call-dispatch.md) (the current trait realization/law runner machinery this decision generalizes rather than duplicates)"
+      },
+      "status": "Accepted",
+      "summary": "Effects may carry laws and named handlers may declare reusable realizations of an effect. A named installation is selected statically and elaborates to the existing custom-handler form; `bang test` and `bang query laws` reuse the trait-law machinery over effect × handler pairs. No kernel constructor, dynamic handler value, or trait/effect syntax merger is introduced.",
+      "title": "effect contracts with statically selected named handler realizations"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0112",
+      "lifecycle": [],
+      "path": "docs/decisions/0112-row-attenuation-as-erased-pledge.md",
+      "relationships": {
+        "dependsOn": "[0001](0001-effect-rows-as-finset-semilattice.md) (row order), [0026](0026-correctness-ladder-and-checker-boundary.md) (tested-superset boundary), [0066](0066-surface-type-system.md) (checked ascriptions), [0107](0107-effect-row-subeffecting-at-reuse-sites.md) (subset relation at use sites)"
+      },
+      "status": "Accepted",
+      "summary": "`pledge {E₁, …} in e` checks that `e`'s inferred effect row is a subset of the named closed row, retains the actual inferred row, and erases before kernel lowering. This is an effect-label ceiling, not runtime filtering or value-level resource policy.",
+      "title": "row attenuation as an erased `pledge`"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0113",
+      "lifecycle": [],
+      "path": "docs/decisions/0113-value-level-resource-policy-is-handler-configuration.md",
+      "relationships": {
+        "dependsOn": "[0095](0095-stage7-handler-surface.md) (parameter-carrying custom handlers), [0111](0111-effect-contracts-static-handler-realizations.md) (contract/realization split), [0112](0112-row-attenuation-as-erased-pledge.md) (effect-label ceilings)"
+      },
+      "status": "Accepted",
+      "summary": "Keep resource identities as effect-operation values and enforce allowlists in runtime-configured handler installers. Rows and `pledge` bound which effects may occur; handlers decide which values an admitted operation may act on. Do not add refinements or a kernel policy primitive until a consumer exceeds this mechanism.",
+      "title": "value-level resource policy is handler configuration"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0114",
+      "lifecycle": [],
+      "path": "docs/decisions/0114-stateful-custom-clauses-use-explicit-update-keys.md",
+      "relationships": {
+        "dependsOn": "[0025](0025-resumptive-state-handler.md) (deep state transition), [0087](0087-custom-clauses-finite-rep-dissolves-capsh-wall.md) (finite custom clauses), [0092](0092-stage3-typing-user-effects-program-derived-effsig.md) (ret-shaped custom clauses), [0113](0113-value-level-resource-policy-is-handler-configuration.md) (runtime policy consumer)"
+      },
+      "status": "Accepted",
+      "summary": "Let an individual custom-handler clause opt into parameter transition. A plain clause keeps returning its operation result and reinstalls the existing parameter. An updating clause returns an explicit `(resumeValue, nextParam)` envelope; dispatch installs `nextParam` before resuming. Represent the distinction in the core clause key rather than guessing from the returned value's shape.",
+      "title": "stateful custom clauses use explicit update keys"
     }
   ],
   "arrows": [
@@ -1904,7 +1964,7 @@
         "Bang.Core.CapCoh",
         "Bang.Core.Semantics"
       ],
-      "loc": 6871,
+      "loc": 7590,
       "name": "Bang.Backend.AbstractMachine",
       "path": "Bang/Backend/AbstractMachine.lean",
       "publicSymbols": [
@@ -1976,1339 +2036,1567 @@
         },
         {
           "kind": "abbrev",
-          "line": 220,
+          "line": 219,
           "name": "CStore",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 224,
+          "line": 223,
           "name": "CStore.get?",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 228,
+          "line": 227,
           "name": "CStore.push",
           "visibilityBasis": "public-section"
         },
         {
+          "kind": "def",
+          "line": 232,
+          "name": "CStore.put",
+          "visibilityBasis": "public-section"
+        },
+        {
           "kind": "inductive",
-          "line": 248,
+          "line": 254,
           "name": "Outcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 269,
+          "line": 275,
           "name": "evalD",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 390,
+          "line": 403,
           "name": "Instr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 418,
+          "line": 431,
           "name": "Code",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 422,
+          "line": 435,
           "name": "Stack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 428,
+          "line": 441,
           "name": "HFrame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 439,
+          "line": 452,
           "name": "HStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 443,
+          "line": 456,
           "name": "compile",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 487,
+          "line": 500,
           "name": "unwindFind",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 501,
+          "line": 514,
           "name": "stateUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 518,
+          "line": 531,
           "name": "txnUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 538,
+          "line": 548,
           "name": "customUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 556,
+          "line": 575,
           "name": "isBuiltinOp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 560,
+          "line": 579,
           "name": "isBuiltinOp_iff",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 577,
+          "line": 596,
           "name": "hsState",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 587,
+          "line": 606,
           "name": "hsStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 597,
+          "line": 616,
           "name": "Corr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 603,
+          "line": 622,
           "name": "updateStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 622,
+          "line": 641,
           "name": "hsTxn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 632,
+          "line": 651,
           "name": "hsTxns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 641,
+          "line": 660,
           "name": "TCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 646,
+          "line": 665,
           "name": "updateTxns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 668,
+          "line": 687,
           "name": "hsCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 678,
+          "line": 697,
           "name": "hsCustoms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 687,
+          "line": 706,
           "name": "CCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 703,
+          "line": 722,
           "name": "StoresDisjoint",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 721,
+          "line": 740,
           "name": "StoresBelow",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 727,
+          "line": 746,
           "name": "SStore.get?_push_ne_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 734,
+          "line": 753,
           "name": "THeap.get?_push_ne_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 741,
+          "line": 760,
           "name": "CStore.get?_push_ne_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 751,
+          "line": 770,
           "name": "SStore.put_get?_eq_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 770,
+          "line": 789,
           "name": "THeap.put_get?_eq_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 800,
+          "line": 807,
+          "name": "CStore.put_get?_eq_none",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 837,
           "name": "StoresBelow.put_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 803,
+          "line": 840,
           "name": "StoresBelow.put_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 806,
+          "line": 843,
+          "name": "StoresBelow.put_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 846,
           "name": "StoresBelow.push_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 812,
+          "line": 852,
           "name": "StoresBelow.push_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 818,
+          "line": 858,
           "name": "StoresBelow.push_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 824,
+          "line": 864,
           "name": "StoresDisjoint.put_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 832,
+          "line": 872,
           "name": "StoresDisjoint.put_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 840,
+          "line": 880,
+          "name": "StoresDisjoint.put_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 888,
           "name": "StoresDisjoint.push_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 852,
+          "line": 900,
           "name": "StoresDisjoint.push_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 864,
+          "line": 912,
           "name": "StoresDisjoint.push_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 879,
+          "line": 927,
           "name": "StoresBelow.bump",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 884,
+          "line": 932,
           "name": "StoresBelow.nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 886,
+          "line": 934,
           "name": "StoresDisjoint.nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 891,
+          "line": 939,
           "name": "SStore.tail_get?_ne_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 901,
+          "line": 949,
           "name": "THeap.tail_get?_ne_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 911,
+          "line": 959,
           "name": "CStore.tail_get?_ne_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 922,
+          "line": 970,
           "name": "StoresBelow.tail_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 925,
+          "line": 973,
           "name": "StoresBelow.tail_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 928,
+          "line": 976,
           "name": "StoresBelow.tail_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 931,
+          "line": 979,
           "name": "StoresDisjoint.tail_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 937,
+          "line": 985,
           "name": "StoresDisjoint.tail_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 943,
+          "line": 991,
           "name": "StoresDisjoint.tail_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 954,
+          "line": 1001,
           "name": "updateCustoms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 965,
+          "line": 1011,
+          "name": "hsStates_updateCustoms",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1029,
+          "name": "hsTxns_updateCustoms",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1048,
           "name": "get?_hsStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 984,
+          "line": 1067,
           "name": "Corr.get?",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 988,
+          "line": 1071,
           "name": "SStore.get?_put_self",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1005,
+          "line": 1088,
           "name": "SStore.get?_put_ne",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1025,
+          "line": 1108,
           "name": "stateUpdate_get",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1054,
+          "line": 1137,
           "name": "stateUpdate_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1097,
+          "line": 1180,
           "name": "Corr_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1114,
+          "line": 1197,
           "name": "FrameMut",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1132,
+          "line": 1213,
           "name": "HMut",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1137,
+          "line": 1218,
           "name": "HMut.refl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1145,
+          "line": 1226,
           "name": "Corr_pop_nonstate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1172,
+          "line": 1253,
           "name": "HMut.of_stateUpdate_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1208,
+          "line": 1289,
           "name": "HMut.trans",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1232,
+          "line": 1313,
           "name": "HMut.tail",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1236,
+          "line": 1317,
           "name": "updateTxns_cons_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1242,
+          "line": 1323,
           "name": "updateTxns_cons_throws",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1247,
+          "line": 1328,
           "name": "updateStates_cons_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1257,
+          "line": 1335,
           "name": "updateStates_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1341,
+          "line": 1424,
           "name": "netEffect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1345,
+          "line": 1429,
           "name": "updateStates_self",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1350,
+          "line": 1435,
           "name": "hsCustoms_updateStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1367,
+          "line": 1452,
           "name": "hsCustoms_updateTxns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1385,
+          "line": 1469,
           "name": "hsCustoms_netEffect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1392,
+          "line": 1511,
           "name": "HMut_netEffect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1434,
+          "line": 1562,
           "name": "netEffect_congr_HMut",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1443,
+          "line": 1571,
           "name": "updateStates_cons_nonstate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1455,
+          "line": 1583,
           "name": "netEffect_cons_throws",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1464,
+          "line": 1593,
           "name": "netEffect_cons_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1475,
+          "line": 1611,
           "name": "raisedTriple_pop_nontxn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1511,
+          "line": 1648,
+          "name": "raisedTriple_pop_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1665,
           "name": "raisedTriple_pop_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1540,
+          "line": 1696,
           "name": "raisedTriple_pop_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1569,
+          "line": 1727,
           "name": "stateUpdate_none_of_non_getput",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1587,
+          "line": 1745,
           "name": "stateUpdate_none_of_get?_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1607,
+          "line": 1765,
           "name": "Corr_install",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1612,
+          "line": 1770,
           "name": "Corr_install_nonstate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1623,
+          "line": 1781,
           "name": "Corr_pop_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1630,
+          "line": 1788,
           "name": "get?_hsTxns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1649,
+          "line": 1807,
           "name": "TCorr.get?",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1654,
+          "line": 1812,
           "name": "get?_hsCustoms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1673,
+          "line": 1831,
           "name": "CCorr.get?",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1680,
+          "line": 1834,
+          "name": "CCorr_put",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1843,
           "name": "customUpdate_service",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1709,
+          "line": 1873,
+          "name": "customUpdate_service_updating",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1934,
           "name": "customUpdate_none_of_hsCustom_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1728,
+          "line": 1953,
           "name": "customUpdate_none_of_clause_miss",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1751,
+          "line": 1976,
           "name": "CCorr_install",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1757,
+          "line": 1982,
           "name": "CCorr_install_noncustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1768,
+          "line": 1993,
           "name": "CCorr_pop_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1776,
+          "line": 2001,
           "name": "CCorr_pop_noncustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1786,
+          "line": 2011,
           "name": "THeap.get?_put_self",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1805,
+          "line": 2030,
           "name": "txnUpdate_service",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1848,
+          "line": 2073,
           "name": "txnUpdate_none_of_hsTxn_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1868,
+          "line": 2093,
           "name": "txnUpdate_none_of_non_txnop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1886,
+          "line": 2111,
           "name": "TCorr_install",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1891,
+          "line": 2116,
           "name": "TCorr_install_nontxn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1901,
+          "line": 2126,
           "name": "TCorr_pop_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1907,
+          "line": 2132,
           "name": "TCorr_pop_nontxn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1923,
+          "line": 2148,
           "name": "hsStates_txnUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1958,
+          "line": 2183,
           "name": "Corr_txnUpdate_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1963,
+          "line": 2188,
           "name": "HMut_of_txnUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2000,
+          "line": 2225,
           "name": "hsTxns_stateUpdate_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2035,
+          "line": 2260,
           "name": "hsCustoms_stateUpdate_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2070,
+          "line": 2295,
           "name": "hsCustoms_txnUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2109,
+          "line": 2334,
           "name": "exec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2184,
+          "line": 2409,
           "name": "exec_succ",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2258,
+          "line": 2483,
           "name": "exec_mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2270,
+          "line": 2495,
           "name": "throwOutcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2278,
+          "line": 2503,
           "name": "throwOutcome_cons_nonthrows",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2296,
+          "line": 2521,
           "name": "sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3456,
+          "line": 3706,
           "name": "compile_correct",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3495,
+          "line": 3745,
           "name": "Agree",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3633,
+          "line": 3883,
           "name": "dispatch_letF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3639,
+          "line": 3889,
           "name": "dispatch_appF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3650,
+          "line": 3900,
           "name": "dispatch_handleF_skip",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3664,
+          "line": 3914,
           "name": "dispatchRun",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3674,
+          "line": 3924,
           "name": "labelOf",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3686,
+          "line": 3936,
           "name": "ctxStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3692,
+          "line": 3942,
           "name": "CtxCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3697,
+          "line": 3947,
           "name": "updateCtxStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3711,
+          "line": 3961,
           "name": "ctxTxns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3717,
+          "line": 3967,
           "name": "CtxTxnCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3721,
+          "line": 3971,
           "name": "updateCtxTxns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3730,
-          "name": "ctxNetEffect",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3735,
-          "name": "updateCtxTxns_cons_state",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3739,
-          "name": "updateCtxStates_cons_txn",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3744,
-          "name": "ctxNetEffect_cons_nonframe",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3761,
-          "name": "ctxNetEffect_self",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3780,
-          "name": "CtxTxnCorr_cons_nontxn",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3797,
-          "name": "ctxNetEffect_ctxNetEffect",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3841,
-          "name": "CtxCorr_ctxNetEffect_nonframe",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3857,
-          "name": "CtxTxnCorr_ctxNetEffect_nonframe",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3873,
-          "name": "updateCtxStates_self",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3890,
-          "name": "updateCtxStates_cons_nonstate",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3905,
-          "name": "CtxCorr_cons_nonstate",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3920,
-          "name": "CtxCorr_install",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3927,
-          "name": "CtxTxnCorr_install",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3933,
-          "name": "CtxCorr_ctxNetEffect_pop_state",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3958,
-          "name": "CtxCorr_ctxNetEffect_pop_throws",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3976,
-          "name": "CtxCorr_ctxNetEffect_pop_custom",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 3993,
-          "name": "CtxCorr_ctxNetEffect_pop_txn",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4019,
-          "name": "splitAtId_reconstruct",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4057,
-          "name": "splitAtId_state_value",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4110,
-          "name": "ctxStates_get_none_of_capsBelow",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4137,
-          "name": "splitAtId_of_ctxStates_get",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4199,
-          "name": "ctxTxns_get_none_of_capsBelow",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4223,
-          "name": "splitAtId_of_ctxTxns_get",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4291,
-          "name": "dispatch_state_get",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4323,
-          "name": "updateCtxStates_put_split",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4388,
-          "name": "dispatch_state_put",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4413,
-          "name": "ctxStates_updateCtxStates_put",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4454,
-          "name": "splitAtId_txn_value",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4505,
-          "name": "updateCtxStates_self_aux",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4509,
-          "name": "updateCtxTxns_self_aux",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4527,
-          "name": "updateCtxTxns_service_split",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4590,
-          "name": "dispatch_txn_service",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4634,
-          "name": "ctxStates_updateCtxTxns",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4657,
-          "name": "ctxTxns_updateCtxTxns_service",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 4694,
-          "name": "ctxTxns_updateCtxStates",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "def",
-          "line": 4726,
+          "line": 3980,
           "name": "ctxCustoms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 4733,
-          "name": "CCtxCorr",
+          "line": 3985,
+          "name": "updateCtxCustoms",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 3993,
+          "name": "customCtxPut",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4736,
-          "name": "ctxCustoms_updateCtxStates",
+          "line": 4000,
+          "name": "updateCtxCustoms_self",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4757,
-          "name": "ctxCustoms_updateCtxTxns",
+          "line": 4015,
+          "name": "updateCtxCustoms_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4779,
-          "name": "ctxCustoms_ctxNetEffect",
+          "line": 4037,
+          "name": "ctxCustoms_customCtxPut",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4785,
-          "name": "CCtxCorr_ctxNetEffect",
+          "line": 4057,
+          "name": "customCtxPut_split",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 4102,
+          "name": "ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 4106,
+          "name": "ctxFullEffect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4791,
-          "name": "CCtxCorr_install",
+          "line": 4109,
+          "name": "ctxFullEffect_cons_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4797,
-          "name": "CCtxCorr_cons_noncustom",
+          "line": 4116,
+          "name": "ctxFullEffect_cons_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4813,
-          "name": "CCtxCorr_pop_custom",
+          "line": 4123,
+          "name": "ctxFullEffect_cons_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4819,
-          "name": "CCtxCorr_pop_noncustom",
+          "line": 4130,
+          "name": "ctxFullEffect_cons_throws",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4836,
-          "name": "ctxCustoms_get_none_of_capsBelow",
+          "line": 4135,
+          "name": "ctxFullEffect_cons_let",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4862,
-          "name": "splitAtId_of_ctxCustoms_get",
+          "line": 4139,
+          "name": "ctxFullEffect_cons_app",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4929,
-          "name": "splitAtId_custom_value",
+          "line": 4143,
+          "name": "ctxFullEffect_ctxFullEffect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 4988,
-          "name": "ctxTxns_get_none_of_ctxStates_some",
+          "line": 4169,
+          "name": "updateCtxTxns_cons_state",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4173,
+          "name": "updateCtxStates_cons_txn",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4178,
+          "name": "ctxNetEffect_cons_nonframe",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4192,
+          "name": "ctxFullEffect_cons_nonframe",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4212,
+          "name": "ctxNetEffect_self",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4231,
+          "name": "CtxTxnCorr_cons_nontxn",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4248,
+          "name": "ctxNetEffect_ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4292,
+          "name": "CtxCorr_ctxNetEffect_nonframe",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4308,
+          "name": "CtxTxnCorr_ctxNetEffect_nonframe",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4324,
+          "name": "updateCtxStates_self",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4341,
+          "name": "updateCtxStates_cons_nonstate",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4356,
+          "name": "CtxCorr_cons_nonstate",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4370,
+          "name": "CtxCorr_pop_nonstate",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4384,
+          "name": "CtxTxnCorr_pop_nontxn",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4399,
+          "name": "CtxCorr_install",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4406,
+          "name": "CtxTxnCorr_install",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4412,
+          "name": "CtxCorr_ctxNetEffect_pop_state",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4437,
+          "name": "CtxCorr_ctxNetEffect_pop_throws",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4455,
+          "name": "CtxCorr_ctxNetEffect_pop_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4472,
+          "name": "CtxCorr_ctxNetEffect_pop_txn",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4495,
+          "name": "CtxCorr_ctxFullEffect_pop_state",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4514,
+          "name": "CtxCorr_ctxFullEffect_pop_throws",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4526,
+          "name": "CtxCorr_ctxFullEffect_pop_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4541,
+          "name": "CtxCorr_ctxFullEffect_pop_txn",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4563,
+          "name": "splitAtId_reconstruct",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4601,
+          "name": "splitAtId_state_value",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4654,
+          "name": "ctxStates_get_none_of_capsBelow",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4681,
+          "name": "splitAtId_of_ctxStates_get",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4743,
+          "name": "ctxTxns_get_none_of_capsBelow",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4767,
+          "name": "splitAtId_of_ctxTxns_get",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4835,
+          "name": "dispatch_state_get",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4867,
+          "name": "updateCtxStates_put_split",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4932,
+          "name": "dispatch_state_put",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 4957,
+          "name": "ctxStates_updateCtxStates_put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
           "line": 4998,
-          "name": "ctxCustoms_get_none_of_ctxStates_some",
+          "name": "splitAtId_txn_value",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5010,
-          "name": "ctxCustoms_get_none_of_ctxTxns_some",
+          "line": 5049,
+          "name": "updateCtxStates_self_aux",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5029,
-          "name": "dispatch_custom",
+          "line": 5053,
+          "name": "updateCtxTxns_self_aux",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5047,
-          "name": "splitAt_handles",
+          "line": 5071,
+          "name": "updateCtxTxns_service_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5087,
-          "name": "dispatchRun_letF",
+          "line": 5134,
+          "name": "dispatch_txn_service",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5178,
+          "name": "ctxStates_updateCtxTxns",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5201,
+          "name": "ctxTxns_updateCtxTxns_service",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5238,
+          "name": "ctxTxns_updateCtxStates",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 5109,
-          "name": "NoCustomFrame",
+          "line": 5267,
+          "name": "CCtxCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5115,
-          "name": "NoCustomFrame.tail",
+          "line": 5269,
+          "name": "ctxStates_updateCtxCustoms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5123,
-          "name": "NoCustomFrame.cons_handleF",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5130,
-          "name": "NoCustomFrame.cons_letF",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5132,
-          "name": "NoCustomFrame.cons_appF",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5136,
-          "name": "NoCustomFrame.updateCtxStates",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5155,
-          "name": "NoCustomFrame.updateCtxTxns",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5174,
-          "name": "NoCustomFrame.ctxNetEffect",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5181,
-          "name": "NoCustomFrame.not_custom",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "def",
-          "line": 5217,
-          "name": "NoResume",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5222,
-          "name": "splitAtId_cons_lift",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5236,
-          "name": "noResume_strip_cons",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5241,
-          "name": "CapsBelow_updateCtxStates",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5273,
-          "name": "CapsBelow_updateCtxTxns",
-          "visibilityBasis": "public-section"
-        },
-        {
-          "kind": "theorem",
-          "line": 5305,
-          "name": "CapsBelow_ctxNetEffect",
+          "line": 5291,
+          "name": "ctxTxns_updateCtxCustoms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
           "line": 5313,
+          "name": "ctxFullEffect_eq_ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5319,
+          "name": "ctxFullEffect_self",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5326,
+          "name": "ctxFullEffect_put_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5338,
+          "name": "ctxCustoms_updateCtxStates",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5359,
+          "name": "ctxCustoms_updateCtxTxns",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5381,
+          "name": "ctxCustoms_ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5387,
+          "name": "CCtxCorr_ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5393,
+          "name": "CCtxCorr_install",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5399,
+          "name": "CCtxCorr_cons_noncustom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5415,
+          "name": "CCtxCorr_pop_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5421,
+          "name": "CCtxCorr_pop_noncustom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5438,
+          "name": "ctxCustoms_get_none_of_capsBelow",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5464,
+          "name": "splitAtId_of_ctxCustoms_get",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5531,
+          "name": "splitAtId_custom_value",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5590,
+          "name": "ctxTxns_get_none_of_ctxStates_some",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5600,
+          "name": "ctxCustoms_get_none_of_ctxStates_some",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5612,
+          "name": "ctxCustoms_get_none_of_ctxTxns_some",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5631,
+          "name": "dispatch_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5651,
+          "name": "dispatch_custom_updating",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5673,
+          "name": "splitAt_handles",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5713,
+          "name": "dispatchRun_letF",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 5735,
+          "name": "NoCustomFrame",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5741,
+          "name": "NoCustomFrame.tail",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5749,
+          "name": "NoCustomFrame.cons_handleF",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5756,
+          "name": "NoCustomFrame.cons_letF",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5758,
+          "name": "NoCustomFrame.cons_appF",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5762,
+          "name": "NoCustomFrame.updateCtxStates",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5781,
+          "name": "NoCustomFrame.updateCtxTxns",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5800,
+          "name": "NoCustomFrame.ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5807,
+          "name": "NoCustomFrame.not_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 5843,
+          "name": "NoResume",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5848,
+          "name": "splitAtId_cons_lift",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5862,
+          "name": "noResume_strip_cons",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5867,
+          "name": "CapsBelow_updateCtxStates",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5899,
+          "name": "CapsBelow_updateCtxTxns",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5931,
+          "name": "CapsBelow_ctxNetEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5936,
+          "name": "CapsBelow_updateCtxCustoms",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5970,
+          "name": "CapsBelow_ctxFullEffect",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 5980,
           "name": "run_perform_label_irrel",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5330,
+          "line": 5997,
           "name": "idDispatch_prepend_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5347,
+          "line": 6014,
           "name": "idDispatch_cons_noResume",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5374,
+          "line": 6041,
           "name": "run_perform_cons_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5390,
+          "line": 6057,
           "name": "labelOf_cons_ne",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5407,
+          "line": 6074,
           "name": "splitAtId_none_of_capsBelow",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5417,
+          "line": 6084,
           "name": "run_perform_pop_handleF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5451,
+          "line": 6118,
           "name": "capLabelCoh_pop_letF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5458,
+          "line": 6125,
           "name": "capLabelCoh_pop_appF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5465,
+          "line": 6132,
           "name": "capLabelCoh_pop_handleF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5473,
+          "line": 6140,
           "name": "freshCfg_pop_letF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5479,
+          "line": 6146,
           "name": "freshCfg_pop_appF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5485,
+          "line": 6152,
           "name": "freshCfg_pop_handleF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 5494,
+          "line": 6161,
           "name": "run_evalD",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 6843,
+          "line": 7562,
           "name": "evalD_agrees_source",
           "visibilityBasis": "public-section"
         }
@@ -3320,7 +3608,7 @@
         "Bang.Backend.AbstractMachine",
         "Bang.Core.Semantics"
       ],
-      "loc": 3624,
+      "loc": 3746,
       "name": "Bang.Backend.EnvMachine",
       "path": "Bang/Backend/EnvMachine.lean",
       "publicSymbols": [
@@ -3410,973 +3698,991 @@
         },
         {
           "kind": "def",
-          "line": 192,
-          "name": "mtvarIdx",
+          "line": 191,
+          "name": "ECStore.put",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
           "line": 199,
+          "name": "mtvarIdx",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 206,
           "name": "mtxnService",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 227,
+          "line": 234,
           "name": "evalE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 368,
+          "line": 384,
           "name": "substEnv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 393,
+          "line": 409,
           "name": "Val.ClosedE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 396,
+          "line": 412,
           "name": "shiftNE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 402,
+          "line": 418,
           "name": "shiftNE_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 408,
+          "line": 424,
           "name": "closeUnderBindersE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 418,
+          "line": 434,
           "name": "readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 431,
+          "line": 447,
           "name": "readbackEnv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 442,
+          "line": 458,
           "name": "readbackIn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 458,
+          "line": 474,
           "name": "readbackTerm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 467,
+          "line": 483,
           "name": "readbackTermS",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 481,
+          "line": 497,
           "name": "EnvAgrees",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 493,
+          "line": 509,
           "name": "substEnv_nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 494,
+          "line": 510,
           "name": "substEnv_cons",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 502,
+          "line": 518,
           "name": "substEnv_cons_subst",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 526,
+          "line": 542,
           "name": "closeUnderBindersE_zero",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 533,
+          "line": 549,
           "name": "closeUnderBindersE_subst0",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 549,
+          "line": 565,
           "name": "substEnv_cons2_subst",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 570,
+          "line": 586,
           "name": "substEnvV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 574,
+          "line": 590,
           "name": "substEnvV_nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 576,
+          "line": 592,
           "name": "substEnv_ret",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 582,
+          "line": 598,
           "name": "substEnv_force",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 588,
+          "line": 604,
           "name": "substEnv_app",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 594,
+          "line": 610,
           "name": "substEnv_unfold",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 600,
+          "line": 616,
           "name": "substEnv_binop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 606,
+          "line": 622,
           "name": "substEnv_perform",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 614,
+          "line": 630,
           "name": "substEnvH",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 622,
+          "line": 638,
           "name": "substEnv_handle",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 630,
+          "line": 646,
           "name": "substEnvH_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 635,
+          "line": 651,
           "name": "substEnvH_transaction",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 640,
+          "line": 656,
           "name": "substEnvH_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 646,
+          "line": 662,
           "name": "substEnvH_throws",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 652,
+          "line": 668,
           "name": "substEnvH_label",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 660,
+          "line": 676,
           "name": "substEnv_letC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 668,
+          "line": 684,
           "name": "substEnv_lam",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 676,
+          "line": 692,
           "name": "substEnv_case",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 685,
+          "line": 701,
           "name": "substEnv_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 704,
+          "line": 720,
           "name": "MVal.WF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 708,
+          "line": 724,
           "name": "MEnv.WF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 710,
+          "line": 726,
           "name": "MEnv.WF.nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 712,
+          "line": 728,
           "name": "MEnv.WF.cons",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 721,
+          "line": 737,
           "name": "MEnv.WF.closedEnv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 730,
+          "line": 746,
           "name": "closeVE_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 738,
+          "line": 754,
           "name": "substEnvV_vvar",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 764,
+          "line": 780,
           "name": "Val.ScopedV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 766,
+          "line": 782,
           "name": "Comp.ScopedC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 768,
+          "line": 784,
           "name": "Val.ScopedV.closedE_zero",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 772,
+          "line": 788,
           "name": "Val.ScopedV.vvar_lt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 784,
+          "line": 800,
           "name": "Comp.ScopedC.ret_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 786,
+          "line": 802,
           "name": "Comp.ScopedC.force_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 789,
+          "line": 805,
           "name": "Comp.ScopedC.unfold_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 792,
+          "line": 808,
           "name": "Comp.ScopedC.binop_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 797,
+          "line": 813,
           "name": "Comp.ScopedC.app_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 802,
+          "line": 818,
           "name": "Comp.ScopedC.letC_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 808,
+          "line": 824,
           "name": "Comp.ScopedC.lam_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 813,
+          "line": 829,
           "name": "Comp.ScopedC.case_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 822,
+          "line": 838,
           "name": "Comp.ScopedC.split_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 828,
+          "line": 844,
           "name": "Comp.ScopedC.perform_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 833,
+          "line": 849,
           "name": "Comp.ScopedC.handle_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 841,
+          "line": 857,
           "name": "Comp.ScopedC.mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 843,
+          "line": 859,
           "name": "Val.ScopedV.mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 860,
+          "line": 876,
           "name": "Comp.ScopedC.substFrom_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 869,
+          "line": 885,
           "name": "closeUnderBindersE_scoped_id",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 907,
+          "line": 923,
           "name": "Comp.HandlerWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 941,
+          "line": 957,
           "name": "Val.HandlerWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 955,
+          "line": 971,
           "name": "Comp.HandlerWFClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 960,
+          "line": 976,
           "name": "Comp.HandlerWF.ret_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 962,
+          "line": 978,
           "name": "Comp.HandlerWF.force_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 964,
+          "line": 980,
           "name": "Comp.HandlerWF.unfold_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 966,
+          "line": 982,
           "name": "Comp.HandlerWF.binop_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 969,
+          "line": 985,
           "name": "Comp.HandlerWF.letC_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 971,
+          "line": 987,
           "name": "Comp.HandlerWF.lam_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 973,
+          "line": 989,
           "name": "Comp.HandlerWF.app_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 975,
+          "line": 991,
           "name": "Comp.HandlerWF.case_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 979,
+          "line": 995,
           "name": "Comp.HandlerWF.split_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 982,
+          "line": 998,
           "name": "Comp.HandlerWF.perform_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 985,
+          "line": 1001,
           "name": "Comp.HandlerWF.handle_body",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 988,
+          "line": 1004,
           "name": "Comp.HandlerWF.handle_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 991,
+          "line": 1007,
           "name": "Comp.HandlerWF.handle_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 995,
+          "line": 1011,
           "name": "Comp.HandlerWF.handle_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1003,
+          "line": 1019,
           "name": "Comp.HandlerWFClauses.get",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1019,
+          "line": 1035,
           "name": "Comp.HandlerWF.mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1060,
+          "line": 1076,
           "name": "Val.HandlerWF.mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1088,
+          "line": 1104,
           "name": "Val.ScopedV.subst_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1093,
+          "line": 1109,
           "name": "Comp.ScopedC.subst_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1099,
+          "line": 1115,
           "name": "substEnvV_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1109,
+          "line": 1125,
           "name": "substEnv_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1136,
+          "line": 1152,
           "name": "EffectFree",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1151,
+          "line": 1167,
           "name": "ValEF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1168,
+          "line": 1184,
           "name": "EffectFree.handlerWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1199,
+          "line": 1215,
           "name": "ValEF.handlerWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1221,
+          "line": 1237,
           "name": "MVal.PureV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1235,
+          "line": 1251,
           "name": "MEnv.PureV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1240,
+          "line": 1256,
           "name": "MEnv.PureV.head",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1242,
+          "line": 1258,
           "name": "MEnv.PureV.tail",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1244,
+          "line": 1260,
           "name": "MEnv.PureV.cons",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1249,
+          "line": 1265,
           "name": "MEnv.PureV.get",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1257,
+          "line": 1273,
           "name": "MTerm.WF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1263,
+          "line": 1279,
           "name": "MTerm.PureV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1284,
+          "line": 1300,
           "name": "MVal.WFClos",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1301,
+          "line": 1317,
           "name": "MEnv.WFClos",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1306,
+          "line": 1322,
           "name": "MEnv.WFClos.head",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1308,
+          "line": 1324,
           "name": "MEnv.WFClos.tail",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1310,
+          "line": 1326,
           "name": "MEnv.WFClos.cons",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1314,
+          "line": 1330,
           "name": "MEnv.WFClos.get",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1322,
+          "line": 1338,
           "name": "MVal.PureV.wfclos",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1336,
+          "line": 1352,
           "name": "MEnv.PureV.wfclos",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1345,
+          "line": 1361,
           "name": "MTerm.WFClos",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1362,
+          "line": 1378,
           "name": "readbackEnv_getElem",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1373,
+          "line": 1389,
           "name": "substEnvV_vthunk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1380,
+          "line": 1396,
           "name": "substEnvV_vunit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1384,
+          "line": 1400,
           "name": "substEnvV_vint",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1388,
+          "line": 1404,
           "name": "substEnvV_vcap",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1393,
+          "line": 1409,
           "name": "substEnvV_inl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1398,
+          "line": 1414,
           "name": "substEnvV_inr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1403,
+          "line": 1419,
           "name": "substEnvV_pair",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1408,
+          "line": 1424,
           "name": "substEnvV_fold",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1415,
+          "line": 1431,
           "name": "Val.ScopedV.inl_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1417,
+          "line": 1433,
           "name": "Val.ScopedV.inr_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1419,
+          "line": 1435,
           "name": "Val.ScopedV.fold_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1421,
+          "line": 1437,
           "name": "Val.ScopedV.pair_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1430,
+          "line": 1446,
           "name": "readback_evalV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1457,
+          "line": 1473,
           "name": "evalV_WF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1466,
+          "line": 1482,
           "name": "evalV_PureV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1499,
+          "line": 1515,
           "name": "evalV_WFClos",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1528,
+          "line": 1544,
           "name": "readback_evalVOfBinop_eval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1541,
+          "line": 1557,
           "name": "BinOp_eval_closedE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1553,
+          "line": 1569,
           "name": "evalVOfBinop_eval_pureV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1574,
+          "line": 1590,
           "name": "evalE_agrees_evalD_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1889,
+          "line": 1905,
           "name": "SStoreCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1893,
+          "line": 1909,
           "name": "THeapCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1903,
+          "line": 1919,
           "name": "CStoreCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1909,
+          "line": 1925,
           "name": "StoresCorr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1919,
+          "line": 1935,
           "name": "StoresGood",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1927,
+          "line": 1943,
           "name": "StoresGood.get_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1935,
+          "line": 1951,
           "name": "StoresGood.get_custom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1963,
+          "line": 1979,
           "name": "StoresGood.put_state",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1969,
+          "line": 2010,
+          "name": "StoresGood.put_custom",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 2017,
           "name": "mtxnService_good",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2010,
+          "line": 2058,
           "name": "mtxnService_result_good",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2047,
+          "line": 2095,
           "name": "StoresGood.put_txn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2063,
+          "line": 2111,
           "name": "storesGood_pureV_wedge",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2083,
+          "line": 2131,
           "name": "SStore.get?_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2097,
+          "line": 2145,
           "name": "SStore.put_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2110,
+          "line": 2158,
           "name": "THeap.get?_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2123,
+          "line": 2171,
           "name": "THeap.put_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2137,
+          "line": 2185,
           "name": "CStore.get?_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2155,
+          "line": 2200,
+          "name": "CStore.put_readback",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 2221,
           "name": "mtvarIdx_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2160,
+          "line": 2226,
           "name": "getD_map_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2172,
+          "line": 2238,
           "name": "mtxnService_readback",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2247,
+          "line": 2313,
           "name": "evalE_agrees_evalD_gen",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3109,
+          "line": 3231,
           "name": "evalE_agrees_evalD_effect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3147,
+          "line": 3269,
           "name": "evalE_agrees_evalD",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3173,
+          "line": 3295,
           "name": "headline_refutation_witness",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3211,
+          "line": 3333,
           "name": "effect_pureV_refutation_witness",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3257,
+          "line": 3379,
           "name": "runE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 3265,
+          "line": 3387,
           "name": "HostReq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3323,
+          "line": 3445,
           "name": "evalEHost",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 3435,
+          "line": 3557,
           "name": "HostStep",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3447,
+          "line": 3569,
           "name": "stepHost",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3454,
+          "line": 3576,
           "name": "MiniAgree",
           "visibilityBasis": "public-section"
         }
@@ -4412,7 +4718,7 @@
         "Bang.Backend.AbstractMachine",
         "Bang.Core.Freshness"
       ],
-      "loc": 1649,
+      "loc": 1737,
       "name": "Bang.Backend.U5bComplete",
       "path": "Bang/Backend/U5bComplete.lean",
       "publicSymbols": [
@@ -4562,55 +4868,55 @@
         },
         {
           "kind": "theorem",
-          "line": 388,
+          "line": 394,
           "name": "evalD_fuel_mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 401,
+          "line": 407,
           "name": "evalD_term_shape",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 567,
+          "line": 584,
           "name": "CompletesTo",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 588,
+          "line": 606,
           "name": "completesTo_reduce",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 603,
+          "line": 621,
           "name": "ctxStates_get_none_of_ctxTxns_some",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 619,
+          "line": 637,
           "name": "perform_miss_raises",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 685,
+          "line": 703,
           "name": "evalD_complete_gen_full",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1590,
+          "line": 1677,
           "name": "dispatchRun_nil_ne_done",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1603,
+          "line": 1690,
           "name": "evalD_complete_gen_nil",
           "visibilityBasis": "public-section"
         }
@@ -4626,7 +4932,7 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 2951,
+      "loc": 2982,
       "name": "Bang.Backend.Wasm",
       "path": "Bang/Backend/Wasm.lean",
       "publicSymbols": [
@@ -4746,547 +5052,547 @@
         },
         {
           "kind": "def",
-          "line": 333,
+          "line": 328,
           "name": "wCustomUpdate",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 347,
+          "line": 351,
           "name": "wexec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 412,
+          "line": 416,
           "name": "run",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 429,
+          "line": 433,
           "name": "Comp.Pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 443,
+          "line": 447,
           "name": "Val.Pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 475,
+          "line": 479,
           "name": "InstrPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 486,
+          "line": 490,
           "name": "CodePure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 504,
+          "line": 508,
           "name": "InstrOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 508,
+          "line": 512,
           "name": "CodeOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 512,
+          "line": 516,
           "name": "CodeOk_iff_forall",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 518,
+          "line": 522,
           "name": "injStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 524,
+          "line": 528,
           "name": "injHFrame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 528,
+          "line": 532,
           "name": "injHStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 537,
+          "line": 541,
           "name": "wStateUpdate_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 590,
+          "line": 594,
           "name": "wUnwindFind_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 645,
+          "line": 649,
           "name": "wCustomUpdate_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 697,
+          "line": 708,
           "name": "wCustomUpdate_comm_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 738,
+          "line": 754,
           "name": "Val.shiftFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 755,
+          "line": 771,
           "name": "Comp.shiftFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 783,
+          "line": 799,
           "name": "Val.substFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 804,
+          "line": 820,
           "name": "Comp.substFrom_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 839,
+          "line": 855,
           "name": "subst_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 857,
+          "line": 873,
           "name": "compile_append",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 886,
+          "line": 902,
           "name": "compile_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 948,
+          "line": 964,
           "name": "compile_ok_mem",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1027,
+          "line": 1043,
           "name": "compile_ok",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1040,
+          "line": 1056,
           "name": "compile_no_throw",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1062,
+          "line": 1078,
           "name": "TerminalPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1068,
+          "line": 1084,
           "name": "StackPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1074,
+          "line": 1090,
           "name": "HFramePure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1078,
+          "line": 1094,
           "name": "HStackPure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1088,
+          "line": 1104,
           "name": "HFrameOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1091,
+          "line": 1107,
           "name": "HStackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1093,
+          "line": 1109,
           "name": "exec_wexec_sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1214,
+          "line": 1230,
           "name": "stateUpdate_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1279,
+          "line": 1295,
           "name": "txnUpdate_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1342,
+          "line": 1356,
           "name": "customUpdate_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1399,
+          "line": 1424,
           "name": "wStateUpdate_comm_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1443,
+          "line": 1468,
           "name": "wTxnUpdate_comm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1493,
+          "line": 1518,
           "name": "wTxnUpdate_comm_none",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1532,
+          "line": 1557,
           "name": "unwindFind_savedCode_codeOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1554,
+          "line": 1579,
           "name": "unwindFind_hstackOk",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1590,
+          "line": 1615,
           "name": "NoCustomInstr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1614,
+          "line": 1639,
           "name": "NoCustomHFrame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1623,
+          "line": 1648,
           "name": "customUpdate_none_of_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1641,
+          "line": 1666,
           "name": "wCustomUpdate_none_of_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1660,
+          "line": 1685,
           "name": "CFVal_binopEval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1668,
+          "line": 1693,
           "name": "compile_noCustom_mem",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1772,
+          "line": 1797,
           "name": "stateUpdate_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1847,
+          "line": 1872,
           "name": "txnUpdate_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1919,
+          "line": 1944,
           "name": "unwindFind_noCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1954,
+          "line": 1979,
           "name": "exec_wexec_sim_ok",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2118,
+          "line": 2143,
           "name": "InstrMentionsLocal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2124,
+          "line": 2149,
           "name": "MentionsLocal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2129,
+          "line": 2154,
           "name": "InstrWF",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2135,
+          "line": 2160,
           "name": "WellTyped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2150,
+          "line": 2175,
           "name": "HandlerLawful",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2155,
+          "line": 2180,
           "name": "Wasmfx.HandlerEquiv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2174,
+          "line": 2199,
           "name": "lowerCode_no_locals",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2210,
+          "line": 2235,
           "name": "compileC_no_local",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2220,
+          "line": 2245,
           "name": "compileC_wellTyped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2232,
+          "line": 2257,
           "name": "zero_grade_no_code_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2243,
+          "line": 2268,
           "name": "compile_well_typed_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2282,
+          "line": 2307,
           "name": "evalD_mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2408,
+          "line": 2439,
           "name": "evalD_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2418,
+          "line": 2449,
           "name": "evalD_some_le",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2434,
+          "line": 2465,
           "name": "PureCtx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2451,
+          "line": 2482,
           "name": "Sim",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2454,
+          "line": 2485,
           "name": "Sim.letC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2481,
+          "line": 2512,
           "name": "Sim.app",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2509,
+          "line": 2540,
           "name": "sim_letC_ret",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2515,
+          "line": 2546,
           "name": "sim_app_lam",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2521,
+          "line": 2552,
           "name": "sim_force",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2525,
+          "line": 2556,
           "name": "sim_case_inl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2528,
+          "line": 2559,
           "name": "sim_case_inr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2531,
+          "line": 2562,
           "name": "sim_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2535,
+          "line": 2566,
           "name": "sim_unfold",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2546,
+          "line": 2577,
           "name": "evalD_plug_sim_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2560,
+          "line": 2591,
           "name": "evalD_plug_letC_ret_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2566,
+          "line": 2597,
           "name": "evalD_plug_app_lam_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2572,
+          "line": 2603,
           "name": "evalD_plug_force_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2578,
+          "line": 2609,
           "name": "evalD_plug_case_inl_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2584,
+          "line": 2615,
           "name": "evalD_plug_case_inr_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2590,
+          "line": 2621,
           "name": "evalD_plug_split_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2596,
+          "line": 2627,
           "name": "evalD_plug_unfold_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2616,
+          "line": 2647,
           "name": "evalD_complete_gen",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2626,
+          "line": 2657,
           "name": "evalD_complete_gen_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2745,
+          "line": 2776,
           "name": "evalD_complete",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2751,
+          "line": 2782,
           "name": "source_eval_to_exec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2763,
+          "line": 2794,
           "name": "compile_forward_sim_pure",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2791,
+          "line": 2822,
           "name": "compile_forward_sim_proof",
           "visibilityBasis": "public-section"
         }
@@ -5297,7 +5603,7 @@
       "directImports": [
         "Bang.Backend.AbstractMachine"
       ],
-      "loc": 1757,
+      "loc": 1773,
       "name": "Bang.Backend.WasmEmit",
       "path": "Bang/Backend/WasmEmit.lean",
       "publicSymbols": [
@@ -5423,7 +5729,7 @@
         },
         {
           "kind": "inductive",
-          "line": 707,
+          "line": 706,
           "name": "CapSlot",
           "visibilityBasis": "public-section"
         },
@@ -5537,97 +5843,97 @@
         },
         {
           "kind": "def",
-          "line": 1174,
+          "line": 1189,
           "name": "emitClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1191,
+          "line": 1207,
           "name": "emitLetGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1204,
+          "line": 1220,
           "name": "callClosGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1211,
+          "line": 1227,
           "name": "gcTypes",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1254,
+          "line": 1270,
           "name": "gcHelpers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1335,
+          "line": 1351,
           "name": "bignumHelpers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1504,
+          "line": 1520,
           "name": "gcPreamble",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1509,
+          "line": 1525,
           "name": "renderImports",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1518,
+          "line": 1534,
           "name": "renderFns",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1689,
+          "line": 1705,
           "name": "renderPreamble",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1693,
+          "line": 1709,
           "name": "declLocalsFromTys",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1697,
+          "line": 1713,
           "name": "renderFn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1701,
+          "line": 1717,
           "name": "elemDeclare",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1708,
+          "line": 1724,
           "name": "tagDecls",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1714,
+          "line": 1730,
           "name": "emitModuleGC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1738,
+          "line": 1754,
           "name": "emitModuleGCPrint",
           "visibilityBasis": "public-section"
         }
@@ -5638,7 +5944,7 @@
       "directImports": [
         "Bang.Core.Freshness"
       ],
-      "loc": 566,
+      "loc": 621,
       "name": "Bang.Core.CapCoh",
       "path": "Bang/Core/CapCoh.lean",
       "publicSymbols": [
@@ -5674,25 +5980,25 @@
         },
         {
           "kind": "def",
-          "line": 409,
+          "line": 464,
           "name": "CapLabelCoh",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 416,
+          "line": 471,
           "name": "capLabelCoh_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 549,
+          "line": 604,
           "name": "capLabelCoh_initial",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 557,
+          "line": 612,
           "name": "capLabelCoh_perform_label",
           "visibilityBasis": "public-section"
         }
@@ -5766,7 +6072,7 @@
       "directImports": [
         "Bang.Core.Soundness"
       ],
-      "loc": 833,
+      "loc": 865,
       "name": "Bang.Core.Freshness",
       "path": "Bang/Core/Freshness.lean",
       "publicSymbols": [
@@ -5940,91 +6246,91 @@
         },
         {
           "kind": "theorem",
-          "line": 555,
+          "line": 587,
           "name": "capsV_boolVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 557,
+          "line": 589,
           "name": "capsV_binopEval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 565,
+          "line": 597,
           "name": "freshCfg_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 724,
+          "line": 756,
           "name": "CFComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 739,
+          "line": 771,
           "name": "CFVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 745,
+          "line": 777,
           "name": "CFHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 754,
+          "line": 786,
           "name": "CFVal_shiftFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 764,
+          "line": 796,
           "name": "CFHandler_shiftFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 769,
+          "line": 801,
           "name": "CFComp_shiftFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 787,
+          "line": 819,
           "name": "CFVal_substFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 800,
+          "line": 832,
           "name": "CFHandler_substFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 805,
+          "line": 837,
           "name": "CFComp_substFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 821,
+          "line": 853,
           "name": "CFComp_subst",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 826,
+          "line": 858,
           "name": "CFComp_ret",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 828,
+          "line": 860,
           "name": "CFVal_of_CFComp_ret",
           "visibilityBasis": "public-section"
         }
@@ -6062,7 +6368,7 @@
       "directImports": [
         "Bang.Core.EffectRow"
       ],
-      "loc": 440,
+      "loc": 463,
       "name": "Bang.Core.IR",
       "path": "Bang/Core/IR.lean",
       "publicSymbols": [
@@ -6074,157 +6380,175 @@
         },
         {
           "kind": "inductive",
-          "line": 78,
+          "line": 79,
+          "name": "ClauseKey",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 87,
+          "name": "op",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 91,
+          "name": "updates",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "inductive",
+          "line": 101,
           "name": "BinOp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 97,
+          "line": 120,
           "name": "Val",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 118,
+          "line": 141,
           "name": "Comp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 147,
+          "line": 170,
           "name": "Handler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 181,
+          "line": 204,
           "name": "boolVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 188,
+          "line": 211,
           "name": "BinOp.eval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 198,
+          "line": 221,
           "name": "BinOp.isCompare",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 206,
+          "line": 229,
           "name": "Store",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 216,
+          "line": 239,
           "name": "Frame",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 223,
+          "line": 246,
           "name": "EvalCtx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 232,
+          "line": 255,
           "name": "Config",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 240,
+          "line": 263,
           "name": "VTy",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 257,
+          "line": 280,
           "name": "CTy",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 269,
+          "line": 292,
           "name": "BinOp.resTy",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 286,
+          "line": 309,
           "name": "VTy.tyShiftFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 296,
+          "line": 319,
           "name": "CTy.tyShiftFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 304,
+          "line": 327,
           "name": "VTy.tySubstFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 317,
+          "line": 340,
           "name": "CTy.tySubstFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 324,
+          "line": 347,
           "name": "VTy.unrollMu",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 353,
+          "line": 376,
           "name": "GradeVec",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 357,
+          "line": 380,
           "name": "TyCtx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 360,
+          "line": 383,
           "name": "GradeVec.add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 364,
+          "line": 387,
           "name": "GradeVec.smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 373,
+          "line": 396,
           "name": "GradeVec.basis",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 377,
+          "line": 400,
           "name": "GradeVec.zeros",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "class",
-          "line": 400,
+          "line": 423,
           "name": "EffSig",
           "visibilityBasis": "public-section"
         }
@@ -6248,7 +6572,7 @@
       "directImports": [
         "Bang.Core.Semantics.Subst"
       ],
-      "loc": 270,
+      "loc": 283,
       "name": "Bang.Core.Semantics.Dispatch",
       "path": "Bang/Core/Semantics/Dispatch.lean",
       "publicSymbols": [
@@ -6266,67 +6590,67 @@
         },
         {
           "kind": "theorem",
-          "line": 49,
+          "line": 50,
           "name": "handlesOp_label",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 64,
+          "line": 65,
           "name": "splitAt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 75,
+          "line": 76,
           "name": "splitAtId",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 96,
+          "line": 97,
           "name": "tvarIdx",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 101,
+          "line": 102,
           "name": "storeSet",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 125,
+          "line": 126,
           "name": "dispatchOn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 183,
+          "line": 196,
           "name": "idDispatch",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 202,
+          "line": 215,
           "name": "handlerCount",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 247,
+          "line": 260,
           "name": "CapResolves",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 254,
+          "line": 267,
           "name": "FocusResolves",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 262,
+          "line": 275,
           "name": "handlesOp_substFrom",
           "visibilityBasis": "public-section"
         }
@@ -6337,7 +6661,7 @@
       "directImports": [
         "Bang.Core.Semantics.Dispatch"
       ],
-      "loc": 628,
+      "loc": 629,
       "name": "Bang.Core.Semantics.Eval",
       "path": "Bang/Core/Semantics/Eval.lean",
       "publicSymbols": [
@@ -6469,97 +6793,97 @@
         },
         {
           "kind": "theorem",
-          "line": 364,
+          "line": 365,
           "name": "Config.run_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 380,
+          "line": 381,
           "name": "Config.run_done_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 431,
+          "line": 432,
           "name": "Trace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 436,
+          "line": 437,
           "name": "liveBound",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 448,
+          "line": 449,
           "name": "Config.runTrace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 468,
+          "line": 469,
           "name": "Result.eraseTrace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 480,
+          "line": 481,
           "name": "runTrace_erase_eq_run",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 501,
+          "line": 502,
           "name": "Source.evalTrace",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 507,
+          "line": 508,
           "name": "evalTrace_erase_eq_eval",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 515,
+          "line": 516,
           "name": "traceWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 527,
+          "line": 528,
           "name": "traceWithin_nil",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 532,
+          "line": 533,
           "name": "liveBound_splitAtId",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 565,
+          "line": 566,
           "name": "labelEff_le_liveBound_of_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 578,
+          "line": 579,
           "name": "traceWithin_append",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 591,
+          "line": 592,
           "name": "runTrace_traceWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 616,
+          "line": 617,
           "name": "isReturn",
           "visibilityBasis": "public-section"
         }
@@ -6570,7 +6894,7 @@
       "directImports": [
         "Bang.Core.Semantics.Eval"
       ],
-      "loc": 264,
+      "loc": 273,
       "name": "Bang.Core.Semantics.Invariants",
       "path": "Bang/Core/Semantics/Invariants.lean",
       "publicSymbols": [
@@ -6600,7 +6924,7 @@
         },
         {
           "kind": "theorem",
-          "line": 251,
+          "line": 260,
           "name": "wellCounted_reachable",
           "visibilityBasis": "public-section"
         }
@@ -7039,7 +7363,7 @@
         "Bang.Core.Semantics",
         "Bang.Core.Typing"
       ],
-      "loc": 3392,
+      "loc": 3539,
       "name": "Bang.Core.Soundness",
       "path": "Bang/Core/Soundness.lean",
       "publicSymbols": [
@@ -7165,229 +7489,229 @@
         },
         {
           "kind": "theorem",
-          "line": 306,
+          "line": 307,
           "name": "HasVTy.length_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 384,
+          "line": 386,
           "name": "insG",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 388,
+          "line": 390,
           "name": "insT",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 393,
+          "line": 395,
           "name": "insG_smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 402,
+          "line": 404,
           "name": "insG_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 411,
+          "line": 413,
           "name": "insG_add_smul_aux",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 418,
+          "line": 420,
           "name": "insG_add_smul_aux'",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 433,
+          "line": 435,
           "name": "HasVTy.shift_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 500,
+          "line": 502,
           "name": "HasVTy.subst_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 573,
+          "line": 575,
           "name": "HasVTy.weaken",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 687,
+          "line": 689,
           "name": "HasCTy.weaken",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 825,
+          "line": 827,
           "name": "slotGrade",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 839,
+          "line": 841,
           "name": "eraseIdx_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 859,
+          "line": 861,
           "name": "slotGrade_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 870,
+          "line": 872,
           "name": "slotGrade_smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 880,
+          "line": 882,
           "name": "Sgrade",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 893,
+          "line": 895,
           "name": "Sgrade_add",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 909,
+          "line": 911,
           "name": "Sgrade_smul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1345,
+          "line": 1347,
           "name": "HasCTy.subst_gen",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1529,
+          "line": 1532,
           "name": "subst_value_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1619,
+          "line": 1622,
           "name": "HasCTy.ret_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1631,
+          "line": 1642,
           "name": "HasCTy.letC_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1686,
+          "line": 1697,
           "name": "HasCTy.handleState_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2206,
+          "line": 2306,
           "name": "splitAtId_decomp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2248,
+          "line": 2348,
           "name": "HasStack.handlesOp_of_split",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2290,
+          "line": 2390,
           "name": "HasCTy.perform_full_inv",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2307,
+          "line": 2407,
           "name": "HasVTy.cap_canonical",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2314,
+          "line": 2414,
           "name": "preservation_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2705,
+          "line": 2827,
           "name": "hasConfigTy_step",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3132,
+          "line": 3279,
           "name": "progress'_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3278,
+          "line": 3425,
           "name": "type_safety'_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3294,
+          "line": 3441,
           "name": "HandlesWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3314,
+          "line": 3461,
           "name": "custom_handlesWithin",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3327,
+          "line": 3474,
           "name": "no_accidental_handling_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3343,
+          "line": 3490,
           "name": "rowinst_requires_disjoint_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3362,
+          "line": 3509,
           "name": "no_accidental_handling_custom_proof",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3374,
+          "line": 3521,
           "name": "hasConfig'_of_closed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 3384,
+          "line": 3531,
           "name": "custom_program_safe_proof",
           "visibilityBasis": "public-section"
         }
@@ -7398,7 +7722,7 @@
       "directImports": [
         "Bang.Core.IR"
       ],
-      "loc": 510,
+      "loc": 517,
       "name": "Bang.Core.Typing",
       "path": "Bang/Core/Typing.lean",
       "publicSymbols": [
@@ -7440,37 +7764,37 @@
         },
         {
           "kind": "inductive",
-          "line": 369,
+          "line": 370,
           "name": "HasClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 396,
+          "line": 403,
           "name": "HasStack",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 467,
+          "line": 474,
           "name": "isReturnConfig",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 478,
+          "line": 485,
           "name": "HasConfigTy",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 494,
+          "line": 501,
           "name": "Disjoint",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 504,
+          "line": 511,
           "name": "WfInst",
           "visibilityBasis": "public-section"
         }
@@ -7625,7 +7949,7 @@
       "directImports": [
         "Bang.Frontend.Surface"
       ],
-      "loc": 1139,
+      "loc": 1167,
       "name": "Bang.Frontend.Format",
       "path": "Bang/Frontend/Format.lean",
       "publicSymbols": [
@@ -7637,25 +7961,25 @@
         },
         {
           "kind": "def",
-          "line": 556,
+          "line": 567,
           "name": "showSurf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 686,
+          "line": 699,
           "name": "showProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 706,
+          "line": 719,
           "name": "fmtExpr",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 710,
+          "line": 723,
           "name": "fmtProg",
           "visibilityBasis": "public-modifier"
         }
@@ -7667,7 +7991,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Query"
       ],
-      "loc": 289,
+      "loc": 290,
       "name": "Bang.Frontend.Lint",
       "path": "Bang/Frontend/Lint.lean",
       "publicSymbols": [
@@ -7697,25 +8021,25 @@
         },
         {
           "kind": "def",
-          "line": 215,
+          "line": 216,
           "name": "applyDeadPrivateFix",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 237,
+          "line": 238,
           "name": "unusedPubFindings",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 264,
+          "line": 265,
           "name": "fmtDivergenceFinding",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 284,
+          "line": 285,
           "name": "lintProg",
           "visibilityBasis": "public-modifier"
         }
@@ -7736,7 +8060,7 @@
       "directImports": [
         "Bang.Frontend.Diagnostics"
       ],
-      "loc": 899,
+      "loc": 919,
       "name": "Bang.Frontend.Query",
       "path": "Bang/Frontend/Query.lean",
       "publicSymbols": [
@@ -7760,247 +8084,253 @@
         },
         {
           "kind": "def",
-          "line": 155,
+          "line": 156,
           "name": "DeclKind.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 201,
+          "line": 207,
           "name": "typeStringOfDecl",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 209,
+          "line": 215,
           "name": "splitTypeRow",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 228,
+          "line": 234,
           "name": "DeclFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 261,
+          "line": 267,
           "name": "declFactOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 279,
+          "line": 285,
           "name": "declFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 285,
+          "line": 291,
           "name": "DeclFact.withModule",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 290,
+          "line": 296,
           "name": "DeclFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 302,
+          "line": 308,
           "name": "declBodies",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 320,
+          "line": 327,
           "name": "surfUsesVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 329,
+          "line": 336,
           "name": "declMentionsVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 334,
+          "line": 341,
           "name": "RefEdge",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 349,
+          "line": 356,
           "name": "nameRefEdgesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 412,
+          "line": 428,
           "name": "schemaVersion",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 427,
+          "line": 443,
           "name": "dumpJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 457,
+          "line": 471,
           "name": "dumpJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 487,
+          "line": 500,
           "name": "symbolsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 493,
+          "line": 506,
           "name": "symbolsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 506,
+          "line": 519,
           "name": "typeJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 517,
+          "line": 530,
           "name": "typeJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 525,
+          "line": 538,
           "name": "effectsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 536,
+          "line": 549,
           "name": "effectsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 545,
+          "line": 557,
+          "name": "lawsJsonP",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 565,
           "name": "lawsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 562,
+          "line": 582,
           "name": "defJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 569,
+          "line": 589,
           "name": "defJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 582,
+          "line": 602,
           "name": "refsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 590,
+          "line": 610,
           "name": "refsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 619,
+          "line": 639,
           "name": "HoverFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 640,
+          "line": 660,
           "name": "hoverAtP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 660,
+          "line": 680,
           "name": "hoverJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 667,
+          "line": 687,
           "name": "hoverJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 726,
+          "line": 746,
           "name": "holeMarkersIn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 755,
+          "line": 775,
           "name": "holesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 772,
+          "line": 792,
           "name": "holesJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 777,
+          "line": 797,
           "name": "holesJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 801,
+          "line": 821,
           "name": "dependentsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 818,
+          "line": 838,
           "name": "impactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 829,
+          "line": 849,
           "name": "impactJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 859,
+          "line": 879,
           "name": "semverDiff",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 882,
+          "line": 902,
           "name": "semverDiffJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 890,
+          "line": 910,
           "name": "semverDiffJson",
           "visibilityBasis": "public-modifier"
         }
@@ -8013,7 +8343,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Query"
       ],
-      "loc": 313,
+      "loc": 319,
       "name": "Bang.Frontend.Rewrite",
       "path": "Bang/Frontend/Rewrite.lean",
       "publicSymbols": [
@@ -8025,7 +8355,7 @@
         },
         {
           "kind": "def",
-          "line": 291,
+          "line": 297,
           "name": "rename",
           "visibilityBasis": "public-modifier"
         }
@@ -8036,7 +8366,7 @@
       "directImports": [
         "Bang.Core.Semantics"
       ],
-      "loc": 3415,
+      "loc": 3494,
       "name": "Bang.Frontend.Surface",
       "path": "Bang/Frontend/Surface.lean",
       "publicSymbols": [
@@ -8096,943 +8426,943 @@
         },
         {
           "kind": "inductive",
-          "line": 319,
+          "line": 320,
           "name": "SurfArgs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 326,
+          "line": 327,
           "name": "DArms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 334,
+          "line": 335,
           "name": "LetBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 349,
+          "line": 350,
           "name": "HClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 362,
+          "line": 364,
           "name": "LetRecBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 370,
+          "line": 372,
           "name": "toDArms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 376,
+          "line": 378,
           "name": "toLetBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 382,
+          "line": 384,
           "name": "toLetRecBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 389,
+          "line": 391,
           "name": "letRecBindingsToList",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 395,
+          "line": 397,
           "name": "letRecBindingsNames",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 404,
+          "line": 406,
           "name": "hClausesToList",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 412,
+          "line": 415,
           "name": "desugarLettMulti",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 427,
+          "line": 430,
           "name": "eraseLettMulti",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 472,
+          "line": 476,
           "name": "eraseLettMultiDArms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 477,
+          "line": 481,
           "name": "eraseLettMultiBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 482,
+          "line": 486,
           "name": "eraseLettMultiHClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 487,
+          "line": 493,
           "name": "eraseLettMultiLRBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 516,
+          "line": 522,
           "name": "lookup",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 537,
+          "line": 543,
           "name": "capExn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 539,
+          "line": 545,
           "name": "capState",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 541,
+          "line": 547,
           "name": "capStm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 546,
+          "line": 552,
           "name": "capOpKernel",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 563,
+          "line": 569,
           "name": "hostCapId",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 567,
+          "line": 573,
           "name": "lowerC",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 802,
+          "line": 810,
           "name": "lowerHClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 812,
+          "line": 824,
           "name": "lowerV",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 830,
+          "line": 842,
           "name": "lower",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 845,
+          "line": 857,
           "name": "scanQuoted",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 864,
+          "line": 876,
           "name": "tokenize",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 911,
+          "line": 923,
           "name": "PErr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "abbrev",
-          "line": 926,
+          "line": 938,
           "name": "P",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 930,
+          "line": 942,
           "name": "expect",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 935,
+          "line": 947,
           "name": "isIntLit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 940,
+          "line": 952,
           "name": "decodeEsc",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 951,
+          "line": 963,
           "name": "strToSurf",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 956,
+          "line": 968,
           "name": "pIdent",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1006,
+          "line": 1019,
           "name": "pEffRow",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1013,
+          "line": 1026,
           "name": "pTyPostEff",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1020,
+          "line": 1033,
           "name": "pTy",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1029,
+          "line": 1042,
           "name": "pTyAdd",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1033,
+          "line": 1046,
           "name": "pTyAddLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1038,
+          "line": 1051,
           "name": "pTyMul",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1042,
+          "line": 1055,
           "name": "pTyMulLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1050,
+          "line": 1063,
           "name": "isTyAtomStart",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1054,
+          "line": 1067,
           "name": "pTyAtom1",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1072,
+          "line": 1085,
           "name": "pTyArgs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1081,
+          "line": 1094,
           "name": "pTyAtom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1109,
+          "line": 1122,
           "name": "opInfo",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 1136,
+          "line": 1149,
           "name": "Frag",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 1146,
+          "line": 1159,
           "name": "Choice",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 1156,
+          "line": 1169,
           "name": "Rule",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1170,
+          "line": 1183,
           "name": "keywordRule",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1201,
+          "line": 1214,
           "name": "pExpr",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1329,
+          "line": 1353,
           "name": "pLetBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1347,
+          "line": 1371,
           "name": "pLetRecBindings",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1367,
+          "line": 1391,
           "name": "pOp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1374,
+          "line": 1398,
           "name": "pOpLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1393,
+          "line": 1417,
           "name": "pRuleDrive",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1416,
+          "line": 1440,
           "name": "pApp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1428,
+          "line": 1452,
           "name": "pAppLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1461,
+          "line": 1485,
           "name": "pMatchScrutineeLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1474,
+          "line": 1498,
           "name": "pDotted",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1479,
+          "line": 1503,
           "name": "pDotLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1494,
+          "line": 1518,
           "name": "pArgList",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1511,
+          "line": 1535,
           "name": "pDo",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1533,
+          "line": 1557,
           "name": "pArmBinders",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1545,
+          "line": 1569,
           "name": "pArm",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1560,
+          "line": 1584,
           "name": "pArms",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1570,
+          "line": 1594,
           "name": "pAtom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1654,
+          "line": 1679,
           "name": "pTupleTail",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1671,
+          "line": 1696,
           "name": "pHandlerName",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1696,
+          "line": 1721,
           "name": "pOpName",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1711,
+          "line": 1740,
           "name": "pHClause",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1724,
+          "line": 1757,
           "name": "pHClauses",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1746,
+          "line": 1782,
           "name": "parseE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1754,
+          "line": 1790,
           "name": "parse",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 1769,
+          "line": 1805,
           "name": "Span",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1781,
+          "line": 1817,
           "name": "Span.loc",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1787,
+          "line": 1823,
           "name": "tokenizeSpanned",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1836,
+          "line": 1872,
           "name": "locateToken",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1843,
+          "line": 1879,
           "name": "unboundLocated",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1859,
+          "line": 1895,
           "name": "locateInMsg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1881,
+          "line": 1917,
           "name": "spanOfRest",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1892,
+          "line": 1928,
           "name": "parseLocated",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 1962,
+          "line": 1998,
           "name": "OpSig",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1976,
+          "line": 2012,
           "name": "selfArrows",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 1981,
+          "line": 2017,
           "name": "peelArrows",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 1988,
+          "line": 2024,
           "name": "LawDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 1998,
+          "line": 2034,
           "name": "OpDef",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 2011,
+          "line": 2047,
           "name": "Decl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2046,
+          "line": 2088,
           "name": "Decl.name",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2061,
+          "line": 2104,
           "name": "ImportDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2070,
+          "line": 2113,
           "name": "UseDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 2083,
+          "line": 2126,
           "name": "Prog",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2116,
+          "line": 2159,
           "name": "pParamsLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2127,
+          "line": 2170,
           "name": "pParams",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2137,
+          "line": 2180,
           "name": "pTraitMembers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2166,
+          "line": 2209,
           "name": "pImplMembers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2189,
+          "line": 2232,
           "name": "pEffectMembers",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2206,
+          "line": 2258,
           "name": "pCtorTysLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2218,
+          "line": 2270,
           "name": "pCtor",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2227,
+          "line": 2279,
           "name": "pCtors",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2237,
+          "line": 2289,
           "name": "pDataParams",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2246,
+          "line": 2298,
           "name": "pTraitParams",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2256,
+          "line": 2308,
           "name": "pDerivingNamesLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2268,
+          "line": 2320,
           "name": "pDerivingClause",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2281,
+          "line": 2333,
           "name": "pDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2346,
+          "line": 2405,
           "name": "isDeclStart",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2371,
+          "line": 2430,
           "name": "isLetDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2409,
+          "line": 2468,
           "name": "pDeclPub",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2426,
+          "line": 2485,
           "name": "pDecls",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2454,
+          "line": 2513,
           "name": "pImport",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2460,
+          "line": 2519,
           "name": "pUseNamesLoop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2475,
+          "line": 2534,
           "name": "pUse",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2486,
+          "line": 2545,
           "name": "pHeader",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2502,
+          "line": 2561,
           "name": "parseProgE",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2514,
+          "line": 2573,
           "name": "parseProg",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2521,
+          "line": 2580,
           "name": "eraseLettMultiDecl",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2535,
+          "line": 2595,
           "name": "eraseLettMultiProg",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2546,
+          "line": 2606,
           "name": "parseProgLocated",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 2566,
+          "line": 2626,
           "name": "parseTy",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 2613,
+          "line": 2673,
           "name": "runFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "inductive",
-          "line": 2638,
+          "line": 2698,
           "name": "Outcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2649,
+          "line": 2709,
           "name": "Outcome.oom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2655,
+          "line": 2715,
           "name": "evalToOutcome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2664,
+          "line": 2724,
           "name": "runOutcomeFrom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2669,
+          "line": 2729,
           "name": "assertYieldsInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2673,
+          "line": 2733,
           "name": "assertStuck",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2677,
+          "line": 2737,
           "name": "assertEscaped",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2681,
+          "line": 2741,
           "name": "assertOutOfFuel",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2686,
+          "line": 2746,
           "name": "assertOom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2691,
+          "line": 2751,
           "name": "runYieldsInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2697,
+          "line": 2757,
           "name": "pureComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2702,
+          "line": 2762,
           "name": "throwsComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2708,
+          "line": 2768,
           "name": "deepComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2716,
+          "line": 2776,
           "name": "stateCellComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2722,
+          "line": 2782,
           "name": "stateGetComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2743,
+          "line": 2803,
           "name": "stmNew",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2745,
+          "line": 2805,
           "name": "stmRead",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2747,
+          "line": 2807,
           "name": "stmWrite",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2754,
+          "line": 2814,
           "name": "ledgerCommit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2775,
+          "line": 2835,
           "name": "ledgerAbort",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2825,
+          "line": 2885,
           "name": "cellComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 2837,
+          "line": 2897,
           "name": "cell_reflects_latest",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2852,
+          "line": 2912,
           "name": "beqVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2863,
+          "line": 2923,
           "name": "beqComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2880,
+          "line": 2940,
           "name": "beqHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2886,
+          "line": 2946,
           "name": "beqStore",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2900,
+          "line": 2960,
           "name": "Outcome.beq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2917,
+          "line": 2977,
           "name": "outcomeIs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2939,
+          "line": 2999,
           "name": "empty",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2942,
+          "line": 3002,
           "name": "push",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2949,
+          "line": 3009,
           "name": "pop",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2960,
+          "line": 3020,
           "name": "stackTopComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 2966,
+          "line": 3026,
           "name": "stackTop2Comp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3030,
+          "line": 3090,
           "name": "parsesTo",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 3273,
+          "line": 3352,
           "name": "progParsesTo",
           "visibilityBasis": "public-section"
         }
@@ -9066,7 +9396,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Surface"
       ],
-      "loc": 9493,
+      "loc": 9763,
       "name": "Bang.Frontend.TypeCheck",
       "path": "Bang/Frontend/TypeCheck.lean",
       "publicSymbols": [
@@ -9090,181 +9420,193 @@
         },
         {
           "kind": "structure",
-          "line": 1956,
+          "line": 2010,
           "name": "Inst",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "abbrev",
-          "line": 1976,
+          "line": 2030,
           "name": "InstEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1989,
+          "line": 2043,
           "name": "PendingOpKnot",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2025,
+          "line": 2079,
           "name": "CtorInfo",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2051,
+          "line": 2105,
           "name": "GenData",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2063,
+          "line": 2117,
           "name": "BoundedFn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2082,
+          "line": 2136,
           "name": "RawOp",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2095,
+          "line": 2149,
           "name": "RawImpl",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2108,
+          "line": 2162,
           "name": "HktImpl",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 2122,
+          "line": 2174,
+          "name": "NamedHandler",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "structure",
+          "line": 2185,
           "name": "ElabEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 4664,
+          "line": 4767,
           "name": "buildEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5459,
+          "line": 5601,
           "name": "mergeModules",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5693,
+          "line": 5838,
           "name": "surfUsesVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6180,
+          "line": 6331,
           "name": "expandDerives",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6316,
+          "line": 6467,
           "name": "lawTestSourceOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6420,
+          "line": 6571,
           "name": "elaborateToComp",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6435,
+          "line": 6586,
           "name": "checkAndLower",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6456,
+          "line": 6607,
           "name": "checkAndLowerProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6467,
+          "line": 6618,
           "name": "checkAndLowerProgWithEffects",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6477,
+          "line": 6628,
           "name": "elaborateToCompProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6489,
+          "line": 6640,
           "name": "checkProgRow",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6536,
+          "line": 6687,
           "name": "typeStringOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6549,
+          "line": 6700,
           "name": "typeStringOfProgP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6595,
+          "line": 6746,
           "name": "assertTypedOutOfFuel",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6600,
+          "line": 6751,
           "name": "assertTypedOom",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6726,
+          "line": 6877,
           "name": "sampleVT",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6749,
+          "line": 6900,
           "name": "checkLawOn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6881,
+          "line": 7064,
           "name": "lawInstancesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6905,
+          "line": 7072,
+          "name": "lawInstancesOfProg",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 7084,
           "name": "lawInstanceOpCallDiagnostics",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6941,
+          "line": 7127,
           "name": "unreachableIntImplDiagnostics",
           "visibilityBasis": "public-modifier"
         }
@@ -9279,7 +9621,7 @@
         "Bang.Core.Typing",
         "Bang.Meta.LR"
       ],
-      "loc": 1854,
+      "loc": 2096,
       "name": "Bang.Meta.BinaryLR",
       "path": "Bang/Meta/BinaryLR.lean",
       "publicSymbols": [
@@ -9429,193 +9771,217 @@
         },
         {
           "kind": "theorem",
-          "line": 517,
+          "line": 526,
           "name": "coApproxC_le_of_resumeDecomp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 527,
+          "line": 536,
           "name": "HandlerRel_mono",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 543,
+          "line": 552,
           "name": "krelS_append",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 662,
+          "line": 683,
           "name": "krelS_state_reinstall",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 721,
+          "line": 742,
           "name": "heap_getD_append_left",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 725,
+          "line": 746,
           "name": "heap_getD_append_mid",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 729,
+          "line": 750,
           "name": "heap_getD_default",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 733,
+          "line": 754,
           "name": "heap_getD_get",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 739,
+          "line": 760,
           "name": "HeapRel",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 750,
+          "line": 771,
           "name": "heapRel_self_of_cells_int",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 769,
+          "line": 790,
           "name": "dispatchOn_state_isSome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 774,
+          "line": 795,
           "name": "dispatchOn_transaction_isSome",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 782,
+          "line": 803,
           "name": "krelS_transaction_reinstall",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 903,
+          "line": 924,
           "name": "krelS_handlerCount_eq",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 930,
+          "line": 951,
           "name": "krelS_splitAtId_decomp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1039,
+          "line": 1060,
           "name": "crelK_fund_up",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1064,
+          "line": 1085,
           "name": "KrelS_g_cast",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1111,
+          "line": 1132,
           "name": "compatK_handleThrows",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1149,
+          "line": 1170,
           "name": "compatK_handleState",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1177,
+          "line": 1198,
           "name": "compatK_handleTransaction",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1210,
+          "line": 1231,
           "name": "HasVTy.scopedIn",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1216,
+          "line": 1237,
           "name": "hasClauses_mem_typed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1235,
+          "line": 1259,
+          "name": "hasClauses_mem_typed_updating",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1283,
           "name": "hasClauses_find?_typed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1253,
+          "line": 1295,
+          "name": "hasClauses_find?_typed_updating",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1314,
           "name": "custom_clause_resume_of",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1307,
+          "line": 1361,
+          "name": "custom_clause_update_of",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 1426,
           "name": "krelS_custom_reinstall",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1363,
+          "line": 1515,
           "name": "compatK_handleCustom",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1407,
+          "line": 1572,
           "name": "vrelK_fund_at",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1452,
+          "line": 1617,
           "name": "crelK_fund_at",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1722,
+          "line": 1948,
           "name": "vrelK_fund",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1731,
+          "line": 1957,
           "name": "crelK_fund",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1743,
+          "line": 1969,
           "name": "custom_clause_resume",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "theorem",
-          "line": 1762,
+          "line": 1983,
+          "name": "custom_clause_update",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 2004,
           "name": "krelS_refl",
           "visibilityBasis": "public-section"
         }
@@ -11063,7 +11429,7 @@
         "Bang.Core.Grade",
         "Bang.Core.Semantics"
       ],
-      "loc": 161,
+      "loc": 196,
       "name": "Bang.Witness.D5ParamHandlerWitness",
       "path": "Bang/Witness/D5ParamHandlerWitness.lean",
       "publicSymbols": [],
@@ -11622,7 +11988,7 @@
         "Bang.Frontend.TypeCheck",
         "Bang.Witness.LawTest"
       ],
-      "loc": 372,
+      "loc": 382,
       "name": "Bang.Witness.ProofExport",
       "path": "Bang/Witness/ProofExport.lean",
       "publicSymbols": [
@@ -11658,163 +12024,175 @@
         },
         {
           "kind": "def",
-          "line": 85,
+          "line": 84,
+          "name": "hashClauseKey",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 90,
           "name": "hashVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 96,
+          "line": 101,
           "name": "hashComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 111,
+          "line": 116,
           "name": "hashHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 122,
+          "line": 127,
           "name": "hexDigit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 126,
+          "line": 131,
           "name": "toHex16",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 134,
+          "line": 139,
           "name": "contentAddress",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 145,
+          "line": 150,
           "name": "showBinOp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 150,
+          "line": 155,
           "name": "strLit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 158,
+          "line": 163,
           "name": "intLit",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 162,
+          "line": 166,
+          "name": "showClauseKey",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 172,
           "name": "showVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 173,
+          "line": 183,
           "name": "showComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 188,
+          "line": 198,
           "name": "showHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 202,
+          "line": 212,
           "name": "N₀",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 207,
+          "line": 217,
           "name": "LeanGoalArtifact",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "structure",
-          "line": 222,
+          "line": 232,
           "name": "LawInput",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 242,
+          "line": 252,
           "name": "lamWrap",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 248,
+          "line": 258,
           "name": "applyArgs",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 257,
+          "line": 267,
           "name": "namedRow",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 270,
+          "line": 280,
           "name": "totalityCheck",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 283,
+          "line": 293,
           "name": "exportGoal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 311,
+          "line": 321,
           "name": "intOrdPrelude",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 316,
+          "line": 326,
           "name": "transInput",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 336,
+          "line": 346,
           "name": "loopyBody",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 339,
+          "line": 349,
           "name": "loopyPrelude",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 341,
+          "line": 351,
           "name": "loopyInput",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 350,
+          "line": 360,
           "name": "transRenamed",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 359,
+          "line": 369,
           "name": "commInput",
           "visibilityBasis": "public-section"
         }
@@ -12154,22 +12532,22 @@
       "name": "Apex"
     },
     {
-      "loc": 16995,
+      "loc": 17971,
       "moduleCount": 6,
       "name": "Backend"
     },
     {
-      "loc": 8162,
+      "loc": 8449,
       "moduleCount": 12,
       "name": "Core"
     },
     {
-      "loc": 17278,
+      "loc": 17682,
       "moduleCount": 12,
       "name": "Frontend"
     },
     {
-      "loc": 3852,
+      "loc": 4094,
       "moduleCount": 2,
       "name": "Meta"
     },
@@ -12179,7 +12557,7 @@
       "name": "Reify"
     },
     {
-      "loc": 3685,
+      "loc": 3730,
       "moduleCount": 19,
       "name": "Witness"
     }

@@ -1,5 +1,5 @@
-<!-- note-status: active -->
-<!-- describes: Bang/Core/IR.lean Bang/Core/Typing.lean Bang/Core/Semantics/Dispatch.lean Bang/Backend/AbstractMachine.lean Bang/Backend/EnvMachine.lean Bang/Frontend/TypeCheck.lean @ 5312ec0419dfc25fc38e1920f6e8dfc3cf298c8f -->
+<!-- note-status: historical -->
+<!-- describes: Bang/Core/IR.lean Bang/Core/Typing.lean Bang/Core/Semantics/Dispatch.lean Bang/Backend/AbstractMachine.lean Bang/Backend/EnvMachine.lean Bang/Frontend/TypeCheck.lean @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
 # Stateful handler policy probe — quotas expose the read-only parameter boundary
 
 > **Outcome (2026-07-18):** option A was accepted as ADR-0114. Explicit `ClauseKey.updating`
@@ -7,6 +7,9 @@
 > concrete WasmGC emitter. This note records the pre-decision probe; its deferral language is
 > historical. Public syntax now ships as
 > `update op(x) => (resumeValue, nextParam)`; `examples/stateful-quota/` is the two-call witness.
+> Re-verified on 2026-07-18: the example returns `10` under both executable engines, the full
+> example batteries pass, and the WasmGC effects differential agrees for both the surface example
+> and the raw typed-IR custom-parameter transition.
 
 > Follow-up to ADR-0113 and the completed `PATH-semantic-contracts`. The host-allowlist consumer
 > proved that immutable value policy already belongs in ordinary handler configuration. This probe

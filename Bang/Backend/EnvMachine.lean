@@ -2802,7 +2802,7 @@ theorem evalE_agrees_evalD_gen :
                 · simp only [hupd, if_true] at h
                   split at h
                   · rename_i resume next hbody
-                    simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+                    simp only [Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                     have hScPair : Val.ScopedV
                         (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length

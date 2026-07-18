@@ -670,10 +670,10 @@ theorem wCustomUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
                   split at h <;>
                     simp only [Option.some.injEq, Prod.mk.injEq] at h <;>
                     obtain ⟨rfl, rfl⟩ := h <;>
-                    simp_all [wCustomUpdate, injHStack, injHFrame]
-                · simp only [hupd, if_false] at h
+                    simp_all [injHStack, injHFrame]
+                · simp only [hupd] at h
                   obtain ⟨rfl, rfl⟩ := Option.some.inj h
-                  simp [wCustomUpdate, injHStack, injHFrame, hfr, hid, hcl, hupd]
+                  simp [injHFrame, hfr, hid, hcl, hupd]
           · simp only [hid, if_neg hid] at h
             cases hrec : CalcVM.customUpdate n op v hs with
             | none => rw [hrec] at h; simp at h
@@ -1381,7 +1381,7 @@ theorem customUpdate_hstackOk {n : Nat} {op : Bang.OpId} {v : Bang.Val} :
                     intro fr2 hfr2 <;>
                     rcases List.mem_cons.mp hfr2 with rfl | hfr2
                   all_goals first | exact hfr | exact hsh0 fr2 hfr2
-                · simp only [hupd, if_false, Option.some.injEq, Prod.mk.injEq] at h
+                · simp only [hupd] at h
                   obtain ⟨_, rfl⟩ := h
                   exact hsh
           · simp only [hid, if_neg hid] at h
@@ -2369,7 +2369,7 @@ theorem evalD_mono : ∀ (f g : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (�
                     by_cases hupd : clause.1.updates = true
                     · simp only [hupd, if_true] at h ⊢
                       exact h
-                    · simp only [hupd, if_false] at h ⊢
+                    · simp only [hupd] at h ⊢
                       exact ih _ _ _ _ _ r h
         | _ => simp only [CalcVM.evalD] at h ⊢ <;> exact h
     | handle hh M =>

@@ -2610,7 +2610,7 @@ theorem preservation_proof
           obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
           exact ⟨eo'', le_trans hleo' hleo,
             ⟨⊥, CTy.F q B,
-              HasCTy.ret hresume (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              HasCTy.ret hresume (by simp [hsmul_eq_smul, GradeVec.smul]),
               hsub''⟩, hnecfg'⟩
         · have hplain : clause.1.updates = false := Bool.eq_false_of_not_eq_true hupdate
           obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
@@ -3013,7 +3013,7 @@ theorem hasConfigTy_step
           obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
           exact ⟨eo'', le_trans hleo' hleo,
             ⟨⊥, CTy.F q B,
-              HasCTy.ret hresume (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              HasCTy.ret hresume (by simp [hsmul_eq_smul, GradeVec.smul]),
               hsub''⟩⟩
         · have hplain : clause.1.updates = false := Bool.eq_false_of_not_eq_true hupdate
           obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=

@@ -1,14 +1,13 @@
 <!-- note-status: active -->
-<!-- describes: Bang/Backend/AbstractMachine.lean tools/clone-report.py tools/leanlex.py @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
+<!-- describes: Bang/Backend/AbstractMachine.lean tools/clone-report.py tools/leanlex.py @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
 # Clone triage — duplication census + the extraction map
 
 > **Instrument:** `just clones` (`tools/clone-report.py`, Lean-aware token-window
 > detector; comments stripped via `tools/leanlex.py`). **Companion inventory:**
 > `docs/notes/proof-assets.md` (generated — what reusable proof machinery exists).
-> Snapshot 2026-07-13 on main @ `d6bb892e`: **62 families ≥4×5 lines,
-> duplicated mass ≈ 2171 normalized lines** — ~4.4% of the 49k-line Lean tree.
-> Re-run the tool for current numbers; this note's value is the *shape* analysis
-> and the extraction timing, which change slowly.
+> Re-audit 2026-07-18 on the rebased branch @ `569cca42`: **65 families ≥4×5 lines,
+> duplicated mass ≈ 2241 normalized lines**. The leading family remains the
+> 19×6-line outcome-refutation pattern, so the extraction map and timing below still hold.
 
 ## The headline finding: the top families are NOT tactic-shaped
 
@@ -42,7 +41,7 @@ resume trigger** (below), not adopted on faith.
 | #6, #7, #9: step-unfold headers (`cases hM : … with \| none => absurd \| some oM => rw; match …`), ~12 sites | half macro-shaped | a `step_cases hM h` tactic macro covers the header; the arms still need the inversion lemma | same window as above — the macro alone saves ~2 lines/site, not worth green-proof churn by itself |
 | #8: `splitAtId` destructure, 9×6, AbstractMachine ~4076–4962 | fully macro-shaped | `split_at_id_cases hsp hs` macro (cases + simp only + obtain, names fixed) | same file, same window; first genuinely macro-shaped candidate when that region is next opened |
 | #10, #11: Wasm.lean rec-arm `none/some + obtain + mem_cons` blocks, 8×6 | macro-or-lemma | small helper lemma over the recursion scheme | when Wasm.lean is next rewritten (D5-resume touches it) |
-| remaining 51 families | long tail, mass ≤ 45 each | mixed | opportunistic; re-run `just clones` at each ◊ |
+| remaining families | long tail, mass ≤ 45 each | mixed | opportunistic; re-run `just clones` at each ◊ |
 
 **The rule the map encodes:** extraction of *proven* duplication is bundled into
 the increment that already rewrites those sites (census risk paid once), never

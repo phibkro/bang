@@ -1,6 +1,11 @@
 <!-- note-status: active -->
-<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-rung5-print-diff.sh tools/emit-rung5-effects-diff.sh @ fcddca82e5406ec1f8bf37c9ed7ad7334c7941ba -->
+<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-rung5-print-diff.sh tools/emit-rung5-effects-diff.sh @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
 # Emission rung-5 design — unifying effects onto the GC path (the "closures + handlers" rung)
+
+> **Re-audit (2026-07-18, `569cca42`):** `emit-rung5-effects-diff.sh` reports 46 emitted whole
+> programs matching `bang run`, 23 of them effectful, plus the raw typed-IR stateful custom update
+> witness. `emit-rung5-print-diff.sh` reports 23/23 readback and module-aware programs matching,
+> including `calc` and `json`. The four-case escape differential is also hard-green.
 
 > **Verdict (one sentence).** Rung 5 unifies the two disjoint lowerings (inline rungs 1-3 for the
 > effect fragment, GC rung 4 for the closure fragment) onto **one `$val`/`$env` GC representation** —
@@ -158,7 +163,7 @@ SURVIVES      throws (try_table/throw) + rollback (catch_all_ref/throw_ref) are 
               verbatim, rep-agnostic. Only the VALUE/ENV rep merges.
 SLICES        S0 $ref slot · S1 state · S2 throws · S3 txn(GC heap) · S4 custom · S5 proof-grade.
               No frame-chain slice (post-v1, the ADR-0015 multi-shot frontier).
-LANDED        S0-S4 DONE (feat-rung5-effects): 45 whole programs → WasmGC → wasmtime == bang run, of
+LANDED        S0-S4 DONE (feat-rung5-effects): 46 whole programs → WasmGC → wasmtime == bang run, of
               which 23 are EFFECTFUL (state/stm/throws/logger/custom/dst-rounds/ndet, including the
               ADR-0114 stateful-quota surface witness). The rung-4
               blanket effect-refusal is REPLACED — effectful corpus programs now compile via

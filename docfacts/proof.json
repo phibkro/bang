@@ -187,7 +187,7 @@
       "claimRole": "supporting",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 2763,
+        "line": 2794,
         "path": "Bang/Backend/Wasm.lean"
       },
       "evidenceKind": "kernel-checked-specialization",
@@ -223,7 +223,7 @@
       "claimRole": "supporting",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 2751,
+        "line": 2782,
         "path": "Bang/Backend/Wasm.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -942,7 +942,7 @@
       "claimRole": "supporting",
       "claimStrength": "bounded",
       "definitionSource": {
-        "line": 2837,
+        "line": 2897,
         "path": "Bang/Frontend/Surface.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -974,7 +974,7 @@
       "claimRole": "canonical",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 3456,
+        "line": 3706,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1008,7 +1008,7 @@
       "claimRole": "canonical",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 6843,
+        "line": 7562,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1043,7 +1043,7 @@
       "claimRole": "supporting",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 2296,
+        "line": 2521,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1080,7 +1080,7 @@
       "claimRole": "supporting",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 5494,
+        "line": 6161,
         "path": "Bang/Backend/AbstractMachine.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1118,7 +1118,7 @@
       "claimRole": "canonical",
       "claimStrength": "strong",
       "definitionSource": {
-        "line": 3147,
+        "line": 3269,
         "path": "Bang/Backend/EnvMachine.lean"
       },
       "evidenceKind": "kernel-checked-theorem",
@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "58b41c40545ddc0b2d28a2527fe9ae83248c37cd627291082f4733166d11437a",
+    "digest": "982c9ad4aaa2bd2805b8a7bc0847cd6dcc4deba95b9abab33c29cc0150014b6b",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",

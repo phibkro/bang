@@ -319,7 +319,7 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M
                     · have hupd0 := Bool.eq_false_of_not_eq_true hupd
                       simp only [hupd0, Bool.false_eq_true, if_false] at h ⊢
                       exact ih _ _ _ _ _ _ h
-        | _ => simp [evalD] at h ⊢ <;> exact h
+        | _ => simp [evalD] at h ⊢
     | handle h0 M0 =>
         cases h0 with
         | custom ℓ0 p0 cls0 =>
