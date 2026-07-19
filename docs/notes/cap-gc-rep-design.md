@@ -1,5 +1,5 @@
 <!-- note-status: active -->
-<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-escape-diff.sh @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
+<!-- describes: Bang/Backend/WasmEmit.lean tools/emit-escape-diff.sh @ a47d3ce581dec301a847cdce192fe450640407c4 -->
 # First-class-capability GC rep — design (#133)
 
 > **Scope correction (2026-07-19):** the scalar `$liveTop` repair is **not** exact live-frame
