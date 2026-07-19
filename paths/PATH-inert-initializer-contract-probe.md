@@ -84,7 +84,10 @@
 - [x] Completed 2026-07-19
 - Focused evidence: `tools/test-initializer-census.sh` passes **12/12**; compiled build passes **1456
   jobs**.
-- Convergence evidence: pending final branch gates before publication.
+- Convergence evidence: the tracked product tree passes the full pre-commit `fitness` and `verify`
+  compositions; focused evidence remains **12/12**, the compiled build remains **1456 jobs**, and no
+  checker, query, lowering, runtime, or proof contract changed.
+- Published product commit: `d170f007` on `codex/inert-initializer-contract-probe`.
 - Retained failed gates / successors: cumulative-row attribution remains rejected by ADR-0117;
   compute-once constants retain an explicit-init/memoizing-handler door only if a program pulls it.
 - Reopen / observe: rerun exact corpus rows when initializer syntax, constructor resolution, the example
