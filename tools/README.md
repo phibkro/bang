@@ -86,6 +86,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
 | [`test-82-verbs.sh`](test-82-verbs.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for the #82 agent-tooling verbs over the landed |
 | [`test-annotate.sh`](test-annotate.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite annotate` (#82 item 1) |
+| [`test-autoquality.sh`](test-autoquality.sh) | `fitness` | `autoquality.sh`, `tools/autoquality-files.txt`, `.github/workflows/verify.yml` | Falsification poles for complete product-range discovery in the pinned tooling gate |
 | [`test-bang-build.sh`](test-bang-build.sh) | `verify` | `Main.lean`, `Bang/Backend/WasmEmit.lean` | the CLI gate for `bang build` (issue #136 productized) |
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |
 | [`test-cli-exit-status.sh`](test-cli-exit-status.sh) | `verify` | `tools/test-query.sh`, `tools/test-fmt.sh` | Falsifier for success-path stdout captures: a proxy emits the real expected bytes, then mutates |
