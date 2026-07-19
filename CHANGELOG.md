@@ -320,6 +320,6 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - harden contract evidence integrity (`change:e8b0be444169a0f5091862ec900afe7a0ad35a4384bb79d292e8f610771ae893`)
 - **query** — stabilize interface effect rendering (`change:c1a5b7c9386b1610f2d4fbaf0355c61a777560acb6ffe9c30ad740982fc3f271`)
 - **query** — stabilize module body effect identity (`change:61d06a10b001f146c4aec595e19b4ba508ea4bd5f3d95c802b75c56dd7c6a5e6`)
-- **wasm** — track exact live capabilities (`change:c99fd23f8a8715316dea2cd2dc8485d0e1d7b80c55a435259bed427a505eec8f`)
+- **wasm** — track exact live capabilities (`change:402ecbad66486248351a32f1ff84b39bb3fe4c4ea85a69607d74cec96dc52e6a`)
 
 <!-- END GENERATED changelog -->
