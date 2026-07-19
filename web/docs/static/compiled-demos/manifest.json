@@ -3,8 +3,8 @@
   "packId": "bang-compiled-browser-demo-v1",
   "builtFrom": {
     "repository": "https://github.com/phibkro/bang",
-    "commit": "3c9968afa61648976ec7dfeaa2f21ed67dd8e78c",
-    "compilerTree": "fee70060a608cc7186296a38ae239d3618a4c745",
+    "commit": "87a2a6ba156893163c96482ef8401ac53ed8ee9c",
+    "compilerTree": "1156913f9a0dfbc18656859cb945d58cc005609f",
     "bangVersion": "bang 0.1.1",
     "wasmToolsVersion": "wasm-tools 1.253.0"
   },
@@ -23,7 +23,7 @@
       "id": "json",
       "title": "JSON parser",
       "source": "examples/json/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/json",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/87a2a6ba156893163c96482ef8401ac53ed8ee9c/examples/json",
       "sourceFiles": [
         {
           "path": "examples/json/Json.bang",
@@ -50,7 +50,7 @@
       "id": "calc",
       "title": "Calculator parser",
       "source": "examples/calc/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/calc",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/87a2a6ba156893163c96482ef8401ac53ed8ee9c/examples/calc",
       "sourceFiles": [
         {
           "path": "examples/calc/Ast.bang",
@@ -85,7 +85,7 @@
       "id": "nqueens",
       "title": "N-Queens (4 + 5 + 6)",
       "source": "examples/nqueens/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/nqueens",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/87a2a6ba156893163c96482ef8401ac53ed8ee9c/examples/nqueens",
       "sourceFiles": [
         {
           "path": "examples/nqueens/main.bang",
@@ -100,7 +100,7 @@
       "id": "ndet-sim-kv-a",
       "title": "sim-KV · first realization",
       "source": "examples/ndet-sim-kv-a/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/ndet-sim-kv-a",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/87a2a6ba156893163c96482ef8401ac53ed8ee9c/examples/ndet-sim-kv-a",
       "sourceFiles": [
         {
           "path": "examples/ndet-sim-kv-a/main.bang",
@@ -115,7 +115,7 @@
       "id": "ndet-sim-kv-b",
       "title": "sim-KV · swapped realization",
       "source": "examples/ndet-sim-kv-b/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/ndet-sim-kv-b",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/87a2a6ba156893163c96482ef8401ac53ed8ee9c/examples/ndet-sim-kv-b",
       "sourceFiles": [
         {
           "path": "examples/ndet-sim-kv-b/main.bang",
