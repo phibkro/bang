@@ -204,9 +204,13 @@ reparses printed source. -/
 def withQueryBody (p : Prog) (name : String) : Prog :=
   { p with body := .var name, isLibrary := false }
 
-/-- **PUBLIC (TIER 1):** the checker's `type ! row` string for top-level binding `name` in program
-`p`, or the checker's own error message on failure (an ill-typed program, or `name` not bound as a
-VALUE — e.g. naming a `trait`/`data`/`effect`, which `Surf.var` can never resolve to). `public`:
+/-- **PUBLIC (TIER 1):** the checker's `type ! row` string for the WHOLE `withQueryBody p name`
+projection, or the checker's own error message on failure (an ill-typed program, or `name` not bound
+as a VALUE — e.g. naming a `trait`/`data`/`effect`, which `Surf.var` can never resolve to). Because
+`checkAndLowerProg` folds every top-level `letD`/`letRecD` around that query body, the rendered row
+is CHAIN-CUMULATIVE, not the named declaration's RHS-local initializer row: an unrelated strict
+initializer can contribute its effects. `tools/test-initializer-census.sh` pins that distinction.
+`public`:
 `Bang.Rewrite.annotate` (#82) reuses this DIRECTLY (a `letD`'s own annotate-outcome needs exactly
 this per-decl checked fact) rather than re-deriving a second `withQueryBody`-style projection. -/
 public def typeStringOfDecl (p : Prog) (name : String) : Except String String :=
@@ -245,7 +249,10 @@ public structure DeclFact where
   type-checks — see this structure's own doc comment for the full `type`/`row`/`typeError`
   three-way split. -/
   type      : Option String
-  /-- The decl's rendered effect row, alongside `type` (`some` under the same condition). -/
+  /-- The rendered effect row of the WHOLE `withQueryBody p name` projection, alongside `type`
+  (`some` under the same condition). This is chain-cumulative through every strict top-level
+  initializer, not an RHS-local row; see `typeStringOfDecl` and
+  `tools/test-initializer-census.sh`. -/
   row       : Option String
   /-- The checker's error message, `some` when a value-typed decl's `type`/`row` came back `none`
   because type-checking FAILED (as opposed to `none` because this decl kind has no value-level

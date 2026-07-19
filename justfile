@@ -73,6 +73,11 @@ check-examples-env:
 test-slice-fidelity:
     bash tools/test-slice-fidelity.sh
 
+# One-sided surface-form census for strict initializers, plus the retained cumulative-row and
+# generic-let-rec coverage poles that prevent DeclFact rows being misread as initializer-local.
+test-initializer-census:
+    bash tools/test-initializer-census.sh
+
 # Non-interactive gate for `bang repl` (issue #7): pipes scripted transcripts
 # through the binary and asserts stdout/stderr/exit-code, mirroring
 # check-examples.sh's shape. Part of the default `verify` chain.

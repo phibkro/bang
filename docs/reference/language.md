@@ -1103,6 +1103,12 @@ nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`f
 type-checks; `typeError` carries the checker's message when it doesn't; `shape` carries
 a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`/`handler`, which have no
 value-level type. `refs` is DECL-granularity (which decl's body mentions which name).
+A value declaration's `row` is the checked row of the WHOLE `withQueryBody` projection:
+all strict top-level `let`/`letRec` initializers still wrap the selected result. It is therefore
+chain-cumulative, not the named RHS's initializer-local row; an unrelated divergent sibling can
+make manifest values before and after it all report `{Div}`. The retained initializer-census gate
+also pins one runnable generic `letRec` whose bare query projection reports `row:null`, so consumers
+must treat `row` as neither per-binding effect evidence nor complete initializer coverage.
 
 **Position-addressing (line/col → decl) landed at DECL granularity** (issue #52 slice 5,
 `bang query hover`, below) — a cursor resolves to the NEAREST-ENCLOSING top-level decl,

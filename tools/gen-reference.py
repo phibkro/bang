@@ -1770,6 +1770,24 @@ def render():
     L.append(
         "value-level type. `refs` is DECL-granularity (which decl's body mentions which name)."
     )
+    L.append(
+        "A value declaration's `row` is the checked row of the WHOLE `withQueryBody` projection:"
+    )
+    L.append(
+        "all strict top-level `let`/`letRec` initializers still wrap the selected result. It is therefore"
+    )
+    L.append(
+        "chain-cumulative, not the named RHS's initializer-local row; an unrelated divergent sibling can"
+    )
+    L.append(
+        "make manifest values before and after it all report `{Div}`. The retained initializer-census gate"
+    )
+    L.append(
+        "also pins one runnable generic `letRec` whose bare query projection reports `row:null`, so consumers"
+    )
+    L.append(
+        "must treat `row` as neither per-binding effect evidence nor complete initializer coverage."
+    )
     L.append("")
     L.append(
         "**Position-addressing (line/col → decl) landed at DECL granularity** (issue #52 slice 5,"

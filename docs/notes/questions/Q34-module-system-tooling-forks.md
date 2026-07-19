@@ -303,3 +303,32 @@ effect labels and import slots. Before choosing a mechanism, census real top-lev
 if inert descriptions dominate, consider making strict module initialization unrepresentable; if strict
 computations are common, specify their order/effects explicitly. The census measures this fork and does
 not itself impose a new surface restriction.
+
+## Initializer-census input (2026-07-18): rows are cumulative; syntax bounds the residue
+
+The cheapest proposed census—bucket each value declaration by its existing `DeclFact.row`—failed two
+kill shots. `typeStringOfDecl` checks `withQueryBody p name`; `foldLetDecls` therefore leaves the whole
+strict declaration chain around every selected result. In a minimized program with manifest values
+before and after one divergent initializer, **all five** declaration rows are `{Div}`. The row is a
+whole-query-projection effect, not an initializer-local effect, and effect sets cannot be recovered by
+subtracting prefix rows. Separately, 273/274 strict initializer occurrences have a row: the runnable
+generic `examples/list-basics` binding `length` reports `row:null` / `unbound variable length` because
+the bare query projection supplies no specialization call-site.
+
+`PATH-top-level-initializer-census` preserves both falsifiers and answers only what surface syntax can
+soundly answer without duplicating elaboration. Across the 61 resolved example journeys, 274 strict
+initializer occurrences divide into **233 manifest values**, **24 recursive definitions**, and **17
+computation forms**. Forty journeys have no strict initializer, seven contain definition forms only,
+and fourteen contain at least one computation form. The first two buckets total **257/274 (94%,
+rounded)** under today's non-eager recursive-knot encoding. The residual is an upper bound: named
+constructors retain application syntax until elaboration and therefore conservatively land there even
+when they become values. Counts are occurrence-weighted—imports recur per
+consumer, and the two generated reactive workloads contribute 209 manifest values—so declaration-count
+dominance is not a unique-source census or a mandate for an inert-only language rule.
+
+**Decision:** correct `DeclFact.row` documentation now; keep `linkReady=false`; use syntax only as a
+one-sided inert-description lower bound. The next evidence increment must be checker-cooperative: expose
+the per-binding RHS row already computed during binding elaboration through an additive, reviewed fact,
+then refine only the 17 computation-form occurrences. Generic bare-projection coverage repair is a
+separate defect. No schema/checker behavior, slicer, language rule, initialization order, or linker is
+changed by this census.

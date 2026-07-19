@@ -970,6 +970,103 @@ def runInternalSliceFidelityBatch (files : List String) : IO UInt32 := do
     if code != 0 then aggregate := 1
   return aggregate
 
+/-- One-sided manifest-value test for the census. The true arms are exactly the currently established
+surface value formers (`Surface.lowerV` / TypeCheck's value restriction); the catch-all is deliberately
+conservative, so a future constructor lands in computation-form until reviewed rather than becoming a
+false inert claim. A thunk is a value regardless of its suspended body. -/
+def isManifestInitializerValue : Bang.Surface.Surf → Bool
+  | .lit _ | .var _ | .unitS | .thunk _ => true
+  | .inlS e | .inrS e | .foldS e        => isManifestInitializerValue e
+  | .pairS a b                          =>
+      isManifestInitializerValue a && isManifestInitializerValue b
+  | .annotS e _                         => isManifestInitializerValue e
+  | .useS _ _ e                         => isManifestInitializerValue e
+  | _                                   => false
+
+/-- One-sided syntax classes for declarations that `foldLetDecls` makes strict. `letRecD` is kept
+separate: today's tuple-of-thunks μ-knot elaboration builds its recursive knot without running the
+function body (revisit this bucket if that encoding becomes eager), while a non-value `letD` remains
+conservatively unknown even when its computation is actually pure. `fnD` is absent because
+`foldLetDecls` does not put generic templates in the initialization chain. -/
+inductive InitializerSyntaxClass where
+  | manifestValue
+  | recursiveDefinition
+  | computationForm
+  deriving DecidableEq
+
+def classifyStrictInitializer : Bang.Surface.Decl → Option InitializerSyntaxClass
+  | .letD _ _ rhs =>
+      some (if isManifestInitializerValue rhs then .manifestValue else .computationForm)
+  | .letRecD .. => some .recursiveDefinition
+  | _ => none
+
+#guard classifyStrictInitializer (.letD "x" none (.lit 1)) == some .manifestValue
+#guard classifyStrictInitializer (.letD "x" none (.force (.var "f"))) == some .computationForm
+#guard classifyStrictInitializer (.letRecD "f" (.tArr .tInt .tInt) (.lam "x" (.var "x"))) ==
+  some .recursiveDefinition
+#guard classifyStrictInitializer (.fnD "f" [] .tInt "T" "a" (.lit 1)) == none
+
+structure InitializerSyntaxCounts where
+  manifestValues       : Nat := 0
+  recursiveDefinitions : Nat := 0
+  computationForms     : Nat := 0
+
+def InitializerSyntaxCounts.total (c : InitializerSyntaxCounts) : Nat :=
+  c.manifestValues + c.recursiveDefinitions + c.computationForms
+
+def InitializerSyntaxCounts.add (a b : InitializerSyntaxCounts) : InitializerSyntaxCounts :=
+  { manifestValues := a.manifestValues + b.manifestValues
+    recursiveDefinitions := a.recursiveDefinitions + b.recursiveDefinitions
+    computationForms := a.computationForms + b.computationForms }
+
+def initializerSyntaxCounts (p : Bang.Surface.Prog) : InitializerSyntaxCounts :=
+  p.decls.foldl (fun counts decl =>
+    match classifyStrictInitializer decl with
+    | none => counts
+    | some .manifestValue => { counts with manifestValues := counts.manifestValues + 1 }
+    | some .recursiveDefinition =>
+        { counts with recursiveDefinitions := counts.recursiveDefinitions + 1 }
+    | some .computationForm => { counts with computationForms := counts.computationForms + 1 }) {}
+
+/-- Resolver-aware, occurrence-weighted syntax census for strict initializers. Imported declarations
+are counted once per consuming subject on purpose: this is a journey-weighted corpus measurement,
+not a unique-source inventory (the current facts do not expose collision-safe source identities).
+Manifest-value and recursive-definition are sound inert-description candidates modulo fuel;
+computation-form is deliberately one-sided/unknown, never a claim that an effect occurs. -/
+def runInternalInitializerCensusBatch (files : List String) : IO UInt32 := do
+  let mut aggregate : UInt32 := 0
+  let mut total : InitializerSyntaxCounts := {}
+  let mut resolvedSubjects := 0
+  let mut emptySubjects := 0
+  let mut definitionOnlySubjects := 0
+  let mut computationSubjects := 0
+  for file in files do
+    match ← resolveEntryFile file with
+    | .error e =>
+        IO.eprintln s!"initializer-census resolve-error subject={file} error={e}"
+        aggregate := 1
+    | .ok prog =>
+        let counts := initializerSyntaxCounts prog
+        resolvedSubjects := resolvedSubjects + 1
+        total := total.add counts
+        if counts.total == 0 then
+          emptySubjects := emptySubjects + 1
+        else if counts.computationForms == 0 then
+          definitionOnlySubjects := definitionOnlySubjects + 1
+        else
+          computationSubjects := computationSubjects + 1
+        IO.println <|
+          s!"initializer-census subject={file} manifest-values={counts.manifestValues} " ++
+          s!"recursive-definitions={counts.recursiveDefinitions} " ++
+          s!"computation-forms={counts.computationForms} strict-initializers={counts.total}"
+  IO.println <|
+    s!"initializer-census total requested-subjects={files.length} resolved-subjects={resolvedSubjects} " ++
+    s!"empty-subjects={emptySubjects} definition-only-subjects={definitionOnlySubjects} " ++
+    s!"computation-subjects={computationSubjects} manifest-values={total.manifestValues} " ++
+    s!"recursive-definitions={total.recursiveDefinitions} computation-forms={total.computationForms} " ++
+    s!"strict-initializers={total.total}"
+  return aggregate
+
 /-- `bang emit <file> [-o out.wat]` — lower an entry FILE to a WasmGC `.wat` MODULE and print it (to
 stdout, or to `-o`/`--out` PATH). Shares the runner's `resolveEntryFile` (ADR-0093 D1-D5 module
 resolution + merge) so the emitter sees the SAME flat, module-resolved `Comp` `bang run` lowers —
@@ -2970,7 +3067,8 @@ def main (args : List String) : IO UInt32 := do
       -- promised outside this checkout.
       match rest with
       | "slice-fidelity" :: file :: files => runInternalSliceFidelityBatch (file :: files)
-      | _ => cliError "bang internal: expected `slice-fidelity <file.bang>...`"
+      | "initializer-census" :: file :: files => runInternalInitializerCensusBatch (file :: files)
+      | _ => cliError "bang internal: expected `slice-fidelity|initializer-census <file.bang>...`"
     else if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
       -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file
