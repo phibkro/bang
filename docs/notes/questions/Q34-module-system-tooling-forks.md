@@ -366,3 +366,18 @@ is entry-owned: 14 are `main` bindings (including `nqueens.main`), while the rem
 an inert-library contract has zero current corpus cost; an all-top-level rule would mostly collide with
 the chosen `main` entry convention. The remaining fork is now an operator-visible surface decision, not
 another measurement or cache implementation.
+
+## Source initialization-order input (2026-07-19): preserve semantics without guessing effects
+
+ADR-0117 leaves strict top-level computation legal, so initialization remains a first-class link input.
+`PATH-module-initialization-order` exposes the resolver-owned source portion directly: imported modules
+in dependency-first traversal order, entry last, and each module's `let`/`let rec` declarations in full
+source-declaration order. `(module, sourceIndex)` distinguishes duplicate names before merge or
+elaboration can destroy occurrence identity; ordinary lets are `strict-rhs`, recursive definitions are
+`recursive-knot`.
+
+The companion metadata is the limit, not boilerplate: `elaborationProvenance=false`,
+`perBindingEffects=false`, and `linkReady=false`. Reversed independent imports reverse their published
+initializer blocks, faithfully exposing today's observable order. No row, runtime label, or import slot
+is joined to these source occurrences. Runtime relocation and slot validation remain the next artifact
+wall, and crossing it must satisfy ADR-0117 rather than infer identity from the flattened let spine.

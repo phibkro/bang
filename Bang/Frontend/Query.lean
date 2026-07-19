@@ -401,9 +401,44 @@ public structure ModuleDepFact where
   tgt : String
   deriving Repr
 
+/-- How one source value declaration enters the current strict top-level initialization chain.
+`strictRhs` evaluates an ordinary `let` RHS immediately. `recursiveKnot` constructs the current
+`let rec` knot immediately but does not execute its suspended function body. -/
+public inductive ModuleInitializerMode where
+  | strictRhs | recursiveKnot
+  deriving Repr, DecidableEq
+
+/-- **PUBLIC (TIER 1):** one source declaration occurrence in the exact dependency-first,
+source-order initialization sequence consumed by today's flat module lowering. `id` is an
+occurrence address within this resolved source snapshot, not a cross-edit content identity.
+`sourceIndex` counts every declaration in its owning source module, so duplicate binder names remain
+distinct without guessing from post-elaboration names. No effect row is attributed here. -/
+public structure ModuleInitializerFact where
+  id          : String
+  module      : String
+  sourceIndex : Nat
+  order       : Nat
+  name        : String
+  kind        : DeclKind
+  mode        : ModuleInitializerMode
+  deriving Repr
+
+/-- Metadata that bounds the source initializer rows. The resolver inventory is complete for
+source `let`/`let rec` occurrences, but it deliberately does not claim provenance through prelude
+injection, alias elimination, monomorphization, ANF, checking, or lowering. -/
+public structure ModuleInitializationContractFact where
+  scope                     : String
+  order                     : String
+  sourceOccurrencesComplete : Bool
+  elaborationProvenance     : Bool
+  perBindingEffects         : Bool
+  linkReady                 : Bool
+  deriving Repr
+
 -- Generated `Repr` code ignores its precedence argument.
 attribute [nolint unusedArguments] instReprModuleOrigin.repr instReprModuleFact.repr
-  instReprModuleDepFact.repr
+  instReprModuleDepFact.repr instReprModuleInitializerMode.repr
+  instReprModuleInitializerFact.repr instReprModuleInitializationContractFact.repr
 
 /-- The path-free entry node used by every source- and `Prog`-taking dump route. -/
 public def entryModuleFact : ModuleFact := ⟨"@entry", .entry⟩
@@ -416,8 +451,73 @@ public def ModuleFact.toJson (f : ModuleFact) : String :=
 public def ModuleDepFact.toJson (e : ModuleDepFact) : String :=
   jsonObj [jsonStrField "from" e.src, jsonStrField "to" e.tgt]
 
+/-- Stable JSON spelling for the two initializer modes. -/
+public def ModuleInitializerMode.toJson : ModuleInitializerMode → String
+  | .strictRhs => "\"strict-rhs\""
+  | .recursiveKnot => "\"recursive-knot\""
+
+/-- One source initializer occurrence → its flat JSON row. -/
+public def ModuleInitializerFact.toJson (f : ModuleInitializerFact) : String :=
+  jsonObj [jsonStrField "id" f.id, jsonStrField "module" f.module,
+    jsonField "sourceIndex" (toString f.sourceIndex), jsonField "order" (toString f.order),
+    jsonStrField "name" f.name, jsonField "kind" f.kind.toJson,
+    jsonField "mode" f.mode.toJson]
+
+/-- The fixed honesty metadata for today's resolver-source initialization projection. -/
+public def moduleInitializationContract : ModuleInitializationContractFact := {
+  scope := "resolver-source-initializer-order"
+  order := "dependency-first-source-order"
+  sourceOccurrencesComplete := true
+  elaborationProvenance := false
+  perBindingEffects := false
+  linkReady := false
+}
+
+/-- Initialization-contract metadata → JSON. -/
+public def ModuleInitializationContractFact.toJson
+    (f : ModuleInitializationContractFact) : String :=
+  jsonObj [jsonStrField "scope" f.scope, jsonStrField "order" f.order,
+    jsonField "sourceOccurrencesComplete" (if f.sourceOccurrencesComplete then "true" else "false"),
+    jsonField "elaborationProvenance" (if f.elaborationProvenance then "true" else "false"),
+    jsonField "perBindingEffects" (if f.perBindingEffects then "true" else "false"),
+    jsonField "linkReady" (if f.linkReady then "true" else "false")]
+
+private structure InitializerOccurrence where
+  module      : String
+  sourceIndex : Nat
+  name        : String
+  kind        : DeclKind
+  mode        : ModuleInitializerMode
+
+/-- **PUBLIC (TIER 1):** project resolver-owned, unmerged source modules into the exact strict
+initializer occurrence sequence. Callers provide modules in the same dependency-first order handed
+to `mergeModules`, with `@entry` last. This deliberately stops before rows, lowering, slots, or
+artifacts: it records the initialization input without pretending source occurrences survived
+elaboration. -/
+public def moduleInitializerFactsOf
+    (modulePrograms : List (String × Prog)) : List ModuleInitializerFact :=
+  let occurrences : List InitializerOccurrence := modulePrograms.flatMap fun (moduleName, p) =>
+    p.decls.zipIdx.filterMap fun (d, sourceIndex) =>
+      match d with
+      | .letD name .. => some (InitializerOccurrence.mk
+          moduleName sourceIndex name .letD .strictRhs)
+      | .letRecD name .. => some (InitializerOccurrence.mk
+          moduleName sourceIndex name .letRecD .recursiveKnot)
+      | _ => none
+  occurrences.zipIdx.map fun pair =>
+    let (occurrence, order) := pair
+    ModuleInitializerFact.mk
+      s!"{occurrence.module}::decl:{occurrence.sourceIndex}"
+      occurrence.module occurrence.sourceIndex order occurrence.name occurrence.kind occurrence.mode
+
 #guard entryModuleFact.toJson == "{\"name\":\"@entry\",\"origin\":\"entry\"}"
 #guard (ModuleDepFact.mk "@entry" "Json").toJson == "{\"from\":\"@entry\",\"to\":\"Json\"}"
+#guard (moduleInitializerFactsOf [("Lib", { decls := [
+    .letD "x" none (.lit 1), .letD "x" none (.lit 2),
+    .letRecD "f" (.tArr .tInt .tInt) (.lam "n" (.var "n")) ], body := .lit 0 })]).map
+      (fun f => (f.id, f.order, f.name, f.mode)) ==
+  [("Lib::decl:0", 0, "x", .strictRhs), ("Lib::decl:1", 1, "x", .strictRhs),
+   ("Lib::decl:2", 2, "f", .recursiveKnot)]
 
 /-- **PUBLIC (TIER 1):** one law instance `(contractKey, law, params, body)` → its `LawFact` JSON.
 For traits, `contractKey` is the historical trait name and `realization` is null. Effect-handler
@@ -601,7 +701,7 @@ waiting on a new fixed verb — `tools/test-query.sh`'s composed-query demo answ
 verb below anticipates, over THIS export alone.
 
 SHAPE (operator-informed, the `compiler-as-dbms-survey.md` ruling): `dump` is a FLAT RELATIONAL
-fact base — `modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are top-level ARRAYS OF
+fact base — `modules`/`moduleDeps`/`moduleInitializers`/`decls`/`refs`/`laws`/`imports`/`uses` are top-level ARRAYS OF
 FLAT RECORDS (Glean's
 "predicates = tables, facts = rows" framing), never a nested tree; the concrete gate is that the
 golden `dump` output loads into DuckDB with ONE `read_json` call (`tools/test-query.sh`'s
@@ -1151,7 +1251,9 @@ route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this m
 hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1",
    "coreFingerprint":{...},"moduleInterfaces":[ModuleInterfaceFact,...],
    "moduleBodies":[ModuleBodyFact,...],
-   "modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
+   "modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],
+   "moduleInitialization":{...},"moduleInitializers":[ModuleInitializerFact,...],
+   "decls":[DeclFact,...],
 "refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
 schema documented in `docs/reference/language.md`. -/
 public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := [])
@@ -1159,12 +1261,14 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
     (moduleDeps : List ModuleDepFact := [])
     (moduleExports : List (String × List String) := [])
     (sourceImports : Option (List Bang.Surface.ImportDecl) := none)
-    (sourceUses : Option (List Bang.Surface.UseDecl) := none) : String :=
+    (sourceUses : Option (List Bang.Surface.UseDecl) := none)
+    (modulePrograms : List (String × Prog) := []) : String :=
   let facts := (declFactsOf p).map (fun f => f.withModule (declModule.lookup f.name))
   let core := coreFingerprintOf p
   let exports := if moduleExports.isEmpty then [("@entry", p.pubNames)] else moduleExports
   let imports := sourceImports.getD p.imports
   let uses := sourceUses.getD p.uses
+  let initializerPrograms := if modulePrograms.isEmpty then [("@entry", p)] else modulePrograms
   let lawsJ := match Bang.TypeCheck.lawInstancesOfProg p with
     | .ok insts => insts.map (contractLawJson declModule)
     | .error _  => []   -- same per-seam failure isolation as `dumpJson`: law discovery cannot hide
@@ -1176,6 +1280,9 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
            jsonField "moduleBodies" (moduleBodiesJson core p declModule exports),
            jsonField "modules" (jsonArr (modules.map ModuleFact.toJson)),
            jsonField "moduleDeps" (jsonArr (moduleDeps.map ModuleDepFact.toJson)),
+           jsonField "moduleInitialization" moduleInitializationContract.toJson,
+           jsonField "moduleInitializers"
+             (jsonArr ((moduleInitializerFactsOf initializerPrograms).map ModuleInitializerFact.toJson)),
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
            jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
            jsonField "laws" (jsonArr lawsJ),
@@ -1216,6 +1323,9 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
                  (moduleBodiesJson core p [] [("@entry", p.pubNames)]),
                jsonField "modules" (jsonArr [entryModuleFact.toJson]),
                jsonField "moduleDeps" (jsonArr []),
+               jsonField "moduleInitialization" moduleInitializationContract.toJson,
+               jsonField "moduleInitializers"
+                 (jsonArr ((moduleInitializerFactsOf [("@entry", p)]).map ModuleInitializerFact.toJson)),
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
                jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
                jsonField "laws" (jsonArr lawsJ),

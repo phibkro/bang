@@ -989,6 +989,15 @@ not six independent implementations.
   } ] | null,
   "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
   "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
+  "moduleInitialization": {
+    "scope": "resolver-source-initializer-order",
+    "order": "dependency-first-source-order",
+    "sourceOccurrencesComplete": true, "elaborationProvenance": false,
+    "perBindingEffects": false, "linkReady": false
+  },
+  "moduleInitializers": [ { "id": "Module::decl:N", "module": "Module",
+    "sourceIndex": 0, "order": 0, "name": "binding",
+    "kind": "let|letRec", "mode": "strict-rhs|recursive-knot" } ],
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
@@ -1001,7 +1010,7 @@ not six independent implementations.
 }
 ```
 
-`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —
+`modules`/`moduleDeps`/`moduleInitializers`/`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —
 a relational fact base (Glean's "predicates = tables, facts = rows" framing), never a
 nested tree. The concrete test: `dump`'s output loads into DuckDB with ONE `read_json`
 call, no unnesting gymnastics —
@@ -1016,6 +1025,21 @@ of `project` or `bundled`. Dependency rows collapse `import` and `use` into one 
 invalidation relation. Rows are deterministic, but their semantics are sets; no source
 path, content hash, cache policy, or dependency kind is implied. The source-taking stdin
 route has no resolver walk and therefore reports only `@entry` and zero edges.
+
+`moduleInitialization` and `moduleInitializers` expose the resolver-owned source portion of
+today's strict initialization contract. Imported modules appear dependency-first in the exact
+resolver traversal order, followed by `@entry`; declarations retain source order. Each `let`
+is `strict-rhs`, while `let rec` is `recursive-knot` because knot construction is eager but the
+function body remains suspended. `(module, sourceIndex)` gives duplicate binder occurrences
+distinct snapshot-local IDs. Reversing independent imports therefore reverses their initializer
+blocks; the projection records that observable choice rather than sorting it away.
+
+The metadata is intentionally negative beyond that source boundary: `elaborationProvenance=false`,
+`perBindingEffects=false`, and `linkReady=false`. Prelude injection, alias elimination,
+monomorphization, ANF, checking, and lowering can add or erase bindings after this inventory.
+ADR-0117 forbids joining those transformed bindings back to source occurrences by name or position.
+The rows specify source initialization order; they do not authorize initializer DCE/reordering or
+constitute import slots or a separately linkable artifact.
 
 `coreFingerprint` is an **experimental result-hash observation** over the exact typed lowering path
 `bang run` uses. Its `scope` is `resolved-program`: the resolver merges all files and the frontend
@@ -1139,7 +1163,7 @@ unrecognized key breaks that guarantee itself, regardless of what bang promises.
 this file in the same commit, so drift is always VISIBLE in the diff, never silent; a
 BREAKING change additionally requires the `schemaVersion` bump.
 
-`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not
+`modules`/`moduleDeps`/`moduleInitializers`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not
 computed from other facts); `coreFingerprint` is derived result metadata; the curated verbs below are **intensional** — derived
 predicates (views) over this extensional base, kept few and stable per the Kythe/Glean
 small-core lesson (push richness into derived views, not the base schema).

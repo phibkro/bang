@@ -694,6 +694,10 @@ structure ResolvedFile where
   moduleDeps : List Bang.Query.ModuleDepFact := []
   /-- Resolver-owned module name → final merged names of that module's public declarations. -/
   moduleExports : List (String × List String) := []
+  /-- Unmerged source modules in the exact dependency-first order consumed by `mergeModules`, with
+  the entry source last. This preserves duplicate-safe declaration occurrences for initialization
+  facts; it is not elaboration provenance. -/
+  modulePrograms : List (String × Prog) := []
 
 /-- Reify `TypeCheck.qualifyDeclName`'s declaration-name rule for resolver provenance. The pure
 merger remains authoritative; this projection only tells query facts which final name corresponds
@@ -715,7 +719,7 @@ def resolveEntryFileRawWithProvenance (path : String) : IO (Except String Resolv
   | .error m => return .error s!"parse error: {m}"
   | .ok entryProg =>
       if entryProg.imports.isEmpty && entryProg.uses.isEmpty then
-        return .ok { prog := entryProg }
+        return .ok { prog := entryProg, modulePrograms := [("@entry", entryProg)] }
       let dir := entryPath.parent.getD root
       -- both containment trees realPath-resolved ONCE here (never per module). The entry dir
       -- exists (the entry file was just read from it); the `<|>` fallback to the root tree only
@@ -797,7 +801,10 @@ def resolveEntryFileRawWithProvenance (path : String) : IO (Except String Resolv
               else none) |>.eraseDups
         let moduleExports := ("@entry", publicDeclNames "@entry" entryProg) ::
           st.resolved.map (fun (modName, modP) => (modName, publicDeclNames modName modP))
-        return .ok { prog := merged, trustedHostNames, declModules, modules, moduleDeps, moduleExports }
+        let modulePrograms := st.resolved ++ [("@entry", entryProg)]
+        return .ok {
+          prog := merged, trustedHostNames, declModules, modules, moduleDeps, moduleExports,
+          modulePrograms }
 
 /-- Compatibility projection for non-host commands: provenance is retained only by the host route. -/
 def resolveEntryFileRaw (path : String) : IO (Except String Prog) := do
@@ -1985,7 +1992,7 @@ def runQueryDump (file : Option String) : IO UInt32 := do
                 -- check the exact resolver result, not an unresolvable hybrid AST.
                 printQueryOk (Bang.Query.dumpJsonP resolved.prog bangVersion resolved.declModules
                   resolved.modules resolved.moduleDeps resolved.moduleExports
-                  (some headerProg.imports) (some headerProg.uses))
+                  (some headerProg.imports) (some headerProg.uses) resolved.modulePrograms)
 
 /-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
 def runQuerySymbols (file : Option String) : IO UInt32 := do

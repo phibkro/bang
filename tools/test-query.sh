@@ -90,6 +90,40 @@ cat > "$tmpdir/fingerprint-invalid.bang" <<'BANG'
 let main = 1 + Left(0)
 BANG
 
+# Source-occurrence-safe initialization order. Duplicate names must remain distinct by their owning
+# module + source declaration index, and dependency initializers must precede the entry sequence.
+mkdir -p "$tmpdir/initializer-order"
+cat > "$tmpdir/initializer-order/Dep.bang" <<'BANG'
+let same = 1
+let same = 2
+pub let answer = same
+BANG
+cat > "$tmpdir/initializer-order/main.bang" <<'BANG'
+import Dep
+let before = 0
+let rec identity : Int -> Int = fun x => x
+let main = ($identity) (Dep.answer + before)
+BANG
+for variant in initializer-import-ab initializer-import-ba; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/A.bang" <<'BANG'
+let a = 1
+BANG
+  cat > "$tmpdir/$variant/B.bang" <<'BANG'
+let b = 2
+BANG
+done
+cat > "$tmpdir/initializer-import-ab/main.bang" <<'BANG'
+import A
+import B
+let main = 0
+BANG
+cat > "$tmpdir/initializer-import-ba/main.bang" <<'BANG'
+import B
+import A
+let main = 0
+BANG
+
 # Resolved-module interface variants. The public implementation body and a private binding may move
 # the whole-program core while preserving the exported interface; a public type change must move it.
 for variant in interface-base interface-public-body interface-private-body interface-signature; do
@@ -563,12 +597,46 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v2-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v2-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"moduleInitialization":{"scope":"resolver-source-initializer-order","order":"dependency-first-source-order","sourceOccurrencesComplete":true,"elaborationProvenance":false,"perBindingEffects":false,"linkReady":false},"moduleInitializers":[{"id":"@entry::decl:0","module":"@entry","sourceIndex":0,"order":0,"name":"double","kind":"letRec","mode":"recursive-knot"},{"id":"@entry::decl:1","module":"@entry","sourceIndex":1,"order":1,"name":"quad","kind":"let","mode":"strict-rhs"},{"id":"@entry::decl:2","module":"@entry","sourceIndex":2,"order":2,"name":"main","kind":"let","mode":"strict-rhs"}],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
 check "dump-stdin-exit" "$got_stdin_exit" "0"
 check "dump-stdin-eq-file" "$got_stdin" "$got_out"
+
+# The initializer contract reads unmerged resolver sources, not flattened binder names. Two source
+# declarations named `same` therefore retain different occurrence addresses, dependency rows precede
+# entry rows, and recursive-knot construction is distinguished from strict RHS execution.
+capture initializer_dump initializer_dump_exit "$bang" query dump "$tmpdir/initializer-order/main.bang" 2>/dev/null
+check "module-initializers-exit" "$initializer_dump_exit" "0"
+capture initializer_meta initializer_meta_exit python3 -c '
+import json,sys
+m=json.load(sys.stdin)["moduleInitialization"]
+print("|".join([m["scope"],m["order"],str(m["sourceOccurrencesComplete"]),str(m["elaborationProvenance"]),str(m["perBindingEffects"]),str(m["linkReady"])]))
+' 2>/dev/null <<< "$initializer_dump"
+check "module-initializers-metadata-extractor-exit" "$initializer_meta_exit" "0"
+check "module-initializers-honesty-metadata" "$initializer_meta" "resolver-source-initializer-order|dependency-first-source-order|True|False|False|False"
+capture initializer_rows initializer_rows_exit python3 -c '
+import json,sys
+rows=json.load(sys.stdin)["moduleInitializers"]
+print("|".join("{}:{}:{}:{}:{}:{}".format(r["id"],r["module"],r["sourceIndex"],r["order"],r["name"],r["mode"]) for r in rows))
+' 2>/dev/null <<< "$initializer_dump"
+check "module-initializers-extractor-exit" "$initializer_rows_exit" "0"
+check "module-initializers-duplicate-safe-order" "$initializer_rows" "Dep::decl:0:Dep:0:0:same:strict-rhs|Dep::decl:1:Dep:1:1:same:strict-rhs|Dep::decl:2:Dep:2:2:answer:strict-rhs|@entry::decl:0:@entry:0:3:before:strict-rhs|@entry::decl:1:@entry:1:4:identity:recursive-knot|@entry::decl:2:@entry:2:5:main:strict-rhs"
+
+# Independent imports are not commuted by today's semantics: their source initializer blocks follow
+# resolver traversal order. The fact must expose that observable choice instead of sorting it away.
+capture initializer_ab_dump initializer_ab_exit "$bang" query dump "$tmpdir/initializer-import-ab/main.bang" 2>/dev/null
+capture initializer_ba_dump initializer_ba_exit "$bang" query dump "$tmpdir/initializer-import-ba/main.bang" 2>/dev/null
+check "module-initializers-import-ab-exit" "$initializer_ab_exit" "0"
+check "module-initializers-import-ba-exit" "$initializer_ba_exit" "0"
+capture initializer_import_order initializer_import_order_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+print("|".join(",".join(r["module"] for r in d["moduleInitializers"]) for d in ds))
+' 2>/dev/null <<< "$initializer_ab_dump
+$initializer_ba_dump"
+check "module-initializers-import-order-observable" "$initializer_import_order" "A,B,@entry|B,A,@entry"
 
 # The result-hash firewall's smallest tracer: consume the compiler-emitted fact, not a parallel
 # source hash. Equal core means formatting/comment and binder-name edits do not propagate; a real
@@ -1594,7 +1662,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (263 — dependency observation, recomputation, reuse, module graph, structural
+# always runs (271 — dependency observation, recomputation, reuse, module graph, initializer order, structural
 # invalidation-fanout, resolved-core fingerprint, law-aware interface, and resolved-module-interface
 # checks included);
 # jq's three guarded blocks
@@ -1605,7 +1673,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=263
+want_total=271
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

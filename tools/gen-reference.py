@@ -1480,6 +1480,15 @@ def render():
         '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
     )
     L.append('  "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],')
+    L.append('  "moduleInitialization": {')
+    L.append('    "scope": "resolver-source-initializer-order",')
+    L.append('    "order": "dependency-first-source-order",')
+    L.append('    "sourceOccurrencesComplete": true, "elaborationProvenance": false,')
+    L.append('    "perBindingEffects": false, "linkReady": false')
+    L.append("  },")
+    L.append('  "moduleInitializers": [ { "id": "Module::decl:N", "module": "Module",')
+    L.append('    "sourceIndex": 0, "order": 0, "name": "binding",')
+    L.append('    "kind": "let|letRec", "mode": "strict-rhs|recursive-knot" } ],')
     L.append(
         '  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",'
     )
@@ -1505,7 +1514,7 @@ def render():
     L.append("```")
     L.append("")
     L.append(
-        "`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —"
+        "`modules`/`moduleDeps`/`moduleInitializers`/`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —"
     )
     L.append(
         'a relational fact base (Glean\'s "predicates = tables, facts = rows" framing), never a'
@@ -1539,6 +1548,45 @@ def render():
     L.append(
         "route has no resolver walk and therefore reports only `@entry` and zero edges."
     )
+    L.append("")
+    L.append(
+        "`moduleInitialization` and `moduleInitializers` expose the resolver-owned source portion of"
+    )
+    L.append(
+        "today's strict initialization contract. Imported modules appear dependency-first in the exact"
+    )
+    L.append(
+        "resolver traversal order, followed by `@entry`; declarations retain source order. Each `let`"
+    )
+    L.append(
+        "is `strict-rhs`, while `let rec` is `recursive-knot` because knot construction is eager but the"
+    )
+    L.append(
+        "function body remains suspended. `(module, sourceIndex)` gives duplicate binder occurrences"
+    )
+    L.append(
+        "distinct snapshot-local IDs. Reversing independent imports therefore reverses their initializer"
+    )
+    L.append(
+        "blocks; the projection records that observable choice rather than sorting it away."
+    )
+    L.append("")
+    L.append(
+        "The metadata is intentionally negative beyond that source boundary: `elaborationProvenance=false`,"
+    )
+    L.append(
+        "`perBindingEffects=false`, and `linkReady=false`. Prelude injection, alias elimination,"
+    )
+    L.append(
+        "monomorphization, ANF, checking, and lowering can add or erase bindings after this inventory."
+    )
+    L.append(
+        "ADR-0117 forbids joining those transformed bindings back to source occurrences by name or position."
+    )
+    L.append(
+        "The rows specify source initialization order; they do not authorize initializer DCE/reordering or"
+    )
+    L.append("constitute import slots or a separately linkable artifact.")
     L.append("")
     L.append(
         "`coreFingerprint` is an **experimental result-hash observation** over the exact typed lowering path"
@@ -1859,7 +1907,7 @@ def render():
     L.append("BREAKING change additionally requires the `schemaVersion` bump.")
     L.append("")
     L.append(
-        "`modules`/`moduleDeps`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not"
+        "`modules`/`moduleDeps`/`moduleInitializers`/`decls`/`refs`/`laws`/`imports`/`uses` are the **extensional** fact base (extracted, not"
     )
     L.append(
         "computed from other facts); `coreFingerprint` is derived result metadata; the curated verbs below are **intensional** — derived"
