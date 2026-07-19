@@ -105,11 +105,11 @@
       "title": "Kernel / proof",
       "summary": "Work on graded-CBPV semantics, typing, soundness, or a bounded proof obligation.",
       "order": 20,
-      "targetPage": "current-architecture",
+      "targetPage": "kernel-proof-role-lab",
       "seams": ["Bang/Spec.lean", "Bang/Core/Semantics.lean", "Bang/Core/Soundness.lean"],
       "firstChange": "Close or adapt one small lemma without changing a frozen headline statement.",
-      "narrowGate": "just check Bang/Core/Soundness.lean && just axioms",
-      "fullGate": "just verify"
+      "narrowGate": "nix develop --command bash -lc 'just check Bang/Core/Soundness.lean && just axioms'",
+      "fullGate": "nix develop --command just verify"
     },
     {
       "id": "machine-backend",
@@ -381,6 +381,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
       "target": { "kind": "onboarding-page", "route": "/contribute/routes/frontend-language", "contentKey": "frontend-language" },
       "navigation": { "order": 40 }
+    },
+    {
+      "id": "kernel-proof-role-lab",
+      "title": "Kernel / proof role lab",
+      "section": "contribute",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["common-journey-evidence", "contributor-routes", "current-architecture"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/contribute/routes/kernel-proof", "contentKey": "kernel-proof" },
+      "navigation": { "order": 50 }
     },
     {
       "id": "current-architecture",

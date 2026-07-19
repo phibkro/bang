@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { roleLabContent } from './role-lab-content.mjs'
 import {
   compileSite,
   renderSiteModel,
@@ -44,6 +45,40 @@ function writeSchemaRegistry(name, schemas) {
 }
 
 const site = compileSite({ manifestPath: fixture, repoRoot })
+const productionSite = compileSite({
+  manifestPath: join(siteDir, 'page-manifest.json'),
+  repoRoot,
+})
+function requireProductionRolePrerequisites(roleLabs) {
+  const prerequisites = Object.fromEntries(
+    roleLabs.map((lab) => [lab.routeChoice.id, lab.prerequisites.map((page) => page.id)]),
+  )
+  assert.deepEqual(prerequisites['frontend-language'], [
+    'common-journey-evidence',
+    'contributor-routes',
+    'language-and-cli',
+  ])
+  assert.deepEqual(prerequisites['kernel-proof'], [
+    'common-journey-evidence',
+    'contributor-routes',
+    'current-architecture',
+  ])
+}
+requireProductionRolePrerequisites(resolveRoleLabContent(productionSite, roleLabContent))
+for (const [role, anchor] of [
+  ['frontend-language', 'language-and-cli'],
+  ['kernel-proof', 'current-architecture'],
+]) {
+  const broken = structuredClone(productionSite)
+  const page = broken.pages.find((candidate) => candidate.target.contentKey === role)
+  page.prerequisites = page.prerequisites.filter((prerequisite) => prerequisite !== anchor)
+  assert.throws(
+    () => requireProductionRolePrerequisites(resolveRoleLabContent(broken, roleLabContent)),
+    /Expected values to be strictly deep-equal/,
+    `${role} route-specific prerequisite drift is rejected`,
+  )
+  caseCount += 1
+}
 assert.deepEqual(site.sections.map((section) => section.id), [
   'start',
   'learn',
@@ -319,6 +354,7 @@ try {
       generatedPage('common-journey-evidence', 'learn', '/learn/common-journey-evidence', 10),
       generatedPage('contributor-routes', 'contribute', '/contribute/routes', 10),
       generatedPage('language-and-cli', 'reference', '/reference/language', 10),
+      generatedPage('current-architecture', 'architecture', '/architecture/current', 10),
       generatedPage(
         'frontend-language-role-lab',
         'contribute',
@@ -326,9 +362,25 @@ try {
         20,
         ['common-journey-evidence', 'contributor-routes', 'language-and-cli'],
       ),
+      generatedPage(
+        'kernel-proof-role-lab',
+        'contribute',
+        '/contribute/routes/kernel-proof',
+        30,
+        ['common-journey-evidence', 'contributor-routes', 'current-architecture'],
+      ),
     )
-    manifest.pages.at(-1).target.contentKey = 'language'
+    manifest.pages.find((page) => page.id === 'frontend-language-role-lab').target.contentKey = 'language'
+    manifest.pages.find((page) => page.id === 'kernel-proof-role-lab').target.contentKey = 'proof'
     manifest.routeChoices[0].targetPage = 'frontend-language-role-lab'
+    manifest.routeChoices.push({
+      ...structuredClone(manifest.routeChoices[0]),
+      id: 'proof',
+      title: 'Kernel / proof',
+      order: 20,
+      targetPage: 'kernel-proof-role-lab',
+      seams: ['CLAUDE.md'],
+    })
   })
   const roleLabRecord = {
     key: 'language',
@@ -363,21 +415,37 @@ try {
       },
     ],
   }
-  const resolvedRoleLabs = resolveRoleLabContent(roleLabSite, [roleLabRecord])
-  assert.equal(resolvedRoleLabs.length, 1)
+  const proofRoleLabRecord = structuredClone(roleLabRecord)
+  proofRoleLabRecord.key = 'proof'
+  proofRoleLabRecord.stages[1].seams = ['ROADMAP.md']
+  const roleLabRecords = [roleLabRecord, proofRoleLabRecord]
+  const resolvedRoleLabs = resolveRoleLabContent(roleLabSite, roleLabRecords)
+  assert.equal(resolvedRoleLabs.length, 2)
+  assert.deepEqual(
+    resolvedRoleLabs.map((lab) => lab.routeChoice.id),
+    ['language', 'proof'],
+    'one resolver preserves route-choice order for both role labs',
+  )
   assert.equal(resolvedRoleLabs[0].page.id, 'frontend-language-role-lab')
-  assert.equal(resolvedRoleLabs[0].routeChoice.id, 'language')
+  assert.equal(resolvedRoleLabs[1].page.id, 'kernel-proof-role-lab')
   assert.deepEqual(
     resolvedRoleLabs[0].prerequisites.map((page) => page.id),
     ['common-journey-evidence', 'contributor-routes', 'language-and-cli'],
   )
+  assert.deepEqual(
+    resolvedRoleLabs[1].prerequisites.map((page) => page.id),
+    ['common-journey-evidence', 'contributor-routes', 'current-architecture'],
+  )
+  assert.ok(roleLabSite.pages.find((page) => page.id === 'frontend-language-role-lab').prerequisites.includes('language-and-cli'))
+  assert.ok(roleLabSite.pages.find((page) => page.id === 'kernel-proof-role-lab').prerequisites.includes('current-architecture'))
   assert.deepEqual(resolvedRoleLabs[0].seams, ['README.md', 'CONTRIBUTING.md'])
+  assert.deepEqual(resolvedRoleLabs[1].seams, ['CLAUDE.md', 'ROADMAP.md'])
   assert.equal(resolvedRoleLabs[0].narrowGate, 'just check Bang/Frontend/TypeCheck.lean')
   assert.equal(resolvedRoleLabs[0].fullGate, 'just verify')
 
   function rejectRoleLab(name, mutateSite, mutateRecords, pattern) {
     const candidateSite = mutateSite ? mutateSite() : roleLabSite
-    const records = structuredClone([roleLabRecord])
+    const records = structuredClone(roleLabRecords)
     if (mutateRecords) mutateRecords(records)
     assert.throws(() => resolveRoleLabContent(candidateSite, records), pattern, name)
     caseCount += 1
@@ -385,7 +453,7 @@ try {
 
   rejectRoleLab('missing-role-lab-content', null, (records) => records.pop(), /has no role lab content/)
   rejectRoleLab('duplicate-role-lab-content', null, (records) => records.push(structuredClone(records[0])), /duplicate role lab content key/)
-  rejectRoleLab('extra-role-lab-content', null, (records) => records.push({ ...structuredClone(records[0]), key: 'proof' }), /role lab content has no manifest route choice: proof/)
+  rejectRoleLab('extra-role-lab-content', null, (records) => records.push({ ...structuredClone(records[0]), key: 'backend' }), /role lab content has no manifest route choice: backend/)
   rejectRoleLab('unknown-role-choice', () => site, null, /role lab content has no manifest route choice: language/)
   rejectRoleLab('content-owns-manifest-field', null, (records) => { records[0].title = 'owned twice' }, /fields are owned by the page manifest: title/)
   rejectRoleLab('record-key-mismatch', null, (records) => { records[0].key = 'frontend-language-role-lab' }, /has no role lab content/)
@@ -395,14 +463,15 @@ try {
     return broken
   }, null, /content key other must equal route choice language/)
 
-  for (const missingPrerequisite of ['common-journey-evidence', 'contributor-routes', 'language-and-cli']) {
-    rejectRoleLab(`missing-${missingPrerequisite}-prerequisite`, () => compileMutation(`role-lab-missing-${missingPrerequisite}`, (manifest) => {
-      const lab = roleLabSite.pages.find((page) => page.id === 'frontend-language-role-lab')
-      manifest.pages = structuredClone(roleLabSite.pages)
-      manifest.routeChoices = structuredClone(validManifest.routeChoices)
-      manifest.routeChoices[0].targetPage = 'frontend-language-role-lab'
-      manifest.pages.find((page) => page.id === lab.id).prerequisites = lab.prerequisites.filter((id) => id !== missingPrerequisite)
-    }), null, new RegExp(`role lab language requires prerequisite ${missingPrerequisite}`))
+  for (const roleId of ['language', 'proof']) {
+    for (const missingPrerequisite of ['common-journey-evidence', 'contributor-routes']) {
+      rejectRoleLab(`missing-${roleId}-${missingPrerequisite}-prerequisite`, () => {
+        const broken = structuredClone(roleLabSite)
+        const lab = broken.pages.find((page) => page.target.contentKey === roleId)
+        lab.prerequisites = lab.prerequisites.filter((id) => id !== missingPrerequisite)
+        return broken
+      }, null, new RegExp(`role lab ${roleId} requires prerequisite ${missingPrerequisite}`))
+    }
   }
 
   rejectRoleLab('missing-stage', null, (records) => records[0].stages.pop(), /stages must be exactly retrieve-predict, trace-seam, isolated-practice, inspect-select/)

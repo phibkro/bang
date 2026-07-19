@@ -632,7 +632,7 @@ export function resolveRoleLabContent(site, contentRecords) {
     }
 
     const prerequisiteIds = new Set(page.prerequisites)
-    for (const required of ['common-journey-evidence', 'contributor-routes', 'language-and-cli']) {
+    for (const required of ['common-journey-evidence', 'contributor-routes']) {
       if (!prerequisiteIds.has(required)) {
         throw new Error(`role lab ${routeChoice.id} requires prerequisite ${required}`)
       }

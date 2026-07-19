@@ -34,6 +34,10 @@ test-onboarding-journey *ARGS:
 test-role-lab-frontend:
     bash tools/test-role-lab-frontend.sh
 
+# Dynamic exact-suggestion completion and kernel axiom evidence for the proof role lab.
+test-role-lab-kernel-proof:
+    bash tools/test-role-lab-kernel-proof.sh
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:
