@@ -3,8 +3,8 @@
   "packId": "bang-compiled-browser-demo-v1",
   "builtFrom": {
     "repository": "https://github.com/phibkro/bang",
-    "commit": "ce3d29c779679538e7f5a0380505674cc13430f1",
-    "compilerTree": "0b3c759923411772a69cbd0afc7412243f237394",
+    "commit": "4bc310317d7a16a40c76d0170525df84f708de81",
+    "compilerTree": "d242d94b1fa9fc32360696072099fa94ced48d7f",
     "bangVersion": "bang 0.1.1",
     "wasmToolsVersion": "wasm-tools 1.253.0"
   },
@@ -23,7 +23,7 @@
       "id": "json",
       "title": "JSON parser",
       "source": "examples/json/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/ce3d29c779679538e7f5a0380505674cc13430f1/examples/json",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/4bc310317d7a16a40c76d0170525df84f708de81/examples/json",
       "sourceFiles": [
         {
           "path": "examples/json/Json.bang",
@@ -43,14 +43,14 @@
         }
       ],
       "artifact": "json.wasm",
-      "artifactSha256": "0beb12b5d3b4c3d4434861ec679f6d7165f027dbbfb475ad42ee093f6792bca0",
+      "artifactSha256": "19e912a180d5a0dac4aa3f9c465f78b6a16606c8f6988ac6dbbd159de2961a37",
       "expectedOutput": "30163\n"
     },
     {
       "id": "calc",
       "title": "Calculator parser",
       "source": "examples/calc/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/ce3d29c779679538e7f5a0380505674cc13430f1/examples/calc",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/4bc310317d7a16a40c76d0170525df84f708de81/examples/calc",
       "sourceFiles": [
         {
           "path": "examples/calc/Ast.bang",
@@ -78,14 +78,14 @@
         }
       ],
       "artifact": "calc.wasm",
-      "artifactSha256": "b8c75daa8e3981dd6136bc04b2231097902e4a4d707570abd9bf26400e834e53",
+      "artifactSha256": "9bb369e11591494e06ef162ba9fb2d2588321c4d3e845ca03228acdedfef647a",
       "expectedOutput": "11021193\n"
     },
     {
       "id": "nqueens",
       "title": "N-Queens (4 + 5 + 6)",
       "source": "examples/nqueens/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/ce3d29c779679538e7f5a0380505674cc13430f1/examples/nqueens",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/4bc310317d7a16a40c76d0170525df84f708de81/examples/nqueens",
       "sourceFiles": [
         {
           "path": "examples/nqueens/main.bang",
@@ -93,14 +93,14 @@
         }
       ],
       "artifact": "nqueens.wasm",
-      "artifactSha256": "1b1c1b152694d6a5430d12ef704a48bb71ee11e20e12dac76da022872cf67217",
+      "artifactSha256": "4eba7faf6bc09688567416b387850020d8a925cc2296eecfe799dd37bd0da331",
       "expectedOutput": "21004\n"
     },
     {
       "id": "ndet-sim-kv-a",
       "title": "sim-KV · first realization",
       "source": "examples/ndet-sim-kv-a/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/ce3d29c779679538e7f5a0380505674cc13430f1/examples/ndet-sim-kv-a",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/4bc310317d7a16a40c76d0170525df84f708de81/examples/ndet-sim-kv-a",
       "sourceFiles": [
         {
           "path": "examples/ndet-sim-kv-a/main.bang",
@@ -108,14 +108,14 @@
         }
       ],
       "artifact": "ndet-sim-kv-a.wasm",
-      "artifactSha256": "73c103ecae31e68f198b03121983f0cf9894286826a81b2957e3b35f62cb1c8d",
+      "artifactSha256": "829e03e1bc738a30b19273dfcc61d1e27d996f354a0d3da68bd16ba34e05aa64",
       "expectedOutput": "1120\n"
     },
     {
       "id": "ndet-sim-kv-b",
       "title": "sim-KV · swapped realization",
       "source": "examples/ndet-sim-kv-b/main.bang",
-      "sourceUrl": "https://github.com/phibkro/bang/tree/ce3d29c779679538e7f5a0380505674cc13430f1/examples/ndet-sim-kv-b",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/4bc310317d7a16a40c76d0170525df84f708de81/examples/ndet-sim-kv-b",
       "sourceFiles": [
         {
           "path": "examples/ndet-sim-kv-b/main.bang",
@@ -123,7 +123,7 @@
         }
       ],
       "artifact": "ndet-sim-kv-b.wasm",
-      "artifactSha256": "f27badaba1731b3faae9e01caf3b39ad5f88290e39df8fc1447e9527e1b324bf",
+      "artifactSha256": "af1c36d70d986ad946e988f6beca721eb07c5a63f671df625c1b6000d90f0fa4",
       "expectedOutput": "1100\n"
     }
   ]

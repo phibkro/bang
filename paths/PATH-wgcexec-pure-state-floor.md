@@ -1,17 +1,19 @@
 # PATH-wgcexec-pure-state-floor — expose the first calculated GC helper slice without certifying it
 
-> Extract the smallest theorem-visible code image from the WasmGC emitter, test its state-capability
-> lifetime behavior against exact live membership, and preserve the emitted text byte-for-byte.
+> Extract the smallest theorem-visible code image from the WasmGC emitter, refute the scalar lifetime
+> approximation, and land the separately approved exact helper representation without certifying the
+> compiler or Wasm semantics.
 
 ## Seam
 
 - **From checkpoint**: the GC backend is a differential-tested text emitter with no Lean machine at
   the emission seam; the early-bank plan assumes its scalar `$liveTop` gate images exact liveness.
-- **To checkpoint**: the fixed capability-helper prelude is theorem-visible, its bounded state-cell
-  behavior and stale-reentry counterexample are axiom-clean, and the next exact-liveness fix has an
-  explicit regression gate and proof obligation.
-- **Contract preserved**: emitted Wasm text, frontend acceptance, env/oracle/compiled semantics, and
-  every correctness claim outside the extracted helper/state-cell fragment remain unchanged.
+- **To checkpoint**: the fixed capability-helper prelude is theorem-visible; its scalar counterexample,
+  exact membership gate, and pop-through skipped-inner trace are axiom-clean; emitted Wasm uses the exact
+  GC-linked live stack selected by ADR-0119.
+- **Contract preserved**: helper signatures, frontend acceptance, env/oracle/compiled semantics, valid
+  live access, all other escape refusals, and every correctness claim outside the helper/state-cell
+  fragment remain unchanged. Emitted bytes intentionally change with the helper implementation.
 
 ## Layer
 
@@ -22,31 +24,29 @@
 - **Actor / need**: a backend verifier needs a theorem-visible first object that is mechanically tied
   to emitted text, without treating differential evidence as general compiler adequacy.
 - **Public starting point**: `Bang/Backend/WgcCapCode.lean` and `tools/emit-escape-diff.sh`.
-- **Terminal observation**: focused Lean checking reports no axioms for six bounded witnesses; the
-  escape gate confirms engines classify stale reentry as escaped while emitted Wasm prints `7` as one
-  known-red; representative `.wat` files remain byte-identical across the extraction.
-- **Adverse / recovery route**: if a later mint revives a popped capability, the XFAIL remains visible
-  and explicitly allowlisted; it may be removed only when emitted Wasm fails loud and an exact-liveness argument
-  replaces the refuted scalar equivalence.
-- **Downstream journey released**: a separately priced exact-live-membership emitter design followed by
-  the real pure+state `compileGC`/machine/reification simulation.
+- **Terminal observation**: focused Lean checking reports no axioms for the bounded witnesses; the
+  escape gate reports all five cases fail loud, zero XFAILs, and its positive nested-state control prints
+  `105` in both oracle and Wasmtime.
+- **Adverse / recovery route**: a missing gate id or missing exit target traps. A skipped inner exit is
+  cleaned when `$capExit(m)` pops through `m`, while older live frames remain present.
+- **Downstream journey released**: the real pure+state `compileGC`/machine/reification simulation, priced
+  separately from this helper-level correction.
 
 ## Feeds the constraint
 
-- **Binding constraint now**: `scratch/cap-gc/surface-escape/stale-state-reentry.bang` is `.escapedCap`
-  in the oracle but prints `7` from emitted Wasm; `scalar_revives_stale_cap_after_reentry` and
-  `exact_rejects_stale_cap_after_reentry` machine-check the representation mismatch.
-- **How this path feeds it**: keep the concrete scalar helper code theorem-visible, distinguish it from
-  an exact reference model, and require the differential witness until the emitter representation is
-  changed and proved against exact membership.
+- **Binding constraint now**: `scratch/cap-gc/surface-escape/stale-state-reentry.bang` refutes the old
+  scalar gate; `exact_exit_pops_through_skipped_inner` additionally fixes unwind cleanup behavior.
+- **How this path feeds it**: retain the scalar machine only as a counterexample, mechanically render the
+  exact helper code, and keep both positive and negative real-engine differentials load-bearing.
 
 ## Prospective systemic review
 
 | concern | horizon + evidence | likelihood / impact / late cost | disposition now | reopen trigger |
 |---|---|---|---|---|
 | bounded witnesses are advertised as compiler adequacy | no `Comp`, `Source.eval`, or Wasm semantics occurs in `WgcCapCode` | high / critical / high | state exclusions beside the theorems and in this PATH | a compositional reification theorem exists |
-| scalar watermark is again called exact | stale reentry mints ids 0 then 1 and revives id 0 | high / critical / high | retain exact-membership contrast and known-red gate | an emitter representation rejects the witness |
-| helper extraction changes output | four representative pre/post `.wat` pairs | low / critical / medium | require byte equality and existing emission differentials | renderer/helper text changes |
+| scalar watermark is again called exact | stale reentry mints ids 0 then 1 and revives id 0 | high / critical / high | retain the scalar counterexample beside the exact model | exact representation is removed |
+| pop semantics are weakened to strict-pop | throws/txn abort can skip inner exits | high / critical / high | theorem-pin `[inner,middle,outer] → [outer]` | control-flow lowering guarantees explicit cleanup |
+| helper implementation false-fires | exact search/pop is new emitted code | medium / critical / high | positive `nested1=105` plus full effects corpus | a compositional helper/Wasm proof exists |
 | partial proof displaces broad testing | theorem slice omits closures, throws, txn, custom effects, and Wasm execution | high / high / high | keep emission harnesses load-bearing | the omitted arms gain calculated semantics and proofs |
 
 ## Baseline, falsifier, and evidence
@@ -55,12 +55,12 @@
   after any later handler mint raises `liveTop`.
 - **Smallest tracer bullet**: extract only `globals`/`mint`/`exit`/`gate`, render those exact strings
   from `WasmEmit.gcHelpers`, and calculate scalar and exact helper machines over one state box.
-- **Positive evidence**: four decidable theorems cover live get, put-then-get, and immediate rejection;
-  two more pin the stale scalar/exact disagreement. All six are axiom-clean.
-- **Negative or recovery evidence**: the scalar stale trace returns `some 7`; exact membership returns
-  `none`; env/oracle/compiled return `5/3/5`, while Wasmtime prints `7` with rc 0.
-- **Broader convergence gate**: focused Lean build, `tools/emit-escape-diff.sh`, byte comparison,
-  `tools/check-paths.sh`, doc pins, import/tool indexes, and diff hygiene.
+- **Positive evidence**: live get/put witnesses, exact gate membership, and the skipped-inner pop-through
+  trace are decidable and axiom-clean.
+- **Negative or recovery evidence**: the retained scalar stale trace returns `some 7`; exact membership
+  returns `none`; env/oracle/compiled keep `5/3/5`, and Wasmtime now fails loud.
+- **Broader convergence gate**: focused Lean build, `tools/emit-escape-diff.sh`, rung-5 effects corpus,
+  browser artifact/provenance checks, `tools/check-paths.sh`, ADR/doc indexes, and diff hygiene.
 - **Assumptions / exclusions**: natural-number ids exclude i64 overflow. There is no theorem here for
   `Comp`, closures, handlers, throws, transactions, custom effects, `Source.eval`, Wasm semantics,
   whole-module rendering, or general emitter correctness.
@@ -70,24 +70,26 @@
 1. [x] Confirm scalar stale reentry across env, oracle, compiled, and emitted engines.
 2. [x] Extract the fixed helper text and calculate bounded scalar/exact state-cell models.
 3. [x] Add axiom-clean positive and refutation witnesses without enrolling an adequacy headline.
-4. [x] Keep stale reentry as an explicit allowlisted known-red and prove representative emitted bytes unchanged.
-5. [ ] Separately price and approve an exact-live-membership emitter representation before changing it.
+4. [x] Record stale reentry as the tracer's explicit known-red, then remove the XFAIL only with the exact fix.
+5. [x] Land the approved ADR-0119 GC-linked exact-live stack with pop-through exit and zero XFAILs.
 6. [ ] Only then build `compileGC`/`WgcCode` for a real pure+state reification theorem.
 
 ## Status
 
 - [x] Started 2026-07-19
-- [x] In flight: first bounded tracer complete; exact-liveness successor deliberately not implemented
-- [ ] Blockers: scalar `$liveTop` is not exact membership; emitter correction requires a separate design
+- [x] In flight: bounded tracer and exact-liveness helper correction complete; real `Comp` floor remains
+- [ ] Blockers: no helper-to-Wasm semantics or `Comp` reification relation exists yet
 - [ ] Completed YYYY-MM-DD
-- Retained failed gates / successors: `surface:stale-state-reentry` is the single known-red; next door is
-  exact live-id membership (or another representation proved equivalent), then real fragment adequacy.
-- Reopen / observe: rerun the witness on any capability-lifetime helper change; remove its XFAIL only
-  when engine and emitted outcomes converge by failing loud.
+- Retained failed gates / successors: no XFAIL remains in the five-witness gated catalog. Static
+  throws tags still admit a potential same-site stale re-entry shape; retain `stale-throws-reentry`
+  as a named candidate sixth witness. The next proof door is the real pure+state calculated machine
+  and reification theorem.
+- Reopen / observe: rerun the positive control, escape catalog, and full effects corpus on any helper or
+  handler-control-flow change.
 
 ## Owner
 
-- Agent / human: GPT-5.6 Sol engineer, `codex/lane-wgcexec-floor`
+- Agent / human: GPT-5.6 Sol engineer, `codex/exact-cap-liveness`
 
 ## Notes
 

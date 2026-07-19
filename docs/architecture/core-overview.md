@@ -168,7 +168,7 @@ flowchart LR
     subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
       component_Frontend["Frontend<br/>12 modules · 18959 LOC"]
       component_Core["Core<br/>15 modules · 9099 LOC"]
-      component_Backend["Backend<br/>8 modules · 18322 LOC"]
+      component_Backend["Backend<br/>8 modules · 18382 LOC"]
       component_Meta["Meta<br/>2 modules · 4094 LOC"]
       component_Witness["Witness<br/>19 modules · 3653 LOC"]
       component_Reify["Reify<br/>3 modules · 1883 LOC"]
@@ -193,7 +193,7 @@ flowchart LR
 |---|---|---:|---:|---|
 | `Frontend` | text → typed core | 12 | 18959 | `Core` (7) |
 | `Core` | IR · typing · semantics · soundness | 15 | 9099 | — |
-| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 8 | 18322 | `Core` (10) |
+| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 8 | 18382 | `Core` (10) |
 | `Meta` | contextual-equivalence metatheory | 2 | 4094 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3653 | `Frontend` (5), `Core` (28), `Backend` (4) |
 | `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |

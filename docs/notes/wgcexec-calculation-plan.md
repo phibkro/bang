@@ -1,14 +1,13 @@
 <!-- note-status: active -->
 # The calculated `wgcexec` machine — calculation plan + tractability spike (Wave D, 2026-07-12)
 
-> **Scope correction (2026-07-19, first bounded tracer):** the premise that scalar
-> `$liveTop` is equivalent to exact live-frame membership is **refuted**. After cap 0 exits,
-> minting cap 1 sets `liveTop = 2`, so `0 < 2` revives the stale cap although `splitAtId`
-> cannot find it. `Bang/Backend/WgcCapCode.lean` now mechanically renders only the fixed
-> globals/mint/exit/gate prelude and proves bounded live-get, put/get, immediate-escape, and
-> stale-reentry witnesses over one state cell. This is an axiom-clean calculated-helper floor,
-> **not** `compileGC`, a `Comp` machine, Wasm semantics, or pure+state adequacy. The full
-> differential remains load-bearing; exact live membership is a separately priced emitter fix.
+> **Scope resolution (2026-07-19, bounded helper tracer):** scalar `$liveTop` exactness remains
+> **refuted** and machine-checked as a counterexample. ADR-0119 now replaces it in emitted Wasm with
+> a GC-linked exact live stack: mint pushes, gate searches membership, and exit pops through its named
+> frame plus skipped inner nodes. `Bang/Backend/WgcCapCode.lean` mechanically renders only that fixed
+> prelude and proves bounded live-state, membership, stale-reentry, and skipped-inner traces axiom-clean.
+> The escape differential is zero-XFAIL with a positive legal control. This is still **not**
+> `compileGC`, a `Comp` machine, Wasm semantics, or pure+state adequacy.
 
 > **Verdict (one sentence).** The 3-step unlock the S5 refutation priced (calculate a
 > WasmGC machine from the kernel · prove it ≡ `Source.eval` · show `emitModuleGC` is its
@@ -84,8 +83,8 @@ wgcexec  (explicit env + box heap — the ADR-0059 GC abstract machine)
   │  STEP C — control-flow formers as CALCULATED wasm artifacts
   │     · handle(throws) → try_table; raise → throw_ref (the escape from the box-heap
   │       machine is the wasm unwind — CALCULATED, the rung-5 S2 port). handle(state/txn/
-  │       custom) → mint $id (the $capMint watermark), push the box/cap into the env slot,
-  │       run the body, pop (restore $liveTop). perform → $capGate then struct.get/set /
+  │       custom) → mint $id (push the exact live stack), push the box/cap into the env slot,
+  │       run the body, pop through its id. perform → $capGate then struct.get/set /
   │       call_ref (id-keyed dispatch, the OP arm's image).
   ▼
 Code image  (a compile : Comp → WgcCode, structural fold; see §1.3)
@@ -237,8 +236,8 @@ transaction         B (the $txbox list) + rollback     MEDIUM-LARGE — the   jo
 custom (user eff)   B ($txbox clause $clos) + the      MEDIUM — the clause  the inline-service sub-
                      call_ref clause-resume            call_ref = customUp-  eval (rung-5 S4); one-
                                                       date image            shot, no reification
-caps lifetime       scalar $liveTop vs exact live      REFUTATION LANDED;    WgcCapCode proves the
-                    membership                         emitter fix separate  stale-reentry contrast
+caps lifetime       exact GC-linked live stack;        HELPER MODEL LANDED;  scalar counterexample,
+                    scalar retained as refutation       Comp relation open    exact gate/pop traces
 ```
 
 ### 3.2 · Transferable infrastructure
@@ -258,24 +257,24 @@ caps lifetime       scalar $liveTop vs exact live      REFUTATION LANDED;    Wgc
 - **`evalD_agrees_source`** — the tie-back to the kernel. Reused verbatim: `wgcexec ≡
   evalD ≡ Source.eval` composes through it.
 - **The `#134` escape helpers** (`gcHelpers` `$capMint`/`$capExit`/`$capGate`) —
-  `WgcCapCode.scalarCapCode` is their byte-preserving code extraction. The scalar gate is a
-  concrete subject for proof, but it cannot transfer `WellCounted` into exact membership:
-  `WellCounted` gives a necessary upper bound for live ids, not the converse.
+  `WgcCapCode.exactCapCode` is their mechanical code extraction. Its calculated `List Nat` model
+  supplies exact membership and pop-through traces. No theorem interprets the rendered WAT;
+  `WellCounted` still gives only a necessary upper bound for live ids, not the required relation.
 
 ### 3.3 · Scope correction: scalar watermark equivalence is refuted
 
 `WellCounted (g, K, _)` proves every live identity is below `g`; it does not prove every
-identity below `g` is still in `K`. The current helper restores `$liveTop` on exit but a
+identity below `g` is still in `K`. The superseded helper restored `$liveTop` on exit but a
 later globally fresh mint raises it again. The concrete trace is cap 0 mint/exit, cap 1
 mint, cap 0 gate: the scalar helper accepts and exact `splitAtId`-style membership rejects.
 Global freshness prevents identity collision; it does not prevent a scalar upper bound from
 reviving old identities.
 
-Accordingly, a future `wgcexec_reifies` proof must model exact live membership (or another
-representation with a proved equivalence) and show every emitter gate images that model. The
-bounded tracer proves only the helper-level contrast plus live get/put and immediate escape.
-Transaction abort restoration remains additional debt after the base lifetime representation
-is corrected; none of throws, transactions, custom handlers, or full handler adequacy is claimed.
+ADR-0119 now supplies exact membership operationally: the GC-linked helper searches ids and pop-through
+cleans nodes whose normal exits were skipped by transaction/exception unwinding. A future
+`wgcexec_reifies` proof must relate this helper model to live calculated frames and show the rendered
+WAT images it under a concrete semantics. The bounded tracer proves only helper-level equations and
+traces; none of throws, transactions, custom handlers, or full handler adequacy is claimed.
 
 ### 3.4 · The honest multi-session estimate
 
@@ -313,15 +312,15 @@ and confirms it is not mispriced. The `emitModuleGC` text backend stays differen
 does not yet constitute a standing pure+state adequacy gate:
 
 - It is ~2-3 sessions on top of the `compileGC` extraction (~1 session).
-- It exposes the HIGHEST-VALUE lifetime slice: the scalar helper and exact reference agree
-  on live get/put and immediate escape, then disagree on stale reentry.
-- The actual adequacy gate still requires a corrected emitter representation, a `Comp`-level
-  calculated machine/compile step, and a scoped reification theorem. Until those land, the
-  stale witness and the broader differential harness remain authoritative at the emit stratum.
+- It exposed the HIGHEST-VALUE lifetime slice: the scalar helper and exact reference agree
+  on live get/put and immediate escape, then disagree on stale reentry. ADR-0119 now supplies
+  the exact emitted helper and a pop-through trace at the bounded level.
+- The actual adequacy gate still requires a `Comp`-level calculated machine/compile step and a
+  scoped reification theorem. Until those land, the escape and broader differential harnesses
+  remain authoritative at the emit stratum.
 
-**Completing the early bank** needs an exact-liveness emitter change plus the
-`emitCompGC`→`compileGC` refactor, which touches the live emitter. Even then, a state/pure
-fragment gate would leave the harness load-bearing for the rest.
+**Completing the early bank** now needs the `emitCompGC`→`compileGC` refactor and scoped relation.
+Even then, a state/pure fragment gate would leave the harness load-bearing for the rest.
 
 **The whole-machine decision** stays where the ruling put it: post-v1, an increment, opened
 when ADR-0059 lands and the operator wants the GC path on the verified stratum. This probe's
@@ -350,12 +349,12 @@ SPIKE VERDICT       pure+closures+state TRACTABLE: 3 witnesses value-agree (incl
                     through-captured-closure), heap+leaf legs PROVED axiom-clean, the one
                     sorry = STANDARD subst-coherence (known-tractable), NOT a machine wall.
                     The earlier spike did not exercise stale reentry; that refutation now exists.
-CAPS-LIFETIME       scalar $liveTop ≡ exact membership is REFUTED. WgcCapCode pins live
-                    state-cell observations, immediate rejection, and stale revival versus
-                    exact rejection; it proves no compiler adequacy statement.
-PRICE               prior ~10-13 session total is incomplete: exact liveness needs its own
-                    design/fix estimate before the whole-machine total is recomputed.
+CAPS-LIFETIME       scalar exactness is REFUTED; ADR-0119 exact helpers LANDED. WgcCapCode
+                    pins live state observations, stale rejection, and pop-through only;
+                    it proves no compiler adequacy statement.
+PRICE               the helper fix is paid; the prior whole-machine estimate still excludes
+                    the concrete helper/Wasm correspondence and Comp-level simulation.
 EARLY-BANK          first bounded helper tracer LANDED; the real pure+state adequacy floor
-                    remains behind an exact-liveness emitter fix plus Comp-level calculation
-                    and reification. Differential testing remains load-bearing.
+                    remains behind Comp-level calculation and reification. Differential testing
+                    remains load-bearing.
 ```
