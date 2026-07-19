@@ -9,22 +9,23 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: ◊5.75 closes the last internally reachable pre-◊6 product checkpoint with a real-browser
-journey. Organic outsider exposure remains the weakest loop and is still consciously deferred by the
-operator; no browser automation, agentic review, or internal differential earns human-validation credit._
+_Position: the post-demo CALM tracer banks a fail-closed, join-only lattice-store floor and makes the
+shared pure-computed-update wall concrete without widening it. Organic outsider exposure remains the
+weakest loop and is still consciously deferred by the operator; algebraic proofs, agentic review, and
+internal differential probes do not earn human-validation credit._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
 | types / elaborator | seconds | ✔ excellent |
 | `lake build` · `#guard` oracles | minutes | ✔ excellent |
-| axiom gate (`just axioms`, Audit.lean census) | minutes | ✔ ungameable by design |
+| axiom gate (`just axioms`, Audit.lean census) | minutes | ✔ fail-closed at 23 Spec headlines / 38 reviewed reports; the CALM review caught that leaf-local `#print axioms` was only observational and forced central enrollment |
 | refute-first witnesses (`Bang/Witness/`) | hours | ✔ institutionalized |
 | differential fuzz (`Bang/Witness/Fuzz.lean`, #14) | per-build | ✔ 200 seeded samples, handler-fragment-biased, `#guard`-gated |
 | commit integrity (pre-commit hook) | per-commit | ✔ REPAIRED 2026-07-10 — the 11-incident worktree-index ghost ROOT-CAUSED (hook leaked `GIT_INDEX_FILE` into lake's git-in-mathlib) and fixed (plan 008 `env -u` sanitization, exercised live) |
-| test batteries (`just verify` / `lake test`) | minutes | ✔ 34/34 batteries; the new committed-browser-artifact battery adds source/provenance/hash/live-oracle/Node agreement and host-import refusal poles to the standing suite |
+| test batteries (`just verify` / `lake test`) | minutes | ✔ 35/35 batteries; the lattice-store battery adds positive execution plus pinned computed-update and CAS refusals to the standing suite |
 | increment gate · banking discipline | days | ✔ caught #44 Stage-2 pre-land |
 | doc fitness (`just fitness` generated legs) | days | ✔ caught the new battery's wrong executable boundary and then forced this ◊5.75 refresh after ROADMAP became committed evidence |
-| advisor audit → plan → executor → review (plans/) | days | ✔ persistent Fable 5 advisor selected the browser kill shot, audited the completed exact staged boundary, and returned ACCEPT before publication |
+| advisor audit → plan → executor → review (plans/) | days | ✔ a dedicated Fable 5 product-lead session rejected trace-level proof overclaim and observational-only axiom evidence, then returned ACCEPT after both became scoped and gated |
 | prospective systemic review | per-PATH / checkpoint | ✔ the ◊5.75 PATH separated artifact freshness, browser-compatibility claims, host authority, playground scope, proof scope, and xv6/IO deferral before implementation |
 | production-site browser journey | per site build | ✔ `/bang` deployment shape serves 279 modeled routes and runs all five provenance-pinned demos in real Chromium; catches MIME/base-path/static-copy/runtime drift |
 | **— the desk's edge —** | | |
@@ -55,3 +56,9 @@ escalation named by the refresh protocol: internal work has reached the final pr
 further internal tracer may be presented as progress on the binding validation constraint. The operator's
 deferral remains binding; reopen the prepared outside journey before ◊6/release or when an unfamiliar
 participant becomes available.
+
+**2026-07-19 CALM-lane answer:** the weakest loop is still organic outside use, outside the desk; this
+increment strengthens proof and product-boundary feedback by catching an overclaim and a non-failing
+evidence path, while deliberately making no claim that the human-validation constraint moved. The next
+internal arc may address the shared computed-update wall or the silent capability-reentry defect, but
+neither substitutes for reopening the prepared outside journey before ◊6/release.
