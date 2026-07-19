@@ -500,3 +500,27 @@ bytes. Reusing one would turn a convenient green flag into sustained correctness
 `independentlyTypeValidated=false`, `cacheKeySafe=false`, and `linkReady=false` remain authoritative.
 A complete executable core checker (connected to `HasCTy`) and explicit import/link inputs
 open only when a real cache or linker consumer pulls them.
+
+## Independent-typing probe input (2026-07-19): validation is certificate-gated
+
+`PATH-independent-body-typing-probe` tested the proposed next seam before adding a claimed-type field.
+The machine-checked `scratch/BodyTypingProbe.lean` witness fixes one canonical `Comp` and one closed root
+judgment while varying an ignored let-bound identity thunk over **every** hidden value type. Kernel
+terms are Curry-style: `lam` and `letC` carry no binder types, and lowering erases the producer's local
+typing choices. Consequently `(Comp, claimed root type, effect signature)` is not enough to reconstruct
+the evidence a syntax-directed validator would need.
+
+The hard rules are nevertheless locally checkable from explicit evidence. A proof-relevant sidecar
+certificate would need canonical `VTy`/`CTy`, the complete operation inventory for each referenced
+canonical effect label, effect rows, and exact QTT grades; it can then check `fold`/`unfold`, capability
+perform, custom clauses, coverage, B-occ, and every vector equation without consulting source. This is
+also the first non-speculative import-slot vocabulary. Runtime labels remain relocation inputs.
+
+**Decision:** keep `independentlyTypeValidated=false`. Certificate checking is feasible, but today's
+surface inference returns only the root result and lowering returns only `Comp`; producing the sidecar
+requires instrumenting the trust-bearing typed-lowering path. With no linker or external artifact
+consumer yet, that is one IOU pulling a high-blast-radius refactor—the same arithmetic that deferred
+per-binding provenance. Reopen when linker design begins, an external artifact consumer requires
+validation, or source-provenance work independently opens this seam. The certificate and provenance
+instrumentation should then share one evidence-preserving lowering refactor. Do not substitute source
+replay, guessed binder types, or a type-only/grade-erasing approximation for independent validation.
