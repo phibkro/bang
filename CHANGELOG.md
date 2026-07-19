@@ -224,6 +224,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **tools** — add scoped interface diff consumer (`change:a11442b6c6f3edf882cc44193657bf5aa9cd477ced558ca0071ffa47186b988b`)
 - **query** — expose declared laws in module interfaces (`change:663018b69237ed4a5325ae86806c352708d0301346797922658fc5188a5a53d0`)
 - **tooling** — add BANG interface fact consumer (`change:ebaec7487b9db0f4084b8097355419d3586b103d51dedf714521795047a0aa2a`)
+- **query** — expose reachable module body slices (`change:8b0d1390c47cac4b0522831d7dc2160d960e3e9d436114255ae602bd04a1c48e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

@@ -94,18 +94,20 @@
 4. [x] Gate explicit coverage, sibling stability, reachable sensitivity, refusal, and retained coupling
    through the compiled CLI.
 5. [x] Regenerate public views, run full convergence, and report to the persistent advisor.
-6. [ ] Publish the converged increment and move `CONTEXT.md` to the advisor-ranked successor.
+6. [x] Publish the converged increment and hand the retained red pole to the advisor-ranked successor.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [x] In flight: implementation and convergence complete; publication next
+- [ ] In flight: none; successor is the canonical body-effect identity tracer
 - [ ] Blockers: none
-- [ ] Completed: awaiting publication
+- [x] Completed 2026-07-18
 - Evidence: `lake env lean Bang/Frontend/Query.lean`; `lake build bang` (1452 jobs);
   `tools/test-query.sh` (264/264); `just autoquality`; `CHANGELOG_STABLE_REF=79adeeb3 just
   fitness`; and `CHANGELOG_STABLE_REF=79adeeb3 just verify` all pass. The persistent Fable 5
   implementation audit found no blockers.
+- Published baseline: `ead8a94a` on `origin/codex/module-body-fingerprint-probe`; the successor keeps
+  the observed `27c0555a0c82b9e4 → 1ce72041af068091` order-sensitivity as its dated red evidence.
 - Reopen / observe: `linkReady` remains false until an unchanged dependency body can be validated and
   linked without whole-program elaboration; `cacheKeySafe` additionally requires collision-resistant,
   compiler/kernel-versioned identity.
