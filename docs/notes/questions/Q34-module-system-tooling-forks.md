@@ -327,8 +327,34 @@ consumer, and the two generated reactive workloads contribute 209 manifest value
 dominance is not a unique-source census or a mandate for an inert-only language rule.
 
 **Decision:** correct `DeclFact.row` documentation now; keep `linkReady=false`; use syntax only as a
-one-sided inert-description lower bound. The next evidence increment must be checker-cooperative: expose
-the per-binding RHS row already computed during binding elaboration through an additive, reviewed fact,
-then refine only the 17 computation-form occurrences. Generic bare-projection coverage repair is a
-separate defect. No schema/checker behavior, slicer, language rule, initialization order, or linker is
-changed by this census.
+one-sided inert-description lower bound. Probe checker-cooperative per-binding rows next, but require
+source-safe attribution before any additive fact. Generic bare-projection coverage repair is a separate
+defect. No schema/checker behavior, slicer, language rule, initialization order, or linker is changed by
+this census.
+
+## RHS-row attribution + residual-audit input (2026-07-18): provenance is a priced door, not a shortcut
+
+`PATH-per-binding-rhs-row-probe` found the desired row at final inference: `synthSC`'s `.lett` arm holds
+the binding name and RHS `Row` together, and a capture could be zonked against the run's final
+substitution. The missing piece is identity. The checker sees one elaborated `Surf.lett` constructor for
+source bindings, recursive knots, prelude/use aliases, monomorphized instances, and ANF temporaries.
+
+Live kill shots reject both cheap mappings. Duplicate top-level `let x` declarations are accepted and
+produce two outer `x` bindings; `let rec x` plus `let x` produces `#rec,x,x`; a user may itself bind
+`#rec`; bare aliases disappear; and the generic `list-basics` source declaration `length` elaborates
+beside `#mono0_Prelude_take`, `#mono0_Prelude_drop`, `#mono0_length`, and `#anf` lets. Neither name nor
+outer-spine position identifies a source occurrence. Publishing a row on that basis would be unsound.
+
+**Decision:** do not add an RHS-row schema and do not re-elaborate each RHS. Price explicit
+binding-occurrence provenance through elaboration as a checker/elaborator refactor. Its one hard consumer
+today is per-binding rows; file-aware diagnostics are a plausible half-consumer, not enough to prebuild
+the representation. Reopen when a second concrete consumer arrives or independently justified
+elaboration work supplies provenance.
+
+The enumerable fallback closes the immediate decision input without that machinery. Manual inspection
+of all 17 computation forms finds 2 pure terminating and 15 effectful/Div-capable initializers. Every one
+is entry-owned: 14 are `main` bindings (including `nqueens.main`), while the remaining three are
+`nqueens.q4/q5/q6`. No imported library has a computation-form initializer in the resolved corpus. Thus
+an inert-library contract has zero current corpus cost; an all-top-level rule would mostly collide with
+the chosen `main` entry convention. The remaining fork is now an operator-visible surface decision, not
+another measurement or cache implementation.

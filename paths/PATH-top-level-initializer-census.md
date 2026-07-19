@@ -1,8 +1,8 @@
 # PATH-top-level-initializer-census — measure initializer shapes without misreading rows
 
 > Census the strict declaration chain with a sound one-sided syntax classifier, retain the two
-> falsifiers that block a row-based census, and hand only the computation-form residue to a future
-> checker-cooperative per-binding effect projection.
+> falsifiers that block cumulative-row reuse, refute unsound checker attribution, and manually close
+> the bounded computation-form residue.
 
 ## Seam
 
@@ -30,9 +30,9 @@
 - **Adverse / recovery route**: the public row shortcut is rejected twice: one divergent sibling
   makes `before`, `loop`, `divergent`, `after`, and `main` all report `{Div}`, while the runnable
   generic `list-basics.length` reports `row:null` / `unbound variable length`. Both are permanent gates.
-- **Downstream journey released**: expose checker-computed per-binding RHS rows in its own additive
-  schema/checker increment, then refine only the 17 computation-form occurrences before choosing the
-  initialization contract.
+- **Downstream journey released**: the automated RHS-row route was attribution-refuted; a bounded manual
+  audit now classifies all 17 computation-form occurrences and releases the initialization-contract
+  operator decision without building provenance machinery for one consumer.
 
 ## Feeds the constraint
 
@@ -48,7 +48,7 @@
 |---|---|---|---|---|
 | a chain row is consumed as a declaration-local row | five-declaration taint fixture | realized / critical / high | **correct docs and retain executable red pole** | row producer changes |
 | generic specialization leaves a value fact uncovered | `list-basics` runs at 302 but `length` query fails | realized / high / medium | **pin the gap; separate repair increment** | bare generic projection is repaired |
-| syntax unknown is overclaimed as effectful | `base + 1` is computation-form but pure | high / high / low | **call it conservative unknown, never effect evidence** | per-binding rows exist |
+| syntax unknown is overclaimed as effectful | `base + 1` is computation-form but pure | high / high / low | **call it conservative unknown, never effect evidence** | explicit binding provenance exists |
 | named constructor syntax inflates the unknown residue | `Some(3)` parses as application before elaboration | high / medium / low | **treat 17 computation forms as an upper bound** | census moves post-elaboration |
 | recursive definition bodies are mistaken for executed initialization | `letRecD` builds a knot; body runs only when forced | medium / high / medium | **keep a separate recursive-definition bucket** | recursion lowering changes |
 | occurrence counts masquerade as unique definitions | imports repeat per consuming subject | high / medium / high | **say journey-weighted; claim no source inventory** | stable source identities exist |
@@ -83,6 +83,52 @@
   initializer-local effect row, schema field, termination refinement, DCE rule, language restriction,
   initialization order, artifact, cache authority, import slot, runtime relocation, or linker is claimed.
 
+## Manual residual audit
+
+`PATH-per-binding-rhs-row-probe` found the authoritative final row but refuted source attribution, so the
+bounded residue was read directly. “Effectful/Div-capable” includes a handled operation (the outer row may
+be empty after discharge) or a call whose declared row contains `Div`; it is a behavior classification,
+not a claim about the cumulative `DeclFact.row`.
+
+| entry subject | decl | initializer shape | manual class |
+|---|---|---|---|
+| `caesar` | `main` | six calls to total cipher/round-trip thunks, then concatenation | pure terminating computation |
+| `calc` | `main` | recursive lex/parse/eval/print calls under `Trace` handlers | effectful/Div-capable |
+| `codec-contract` | `main` | `Shift7` encode/decode under its handler | effectful (handled) |
+| `dst-rounds-const` | `main` | local `Div, Sched` recursive driver under `Sched` | effectful/Div-capable |
+| `dst-rounds-lcg` | `main` | same local driver with the LCG policy | effectful/Div-capable |
+| `hostio-echo` | `main` | console performs under `Io_Console` handler | effectful (handled) |
+| `json` | `main` | recursive parse/print/tag calls | Div-capable |
+| `ndet-repkv-fail-a` | `main` | `Choice.pick` delivery simulation under handler | effectful (handled) |
+| `ndet-repkv-fail-b` | `main` | same simulation, one-drop policy | effectful (handled) |
+| `ndet-replicated-kv-a` | `main` | `Choice.pick` order simulation under handler | effectful (handled) |
+| `ndet-replicated-kv-b` | `main` | same simulation, alternate policy | effectful (handled) |
+| `ndet-sim-kv-a` | `main` | six `Choice.pick` calls under handler | effectful (handled) |
+| `ndet-sim-kv-b` | `main` | same simulation, alternate policy | effectful (handled) |
+| `nqueens` | `q4` | call `solve 4`, whose declared row contains `Div` | Div-capable |
+| `nqueens` | `q5` | call `solve 5`, whose declared row contains `Div` | Div-capable |
+| `nqueens` | `q6` | call `solve 6`, whose declared row contains `Div` | Div-capable |
+| `nqueens` | `main` | arithmetic over already-computed `q4/q5/q6` | pure terminating computation |
+
+The result is **2 pure terminating** and **15 effectful/Div-capable**, with no constructor-application
+false positives. More importantly, all 17 belong to entry files: **14 are `main` bindings** (including
+`nqueens.main`), while the remaining three are `nqueens.q4/q5/q6`. No imported library contributes a
+computation-form initializer in any resolved journey. Therefore:
+
+- an inert-**library** declaration rule has zero migration cost in the current corpus;
+- an inert-**all-top-levels** rule would fight the current `main` entry convention and rewrite 13 actor
+  journeys for no module-linking benefit;
+- if entry initialization is also forbidden, the concrete non-`main` cost is only `nqueens.q4/q5/q6`,
+  which can move under `main` or become suspended definitions.
+
+This completes the measurement input but does not choose the language contract. Whether `main` is a
+distinguished executable initializer, entry files retain ordered initialization, or programs return to a
+trailing body is an operator-visible surface decision.
+
+The aggregate battery indirectly guards this conclusion: if its pinned computation-form count moves from
+17, entry ownership and all manual classes must be re-audited before the inert-library conclusion is
+re-cited.
+
 ## Plan
 
 1. [x] Attempt the cheapest row-based census and stop on coverage/meaning falsifiers.
@@ -90,11 +136,12 @@
 3. [x] Implement hidden resolver-aware syntax classification and census all 61 examples.
 4. [x] Update Q34/live map, regenerate derived views, and close skeptical advisor review.
 5. [x] Run full convergence and publish the bounded measurement.
+6. [x] Refute name/position-based checker attribution and manually classify all 17 residual sites.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [ ] In flight: none; successor is checker-cooperative per-binding RHS rows
+- [ ] In flight: none; successor is the initialization-contract operator decision
 - [ ] Blockers: none
 - [x] Completed 2026-07-18
 - Focused evidence: `tools/test-initializer-census.sh` passes **8/8**; compiled build passes **1452
@@ -106,8 +153,8 @@
   resolve-failure behavior, actor-journey tie-backs, constructor under-approximation, and recursive
   knot assumptions.
 - Published baseline: `ab8ea3ea` on `origin/codex/top-level-initializer-census`.
-- Retained successors: generic bare-projection coverage repair; checker-cooperative per-binding RHS
-  rows → row-refined computation residue → initialization-contract design.
+- Retained successors: generic bare-projection coverage repair; explicit binding provenance only after a
+  second concrete consumer; initialization-contract design now has complete corpus input.
 - Reopen / observe: `linkReady` stays false; this census changes no artifact or linking authority.
 
 ## Owner
