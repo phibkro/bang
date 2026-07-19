@@ -1222,7 +1222,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "8892e1f0609a941edf5c51071ecff521d30f701db4710a8c55a0dc4f1d7948da",
+    "digest": "da21f3edfa497f97ef592072cd220abc984bd054b63ad540dabbe9f1ae9f598e",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",
@@ -1232,6 +1232,7 @@
       "Bang/Backend/U5bComplete.lean",
       "Bang/Backend/Wasm.lean",
       "Bang/Backend/WasmEmit.lean",
+      "Bang/Backend/WgcCapCode.lean",
       "Bang/Core/CapCoh.lean",
       "Bang/Core/CompCodec.lean",
       "Bang/Core/EffectRow.lean",
