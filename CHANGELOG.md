@@ -234,7 +234,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **tooling** — probe inert initializer contract (`change:46dbff4a7e282c110d87b5695e3a4ddcd32055ac3a1414d1f62a3fec5facae51`)
 - **frontend** — enforce inert top-level descriptions (`change:ce1c4d6cc9712f34f396d37741a92ca341a3d1d1ee9664e33d35525a8f6eb422`)
 - **site** — ship compiled browser demo pack (`change:3f2f316177dca7dd20494e6c5b6cb297502146f24e3596d616dd0dc21a964515`)
-- **distribution** — bank join-only lattice core (`change:f06b78e77133dd74d881caad3b3921fee03b9afe921b4b92e436603137baff5a`)
+- **distribution** — bank join-only lattice core (`change:38c00784a626db70594b70de78e66c7f33dddbef20156e06f2a1c53993ec211e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
