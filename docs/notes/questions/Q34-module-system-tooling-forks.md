@@ -261,3 +261,23 @@ runtime labels remain global. That red pole is retained as the next demand signa
 `linkReady=false`. Defer environment slicing, type-directed impl reachability, stable label allocation,
 generic instantiation identity, import slots, artifact validation, linking, storage, scheduling, and
 reuse authorization until this projection's actor journey supplies their concrete demand.
+
+## Canonical body-effect input (2026-07-18): quotient the observation, not runtime allocation
+
+`PATH-canonical-body-effect-identity` follows the published body-slice red pole at its narrowest real
+boundary. The kernel `Comp` contains labels only in `Val.vcap` and the four `Handler` constructors;
+a Query-local exhaustive traversal can therefore canonicalize the digest input without changing typing,
+execution, allocation, or emission. Five exact mapping/collection guards witness every current position,
+while identity and permutation-roundtrip guards establish consistent bijection on the traversed fields.
+
+The pre-scope quotient audit caught a critical collapse before it reached schema: if canonical ranks are
+assigned only to used effect names, a body using only `A` and an otherwise symmetric body using only `B`
+both receive label 4. Body-slice v2 therefore hashes the canonically relabelled `Comp` and then the sorted
+canonical-label-to-qualified-effect-name table. An unused earlier effect is absent from that table and no
+longer moves the body observation; changing `A` to `B` moves the table hash. A user label that cannot be
+reversed through the production elaborator table nulls the complete `moduleBodies` projection.
+
+**Decision:** stable digest-side effect identity is not stable runtime identity. Keep dense production
+labels and `linkReady=false`; hand relocation and import-slot validation to the next link-contract tracer
+where those representations finally have a consumer. Keep `cacheKeySafe=false`: the composite remains a
+versioned 64-bit change detector, not an artifact address or reuse authorization.

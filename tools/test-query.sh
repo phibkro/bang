@@ -163,8 +163,8 @@ pub let rec countdown : Int -> Int = fun n => if n == 0 then 0 else ($countdown)
 pub let selected : Int = 41
 BANG
 
-# The retained environment carries dense effect labels. Adding an unrelated earlier effect is an
-# intentional red pole: checked interface identity stays stable, sliced lowered body identity moves.
+# The retained environment carries dense effect labels. Body-slice v2 quotients an unrelated earlier
+# effect at the digest boundary while leaving the production runtime allocation untouched.
 for variant in body-slice-effect-base body-slice-effect-shifted; do
   mkdir -p "$tmpdir/$variant"
   cat > "$tmpdir/$variant/main.bang" <<'BANG'
@@ -180,6 +180,24 @@ cat > "$tmpdir/body-slice-effect-shifted/Lib.bang" <<'BANG'
 effect Earlier { pong : Int -> Int }
 effect Target { ping : Int -> Int }
 pub let selected : Int = handle target.ping(1) with Target as target { ping(n) => n }
+BANG
+
+# Rank-only canonicalization would collapse these symmetric single-effect slices: both effects would
+# become canonical label 4. Binding the qualified effect-name table must keep them distinct.
+for variant in body-slice-effect-alpha body-slice-effect-beta; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+let main = Lib.selected
+BANG
+done
+cat > "$tmpdir/body-slice-effect-alpha/Lib.bang" <<'BANG'
+effect Alpha { ping : Int -> Int }
+pub let selected : Int = handle alpha.ping(1) with Alpha as alpha { ping(n) => n }
+BANG
+cat > "$tmpdir/body-slice-effect-beta/Lib.bang" <<'BANG'
+effect Beta { ping : Int -> Int }
+pub let selected : Int = handle beta.ping(1) with Beta as beta { ping(n) => n }
 BANG
 
 # Structural declarations carry checked shapes rather than value types; retain a separate pole so
@@ -545,7 +563,7 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v1-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v2-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
@@ -616,7 +634,7 @@ $body_sibling_dump
 $body_reachable_dump
 $body_env_dump"
 check "module-body-extractor-exit" "$body_rows_exit" "0"
-check "module-body-reachability-boundary" "$body_rows" "resolved-program-module-body-slice|bang-module-body-slice-comp-v1-uint64|false|false|16|sliced|True|True|True|True|True|True"
+check "module-body-reachability-boundary" "$body_rows" "resolved-program-module-body-slice|bang-module-body-slice-comp-v2-uint64|false|false|16|sliced|True|True|True|True|True|True"
 
 # Coverage is explicit, never inferred from omitted rows. Generic templates have no concrete
 # instantiation at this seam; structural kinds have no value body; concrete let/letRec rows do.
@@ -631,8 +649,8 @@ print("|".join("{}:{}:{}:{}".format(x["name"],x["kind"],x["status"],str(x["diges
 check "module-body-coverage-extractor-exit" "$body_coverage_rows_exit" "0"
 check "module-body-explicit-export-coverage" "$body_coverage_rows" "Box:data:no-body-kind:false|Marker:trait:no-body-kind:false|generic:fn:unsupported-generic-fn:false|countdown:letRec:sliced:true|selected:let:sliced:true"
 
-# Retained negative pole: keeping the non-value environment whole also keeps dense effect labels.
-# An unrelated earlier effect preserves the public interface but moves the lowered body slice.
+# Digest-side quotient: an unrelated earlier effect preserves both the checked interface and the
+# environment-relative body observation. Runtime labels are deliberately outside this query fact.
 capture body_effect_base_dump body_effect_base_exit "$bang" query dump "$tmpdir/body-slice-effect-base/main.bang" 2>/dev/null
 capture body_effect_shifted_dump body_effect_shifted_exit "$bang" query dump "$tmpdir/body-slice-effect-shifted/main.bang" 2>/dev/null
 check "module-body-effect-base-exit" "$body_effect_base_exit" "0"
@@ -643,11 +661,28 @@ ds=[json.loads(line) for line in sys.stdin if line.strip()]
 def module(d,table): return next(x for x in d[table] if x["module"]=="Lib")
 interfaces=[module(d,"moduleInterfaces") for d in ds]
 bodies=[module(d,"moduleBodies")["exports"][0] for d in ds]
-print("|".join([str(interfaces[0]["digest"]==interfaces[1]["digest"]),str(bodies[0]["digest"]!=bodies[1]["digest"]),bodies[0]["status"],bodies[1]["status"]]))
+print("|".join([str(interfaces[0]["digest"]==interfaces[1]["digest"]),str(bodies[0]["digest"]==bodies[1]["digest"]),bodies[0]["status"],bodies[1]["status"]]))
 ' 2>/dev/null <<< "$body_effect_base_dump
 $body_effect_shifted_dump"
 check "module-body-effect-extractor-exit" "$body_effect_rows_exit" "0"
-check "module-body-retains-effect-coupling" "$body_effect_rows" "True|True|sliced|sliced"
+check "module-body-quotients-unrelated-effect" "$body_effect_rows" "True|True|sliced|sliced"
+
+# Semantic discrimination: equal shapes using differently named effects must not collapse merely
+# because each used-name set receives the same singleton canonical rank.
+capture body_effect_alpha_dump body_effect_alpha_exit "$bang" query dump "$tmpdir/body-slice-effect-alpha/main.bang" 2>/dev/null
+capture body_effect_beta_dump body_effect_beta_exit "$bang" query dump "$tmpdir/body-slice-effect-beta/main.bang" 2>/dev/null
+check "module-body-effect-alpha-exit" "$body_effect_alpha_exit" "0"
+check "module-body-effect-beta-exit" "$body_effect_beta_exit" "0"
+capture body_effect_identity_rows body_effect_identity_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+def body(d): return next(x for x in d["moduleBodies"] if x["module"]=="Lib")["exports"][0]
+rows=[body(d) for d in ds]
+print("|".join([str(rows[0]["digest"]!=rows[1]["digest"]),rows[0]["status"],rows[1]["status"]]))
+' 2>/dev/null <<< "$body_effect_alpha_dump
+$body_effect_beta_dump"
+check "module-body-effect-identity-extractor-exit" "$body_effect_identity_rows_exit" "0"
+check "module-body-binds-effect-identity" "$body_effect_identity_rows" "True|sliced|sliced"
 
 # Interface and implementation are distinct invalidation boundaries. All four projects type-check;
 # body/private changes move the current flat core but not Lib's checked public interface, while a
@@ -1559,7 +1594,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (218 — dependency observation, recomputation, reuse, module graph, structural
+# always runs (263 — dependency observation, recomputation, reuse, module graph, structural
 # invalidation-fanout, resolved-core fingerprint, law-aware interface, and resolved-module-interface
 # checks included);
 # jq's three guarded blocks
@@ -1570,7 +1605,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=259
+want_total=263
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

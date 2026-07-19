@@ -980,7 +980,7 @@ not six independent implementations.
   "moduleBodies": [ {
     "module": "@entry|logical module name",
     "scope": "resolved-program-module-body-slice",
-    "algorithm": "bang-module-body-slice-comp-v1-uint64",
+    "algorithm": "bang-module-body-slice-comp-v2-uint64",
     "cacheKeySafe": false, "linkReady": false,
     "exports": [ { "id": "Module::localName", "name": "localName",
                    "kind": "..",

@@ -739,10 +739,10 @@ public structure ModuleBodyFact where
 attribute [nolint unusedArguments] instReprModuleBodyStatus.repr
   instReprModuleBodyExportFact.repr instReprModuleBodyFact.repr
 
-/-- Versioned body-slice fingerprint name. The underlying `Comp` fold is
-`CoreFingerprint.algorithm`; the outer fresh tag separates this projection from whole-program and
-interface digest domains. Still only a 64-bit change detector. -/
-public def moduleBodyAlgorithm : String := "bang-module-body-slice-comp-v1-uint64"
+/-- Versioned body-slice fingerprint name. Version 2 canonicalizes the user-effect labels occurring
+in the lowered slice and binds their sorted qualified names into the digest. The underlying `Comp`
+fold remains `CoreFingerprint.algorithm`; this is still only a 64-bit change detector. -/
+public def moduleBodyAlgorithm : String := "bang-module-body-slice-comp-v2-uint64"
 
 /-- Does `d` denote a value declaration that may be removed when unreachable? `fnD` is included:
 it is retained when a concrete selected export reaches its generic template, but an exported `fnD`
@@ -785,11 +785,168 @@ public def reachableValueSliceProg (p : Prog) (name : String) : Prog :=
   let retainedPubs := p.pubNames.filter (fun n => keptNames.contains n)
   { p with pubNames := retainedPubs, decls := decls, body := .var name, isLibrary := false }
 
-/-- Fresh-domain digest for one successfully lowered reachable body slice. -/
-def moduleBodyDigest (comp : Bang.Comp) : String :=
-  Bang.CoreFingerprint.toHex16
-    (Bang.CoreFingerprint.step (Bang.CoreFingerprint.tag 71)
-      (Bang.CoreFingerprint.hashComp comp))
+/-! ### Digest-local effect-label canonicalization
+
+Lowering assigns user-effect labels densely in declaration order. That representation remains the
+runtime contract, but it is noise at the body-observation boundary: inserting an unused earlier
+effect must not change an otherwise identical export digest. The traversal below is deliberately
+Query-local; it changes only the value passed to `hashComp`, never the checked/lowered program used by
+execution or emission.
+
+The exhaustive constructor matches make a NEW `Val`/`Comp`/`Handler` constructor fail compilation.
+Adding a new label-bearing FIELD to an existing constructor is a separate update obligation: extend
+both the mapping/collection folds and the exact position guards below.
+-/
+
+mutual
+/-- Map every kernel label position in a value. -/
+partial def mapBodyValLabels (f : Bang.EffectRow.Label → Bang.EffectRow.Label) : Bang.Val → Bang.Val
+  | .vunit => .vunit
+  | .vint n => .vint n
+  | .vvar i => .vvar i
+  | .vcap n l => .vcap n (f l)
+  | .vthunk c => .vthunk (mapBodyCompLabels f c)
+  | .inl v => .inl (mapBodyValLabels f v)
+  | .inr v => .inr (mapBodyValLabels f v)
+  | .pair a b => .pair (mapBodyValLabels f a) (mapBodyValLabels f b)
+  | .fold v => .fold (mapBodyValLabels f v)
+/-- Map every kernel label position in a computation. -/
+partial def mapBodyCompLabels (f : Bang.EffectRow.Label → Bang.EffectRow.Label) :
+    Bang.Comp → Bang.Comp
+  | .ret v => .ret (mapBodyValLabels f v)
+  | .letC m n => .letC (mapBodyCompLabels f m) (mapBodyCompLabels f n)
+  | .force v => .force (mapBodyValLabels f v)
+  | .lam m => .lam (mapBodyCompLabels f m)
+  | .app m v => .app (mapBodyCompLabels f m) (mapBodyValLabels f v)
+  | .perform c op v => .perform (mapBodyValLabels f c) op (mapBodyValLabels f v)
+  | .handle h m => .handle (mapBodyHandlerLabels f h) (mapBodyCompLabels f m)
+  | .case v n1 n2 =>
+      .case (mapBodyValLabels f v) (mapBodyCompLabels f n1) (mapBodyCompLabels f n2)
+  | .split v n => .split (mapBodyValLabels f v) (mapBodyCompLabels f n)
+  | .unfold v => .unfold (mapBodyValLabels f v)
+  | .binop op v w => .binop op (mapBodyValLabels f v) (mapBodyValLabels f w)
+  | .oom => .oom
+  | .wrong s => .wrong s
+/-- Map every kernel label position in a handler, including nested values and custom clauses. -/
+partial def mapBodyHandlerLabels (f : Bang.EffectRow.Label → Bang.EffectRow.Label) :
+    Bang.Handler → Bang.Handler
+  | .state l v => .state (f l) (mapBodyValLabels f v)
+  | .throws l => .throws (f l)
+  | .transaction l vs => .transaction (f l) (vs.map (mapBodyValLabels f))
+  | .custom l p cls => .custom (f l) (mapBodyValLabels f p)
+      (cls.map fun (key, c) => (key, mapBodyCompLabels f c))
+end
+
+mutual
+/-- Collect every kernel label occurring in a value. -/
+partial def bodyValLabels : Bang.Val → List Bang.EffectRow.Label
+  | .vunit | .vint _ | .vvar _ => []
+  | .vcap _ l => [l]
+  | .vthunk c => bodyCompLabels c
+  | .inl v | .inr v | .fold v => bodyValLabels v
+  | .pair a b => bodyValLabels a ++ bodyValLabels b
+/-- Collect every kernel label occurring in a computation. -/
+partial def bodyCompLabels : Bang.Comp → List Bang.EffectRow.Label
+  | .ret v | .force v | .unfold v => bodyValLabels v
+  | .letC m n => bodyCompLabels m ++ bodyCompLabels n
+  | .lam m => bodyCompLabels m
+  | .app m v => bodyCompLabels m ++ bodyValLabels v
+  | .perform c _ v => bodyValLabels c ++ bodyValLabels v
+  | .handle h m => bodyHandlerLabels h ++ bodyCompLabels m
+  | .case v n1 n2 => bodyValLabels v ++ bodyCompLabels n1 ++ bodyCompLabels n2
+  | .split v n => bodyValLabels v ++ bodyCompLabels n
+  | .binop _ v w => bodyValLabels v ++ bodyValLabels w
+  | .oom | .wrong _ => []
+/-- Collect every kernel label occurring in a handler and its payloads. -/
+partial def bodyHandlerLabels : Bang.Handler → List Bang.EffectRow.Label
+  | .state l v => l :: bodyValLabels v
+  | .throws l => [l]
+  | .transaction l vs => l :: vs.flatMap bodyValLabels
+  | .custom l p cls => l :: (bodyValLabels p ++ cls.flatMap (bodyCompLabels ∘ Prod.snd))
+end
+
+private def bodyLabelProbeMap (l : Bang.EffectRow.Label) : Bang.EffectRow.Label :=
+  if l = 4 then 9 else l
+
+-- Exact position guards witness mapping and collection at every CURRENT label-bearing field.
+#guard Bang.CoreFingerprint.hashHandler
+    (mapBodyHandlerLabels bodyLabelProbeMap (.state 4 .vunit)) ==
+  Bang.CoreFingerprint.hashHandler (.state 9 .vunit)
+#guard Bang.CoreFingerprint.hashHandler
+    (mapBodyHandlerLabels bodyLabelProbeMap (.throws 4)) ==
+  Bang.CoreFingerprint.hashHandler (.throws 9)
+#guard Bang.CoreFingerprint.hashHandler
+    (mapBodyHandlerLabels bodyLabelProbeMap (.transaction 4 [.vunit])) ==
+  Bang.CoreFingerprint.hashHandler (.transaction 9 [.vunit])
+#guard Bang.CoreFingerprint.hashHandler
+    (mapBodyHandlerLabels bodyLabelProbeMap (.custom 4 .vunit [])) ==
+  Bang.CoreFingerprint.hashHandler (.custom 9 .vunit [])
+#guard Bang.CoreFingerprint.hashVal (mapBodyValLabels bodyLabelProbeMap (.vcap 3 4)) ==
+  Bang.CoreFingerprint.hashVal (.vcap 3 9)
+#guard bodyHandlerLabels (.state 4 .vunit) == [4]
+#guard bodyHandlerLabels (.throws 4) == [4]
+#guard bodyHandlerLabels (.transaction 4 [.vunit]) == [4]
+#guard bodyHandlerLabels (.custom 4 .vunit []) == [4]
+#guard bodyValLabels (.vcap 3 4) == [4]
+
+private def bodyLabelRoundTripSample : Bang.Comp :=
+  .handle (.custom 9 (.vcap 3 8)
+      [(.plain "ping", .ret (.vthunk (.handle (.state 7 .vunit) (.ret (.vcap 2 6)))) )])
+    (.case (.pair (.vcap 1 5) .vunit) (.ret .vunit) (.wrong "no"))
+
+private def bodyLabelSwap (l : Bang.EffectRow.Label) : Bang.EffectRow.Label :=
+  if l = 5 then 8 else if l = 8 then 5 else l
+
+-- These guards establish identity and bijection on the positions traversed above; the exact guards
+-- establish position coverage.
+#guard Bang.CoreFingerprint.hashComp (mapBodyCompLabels id bodyLabelRoundTripSample) ==
+  Bang.CoreFingerprint.hashComp bodyLabelRoundTripSample
+#guard Bang.CoreFingerprint.hashComp
+    (mapBodyCompLabels bodyLabelSwap (mapBodyCompLabels bodyLabelSwap bodyLabelRoundTripSample)) ==
+  Bang.CoreFingerprint.hashComp bodyLabelRoundTripSample
+
+/-- Resolve the user labels present in `comp`, sort them by qualified semantic name, and assign dense
+canonical labels from 4. Built-ins retain 0-3. Missing reverse lookup is a producer inconsistency and
+refuses the body projection rather than preserving a plausible raw label. -/
+def canonicalBodyEffects (comp : Bang.Comp)
+    (effects : List (String × Bang.EffectRow.Label)) :
+    Except String (List (String × Bang.EffectRow.Label)) := do
+  let usedUserLabels := (bodyCompLabels comp).eraseDups.filter (· >= 4)
+  for l in usedUserLabels do
+    if !(effects.any fun (_, declared) => declared = l) then
+      throw s!"module body digest: lowered user-effect label {l} is absent from the elaboration environment"
+  return ((effects.filter fun (_, l) => usedUserLabels.contains l).toArray.qsort
+    (fun a b => a.1 < b.1)).toList
+
+/-- Map one allocated label through the sorted used-effect table. Unknown user labels have already
+been rejected by `canonicalBodyEffects`; this total fallback is unreachable on the digest path. -/
+def canonicalBodyLabel (used : List (String × Bang.EffectRow.Label))
+    (l : Bang.EffectRow.Label) : Bang.EffectRow.Label :=
+  if l < 4 then l else
+    match used.zipIdx.find? (fun ((_, allocated), _) => allocated = l) with
+    | some (_, rank) => 4 + rank
+    | none => l
+
+/-- Hash the sorted canonical-label-to-qualified-name table. The canonical label is explicit even
+though its rank is implied by list order, preventing a one-used-effect `A`/`B` collapse. -/
+def hashCanonicalBodyEffects (used : List (String × Bang.EffectRow.Label)) : UInt64 :=
+  used.zipIdx.foldl (fun acc ((name, _), rank) =>
+    Bang.CoreFingerprint.step
+      (Bang.CoreFingerprint.step acc (Bang.CoreFingerprint.hashNat (4 + rank)))
+      (Bang.CoreFingerprint.hashStr name))
+    (Bang.CoreFingerprint.tag 72)
+
+/-- Fresh-domain v2 digest for one successfully lowered reachable body slice. Binding order is
+canonical `Comp` hash, then the sorted semantic-name table hash; the empty table is bound uniformly. -/
+def moduleBodyDigest (comp : Bang.Comp) (effects : List (String × Bang.EffectRow.Label)) :
+    Except String String := do
+  let used ← canonicalBodyEffects comp effects
+  let canonical := mapBodyCompLabels (canonicalBodyLabel used) comp
+  return Bang.CoreFingerprint.toHex16 <|
+    Bang.CoreFingerprint.step
+      (Bang.CoreFingerprint.step (Bang.CoreFingerprint.tag 71)
+        (Bang.CoreFingerprint.hashComp canonical))
+      (hashCanonicalBodyEffects used)
 
 /-- One export row rendered with every key present. -/
 public def ModuleBodyExportFact.toJson (f : ModuleBodyExportFact) : String :=
@@ -820,9 +977,12 @@ public def moduleBodyFactsOf (p : Prog) (declModule : List (String × String))
       let id := moduleName ++ "::" ++ localName
       match d with
       | .letD .. | .letRecD .. =>
-          match Bang.TypeCheck.checkAndLowerProg (reachableValueSliceProg p name) with
+          match Bang.TypeCheck.checkAndLowerProgWithEffects (reachableValueSliceProg p name) with
           | .error e => throw s!"module bodies '{moduleName}': slice for exported declaration '{name}' failed to lower: {e}"
-          | .ok comp => pure ⟨id, localName, DeclKind.of d, .sliced, some (moduleBodyDigest comp)⟩
+          | .ok (comp, effects) =>
+              let digest ← (moduleBodyDigest comp effects).mapError fun e =>
+                s!"module bodies '{moduleName}': slice for exported declaration '{name}' failed to canonicalize: {e}"
+              pure ⟨id, localName, DeclKind.of d, .sliced, some digest⟩
       | .fnD .. => pure ⟨id, localName, DeclKind.of d, .unsupportedGenericFn, none⟩
       | _ => pure ⟨id, localName, DeclKind.of d, .noBodyKind, none⟩
     pure ⟨moduleName, "resolved-program-module-body-slice", moduleBodyAlgorithm,

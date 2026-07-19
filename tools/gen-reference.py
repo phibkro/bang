@@ -1467,7 +1467,7 @@ def render():
     L.append('  "moduleBodies": [ {')
     L.append('    "module": "@entry|logical module name",')
     L.append('    "scope": "resolved-program-module-body-slice",')
-    L.append('    "algorithm": "bang-module-body-slice-comp-v1-uint64",')
+    L.append('    "algorithm": "bang-module-body-slice-comp-v2-uint64",')
     L.append('    "cacheKeySafe": false, "linkReady": false,')
     L.append('    "exports": [ { "id": "Module::localName", "name": "localName",')
     L.append('                   "kind": "..",')
