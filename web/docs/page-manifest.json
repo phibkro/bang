@@ -116,11 +116,11 @@
       "title": "Machine / backend",
       "summary": "Trace source meaning through CalcVM, compilation, execution, or Wasm emission.",
       "order": 30,
-      "targetPage": "current-architecture",
+      "targetPage": "machine-backend-role-lab",
       "seams": ["Bang/Backend/AbstractMachine.lean", "Bang/Backend/Wasm.lean", "Bang/Backend/WasmEmit.lean"],
       "firstChange": "Trace one constructor through source, compile/exec, and its differential fixture.",
-      "narrowGate": "just check Bang/Backend/AbstractMachine.lean",
-      "fullGate": "just verify"
+      "narrowGate": "nix develop --command just check Bang/Backend/AbstractMachine.lean",
+      "fullGate": "nix develop --command just verify"
     },
     {
       "id": "tooling-docs-examples",
@@ -392,6 +392,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
       "target": { "kind": "onboarding-page", "route": "/contribute/routes/kernel-proof", "contentKey": "kernel-proof" },
       "navigation": { "order": 50 }
+    },
+    {
+      "id": "machine-backend-role-lab",
+      "title": "Machine / backend role lab",
+      "section": "contribute",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["common-journey-evidence", "contributor-routes", "current-architecture"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/contribute/routes/machine-backend", "contentKey": "machine-backend" },
+      "navigation": { "order": 60 }
     },
     {
       "id": "current-architecture",

@@ -38,6 +38,10 @@ test-role-lab-frontend:
 test-role-lab-kernel-proof:
     bash tools/test-role-lab-kernel-proof.sh
 
+# Exact-HEAD env/oracle/compiled + Agree + supported Wasm evidence for the backend role lab.
+test-role-lab-machine-backend:
+    bash tools/test-role-lab-machine-backend.sh
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:

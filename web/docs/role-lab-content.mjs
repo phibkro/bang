@@ -10,6 +10,19 @@ export const kernelProofReference = Object.freeze({
   auditSource: 'Bang/Audit.lean',
 })
 
+export const machineBackendReference = Object.freeze({
+  constructor: 'Comp.binop',
+  operation: 'BinOp.add',
+  sourceDefinition: 'Bang/Core/IR.lean',
+  sourceSemantics: 'Bang/Core/Semantics/Eval.lean',
+  machineSource: 'Bang/Backend/AbstractMachine.lean',
+  emitterSource: 'Bang/Backend/WasmEmit.lean',
+  emitterHarness: 'tools/emit-rung1-diff.sh',
+  expectedOutput: '42\n',
+})
+
+const machineBackendExpectedShell = machineBackendReference.expectedOutput.replaceAll('\n', '\\n')
+
 export const roleLabContent = [
   {
     key: 'frontend-language',
@@ -229,6 +242,105 @@ you can name the statement owner, proof owner, and smallest falsifying gate.
           'Record the real narrow and full gate exit statuses; a skipped gate is not a pass.',
         ],
         issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "proof OR soundness OR kernel"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Recommend one only after naming its statement owner, proof owner, and smallest falsifying gate; do not claim, comment on, or mutate it.',
+      },
+    ],
+  },
+  {
+    key: 'machine-backend',
+    stages: [
+      {
+        id: 'retrieve-predict',
+        prose: `
+Start from the existing \u0060${machineBackendReference.constructor}\u0060 constructor and
+its source meaning. Locate the constructor in
+\u0060${machineBackendReference.sourceDefinition}\u0060, then the closed-integer reduction
+in \u0060${machineBackendReference.sourceSemantics}\u0060. Predict the disposable program's
+observable value before running any engine. The task is to follow an existing
+calculation, not to propose an instruction or optimize it.
+`,
+        retrievalChecks: [
+          `Locate \u0060${machineBackendReference.constructor}\u0060 and \u0060${machineBackendReference.operation}\u0060 in \u0060${machineBackendReference.sourceDefinition}\u0060.`,
+          `Locate the closed-integer \u0060${machineBackendReference.constructor}\u0060 arm in \u0060${machineBackendReference.sourceSemantics}\u0060.`,
+          `Locate \u0060evalD\u0060, \u0060compile\u0060, \u0060exec\u0060, and \u0060Agree\u0060 in \u0060${machineBackendReference.machineSource}\u0060.`,
+        ],
+        predictionChecks: [
+          'Predict the value of `19 + 23` before running env, oracle, or compiled.',
+          'Predict whether compile/exec keeps an arithmetic instruction or collapses the closed operation to a return.',
+          'Predict whether the Wasm emitter supports integer addition or must refuse it loudly.',
+        ],
+      },
+      {
+        id: 'trace-seam',
+        prose: `
+Trace one constructor through linked owners. The kernel step defines source
+meaning; \u0060evalD\u0060 is the state-explicit denotation from which \u0060compile\u0060 and
+\u0060exec\u0060 are calculated; \u0060Agree\u0060 ties \u0060exec ∘ compile\u0060 and \u0060Source.eval\u0060 to one
+observable value. The Wasm emitter is a separate tested path from the same
+\u0060Comp\u0060: its \u0060emitComp\u0060 arm emits supported arithmetic and its differential
+harness compares Wasmtime with the kernel oracle. The calculated machine remains
+an output of the calculation; this lab adds no instruction or semantic rule.
+`,
+        checks: [
+          'Name the source step, evalD arm, compile arm, exec return behavior, and Agree observation without copying their bodies.',
+          'Explain why compile/exec constant-folding and direct Wasm arithmetic emission may differ internally while sharing the source result.',
+          'Explain how an explicit emitter refusal differs from an agreement failure or a silent skip.',
+        ],
+        seams: [
+          machineBackendReference.sourceDefinition,
+          machineBackendReference.sourceSemantics,
+          machineBackendReference.emitterHarness,
+        ],
+      },
+      {
+        id: 'isolated-practice',
+        prose: `
+Create the fixture below only in the disposable exact-HEAD clone. Materialize its
+expected output beside it, then run the same source through env, oracle, and
+compiled; each engine must match that one expected file. Run the existing
+\u0060Agree\u0060 battery and, because integer addition is supported, the existing rung-1
+emitter differential. Do not edit a production Lean file or add a new machine
+case. A refusal from a supported addition or any skipped engine is a failure.
+`,
+        fixture: {
+          path: 'main.bang',
+          source: `let main = 19 + 23
+`,
+        },
+        commands: [
+          'nix develop --command lake build bang',
+          'expected="$lane/expected.txt"',
+          `printf '${machineBackendExpectedShell}' > "$expected"`,
+          './.lake/build/bin/bang run --engine=env "$practice" > "$bundle/env.txt" && diff -u "$expected" "$bundle/env.txt"',
+          './.lake/build/bin/bang run --engine=oracle "$practice" > "$bundle/oracle.txt" && diff -u "$expected" "$bundle/oracle.txt"',
+          './.lake/build/bin/bang run --engine=compiled "$practice" > "$bundle/compiled.txt" && diff -u "$expected" "$bundle/compiled.txt"',
+          'nix develop --command just check Bang/Backend/AbstractMachine.lean > "$bundle/agree.txt" 2>&1',
+          'nix develop --command bash tools/emit-rung1-diff.sh > "$bundle/emitter.txt" 2>&1',
+          'nix develop --command just test-role-lab-machine-backend > "$bundle/harness.txt" 2>&1',
+          'cp "$practice" "$expected" "$bundle"',
+          'rm "$practice" "$expected"',
+          'test -z "$(git status --porcelain)"',
+        ],
+        boundedOutcome: 'The disposable source yields 42 under env, oracle, and compiled; the Agree battery elaborates; the supported addition sample emits and agrees with Wasmtime; cleanup leaves the exact-HEAD lane unchanged.',
+      },
+      {
+        id: 'inspect-select',
+        prose: `
+Keep the three engine outputs, \u0060Agree\u0060 check, emitter report, source, and expected
+file as one evidence bundle outside the disposable clone. Agreement means all
+observations equal the committed expected value. Unsupported means the emitter
+returns and reports an explicit refusal; it never means a missing result or an
+unrun command. Select live backend work read-only only after naming the owning
+module and the smallest gate that can falsify a change on this seam.
+`,
+        evidenceChecks: [
+          'Require env, oracle, and compiled to run exactly once and match the same expected file.',
+          'Confirm a deliberately wrong expected value would reject every captured engine output.',
+          'Require the AbstractMachine check to exercise the existing Agree battery.',
+          'Require the emitter report to include the supported integer-add sample, no refusal, and a Wasmtime/oracle agreement verdict.',
+          'Confirm no production Lean source changed and cleanup returned the exact-HEAD lane to a clean state.',
+          'Record the real narrow and full gate exit statuses; a skipped gate is not a pass.',
+        ],
+        issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "backend OR CalcVM OR Wasm OR emitter"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Recommend one only after naming its owning module, semantic oracle, and smallest falsifying gate; do not claim, comment on, or mutate it.',
       },
     ],
   },

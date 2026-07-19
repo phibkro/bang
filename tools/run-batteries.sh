@@ -13,7 +13,7 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # to skip its own rebuild (tools/test-*.sh honor this — see the conditional rebuild
 # each carries). Under `just verify`, the warning-wrapped `build` recipe has already
 # built this same target, so this is an incremental check rather than a second cold build.
-# The proof role-lab harness builds inside the exact-HEAD clone that it verifies.
+# The proof and machine/backend role-lab harnesses build inside the exact-HEAD clones they verify.
 #
 # FALSE-GREEN DEFENSES (this script IS part of the gate, so it must not paper over a
 # hung/missing battery):
@@ -35,7 +35,7 @@ export BANG_BIN_FRESH=1
 batteries=(check-examples check-examples-env test-example-exit-status test-repl test-fmt test-check-json test-query \
            test-cli-exit-status test-rewrite test-annotate test-lint test-82-verbs test-cli test-cli-options test-lean-warnings test-release-version test-release-integrity test-law test-modules \
            test-explain test-hostio-seam test-host-authority test-reference-samples test-docfacts-language test-docfacts-logger test-out-of-fuel-naming test-onboarding-journey \
-           test-role-lab-frontend test-role-lab-kernel-proof test-compiled-dogfood test-bang-build)
+           test-role-lab-frontend test-role-lab-kernel-proof test-role-lab-machine-backend test-compiled-dogfood test-bang-build)
 
 workdir="$(mktemp -d --tmpdir bang-run-batteries-XXXXXX)"
 trap 'rm -rf "$workdir"' EXIT
