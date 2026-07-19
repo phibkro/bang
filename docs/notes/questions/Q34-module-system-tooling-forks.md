@@ -400,3 +400,28 @@ analysis can drift.
 serialized, built-ins 0-3 remain implicit/fixed, and `linkReady=false` remains authoritative. The next
 body-side tracer may encode a canonical artifact and apply/validate this table. Import and initializer
 slots still require ADR-0117 provenance and must not be inferred from source occurrence order.
+
+## Canonical body-artifact input (2026-07-19): bytes and inverse are real; validation is still partial
+
+`PATH-canonical-body-artifact` turns the exact digest-side canonical `Comp` into the versioned
+constructor-array format `bang-core-comp-json-v1`. `Bang.CompCodec` covers every current
+`Val`/`Comp`/`Handler` constructor in both directions and rejects wrong versions, unknown tags, wrong
+arities/scalars, trailing input, byte-limit overflow, and constructor-depth overflow. The producer
+decodes and re-encodes its own bytes; `Bang.BodyArtifactConsumer` then feeds decoded pure and effectful
+terms to the unchanged calculated-VM compiler and environment-machine runner.
+
+The first transport design—an `artifact` field on every `moduleBodies[].exports[]` row—was refuted
+end to end before publication. Reachable slices share transitive bodies, so a wide module duplicates
+the same syntax across many export rows. On the committed 100-formula workload the dump immediately
+crossed the shell argument-size boundary and truncated the query suite. Artifact bytes therefore live
+behind `bang query body-artifact <export-id> [<file>]`; `dump` remains the compact discovery/index view.
+The unrelated-earlier-effect pole preserves on-demand artifact bytes and digest while only the runtime
+relocation moves `4 → 5`.
+
+**Decision:** this is a producer-checked, structurally round-tripped body encoding—not a trusted cache
+entry or a separately linked module. Its metadata says `producerChecked=true` and
+`structurallyRoundTripped=true`, but `independentlyTypeValidated=false`, `cacheKeySafe=false`, and
+`linkReady=false`. Do not add a store, scheduler, or reuse skip yet. The next body-side demand is an
+independent validation/link contract: type evidence or revalidation, collision-safe version-domain
+addressing, and explicit import/initializer slots. ADR-0117 still forbids guessing those initializer
+joins from flattened binder identity.

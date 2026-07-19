@@ -161,6 +161,15 @@
         "parserOptionFamilies": [],
         "path": [
           "query",
+          "body-artifact"
+        ],
+        "principalFlags": [],
+        "synopsis": "bang query body-artifact <id> [<file>]  canonical code for one sliced public export ID;"
+      },
+      {
+        "parserOptionFamilies": [],
+        "path": [
+          "query",
           "symbols"
         ],
         "principalFlags": [],

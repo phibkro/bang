@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Fingerprint.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Frontend/Query.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
+# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Fingerprint.lean,Bang/Core/CompCodec.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Frontend/Query.lean,Bang/Backend/BodyArtifact.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
 """Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained.
 
 Sources of truth (the generate rung of the derivation ladder):
@@ -1739,7 +1739,7 @@ def render():
         "`linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,"
     )
     L.append(
-        "and neither the slice nor its digest-local canonical labels are an encoded artifact. The"
+        "and the complete dump deliberately does not duplicate canonical code across exports. The"
     )
     L.append("execution-classification gate agrees across all 61")
     L.append(
@@ -1752,9 +1752,41 @@ def render():
         "A future linker therefore needs an explicit module-initialization contract in addition to runtime"
     )
     L.append(
-        "label/import-slot agreement. No artifact validation, linking, skip, storage, or reuse authority"
+        "label/import-slot agreement. No independent type validation, linking, skip, storage, or reuse authority"
     )
     L.append("follows from this fact.")
+    L.append("")
+    L.append(
+        "`bang query body-artifact <export-id> [<file.bang>]` materializes canonical code **on demand** for"
+    )
+    L.append(
+        "one sliced public export ID already listed by `moduleBodies`. Keeping bytes behind a point query is"
+    )
+    L.append(
+        "load-bearing: reachable slices share transitive declarations, so embedding every artifact in `dump`"
+    )
+    L.append(
+        "duplicates them quadratically on wide modules (the 100-formula workload is the regression pole)."
+    )
+    L.append(
+        "The artifact is the versioned constructor-array format `bang-core-comp-json-v1`; its public decoder"
+    )
+    L.append(
+        "rejects malformed JSON, wrong versions/tags/arities/scalars, oversized input, and excessive constructor"
+    )
+    L.append(
+        "depth. The producer decodes and re-encodes its own bytes, and `Bang.BodyArtifactConsumer` feeds decoded"
+    )
+    L.append(
+        "terms to the unchanged calculated-VM compiler and environment-machine runner. Metadata distinguishes"
+    )
+    L.append(
+        "that structural round-trip from missing independent type validation: `producerChecked=true` and"
+    )
+    L.append(
+        "`structurallyRoundTripped=true`, but `independentlyTypeValidated=false`, `cacheKeySafe=false`, and"
+    )
+    L.append("`linkReady=false`.")
     L.append("")
     L.append(
         "`python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external"

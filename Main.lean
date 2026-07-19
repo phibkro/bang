@@ -1994,6 +1994,22 @@ def runQueryDump (file : Option String) : IO UInt32 := do
                   resolved.modules resolved.moduleDeps resolved.moduleExports
                   (some headerProg.imports) (some headerProg.uses) resolved.modulePrograms)
 
+/-- `bang query body-artifact <export-id> [<file>]` — materialize exactly one canonical body on
+demand. The complete dump lists stable IDs and compact body facts; keeping code behind this point query
+avoids transitive-slice duplication across wide modules. -/
+def runQueryBodyArtifact (file : Option String) (id : String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProgWithProvenance src headerProg file with
+      | .error code => pure code
+      | .ok resolved =>
+          let moduleExports := if resolved.moduleExports.isEmpty then
+            [("@entry", resolved.prog.pubNames)]
+          else resolved.moduleExports
+          printQueryOk (Bang.Query.moduleBodyArtifactJsonP resolved.prog resolved.declModules
+            moduleExports id)
+
 /-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
 def runQuerySymbols (file : Option String) : IO UInt32 := do
   match ← readQuerySrc file with
@@ -2802,6 +2818,8 @@ def usage : String :=
   "                                             checked public interfaces per resolved module, every\n" ++
   "                                             decl (name/kind/type/row/visibility), every\n" ++
   "                                             name-ref edge/law, import/use — one JSON object\n" ++
+  "    bang query body-artifact <id> [<file>]  canonical code for one sliced public export ID;\n" ++
+  "                                             strict round-trip, fetched on demand to avoid dump bloat\n" ++
   "    bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row\n" ++
   "                                             (dump's own \"decls\" field, narrowed)\n" ++
   "    bang query type <file.bang> <name>      the checked type ! row of one top-level binding\n" ++
@@ -3203,6 +3221,8 @@ def main (args : List String) : IO UInt32 := do
         match opts.positionals with
         | ["dump", file]          => runQueryDump (some file)
         | ["dump"]                => runQueryDump none
+        | ["body-artifact", id, file] => runQueryBodyArtifact (some file) id
+        | ["body-artifact", id]   => runQueryBodyArtifact none id
         | ["symbols", file]       => runQuerySymbols (some file)
         | ["symbols"]             => runQuerySymbols none
         | ["type", file, name]    => runQueryType (some file) name

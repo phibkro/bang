@@ -1099,13 +1099,25 @@ no standalone concrete instantiation; structural declarations have `status=no-bo
 lowering, the entire `moduleBodies` projection is `null` rather than a partial list.
 `cacheKeySafe=false` and
 `linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,
-and neither the slice nor its digest-local canonical labels are an encoded artifact. The
+and the complete dump deliberately does not duplicate canonical code across exports. The
 execution-classification gate agrees across all 61
 current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict
 top-level initializer diverges in the whole lexical chain while the pruned selected body returns.
 A future linker therefore needs an explicit module-initialization contract in addition to runtime
-label/import-slot agreement. No artifact validation, linking, skip, storage, or reuse authority
+label/import-slot agreement. No independent type validation, linking, skip, storage, or reuse authority
 follows from this fact.
+
+`bang query body-artifact <export-id> [<file.bang>]` materializes canonical code **on demand** for
+one sliced public export ID already listed by `moduleBodies`. Keeping bytes behind a point query is
+load-bearing: reachable slices share transitive declarations, so embedding every artifact in `dump`
+duplicates them quadratically on wide modules (the 100-formula workload is the regression pole).
+The artifact is the versioned constructor-array format `bang-core-comp-json-v1`; its public decoder
+rejects malformed JSON, wrong versions/tags/arities/scalars, oversized input, and excessive constructor
+depth. The producer decodes and re-encodes its own bytes, and `Bang.BodyArtifactConsumer` feeds decoded
+terms to the unchanged calculated-VM compiler and environment-machine runner. Metadata distinguishes
+that structural round-trip from missing independent type validation: `producerChecked=true` and
+`structurallyRoundTripped=true`, but `independentlyTypeValidated=false`, `cacheKeySafe=false`, and
+`linkReady=false`.
 
 `python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external
 consumer of this view. It compares complete projected exports (using the digest only as a consistency
@@ -1517,6 +1529,7 @@ GENERATED from `Main.lean`'s `usage` text and cross-checked against its bounded 
 | `bang test` | — | `bang test [<file.bang>]            discover + sample-check every contract law (issue #60);` |
 | `bang query` | — | `bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);` |
 | `bang query dump` | — | `bang query dump [<file.bang>]           THE complete fact base: resolved-core fingerprint,` |
+| `bang query body-artifact` | — | `bang query body-artifact <id> [<file>]  canonical code for one sliced public export ID;` |
 | `bang query symbols` | — | `bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row` |
 | `bang query type` | — | `bang query type <file.bang> <name>      the checked type ! row of one top-level binding` |
 | `bang query effects` | — | `bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding` |

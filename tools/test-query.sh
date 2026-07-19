@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # `capture` assigns caller-named output/status variables dynamically.
-# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Frontend/Query.lean,Main.lean,examples/*/main.bang,examples/json/Parse.bang,examples/json/query-dump.bang,examples/json/interface-moved.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py,tools/interface-diff.py runs-in=verify
+# tool: role=test couples=Bang/Core/Fingerprint.lean,Bang/Core/CompCodec.lean,Bang/Frontend/Query.lean,Bang/Backend/BodyArtifact.lean,Main.lean,examples/*/main.bang,examples/json/Parse.bang,examples/json/query-dump.bang,examples/json/interface-moved.bang,examples/calc,examples/reactive-spreadsheet/Formulas.bang,examples/reactive-spreadsheet/expected-dependencies.json,examples/reactive-recomputation/Workload.bang,examples/reactive-observation-reuse/CachedWorkload.bang,tools/module-impact.py,tools/interface-diff.py runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-query.sh — the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as
 # stateless CLI subcommands).
@@ -743,6 +743,50 @@ print("|".join([str(interfaces[0]["digest"]==interfaces[1]["digest"]),
 $body_effect_shifted_dump"
 check "module-body-effect-extractor-exit" "$body_effect_rows_exit" "0"
 check "module-body-quotients-unrelated-effect" "$body_effect_rows" "True|True|sliced|sliced|True|True|4>5"
+
+# Canonical code is point-queried by the stable export ID, never duplicated into the complete dump.
+# The unrelated earlier effect must preserve artifact bytes while only the contextual relocation moves.
+capture body_artifact_base body_artifact_base_exit "$bang" query body-artifact Lib::selected \
+  "$tmpdir/body-slice-effect-base/main.bang" 2>/dev/null
+capture body_artifact_shifted body_artifact_shifted_exit "$bang" query body-artifact Lib::selected \
+  "$tmpdir/body-slice-effect-shifted/main.bang" 2>/dev/null
+check "module-body-artifact-base-exit" "$body_artifact_base_exit" "0"
+check "module-body-artifact-shifted-exit" "$body_artifact_shifted_exit" "0"
+capture body_artifact_rows body_artifact_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+rows=[d["bodyArtifact"] for d in ds]
+print("|".join([str(all(d["ok"] for d in ds)),rows[0]["id"],rows[0]["format"],
+  str(rows[0]["digest"]==rows[1]["digest"]),str(rows[0]["artifact"]==rows[1]["artifact"]),
+  str(rows[0]["artifact"][0]==rows[0]["format"]),
+  str(rows[0]["producerChecked"] and rows[0]["structurallyRoundTripped"]),
+  str(not rows[0]["cacheKeySafe"] and not rows[0]["independentlyTypeValidated"] and not rows[0]["linkReady"]),
+  "{}>{}".format(rows[0]["effectRelocations"][0]["runtimeLabel"],
+                  rows[1]["effectRelocations"][0]["runtimeLabel"])]))
+' 2>/dev/null <<< "$body_artifact_base
+$body_artifact_shifted"
+check "module-body-artifact-extractor-exit" "$body_artifact_rows_exit" "0"
+check "module-body-artifact-roundtrip-boundary" "$body_artifact_rows" \
+  "True|Lib::selected|bang-core-comp-json-v1|True|True|True|True|True|4>5"
+
+capture body_artifact_absent_dump body_artifact_absent_dump_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+row=next(x for x in next(m for m in d["moduleBodies"] if m["module"]=="Lib")["exports"] if x["id"]=="Lib::selected")
+print(str("artifact" not in row))
+' 2>/dev/null <<< "$body_effect_base_dump"
+check "module-body-artifact-absent-dump-extractor-exit" "$body_artifact_absent_dump_exit" "0"
+check "module-body-artifact-is-on-demand" "$body_artifact_absent_dump" "True"
+
+capture body_artifact_unsupported body_artifact_unsupported_exit "$bang" query body-artifact \
+  @entry::generic "$tmpdir/body-slice-coverage.bang" 2>/dev/null
+check "module-body-artifact-unsupported-exit" "$body_artifact_unsupported_exit" "0"
+capture body_artifact_unsupported_ok body_artifact_unsupported_ok_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin); print(str(not d["ok"] and "unsupported generic fn" in d["error"]))
+' 2>/dev/null <<< "$body_artifact_unsupported"
+check "module-body-artifact-unsupported-extractor-exit" "$body_artifact_unsupported_ok_exit" "0"
+check "module-body-artifact-unsupported-fails-loud" "$body_artifact_unsupported_ok" "True"
 
 # Semantic discrimination: equal shapes using differently named effects must not collapse merely
 # because each used-name set receives the same singleton canonical rank.
@@ -1653,7 +1697,8 @@ if command -v jq >/dev/null 2>&1; then
   jq_total=0
   for op_args in "dump $tmpdir/simple.bang" "symbols $tmpdir/simple.bang" "type $tmpdir/simple.bang double" \
                  "effects double $tmpdir/simple.bang" "laws $tmpdir/laws.bang" \
-                 "def double $tmpdir/simple.bang" "refs double $tmpdir/simple.bang"; do
+                 "def double $tmpdir/simple.bang" "refs double $tmpdir/simple.bang" \
+                 "body-artifact Lib::selected $tmpdir/body-slice-effect-base/main.bang"; do
     jq_total=$((jq_total + 1))
     if jq_in="$("$bang" query $op_args 2>/dev/null)"; then
       jq_in_exit=0
@@ -1674,7 +1719,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (271 — dependency observation, recomputation, reuse, module graph, initializer order, structural
+# always runs (280 — dependency observation, recomputation, reuse, module graph, initializer order, structural
 # invalidation-fanout, resolved-core fingerprint, law-aware interface, and resolved-module-interface
 # checks included);
 # jq's three guarded blocks
@@ -1685,7 +1730,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=271
+want_total=280
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

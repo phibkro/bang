@@ -2,8 +2,10 @@ module
 
 meta import Bang.Frontend.Diagnostics
 meta import Bang.Core.Fingerprint
+meta import Bang.Core.CompCodec
 public import Bang.Frontend.Diagnostics
 public import Bang.Core.Fingerprint
+public import Bang.Core.CompCodec
 
 /-!
   Bang/Frontend/Query.lean — the `bang query` fact base: a PUBLIC LIBRARY API + its CLI views (#80).
@@ -825,8 +827,8 @@ public def ModuleBodyStatus.toJson : ModuleBodyStatus → String
 /-- One public export's environment-relative body observation. `digest` is present exactly for
 `status=sliced`; the two decided-absence states carry `null`. `effectRelocations` follows the same
 presence rule. Its rows cover every user-effect label occurring in the lowered slice; built-ins
-0-3 are fixed and therefore absent. The canonical label is digest-local today, while the runtime
-label is the context-dependent runtime allocation—this is relocation input, not an artifact. -/
+0-3 are fixed and therefore absent. Canonical code is fetched on demand rather than duplicated in
+this complete fact table; see `moduleBodyArtifactJsonP`. -/
 public structure ModuleBodyEffectRelocationFact where
   name           : String
   canonicalLabel : Bang.EffectRow.Label
@@ -1064,11 +1066,16 @@ public def moduleBodyEffectRelocations
   used.zipIdx.map fun ((name, runtimeLabel), rank) =>
     ⟨name, 4 + rank, runtimeLabel⟩
 
-/-- Fresh-domain v2 digest plus the exact relocation table for one successfully lowered reachable
-body slice. Both are derived from ONE fail-closed `canonicalBodyEffects` result. Binding order is
-canonical `Comp` hash, then the sorted semantic-name table hash; the empty table is bound uniformly. -/
-def moduleBodyObservation (comp : Bang.Comp) (effects : List (String × Bang.EffectRow.Label)) :
-    Except String (String × List ModuleBodyEffectRelocationFact) := do
+/-- The shared internal result from which compact body facts and on-demand artifacts are projected. -/
+structure CanonicalModuleBody where
+  used      : List (String × Bang.EffectRow.Label)
+  canonical : Bang.Comp
+  digest    : String
+
+/-- Canonicalize a lowered reachable body slice once and retain the exact term used by the unchanged
+v2 digest. This is internal query construction, not an independently typed artifact. -/
+def canonicalModuleBody (comp : Bang.Comp) (effects : List (String × Bang.EffectRow.Label)) :
+    Except String CanonicalModuleBody := do
   let used ← canonicalBodyEffects comp effects
   let canonical := mapBodyCompLabels (canonicalBodyLabel used) comp
   let digest := Bang.CoreFingerprint.toHex16 <|
@@ -1076,7 +1083,14 @@ def moduleBodyObservation (comp : Bang.Comp) (effects : List (String × Bang.Eff
       (Bang.CoreFingerprint.step (Bang.CoreFingerprint.tag 71)
         (Bang.CoreFingerprint.hashComp canonical))
       (hashCanonicalBodyEffects used)
-  return (digest, moduleBodyEffectRelocations used)
+  return ⟨used, canonical, digest⟩
+
+/-- Fresh-domain v2 digest plus the exact relocation table for one successfully lowered reachable
+body slice. Both are derived from ONE fail-closed canonical result. -/
+def moduleBodyObservation (comp : Bang.Comp) (effects : List (String × Bang.EffectRow.Label)) :
+    Except String (String × List ModuleBodyEffectRelocationFact) := do
+  let observed ← canonicalModuleBody comp effects
+  return (observed.digest, moduleBodyEffectRelocations observed.used)
 
 #guard moduleBodyEffectRelocations [("B_E", 9), ("C_F", 4)] ==
   [⟨"B_E", 4, 9⟩, ⟨"C_F", 5, 4⟩]
@@ -1139,6 +1153,90 @@ def moduleBodiesJson (core : Option CoreFingerprintFact) (p : Prog)
     match moduleBodyFactsOf p declModule moduleExports with
     | .ok bodies => jsonArr (bodies.map ModuleBodyFact.toJson)
     | .error _ => "null"
+
+/-! ### On-demand canonical body artifact
+
+The complete dump deliberately retains only compact body facts. Embedding every reachable slice would
+duplicate shared transitive bodies across exports (quadratic on wide modules; the 100-formula workload is
+the committed falsifier). A consumer asks for one existing `ModuleBodyExportFact.id` when it actually
+needs bytes. The same lowering/canonicalization construct supplies the digest, relocation rows, and code.
+-/
+
+/-- One requested canonical body artifact plus explicit trust-boundary metadata. `artifact` is rendered
+JSON, not a quoted string. Structural round-trip means the codec reconstructed the same canonical bytes;
+it does not provide independent type validation. -/
+public structure ModuleBodyArtifactFact where
+  id                         : String
+  scope                      : String
+  digestAlgorithm            : String
+  digest                     : String
+  format                     : String
+  cacheKeySafe               : Bool
+  producerChecked            : Bool
+  structurallyRoundTripped   : Bool
+  independentlyTypeValidated : Bool
+  linkReady                  : Bool
+  effectRelocations          : List ModuleBodyEffectRelocationFact
+  artifact                   : String
+  deriving Repr
+
+attribute [nolint unusedArguments] instReprModuleBodyArtifactFact.repr
+
+/-- Render an on-demand artifact fact. The encoded artifact is embedded as a JSON value. -/
+public def ModuleBodyArtifactFact.toJson (f : ModuleBodyArtifactFact) : String :=
+  jsonObj [jsonStrField "id" f.id, jsonStrField "scope" f.scope,
+    jsonStrField "digestAlgorithm" f.digestAlgorithm, jsonStrField "digest" f.digest,
+    jsonStrField "format" f.format,
+    jsonField "cacheKeySafe" (if f.cacheKeySafe then "true" else "false"),
+    jsonField "producerChecked" (if f.producerChecked then "true" else "false"),
+    jsonField "structurallyRoundTripped" (if f.structurallyRoundTripped then "true" else "false"),
+    jsonField "independentlyTypeValidated"
+      (if f.independentlyTypeValidated then "true" else "false"),
+    jsonField "linkReady" (if f.linkReady then "true" else "false"),
+    jsonField "effectRelocations"
+      (jsonArr (f.effectRelocations.map ModuleBodyEffectRelocationFact.toJson)),
+    jsonField "artifact" f.artifact]
+
+/-- **PUBLIC (TIER 1):** materialize one concrete public body artifact by the stable export ID already
+listed in `moduleBodies`. Unsupported/no-body exports and unknown/private IDs fail loud. -/
+public def moduleBodyArtifactOf (p : Prog) (declModule : List (String × String))
+    (moduleExports : List (String × List String)) (id : String) :
+    Except String ModuleBodyArtifactFact := do
+  let candidates := moduleExports.flatMap fun (moduleName, names) =>
+    names.eraseDups.map fun name =>
+      let localName := if moduleName == "@entry" then name else displayDeclName declModule name
+      (moduleName ++ "::" ++ localName, name)
+  let name ← match candidates.find? (·.1 == id) with
+    | some (_, name) => pure name
+    | none => throw s!"module body artifact: unknown public export id '{id}'"
+  let d ← match p.decls.find? (·.name == name) with
+    | some d => pure d
+    | none => throw s!"module body artifact: export '{id}' is absent from the merged program"
+  match d with
+  | .letD .. | .letRecD .. =>
+      let (comp, effects) ←
+        (Bang.TypeCheck.checkAndLowerProgWithEffects (reachableValueSliceProg p name)).mapError fun e =>
+          s!"module body artifact '{id}': slice failed to lower: {e}"
+      let observed ← (canonicalModuleBody comp effects).mapError fun e =>
+        s!"module body artifact '{id}': canonicalization failed: {e}"
+      let artifact := Bang.CompCodec.encodeArtifact observed.canonical
+      let decoded ← Bang.CompCodec.decodeArtifact artifact |>.mapError fun e =>
+        s!"module body artifact '{id}': producer round-trip failed: {e}"
+      if Bang.CompCodec.encodeArtifact decoded != artifact then
+        throw s!"module body artifact '{id}': producer round-trip changed canonical bytes"
+      pure ⟨id, "resolved-program-module-body-slice", moduleBodyAlgorithm, observed.digest,
+        Bang.CompCodec.format, false, true, true, false, false,
+        moduleBodyEffectRelocations observed.used, artifact⟩
+  | .fnD .. => throw s!"module body artifact: export '{id}' is an unsupported generic fn template"
+  | _ => throw s!"module body artifact: export '{id}' has no value body"
+
+/-- Tier-2 JSON result for one on-demand canonical body artifact. Semantic misses use the query
+surface's ordinary `ok:false` value rather than hiding failure as `null`. -/
+public def moduleBodyArtifactJsonP (p : Prog) (declModule : List (String × String))
+    (moduleExports : List (String × List String)) (id : String) : String :=
+  match moduleBodyArtifactOf p declModule moduleExports id with
+  | .ok fact => jsonObj [jsonField "ok" "true", jsonField "bodyArtifact" fact.toJson]
+  | .error e => errorJsonOk e
 
 /-! ### Resolved-module public-interface probe
 
