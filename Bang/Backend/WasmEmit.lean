@@ -1056,9 +1056,9 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
           else (.unsup s!"op {op} on a throws cap (only `raise` is a throws op)", st)
       | some .none =>
           -- S1 state / S3 txn: the cap is a runtime box in the env; route by op name.
-          -- #134 ESCAPE STAMP (C2): every op FIRST gates the cap's runtime id (`$capGate`) — a state
-          -- `$ref` cap or a txn `$txbox` cap carries its minting handle's `$id`; if that handle has
-          -- popped (`$id >= $liveTop`) the perform traps (= escapedCap), matching the kernel oracle.
+          -- #134 ESCAPE GATE (C2): every op FIRST gates the cap's runtime id (`$capGate`) — a state
+          -- `$ref` cap or a txn `$txbox` cap carries its minting handle's `$id`; if that id is absent
+          -- from `$liveCaps`, the perform traps (= escapedCap), matching the kernel oracle.
           -- The gate is a statement prefixed into the op's seqBlock. Field indices shifted: $ref/$txbox
           -- field 0 = $id, field 1 = the box/list payload.
           let refGate := s!"(call $capGate (struct.get $ref $id (ref.cast (ref $ref) {lookupGC envL i})))"
@@ -1141,10 +1141,9 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
           match emitCompGC e2L (CapSlot.none :: caps) M st2 with
           | (.unsup r, st') => (.unsup r, st')
           | (.ok bM, st3) =>
-              -- #134 ESCAPE STAMP: mint id (bumps $liveTop), stamp the $ref cap with it, run M, then
-              -- SAVE M's value, restore $liveTop ($capExit), yield the saved value. A {get} thunk that
-              -- escaped in M's value carries the stamped $ref; forced past this exit its $id >= $liveTop
-              -- ⇒ $capGate traps (= escapedCap). env slot 0 = a fresh stamped $ref box wrapping s₀.
+              -- #134 ESCAPE GATE: mint/push id, stamp the $ref cap, run M, then SAVE M's value and
+              -- pop through the id ($capExit). A {get} thunk escaping in M's value carries an id no
+              -- longer present in `$liveCaps`, so $capGate traps. env slot 0 wraps s₀.
               (.ok (seqBlock s!"(local.set {idL} (call $capMint))\n    (local.set {e2L} (struct.new $env (struct.new $ref (local.get {idL}) {es₀}) (local.get {envL})))\n    (local.set {valL} {bM})\n    (call $capExit (local.get {idL}))\n    (local.get {valL})"), st3)
   -- RUNG 5 S2: handle (throws ℓ) M on the GC path. Mint a fresh module-wide tag `t`, push `.throwsTag t`
   -- for M's index-0 cap-binder (compile-time), wrap the body in `(block $h{t} (try_table (catch
@@ -1155,7 +1154,7 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
   -- (the cap is dispatched by the compile-time tag), so push a null-carrying $env slot.
   | .handle (.throws _) M =>
       let (t, st1) := st.freshTag
-      let (idL, st1a) := st1.fresh "i64"          -- #134: the minted id (bumps $liveTop for nesting).
+      let (idL, st1a) := st1.fresh "i64"          -- #134: the minted id (pushed for nesting).
       let (valL, st1b) := st1a.fresh tyVal         -- M's value (normal OR caught), across $capExit.
       let (e2L, st2) := st1b.fresh tyEnv
       match emitCompGC e2L (CapSlot.throwsTag t :: caps) M st2 with
@@ -1163,11 +1162,13 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
       | (.ok bM, st3) =>
           -- env slot 0 = a placeholder (the throws cap has no runtime value — dispatch is the tag);
           -- a boxed unit keeps the $env slot well-typed and the de-Bruijn depth aligned.
-          -- #134 ESCAPE STAMP: a throws handle still bumps/restores $liveTop so a state/custom cap
-          -- NESTED under it gets a correctly-ordered id (the watermark counts ALL open handlers). A
-          -- `raise` on an ESCAPED throws cap throws a tag whose try_table has exited ⇒ wasm's uncaught
-          -- throw traps (fail-loud) — no extra gate needed for throws itself. The block's value (normal
-          -- exit OR the caught payload) is captured, $liveTop restored, then yielded.
+          -- #134 ESCAPE GATE: a throws handle still pushes/pops `$liveCaps`, so a state/custom cap
+          -- nested under it occupies the correct live-stack position. Throws dispatch itself remains
+          -- tag-based rather than id-gated: ordinary post-exit use has no active try_table and traps,
+          -- but same-site re-entry can reactivate the static tag. That stale-throws-reentry gap is a
+          -- separately named successor; ADR-0119 closes exact membership for state/txn/custom caps.
+          -- The block's value (normal exit OR the caught payload) is captured, the throws frame popped
+          -- through, then yielded.
           (.ok (seqBlock s!"(local.set {idL} (call $capMint))\n    (local.set {e2L} (struct.new $env {boxI "(i64.const 0)"} (local.get {envL})))\n    (local.set {valL} (block $h{t} (result (ref null $val))\n      (try_table (result (ref null $val)) (catch $exn{t} $h{t})\n        {bM})))\n    (call $capExit (local.get {idL}))\n    (local.get {valL})"), st3)
   -- RUNG 5 S3: handle (transaction Θ) M on the GC path. Empty-start only (Θ=[], all v1 STM surface,
   -- ADR-0030). Mint a fresh heap box H = (new $ref null) held in a local, push it as env slot 0. Run M
@@ -1187,10 +1188,10 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
         match emitCompGC e2L (CapSlot.none :: caps) M st2 with
         | (.unsup r, st') => (.unsup r, st')
         | (.ok bM, st3) =>
-            -- #134 ESCAPE STAMP: mint id (bumps $liveTop), stamp the $txbox with it. env slot 0 = H;
-            -- body under a txcommit/txab rollback wrapper. On the COMMIT (fall-through) path, restore
-            -- $liveTop after the block; on ABORT the throw_ref unwinds past here (an outer catcher's
-            -- exit restores). The custom-only parameter field is null for a transaction box.
+            -- #134 ESCAPE GATE: mint/push id and stamp the $txbox. On COMMIT, `$capExit` pops it.
+            -- On ABORT, throw_ref skips this call; the first enclosing normal/caught exit pops THROUGH
+            -- its own node and therefore discards this skipped inner node too. The custom-only
+            -- parameter field is null for a transaction box.
             (.ok (seqBlock s!"(local.set {idL} (call $capMint))\n    (local.set {hL} (struct.new $txbox (local.get {idL}) (ref.null $env) (ref.null $env)))\n    (local.set {e2L} (struct.new $env (local.get {hL}) (local.get {envL})))\n    (block $txc{hL} (result (ref null $val))\n      (block $txa{hL} (result exnref)\n        (try_table (result (ref null $val)) (catch_all_ref $txa{hL})\n          {bM})\n        (call $capExit (local.get {idL}))\n        (br $txc{hL}))\n      (struct.set $txbox $list (local.get {hL}) (ref.null $env))\n      (throw_ref))"), st3)
   -- RUNG 5 S4: handle (custom p cls) M on the GC path — user-defined effects (ADR-0085 Stage 4). A
   -- custom op runs `subst p (subst (shift v) clause.2)` INLINE (one-shot resume, no reified
@@ -1216,10 +1217,9 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
               match emitCompGC capL (CapSlot.custom clauseMap :: caps) M st4 with
               | (.unsup r, st') => (.unsup r, st')
               | (.ok bM, st5) =>
-                  -- #134 ESCAPE STAMP: mint id (bumps $liveTop), stamp the clause-list $txbox with it.
-                  -- pEnvL := (p :: handlerEnv); cap env slot := the box; run M; save its value; restore
-                  -- $liveTop; yield. A closure escaping in M's value that performs the op carries the
-                  -- stamped cap; forced past this exit its $id >= $liveTop ⇒ $capGate traps. $txbox
+                  -- #134 ESCAPE GATE: mint/push id and stamp the clause-list $txbox. pEnvL :=
+                  -- (p :: handlerEnv); cap env slot := the box; run M; save its value; pop through the
+                  -- id; yield. An escaping closure later finds its id absent and `$capGate` traps. $txbox
                   -- fields are id, clause-record list, and shared parameter env. Exact operation
                   -- identity and update mode live on each record, so first-class multi-op dispatch
                   -- needs no handler-wide shortcut.
@@ -1294,15 +1294,15 @@ def gcTypes : String :=
   "    (type $bigval (sub $val (struct (field $sign i32) (field $mag (ref $limbs)))))\n" ++
   "    (type $sum  (sub $val (struct (field $tag i32) (field $payload (ref null $val)))))\n" ++
   "    (type $pair (sub $val (struct (field (ref null $val)) (field (ref null $val)))))\n" ++
+  WgcCapCode.capFrameType ++
   -- RUNG 5: a $ref is a MUTABLE box holding a $val — the GC-path image of a state cell / TVar cell.
   -- A `handle (state s₀)` mints one and pushes it as an ordinary $env slot, so a captured closure
   -- reads/mutates it via the SAME $lookup rung 4 uses (get = struct.get, put = struct.set). This is
   -- the unified-rep move (rung-5 design (b) Candidate 1): the compile-time inline `.state` LOCAL
   -- becomes a runtime heap box, reachable through the env cons-list.
-  -- #134 ESCAPE STAMP (C2): field $id = the generative handler identity (ADR-0055). For a STATE cap
-  -- cell it is the minting handle's id; a `get`/`put` gates `$id < $liveTop`, which rejects immediate
-  -- escape but is only a scalar approximation to live-frame membership (a later mint can revive a
-  -- stale id; `WgcCapCode` pins the counterexample). For a TXN data cell (also a $ref) the id is inert
+  -- #134 ESCAPE GATE (C2): field $id = the generative handler identity (ADR-0055). For a STATE cap
+  -- cell it is the minting handle's id; a `get`/`put` gates exact membership in `$liveCaps`, so a
+  -- later mint cannot revive a stale id. For a TXN data cell (also a $ref) the id is inert
   -- (id 0) — txn cells are
   -- never performed on as caps; only the $txbox is the cap. `$box` (field 1) is the mutable payload.
   "    (type $ref  (sub $val (struct (field $id i64) (field $box (mut (ref null $val))))))\n" ++
@@ -1329,16 +1329,14 @@ with kernel-index `i` sits at front-position `(length-1-i)`. `readTVar`/`writeTV
 and `struct.get`/`struct.set` it — the SAME in-place resume as state (one-shot, ADR-0025). Rollback
 = reset `H` to null (the journal drops; empty-start restore, rung-3 §Q3). -/
 def gcHelpers : String :=
-  -- #134 ESCAPE STAMP (C2): the runtime image of the kernel's global-fresh handler-identity counter
+  -- #134 ESCAPE GATE (C2): the runtime image of the kernel's global-fresh handler-identity counter
   -- (ADR-0055). `$nextId` mints a fresh id per `handle`;
-  -- `$liveTop` is a scalar high-water mark. A `handle` bumps
-  -- `$liveTop := ++$nextId` on entry and restores it to its own minted id on exit; a `perform` on a
-  -- cap with id `n` gates `n < $liveTop` (its minting frame still live) else TRAPS = the defined
-  -- This rejects an immediately escaped cap, but it is NOT exact live-frame membership: a later
-  -- mint raises `$liveTop` and revives an older popped id. `WgcCapCode` is the theorem-visible,
-  -- mechanically rendered slice that pins both facts; the stale re-entry surface witness remains
-  -- a known-red differential outside the proved fragment. Do not claim `$liveTop ≡ splitAtId`.
-  WgcCapCode.render WgcCapCode.scalarCapCode ++
+  -- `$liveCaps` is a GC-linked stack of exact live identities. `$capMint` pushes; `$capGate` searches
+  -- for exact membership; `$capExit(m)` pops THROUGH `m`, discarding `m` and every newer node whose
+  -- normal exit may have been skipped by exception/transaction unwinding. Missing ids trap.
+  -- `WgcCapCode` is the theorem-visible calculated helper model and mechanical text image. It does
+  -- not interpret WAT, handlers, or the compiler as a whole.
+  WgcCapCode.render WgcCapCode.exactCapCode ++
   "  (func $box (param $n i64) (result (ref null $val)) (struct.new $ival (local.get $n)))\n" ++
   "  (func $lookup (param $e (ref null $env)) (param $n i32) (result (ref null $val))\n" ++
   "    (block $done (loop $l\n" ++

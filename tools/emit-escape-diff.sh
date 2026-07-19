@@ -4,20 +4,16 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # emit-escape-diff.sh — the #133 ESCAPE-DIFFERENTIAL gate (cap-gc-rep, ships FIRST per the C-slice
 # amend). Capability-escape is a DEFINED fail-loud in the kernel (`.escapedCap`, ADR-0063): a cap
 # used past its handler must NOT produce a value. The GC emitter, when it became structured control
-# flow, discarded the handler CHAIN that idDispatch/splitAtId walks to detect this. The scalar
-# `$liveTop` repair rejects the original immediate-escape catalog but is not exact live membership:
-# `stale-state-reentry.bang` still prints a value after a later mint revives its popped id. This gate
-# makes that residual VISIBLE and pins the regression class: every escape-catalog program must (1)
-# have kernel outcome .escapedCap, and (2) either fail loud in emitted Wasm or remain an explicit,
-# allowlisted known-red.
+# flow, discarded the handler CHAIN that idDispatch/splitAtId walks to detect this. The emitted
+# `$liveCaps` stack now carries exact live membership: every escape-catalog program must (1) have
+# kernel outcome .escapedCap and (2) fail loud in emitted Wasm. A positive nested-state control also
+# has to print 105, so a missing/broken Wasmtime cannot make all-negative cases false-green.
 #
 # Escape is surface-expressible in v1 (#134). The gate carries both a raw `Comp` catalog in
 # `scratch/Rung4Shape.lean` and legal surface programs under `scratch/cap-gc/surface-escape/`.
 #
-# XFAIL_UNTIL_STAMP: programs the emitter CANNOT yet fail-loud on. Listed here they are KNOWN-RED
-# (documented by the gate) so the build stays green while the hole is on record. The separately
-# priced exact-liveness fix REMOVES the entry, flipping the gate to hard-fail. A program that fails
-# loud but is STILL listed here is ALSO a failure (the xfail is stale — remove it).
+# XFAIL_UNTIL_STAMP remains fail-closed infrastructure for future explicitly priced gaps. Exact
+# liveness deletes the final entry: this gate is expected to report zero known-red programs.
 #
 # Requires: the dev shell (`nix develop`) for `lake`; `wasmtime` via `nix shell nixpkgs#wasmtime`.
 set -euo pipefail
@@ -36,14 +32,9 @@ run_wasmtime() {
   fi
 }
 
-# Programs the emitter does not yet fail-loud on. The scalar `$liveTop` stamp closes immediate
-# escape, but a later handler mint raises the watermark and revives an older popped id. Keep that
-# stale-reentry witness known-red until the emitter carries exact live-frame membership (or another
-# representation proved equivalent to it). A stale entry that starts failing loud is a hard failure,
-# so the map cannot silently mask a fix or a changed boundary.
-declare -A XFAIL_UNTIL_STAMP=(
-  [surface:stale-state-reentry]="scalar liveTop revives a popped id after a later handler mint"
-)
+# A stale entry that starts failing loud is a hard failure, so this map cannot silently mask a fix
+# or a changed boundary.
+declare -A XFAIL_UNTIL_STAMP=()
 
 echo "── building the emitter and engine executables ──"
 lake build rung4-shape bang >/dev/null 2>&1
@@ -52,13 +43,34 @@ bin="$(find .lake/build/bin -name rung4-shape | head -1)"
 bang="$(find .lake/build/bin -name bang | head -1)"
 [ -n "$bang" ] || { echo "FAIL: bang binary not found"; exit 2; }
 
-echo ""
-echo "── escape differential: kernel .escapedCap  vs  wasmtime fail-loud (trap / non-zero) ──"
-printf '%-22s %s\n' "escape program" "verdict"
-
 fail=0
 checked=0
 xfailed=0
+declare -A SEEN_ESCAPE=()
+
+echo ""
+echo "── positive control: legal nested state remains live and executable ──"
+control_src="scratch/cap-gc/c2-edges/nested1.bang"
+control_wat="$outdir/positive-nested-live.wat"
+set +e
+"$bang" check "$control_src" >/dev/null 2>&1; control_check_rc=$?
+control_oracle="$("$bang" run --engine=oracle "$control_src" 2>/dev/null)"; control_oracle_rc=$?
+control_report="$("$bin" --print "$control_src" "$control_wat" 2>&1)"; control_emit_rc=$?
+control_wasm="$(run_wasmtime "$control_wat" 2>/dev/null)"; control_wasm_rc=$?
+set -e
+if [ "$control_check_rc" -eq 0 ] && [ "$control_oracle_rc" -eq 0 ] &&
+   [ "$control_emit_rc" -eq 0 ] && [ "$control_wasm_rc" -eq 0 ] &&
+   [ "$control_oracle" = "105" ] && [ "$control_wasm" = "$control_oracle" ]; then
+  echo "positive:nested-live     OK (oracle=wasmtime=[$control_wasm], rc=0)"
+else
+  echo "positive:nested-live     FAIL (check=$control_check_rc oracle=$control_oracle_rc emit=$control_emit_rc wasmtime=$control_wasm_rc; oracle=[$control_oracle] wasm=[$control_wasm])"
+  [ "$control_emit_rc" -eq 0 ] || echo "  emitter report: $control_report"
+  fail=1
+fi
+
+echo ""
+echo "── escape differential: kernel .escapedCap  vs  wasmtime fail-loud (trap / non-zero) ──"
+printf '%-22s %s\n' "escape program" "verdict"
 
 # Shared verdict for one escape program: given its name, kernel outcome, and either EMIT=REFUSED or
 # a written .wat path, assert (1) kernel = escapedCap and (2) the emitted run fails loud. Updates the
@@ -67,6 +79,7 @@ xfailed=0
 verdict_one() {
   local name="$1" kernel="$2" emit="$3" wat="$4"
   checked=$((checked + 1))
+  SEEN_ESCAPE["$name"]=1
 
   if [ "$kernel" != "KERNEL=escapedCap" ]; then
     printf '%-24s %s\n' "$name" "FAIL (kernel=$kernel, expected escapedCap — bad catalog entry)"
@@ -111,8 +124,8 @@ while IFS=$'\t' read -r name kernel emit rest; do
 done < <("$bin" --escape "$outdir")
 
 # ── Leg 2: SURFACE-reachable escape (#134) — legal .bang programs that `bang check`s clean, reach
-# escapedCap on the oracle. The stale-reentry member silently miscompiles today; the immediate
-# members fail loud. Driven through the FULL surface→emit pipeline (`--print`).
+# escapedCap on the oracle. Every member, including stale reentry, must fail loud. Driven through
+# the FULL surface→emit pipeline (`--print`).
 echo "  [surface-reachable #134]"
 surfdir="tools/../scratch/cap-gc/surface-escape"
 for src in "$surfdir"/*.bang; do
@@ -150,6 +163,20 @@ for src in "$surfdir"/*.bang; do
     verdict_one "$name" "$kern" "EMIT=REFUSED" ""
   else
     verdict_one "$name" "$kern" "EMIT=ok" "$wat"
+  fi
+done
+
+required_escape=(
+  "capEscape-get"
+  "surface:b3"
+  "surface:c1"
+  "surface:d2-sched-capture"
+  "surface:stale-state-reentry"
+)
+for name in "${required_escape[@]}"; do
+  if [ -z "${SEEN_ESCAPE[$name]+present}" ]; then
+    echo "FAIL: required escape witness was not checked: $name"
+    fail=1
   fi
 done
 
