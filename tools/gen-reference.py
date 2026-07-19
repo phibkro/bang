@@ -1464,6 +1464,18 @@ def render():
     L.append('                               "name": "law", "params": ["x"],')
     L.append('                               "body": "canonical surface text" } ] } ]')
     L.append("  } ] | null,")
+    L.append('  "moduleBodies": [ {')
+    L.append('    "module": "@entry|logical module name",')
+    L.append('    "scope": "resolved-program-module-body-slice",')
+    L.append('    "algorithm": "bang-module-body-slice-comp-v1-uint64",')
+    L.append('    "cacheKeySafe": false, "linkReady": false,')
+    L.append('    "exports": [ { "id": "Module::localName", "name": "localName",')
+    L.append('                   "kind": "..",')
+    L.append(
+        '                   "status": "sliced|unsupported-generic-fn|no-body-kind",'
+    )
+    L.append('                   "digest": "16 lowercase hex digits"|null } ]')
+    L.append("  } ] | null,")
     L.append(
         '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
     )
@@ -1624,6 +1636,47 @@ def render():
         "markers, or define a module body/link contract. Treat the digest as an invalidation-analysis probe, not"
     )
     L.append("permission to skip lowering, linking, or unchecked cache validation.")
+    L.append("")
+    L.append(
+        "`moduleBodies` is the parallel **environment-relative reachable body view**. For each concrete"
+    )
+    L.append(
+        "public `let`/`letRec`, it follows the existing declaration reference edges, removes unreachable"
+    )
+    L.append(
+        "value declarations, and lowers the pruned program through the unchanged production typed pipeline."
+    )
+    L.append(
+        "Every retained non-value declaration is also a closure root: implicit impl/handler selection is not"
+    )
+    L.append(
+        "a syntactic reference edge, so its value dependencies are safely over-retained rather than silently"
+    )
+    L.append(
+        "omitted. This can cause false invalidation in impl-heavy programs, but not false preservation."
+    )
+    L.append("")
+    L.append(
+        "Coverage is explicit. A bounded generic `fn` row has `status=unsupported-generic-fn` because it has"
+    )
+    L.append(
+        "no standalone concrete instantiation; structural declarations have `status=no-body-kind`; both carry"
+    )
+    L.append(
+        "`digest:null`. If any supposedly sliceable export fails production lowering, the entire"
+    )
+    L.append(
+        "`moduleBodies` projection is `null` rather than a partial list. `cacheKeySafe=false` and"
+    )
+    L.append(
+        "`linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,"
+    )
+    L.append(
+        "and dense runtime effect labels can still move a sliced body when an unrelated earlier effect is"
+    )
+    L.append(
+        "inserted. No artifact validation, linking, skip, storage, or reuse authority follows from this fact."
+    )
     L.append("")
     L.append(
         "`python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external"

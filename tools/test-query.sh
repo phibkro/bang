@@ -116,6 +116,72 @@ let hidden = 1
 pub let answer : Int * Int = (41, 0)
 BANG
 
+# Reachable module-body slices. The first three variants differ only in one lexical value: an
+# unreachable sibling must stop contaminating `selected`, while a transitive dependency must move
+# it. The interface stays fixed throughout. A separate environment-root fixture pins the implicit
+# impl→helper dependency that selected-only closure missed in the pre-scope falsifier.
+for variant in body-slice-base body-slice-sibling body-slice-reachable; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+let main = Lib.selected
+BANG
+done
+cat > "$tmpdir/body-slice-base/Lib.bang" <<'BANG'
+let base : Int = 40
+let helper : Int = base + 1
+pub let selected : Int = helper
+let unrelated : Int = 7
+BANG
+cat > "$tmpdir/body-slice-sibling/Lib.bang" <<'BANG'
+let base : Int = 40
+let helper : Int = base + 1
+pub let selected : Int = helper
+let unrelated : Int = 8
+BANG
+cat > "$tmpdir/body-slice-reachable/Lib.bang" <<'BANG'
+let base : Int = 41
+let helper : Int = base + 1
+pub let selected : Int = helper
+let unrelated : Int = 7
+BANG
+cat > "$tmpdir/body-slice-env-root.bang" <<'BANG'
+let helper = {fun x => x + 1}
+trait Inc { fn inc(x) -> Int }
+impl Inc for Int { fn inc(x) = ($helper) x }
+pub let selected : Int = inc(1)
+let unrelated : Int = 7
+BANG
+
+# Every public export receives a body row. Only concrete let/letRec declarations are sliced;
+# bounded generic functions and non-value kinds state their decided absence explicitly.
+cat > "$tmpdir/body-slice-coverage.bang" <<'BANG'
+pub data Box = B(Int)
+pub trait Marker { fn mark(x) -> Int }
+pub fn generic(x) : Int where Marker a = x
+pub let rec countdown : Int -> Int = fun n => if n == 0 then 0 else ($countdown) (n - 1)
+pub let selected : Int = 41
+BANG
+
+# The retained environment carries dense effect labels. Adding an unrelated earlier effect is an
+# intentional red pole: checked interface identity stays stable, sliced lowered body identity moves.
+for variant in body-slice-effect-base body-slice-effect-shifted; do
+  mkdir -p "$tmpdir/$variant"
+  cat > "$tmpdir/$variant/main.bang" <<'BANG'
+import Lib
+let main = Lib.selected
+BANG
+done
+cat > "$tmpdir/body-slice-effect-base/Lib.bang" <<'BANG'
+effect Target { ping : Int -> Int }
+pub let selected : Int = handle target.ping(1) with Target as target { ping(n) => n }
+BANG
+cat > "$tmpdir/body-slice-effect-shifted/Lib.bang" <<'BANG'
+effect Earlier { pong : Int -> Int }
+effect Target { ping : Int -> Int }
+pub let selected : Int = handle target.ping(1) with Target as target { ping(n) => n }
+BANG
+
 # Structural declarations carry checked shapes rather than value types; retain a separate pole so
 # the public firewall is gated for both sides of ModuleExportFact's type-or-shape contract.
 for variant in interface-shape-base interface-shape-changed; do
@@ -479,7 +545,7 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v1-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
@@ -512,6 +578,76 @@ check "core-fingerprint-invalid-null" "$fp_invalid_value" "null"
 capture iface_invalid_value iface_invalid_value_exit python3 -c 'import json,sys; print("null" if json.load(sys.stdin)["moduleInterfaces"] is None else "present")' 2>/dev/null <<< "$fp_invalid_dump"
 check "module-interface-invalid-extractor-exit" "$iface_invalid_value_exit" "0"
 check "module-interface-invalid-null" "$iface_invalid_value" "null"
+capture body_invalid_value body_invalid_value_exit python3 -c 'import json,sys; print("null" if json.load(sys.stdin)["moduleBodies"] is None else "present")' 2>/dev/null <<< "$fp_invalid_dump"
+check "module-body-invalid-extractor-exit" "$body_invalid_value_exit" "0"
+check "module-body-invalid-null" "$body_invalid_value" "null"
+
+# The body-side firewall. Whole-program core still moves on an unreachable sibling edit, but the
+# concrete selected export's reachable slice stays stable; changing a transitive helper moves it.
+# The environment-root fixture must produce a digest (not null): its impl body is the only syntactic
+# owner of `helper`, the exact hidden dependency that refuted selected-only roots.
+capture body_base_dump body_base_exit "$bang" query dump "$tmpdir/body-slice-base/main.bang" 2>/dev/null
+capture body_sibling_dump body_sibling_exit "$bang" query dump "$tmpdir/body-slice-sibling/main.bang" 2>/dev/null
+capture body_reachable_dump body_reachable_exit "$bang" query dump "$tmpdir/body-slice-reachable/main.bang" 2>/dev/null
+capture body_env_dump body_env_exit "$bang" query dump "$tmpdir/body-slice-env-root.bang" 2>/dev/null
+check "module-body-base-exit" "$body_base_exit" "0"
+check "module-body-sibling-exit" "$body_sibling_exit" "0"
+check "module-body-reachable-exit" "$body_reachable_exit" "0"
+check "module-body-environment-root-exit" "$body_env_exit" "0"
+capture body_rows body_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+def module(d,table,name): return next(x for x in d[table] if x["module"]==name)
+bodies=[module(d,"moduleBodies","Lib") for d in ds[:3]]+[module(ds[3],"moduleBodies","@entry")]
+selected=[next(x for x in b["exports"] if x["name"]=="selected") for b in bodies]
+interfaces=[module(d,"moduleInterfaces","Lib") for d in ds[:3]]
+print("|".join([
+  bodies[0]["scope"],bodies[0]["algorithm"],str(bodies[0]["cacheKeySafe"]).lower(),
+  str(bodies[0]["linkReady"]).lower(),str(len(selected[0]["digest"])),selected[0]["status"],
+  str(ds[0]["coreFingerprint"]["digest"]!=ds[1]["coreFingerprint"]["digest"]),
+  str(selected[0]["digest"]==selected[1]["digest"]),
+  str(selected[0]["digest"]!=selected[2]["digest"]),
+  str(interfaces[0]["digest"]==interfaces[1]["digest"]==interfaces[2]["digest"]),
+  str(selected[3]["status"]=="sliced" and len(selected[3]["digest"])==16),
+  str([[x["module"] for x in d["moduleBodies"]] for d in ds]
+      == [[x["module"] for x in d["moduleInterfaces"]] for d in ds])]))
+' 2>/dev/null <<< "$body_base_dump
+$body_sibling_dump
+$body_reachable_dump
+$body_env_dump"
+check "module-body-extractor-exit" "$body_rows_exit" "0"
+check "module-body-reachability-boundary" "$body_rows" "resolved-program-module-body-slice|bang-module-body-slice-comp-v1-uint64|false|false|16|sliced|True|True|True|True|True|True"
+
+# Coverage is explicit, never inferred from omitted rows. Generic templates have no concrete
+# instantiation at this seam; structural kinds have no value body; concrete let/letRec rows do.
+capture body_coverage_dump body_coverage_exit "$bang" query dump "$tmpdir/body-slice-coverage.bang" 2>/dev/null
+check "module-body-coverage-exit" "$body_coverage_exit" "0"
+capture body_coverage_rows body_coverage_rows_exit python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+lib=next(x for x in d["moduleBodies"] if x["module"]=="@entry")
+print("|".join("{}:{}:{}:{}".format(x["name"],x["kind"],x["status"],str(x["digest"] is not None).lower()) for x in lib["exports"]))
+' 2>/dev/null <<< "$body_coverage_dump"
+check "module-body-coverage-extractor-exit" "$body_coverage_rows_exit" "0"
+check "module-body-explicit-export-coverage" "$body_coverage_rows" "Box:data:no-body-kind:false|Marker:trait:no-body-kind:false|generic:fn:unsupported-generic-fn:false|countdown:letRec:sliced:true|selected:let:sliced:true"
+
+# Retained negative pole: keeping the non-value environment whole also keeps dense effect labels.
+# An unrelated earlier effect preserves the public interface but moves the lowered body slice.
+capture body_effect_base_dump body_effect_base_exit "$bang" query dump "$tmpdir/body-slice-effect-base/main.bang" 2>/dev/null
+capture body_effect_shifted_dump body_effect_shifted_exit "$bang" query dump "$tmpdir/body-slice-effect-shifted/main.bang" 2>/dev/null
+check "module-body-effect-base-exit" "$body_effect_base_exit" "0"
+check "module-body-effect-shifted-exit" "$body_effect_shifted_exit" "0"
+capture body_effect_rows body_effect_rows_exit python3 -c '
+import json,sys
+ds=[json.loads(line) for line in sys.stdin if line.strip()]
+def module(d,table): return next(x for x in d[table] if x["module"]=="Lib")
+interfaces=[module(d,"moduleInterfaces") for d in ds]
+bodies=[module(d,"moduleBodies")["exports"][0] for d in ds]
+print("|".join([str(interfaces[0]["digest"]==interfaces[1]["digest"]),str(bodies[0]["digest"]!=bodies[1]["digest"]),bodies[0]["status"],bodies[1]["status"]]))
+' 2>/dev/null <<< "$body_effect_base_dump
+$body_effect_shifted_dump"
+check "module-body-effect-extractor-exit" "$body_effect_rows_exit" "0"
+check "module-body-retains-effect-coupling" "$body_effect_rows" "True|True|sliced|sliced"
 
 # Interface and implementation are distinct invalidation boundaries. All four projects type-check;
 # body/private changes move the current flat core but not Lib's checked public interface, while a
@@ -1434,7 +1570,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=244
+want_total=259
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

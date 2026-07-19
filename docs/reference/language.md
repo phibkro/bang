@@ -977,6 +977,16 @@ not six independent implementations.
                                "name": "law", "params": ["x"],
                                "body": "canonical surface text" } ] } ]
   } ] | null,
+  "moduleBodies": [ {
+    "module": "@entry|logical module name",
+    "scope": "resolved-program-module-body-slice",
+    "algorithm": "bang-module-body-slice-comp-v1-uint64",
+    "cacheKeySafe": false, "linkReady": false,
+    "exports": [ { "id": "Module::localName", "name": "localName",
+                   "kind": "..",
+                   "status": "sliced|unsupported-generic-fn|no-body-kind",
+                   "digest": "16 lowercase hex digits"|null } ]
+  } ] | null,
   "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
   "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect|handler",
@@ -1043,6 +1053,21 @@ unchanged rendered interface. Same-named effects from different modules retain d
 This presentation stability does not create stable lowered identities, normalize global type-hole
 markers, or define a module body/link contract. Treat the digest as an invalidation-analysis probe, not
 permission to skip lowering, linking, or unchecked cache validation.
+
+`moduleBodies` is the parallel **environment-relative reachable body view**. For each concrete
+public `let`/`letRec`, it follows the existing declaration reference edges, removes unreachable
+value declarations, and lowers the pruned program through the unchanged production typed pipeline.
+Every retained non-value declaration is also a closure root: implicit impl/handler selection is not
+a syntactic reference edge, so its value dependencies are safely over-retained rather than silently
+omitted. This can cause false invalidation in impl-heavy programs, but not false preservation.
+
+Coverage is explicit. A bounded generic `fn` row has `status=unsupported-generic-fn` because it has
+no standalone concrete instantiation; structural declarations have `status=no-body-kind`; both carry
+`digest:null`. If any supposedly sliceable export fails production lowering, the entire
+`moduleBodies` projection is `null` rather than a partial list. `cacheKeySafe=false` and
+`linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,
+and dense runtime effect labels can still move a sliced body when an unrelated earlier effect is
+inserted. No artifact validation, linking, skip, storage, or reuse authority follows from this fact.
 
 `python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external
 consumer of this view. It compares complete projected exports (using the digest only as a consistency

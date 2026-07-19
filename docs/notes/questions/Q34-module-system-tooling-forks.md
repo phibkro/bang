@@ -233,3 +233,31 @@ exit-code contract and authorizes no skipped work or artifact reuse.
 realizes the first half of ADR-0076's toolchain project without pretending a separately validated module
 artifact exists. After convergence, return to the independently lowerable identity/body/link seam; a
 store, scheduler, cryptographic key, and cache-hit path remain downstream of that artifact.
+
+## Body-identity input (2026-07-18): the cheap projection is refuted; reachable slicing is bounded
+
+The first pre-scope attempt composed the existing `withQueryBody` and `coreFingerprintOf` seams for one
+export. That composition is not per-export: `foldLetDecls` still nests every top-level `let`/`let rec`
+around the selected trailing body. In a live two-module fixture, changing only unused
+`Lib.unrelated : Int = 7` to `8` preserved `Lib`'s checked interface exactly
+(`1e689a399109f5aa`) while moving the selected-body proxy
+`9ba6727b3122c4ac → 2aef16e70fe42aba`. No `moduleBodies` schema was added on that false boundary.
+
+`PATH-reachable-module-body-slices` narrows the answer to a query projection, not a new lowering mode:
+filter unreachable value declarations, keep the non-value elaboration environment whole, preserve source
+order, and lower through the unchanged production pipeline. Its pre-scope falsifier found that the
+selected export alone is an insufficient closure root: an implicitly selected impl body can reference a
+top-level helper even when the export has no syntactic edge to that impl. Retained non-value declarations
+therefore root the closure too; this safely over-retains their value dependencies, and any remaining miss
+nulls the complete projection rather than emitting partial body facts.
+
+Concrete `let`/`let rec` exports can now be measured. A bounded generic `fn` remains a template whose
+standalone body cannot lower without an instantiation, so it receives an explicit unsupported row; every
+other export receives an explicit no-body row. Inserting an unrelated earlier effect still moves an
+effect-using sliced digest (`27c0555a0c82b9e4 → 1ce72041af068091`) because the environment and dense
+runtime labels remain global. That red pole is retained as the next demand signal for label identity.
+
+**Decision:** measure environment-relative reachable body slices with `cacheKeySafe=false` and
+`linkReady=false`. Defer environment slicing, type-directed impl reachability, stable label allocation,
+generic instantiation identity, import slots, artifact validation, linking, storage, scheduling, and
+reuse authorization until this projection's actor journey supplies their concrete demand.

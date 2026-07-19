@@ -686,6 +686,158 @@ def coreFingerprintJson (fact : Option CoreFingerprintFact) : String :=
   | none => "null"
   | some fact => fact.toJson
 
+/-! ### Resolved-module reachable body-slice probe
+
+`withQueryBody` alone is NOT per-export: `checkAndLowerProg` folds every top-level `letD`/`letRecD`
+into one lexical `Comp`. The projection below removes unreachable VALUE declarations before invoking
+that unchanged production pipeline. It deliberately keeps the non-value environment whole. Because
+impl/handler selection is type-directed rather than represented by `nameRefEdgesOf`, every retained
+non-value declaration is also a closure root; this safely over-retains its value dependencies instead
+of risking false preservation.
+
+Only `letD`/`letRecD` exports have a concrete body at this seam. A bounded `fnD` is a generic template
+that lowers only at a concrete instantiation, while the remaining kinds have no value body. Every
+export still receives an explicit row so decided absence cannot be confused with missing coverage.
+Any concrete slice that fails production lowering refuses the COMPLETE projection as `null`; partial
+body coverage would be an integrity bug.
+-/
+
+/-- Which body observation exists for one public export. Stable additive-schema spellings. -/
+public inductive ModuleBodyStatus where
+  | sliced
+  | unsupportedGenericFn
+  | noBodyKind
+  deriving Repr, DecidableEq
+
+/-- Machine spelling for `ModuleBodyStatus`. -/
+public def ModuleBodyStatus.toJson : ModuleBodyStatus → String
+  | .sliced => "\"sliced\""
+  | .unsupportedGenericFn => "\"unsupported-generic-fn\""
+  | .noBodyKind => "\"no-body-kind\""
+
+/-- One public export's environment-relative body observation. `digest` is present exactly for
+`status=sliced`; the two decided-absence states carry `null`. -/
+public structure ModuleBodyExportFact where
+  id     : String
+  name   : String
+  kind   : DeclKind
+  status : ModuleBodyStatus
+  digest : Option String
+  deriving Repr
+
+/-- One logical module's complete export-body projection. `linkReady=false` is load-bearing: these
+are measurements through a whole environment, not independently validated artifacts. -/
+public structure ModuleBodyFact where
+  module       : String
+  scope        : String
+  algorithm    : String
+  cacheKeySafe : Bool
+  linkReady    : Bool
+  exports      : List ModuleBodyExportFact
+  deriving Repr
+
+attribute [nolint unusedArguments] instReprModuleBodyStatus.repr
+  instReprModuleBodyExportFact.repr instReprModuleBodyFact.repr
+
+/-- Versioned body-slice fingerprint name. The underlying `Comp` fold is
+`CoreFingerprint.algorithm`; the outer fresh tag separates this projection from whole-program and
+interface digest domains. Still only a 64-bit change detector. -/
+public def moduleBodyAlgorithm : String := "bang-module-body-slice-comp-v1-uint64"
+
+/-- Does `d` denote a value declaration that may be removed when unreachable? `fnD` is included:
+it is retained when a concrete selected export reaches its generic template, but an exported `fnD`
+itself has no standalone concrete instantiation in this tracer. -/
+def isSliceValueDecl : Decl → Bool
+  | .letD .. | .letRecD .. | .fnD .. => true
+  | _ => false
+
+/-- Plain forward closure over the ONE public `nameRefEdgesOf` graph. Roots are de-duplicated by the
+worklist itself; the fuel bound is sufficient because each productive step adds a previously unseen
+edge target. -/
+def reachableSliceNames (edges : List RefEdge) (roots : List String) : List String :=
+  go (edges.length + roots.length + 1) roots roots.eraseDups
+where
+  go : Nat → List String → List String → List String
+  | 0, _, seen => seen
+  | _ + 1, [], seen => seen
+  | fuel + 1, name :: work, seen =>
+      let next := edges.filterMap (fun edge =>
+        if edge.src == name && !seen.contains edge.tgt then some edge.tgt else none)
+      let next := next.eraseDups
+      go fuel (next ++ work)
+        (next.foldl (fun acc dep => if acc.contains dep then acc else dep :: acc) seen)
+
+#guard (reachableSliceNames [⟨"selected", "helper"⟩, ⟨"helper", "base"⟩,
+    ⟨"unused", "other"⟩] ["selected"] |>.contains "base")
+#guard !(reachableSliceNames [⟨"selected", "helper"⟩, ⟨"unused", "other"⟩]
+    ["selected"] |>.contains "other")
+
+/-- Build the environment-relative value slice for one concrete export. Source order is preserved.
+Every non-value declaration is retained AND rooted so helpers reachable only through implicit
+impl/handler/generic-environment paths cannot be dropped. `pubNames` is narrowed to retained decls;
+imports/uses and all other program metadata are unchanged. -/
+public def reachableValueSliceProg (p : Prog) (name : String) : Prog :=
+  let environmentRoots := p.decls.filterMap (fun d =>
+    if isSliceValueDecl d then none else some d.name)
+  let live := reachableSliceNames (nameRefEdgesOf p) (name :: environmentRoots)
+  let decls := p.decls.filter (fun d => !isSliceValueDecl d || live.contains d.name)
+  let keptNames := decls.map Decl.name
+  let retainedPubs := p.pubNames.filter (fun n => keptNames.contains n)
+  { p with pubNames := retainedPubs, decls := decls, body := .var name, isLibrary := false }
+
+/-- Fresh-domain digest for one successfully lowered reachable body slice. -/
+def moduleBodyDigest (comp : Bang.Comp) : String :=
+  Bang.CoreFingerprint.toHex16
+    (Bang.CoreFingerprint.step (Bang.CoreFingerprint.tag 71)
+      (Bang.CoreFingerprint.hashComp comp))
+
+/-- One export row rendered with every key present. -/
+public def ModuleBodyExportFact.toJson (f : ModuleBodyExportFact) : String :=
+  jsonObj [jsonStrField "id" f.id, jsonStrField "name" f.name,
+    jsonField "kind" f.kind.toJson, jsonField "status" f.status.toJson,
+    jsonOptStrField "digest" f.digest]
+
+/-- One module body projection rendered independently from `moduleInterfaces`; nesting body facts
+inside the interface record would make body edits destroy the checked-interface firewall. -/
+public def ModuleBodyFact.toJson (f : ModuleBodyFact) : String :=
+  jsonObj [jsonStrField "module" f.module, jsonStrField "scope" f.scope,
+    jsonStrField "algorithm" f.algorithm,
+    jsonField "cacheKeySafe" (if f.cacheKeySafe then "true" else "false"),
+    jsonField "linkReady" (if f.linkReady then "true" else "false"),
+    jsonField "exports" (jsonArr (f.exports.map ModuleBodyExportFact.toJson))]
+
+/-- **PUBLIC (TIER 1):** project resolver-owned exports onto reachable concrete body slices. Every
+export gets a row. A missing export or failed concrete slice refuses the whole result, so callers
+cannot mistake partial coverage for completeness. -/
+public def moduleBodyFactsOf (p : Prog) (declModule : List (String × String))
+    (moduleExports : List (String × List String)) : Except String (List ModuleBodyFact) :=
+  moduleExports.mapM fun (moduleName, names) => do
+    let exports ← names.eraseDups.mapM fun name => do
+      let d ← match p.decls.find? (·.name == name) with
+        | some d => pure d
+        | none => throw s!"module bodies '{moduleName}': exported declaration '{name}' is absent from the merged program"
+      let localName := if moduleName == "@entry" then name else displayDeclName declModule name
+      let id := moduleName ++ "::" ++ localName
+      match d with
+      | .letD .. | .letRecD .. =>
+          match Bang.TypeCheck.checkAndLowerProg (reachableValueSliceProg p name) with
+          | .error e => throw s!"module bodies '{moduleName}': slice for exported declaration '{name}' failed to lower: {e}"
+          | .ok comp => pure ⟨id, localName, DeclKind.of d, .sliced, some (moduleBodyDigest comp)⟩
+      | .fnD .. => pure ⟨id, localName, DeclKind.of d, .unsupportedGenericFn, none⟩
+      | _ => pure ⟨id, localName, DeclKind.of d, .noBodyKind, none⟩
+    pure ⟨moduleName, "resolved-program-module-body-slice", moduleBodyAlgorithm,
+      false, false, exports⟩
+
+/-- JSON value for complete module-body coverage. Whole-program invalidity and any projection
+inconsistency both refuse this seam as `null`, while sibling dump facts remain available. -/
+def moduleBodiesJson (core : Option CoreFingerprintFact) (p : Prog)
+    (declModule : List (String × String))
+    (moduleExports : List (String × List String)) : String :=
+  if core.isNone then "null" else
+    match moduleBodyFactsOf p declModule moduleExports with
+    | .ok bodies => jsonArr (bodies.map ModuleBodyFact.toJson)
+    | .error _ => "null"
+
 /-! ### Resolved-module public-interface probe
 
 The whole-program `Comp` fingerprint above is an implementation-result observation. A module's
@@ -829,6 +981,7 @@ OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the sin
 route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this module never
 hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1",
    "coreFingerprint":{...},"moduleInterfaces":[ModuleInterfaceFact,...],
+   "moduleBodies":[ModuleBodyFact,...],
    "modules":[ModuleFact,...],"moduleDeps":[ModuleDepFact,...],"decls":[DeclFact,...],
 "refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
 schema documented in `docs/reference/language.md`. -/
@@ -851,6 +1004,7 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
            jsonStrField "bangVersion" bangVersion,
            jsonField "coreFingerprint" (coreFingerprintJson core),
            jsonField "moduleInterfaces" (moduleInterfacesJson core p.decls facts declModule exports),
+           jsonField "moduleBodies" (moduleBodiesJson core p declModule exports),
            jsonField "modules" (jsonArr (modules.map ModuleFact.toJson)),
            jsonField "moduleDeps" (jsonArr (moduleDeps.map ModuleDepFact.toJson)),
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
@@ -889,6 +1043,8 @@ public def dumpJson (src : String) (bangVersion : String) : String :=
                jsonField "coreFingerprint" (coreFingerprintJson core),
                jsonField "moduleInterfaces"
                  (moduleInterfacesJson core p.decls facts [] [("@entry", p.pubNames)]),
+               jsonField "moduleBodies"
+                 (moduleBodiesJson core p [] [("@entry", p.pubNames)]),
                jsonField "modules" (jsonArr [entryModuleFact.toJson]),
                jsonField "moduleDeps" (jsonArr []),
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
