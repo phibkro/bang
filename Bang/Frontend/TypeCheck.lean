@@ -3141,17 +3141,43 @@ ctor at all, falls through to ordinary var/application handling unchanged); exac
 byte-identical to today's `.lookup` for every unambiguous reference; 2+ ⟹ **B012**, `.error` carrying
 the full candidate list (dataName × qualified spelling pairs) for the diagnostic to name every
 candidate + its fix. -/
-def resolveCtor (env : ElabEnv) (x : String) : Option (Except String CtorInfo) :=
-  match env.ctors.find? (fun p => qualifyName p.2.dataName p.1 == x) with
+public def resolveCtorFrom (ctors : List (String × CtorInfo)) (x : String) :
+    Option (Except String CtorInfo) :=
+  match ctors.find? (fun p => qualifyName p.2.dataName p.1 == x) with
   | some ci => some (.ok ci.2)
   | none    =>
-      match env.ctors.filter (fun p => p.1 == x) with
+      match ctors.filter (fun p => p.1 == x) with
       | []   => none
       | [ci] => some (.ok ci.2)
       | cs   =>
           let owners := cs.map (fun p => s!"{p.2.dataName} (as '{qualifyName p.2.dataName p.1}')")
           let ownersStr := String.intercalate ", " owners
           some (.error s!"ambiguous constructor '{x}' — candidates: {ownersStr}")
+
+def resolveCtor (env : ElabEnv) (x : String) : Option (Except String CtorInfo) :=
+  resolveCtorFrom env.ctors x
+
+/-- Enforcement-grade inert initializer predicate used by the initialization-contract probe.
+It extends the checker's ordinary syntactic-value restriction at exactly one program-informed seam:
+a named data-constructor application is inert when all of its payload syntax is inert. Constructor
+identity is resolved through the same qualified/bare ambiguity rule as elaboration; an ordinary
+application remains non-inert. This deliberately mirrors `elabS`: constructor resolution precedes
+ordinary-variable lookup, so a same-named value binding cannot spoof either elaboration or this
+classifier into treating `Some(3)` differently. A thunk is inert regardless of its suspended body. -/
+public partial def isInertInitializerValue (ctors : List (String × CtorInfo)) : Surf → Bool
+  | .lit _ | .var _ | .unitS | .thunk _ => true
+  | .inlS e | .inrS e | .foldS e        => isInertInitializerValue ctors e
+  | .pairS a b                           =>
+      isInertInitializerValue ctors a && isInertInitializerValue ctors b
+  | .annotS e _                          => isInertInitializerValue ctors e
+  | .useS _ _ e                          => isInertInitializerValue ctors e
+  | .app (.var c) payload                =>
+      match resolveCtorFrom ctors c with
+      | some (.ok ci) => ci.arity > 0 && isInertInitializerValue ctors payload
+      | _ => false
+  | _ => false
+
+#guard isInertInitializerValue [] (.app (.var "ordinaryFunction") (.lit 3)) == false
 
 /-- **#101**: expand a match's wildcard arm `_ -> body` (if present) into one fresh arm per
 constructor of the scrutinee's data type NOT already covered by an earlier, EXPLICIT arm — so
@@ -6709,6 +6735,12 @@ def elabProg (p : Prog) :
   let monomorphized ← monomorphizeLetRec env.gen env.aliases bigFuel dealiased
   let e ← elabS env [] monomorphized   -- bounded-fn uses/mono residues → elaborate (bite-2 + ADR-0103)
   return (e, env.effects, env.ctors, env.gen)
+
+/-- Public probe projection of `elabProg`'s authoritative constructor environment. This deliberately
+does not expose or duplicate the elaboration pipeline; callers still pay the complete existing pass. -/
+public def initializerCtorEnv (p : Prog) : Except String (List (String × CtorInfo)) := do
+  let (_, _, ctors, _) ← elabProg p
+  pure ctors
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators

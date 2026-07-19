@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tool: role=test couples=Main.lean,Bang/Frontend/Query.lean,Bang/Frontend/TypeCheck.lean,examples/*/main.bang runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
-# test-initializer-census.sh — pin the honest syntax census and the two row-fact stop conditions.
+# test-initializer-census.sh — pin the syntax census, row stop conditions, and inert-contract probe.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -39,8 +39,51 @@ census_total="$(printf '%s\n' "$census_out" | tail -n 1)"
 census_want="initializer-census total requested-subjects=61 resolved-subjects=61 empty-subjects=40 definition-only-subjects=7 computation-subjects=14 manifest-values=233 recursive-definitions=24 computation-forms=17 strict-initializers=274"
 check_eq "one-sided syntax census" "$census_want" "$census_total"
 
+# Pre-decision kill shot for the proposed inert-top-level contract. Pin exact identities, not only
+# the count: all 61 actor journeys may refuse only nqueens' three entry-local computed constants.
+contract_probe="$($bang internal initializer-contract-probe "${mains[@]}")"
+contract_probe_rows="$(printf '%s\n' "$contract_probe" | sed -n 's/^initializer-contract-probe subject=\([^ ]*\) module=\([^ ]*\) name=\(.*\)$/\1:\2:\3/p' | paste -sd '|' -)"
+contract_probe_total="$(printf '%s\n' "$contract_probe" | tail -n 1)"
+check_eq "inert-contract exact corpus refusals" \
+  "examples/nqueens/main.bang:@entry:q4|examples/nqueens/main.bang:@entry:q5|examples/nqueens/main.bang:@entry:q6" \
+  "$contract_probe_rows"
+check_eq "inert-contract corpus accounting" \
+  "initializer-contract-probe total requested-subjects=61 resolved-subjects=61 would-refuse=3" \
+  "$contract_probe_total"
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
+
+# Enforcement-grade constructor pole: named ctor applications with inert payloads are descriptions,
+# both in a library and beside main. Ordinary computed non-main bindings remain the exact refusals;
+# main itself remains executable under option A.
+mkdir -p "$tmpdir/contract-probe"
+cat > "$tmpdir/contract-probe/Lib.bang" <<'BANG'
+pub let wrapped = Some(3)
+pub let empty : Option Int = None
+pub let computed = 1 + 2
+pub let computedWrapped = Some(1 + 2)
+BANG
+cat > "$tmpdir/contract-probe/main.bang" <<'BANG'
+use Lib (wrapped, computed)
+-- Constructor resolution deliberately precedes ordinary-variable lookup. This same-named inert
+-- binding therefore cannot spoof the classifier: if Some(4) were treated as an application of
+-- this thunk, full elaboration below would reject it as a non-function. It instead remains the
+-- authoritative Option constructor and the probe accepts it for that exact reason.
+let Some = {40 + 2}
+let localWrapped = Some(4)
+let localComputed = 3 + 4
+let main = match wrapped { Some(x) -> x + computed, None -> localComputed }
+BANG
+fixture_probe="$($bang internal initializer-contract-probe "$tmpdir/contract-probe/main.bang")"
+fixture_probe_rows="$(printf '%s\n' "$fixture_probe" | sed -n 's/^initializer-contract-probe subject=.* module=\([^ ]*\) name=\(.*\)$/\1::\2/p' | paste -sd '|' -)"
+fixture_probe_total="$(printf '%s\n' "$fixture_probe" | tail -n 1)"
+check_eq "inert-contract constructor values stay legal" \
+  "Lib::Lib_computed|Lib::Lib_computedWrapped|@entry::localComputed" "$fixture_probe_rows"
+check_eq "inert-contract fixture accounting" \
+  "initializer-contract-probe total requested-subjects=1 resolved-subjects=1 would-refuse=3" \
+  "$fixture_probe_total"
+
 cat > "$tmpdir/strict-initializer.bang" <<'BANG'
 let before = 1
 let rec loop : Int -> Int ! {Div} = fun n => ($loop) n

@@ -10245,7 +10245,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Surface"
       ],
-      "loc": 9914,
+      "loc": 9946,
       "name": "Bang.Frontend.TypeCheck",
       "path": "Bang/Frontend/TypeCheck.lean",
       "publicSymbols": [
@@ -10377,127 +10377,145 @@
         },
         {
           "kind": "def",
-          "line": 4907,
+          "line": 3144,
+          "name": "resolveCtorFrom",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 3167,
+          "name": "isInertInitializerValue",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 4933,
           "name": "buildEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5746,
+          "line": 5772,
           "name": "mergeModules",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5983,
+          "line": 6009,
           "name": "surfUsesVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6478,
+          "line": 6504,
           "name": "expandDerives",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6614,
+          "line": 6640,
           "name": "lawTestSourceOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6718,
+          "line": 6741,
+          "name": "initializerCtorEnv",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 6750,
           "name": "elaborateToComp",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6733,
+          "line": 6765,
           "name": "checkAndLower",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6754,
+          "line": 6786,
           "name": "checkAndLowerProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6765,
+          "line": 6797,
           "name": "checkAndLowerProgWithEffects",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6775,
+          "line": 6807,
           "name": "elaborateToCompProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6787,
+          "line": 6819,
           "name": "checkProgRow",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6837,
+          "line": 6869,
           "name": "typeStringOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6850,
+          "line": 6882,
           "name": "typeStringOfProgP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6896,
+          "line": 6928,
           "name": "assertTypedOutOfFuel",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6901,
+          "line": 6933,
           "name": "assertTypedOom",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7027,
+          "line": 7059,
           "name": "sampleVT",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7050,
+          "line": 7082,
           "name": "checkLawOn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7215,
+          "line": 7247,
           "name": "lawInstancesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7223,
+          "line": 7255,
           "name": "lawInstancesOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7235,
+          "line": 7267,
           "name": "lawInstanceOpCallDiagnostics",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7278,
+          "line": 7310,
           "name": "unreachableIntImplDiagnostics",
           "visibilityBasis": "public-modifier"
         }
@@ -13368,7 +13386,7 @@
       "name": "Core"
     },
     {
-      "loc": 18890,
+      "loc": 18922,
       "moduleCount": 12,
       "name": "Frontend"
     },

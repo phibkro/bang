@@ -367,6 +367,39 @@ an inert-library contract has zero current corpus cost; an all-top-level rule wo
 the chosen `main` entry convention. The remaining fork is now an operator-visible surface decision, not
 another measurement or cache implementation.
 
+## Inert-initializer contract probe input (2026-07-19): enforcement is feasible; policy remains explicit
+
+The body-artifact arc reached the actual link seam, firing the census's decision trigger without making
+per-binding effects or guessed source provenance necessary. `PATH-inert-initializer-contract-probe`
+reuses the production resolver, runs the complete elaborator, and classifies each plain top-level `let`
+against its authoritative constructor table. This retires the phase-placement uncertainty: enforcement
+can be an ordinary post-resolution, pre-lowering checker diagnostic. The checker does not call the
+classifier yet, so accepted programs and runtime semantics remain unchanged.
+
+Across all 61 resolved example journeys, the proposed description-only rule would refuse exactly three
+bindings: entry-owned `nqueens.q4`, `q5`, and `q6`. Named constructor values are no longer conservative
+false positives: library `Some(3)`, annotated `None`, and entry `Some(4)` remain inert, while
+`Some(1 + 2)` is refused because its payload performs eager work. The adversarial name-resolution pole
+is also closed against the actual language rather than an imagined scoping rule: constructor resolution
+already precedes ordinary-variable lookup in elaboration, so a same-named inert `let Some = {…}` cannot
+turn `Some(4)` into an ordinary function call. Full elaboration plus the focused probe pins that behavior.
+
+The remaining choice is now priced rather than guessed:
+
+- **Option A — descriptions everywhere, one executable `main`.** Every library and non-`main` entry
+  `let` must be inert; `let rec` remains a suspended definition. Migrate only `q4/q5/q6` under `main`.
+  This buys one uniform module/link contract, but makes `main` the language's first distinguished name
+  (an explicit amendment to ADR-0093 D5) and removes implicit compute-once constants. Preserve a future
+  explicit-init or memoizing-handler door if a real program pulls it; build neither now.
+- **Option B — inert libraries, ordered entry initialization.** The current corpus needs no migration
+  and no distinguished-name change. In exchange, entry initializers remain observable ordered link
+  inputs, so the future linker must retain and specify their order rather than treating every module as
+  a description.
+
+**Decision:** none in this probe. Both policies are implementable with the demonstrated classifier.
+Choose by explicit operator ruling and ADR; do not smuggle Option A in as a checker cleanup or Option B in
+as an accidental consequence of today's flattening.
+
 ## Source initialization-order input (2026-07-19): preserve semantics without guessing effects
 
 ADR-0117 leaves strict top-level computation legal, so initialization remains a first-class link input.

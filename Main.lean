@@ -1035,6 +1035,52 @@ def initializerSyntaxCounts (p : Bang.Surface.Prog) : InitializerSyntaxCounts :=
         { counts with recursiveDefinitions := counts.recursiveDefinitions + 1 }
     | some .computationForm => { counts with computationForms := counts.computationForms + 1 }) {}
 
+/-- One declaration the proposed inert-top-level contract would reject. This is probe evidence only:
+the ordinary checker does not call it and the language contract remains unchanged. -/
+structure InitializerContractRefusal where
+  moduleName : String
+  name       : String
+  deriving Repr
+
+/-- Dry-run the proposed contract over the fully merged resolver program. Recursive definitions and
+`main` are allowed; every other top-level plain `let` must be an enforcement-grade inert value.
+Resolver provenance recovers library ownership without guessing from qualified spellings. -/
+def initializerContractRefusals (p : Bang.Surface.Prog) (declModules : List (String × String))
+    (ctors : List (String × Bang.TypeCheck.CtorInfo)) : List InitializerContractRefusal :=
+  p.decls.filterMap fun d => match d with
+    | .letD name _ rhs =>
+        let moduleName := (declModules.lookup name).getD "@entry"
+        if name == "main" || Bang.TypeCheck.isInertInitializerValue ctors rhs then none
+        else some ⟨moduleName, name⟩
+    | _ => none
+
+/-- Resolver-aware pre-decision kill shot for the inert-top-level contract. It validates each subject
+through the existing elaborator to obtain the authoritative constructor environment, then reports the
+plain bindings that would become ill-formed. No checking, lowering, or runtime behavior changes. -/
+def runInternalInitializerContractProbeBatch (files : List String) : IO UInt32 := do
+  let mut aggregate : UInt32 := 0
+  let mut resolvedSubjects := 0
+  let mut wouldRefuse := 0
+  for file in files do
+    match ← resolveEntryFileWithProvenance file with
+    | .error e =>
+        IO.eprintln s!"initializer-contract-probe resolve-error subject={file} error={e}"
+        aggregate := 1
+    | .ok resolved =>
+        match Bang.TypeCheck.initializerCtorEnv resolved.prog with
+        | .error e =>
+            IO.eprintln s!"initializer-contract-probe elaboration-error subject={file} error={e}"
+            aggregate := 1
+        | .ok ctors =>
+            resolvedSubjects := resolvedSubjects + 1
+            let rows := initializerContractRefusals resolved.prog resolved.declModules ctors
+            wouldRefuse := wouldRefuse + rows.length
+            for row in rows do
+              IO.println s!"initializer-contract-probe subject={file} module={row.moduleName} name={row.name}"
+  IO.println (s!"initializer-contract-probe total requested-subjects={files.length} " ++
+    s!"resolved-subjects={resolvedSubjects} would-refuse={wouldRefuse}")
+  return aggregate
+
 /-- Resolver-aware, occurrence-weighted syntax census for strict initializers. Imported declarations
 are counted once per consuming subject on purpose: this is a journey-weighted corpus measurement,
 not a unique-source inventory (the current facts do not expose collision-safe source identities).
@@ -3093,7 +3139,9 @@ def main (args : List String) : IO UInt32 := do
       match rest with
       | "slice-fidelity" :: file :: files => runInternalSliceFidelityBatch (file :: files)
       | "initializer-census" :: file :: files => runInternalInitializerCensusBatch (file :: files)
-      | _ => cliError "bang internal: expected `slice-fidelity|initializer-census <file.bang>...`"
+      | "initializer-contract-probe" :: file :: files =>
+          runInternalInitializerContractProbeBatch (file :: files)
+      | _ => cliError "bang internal: expected `slice-fidelity|initializer-census|initializer-contract-probe <file.bang>...`"
     else if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
       -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file

@@ -144,8 +144,8 @@ re-cited.
 - [ ] In flight: none; successor is the initialization-contract operator decision
 - [ ] Blockers: none
 - [x] Completed 2026-07-18
-- Focused evidence: `tools/test-initializer-census.sh` passes **8/8**; compiled build passes **1452
-  jobs**.
+- Focused evidence: the successor contract probe extends `tools/test-initializer-census.sh` to
+  **12/12** while preserving this census and its row poles; compiled build passes **1456 jobs**.
 - Convergence evidence: `CHANGELOG_STABLE_REF=73af9668 just fitness` and
   `CHANGELOG_STABLE_REF=73af9668 just verify` pass; direct battery execution passes **33/33**, both
   **61-example** engine journeys remain green, and live proof facts match. The persistent Fable 5
