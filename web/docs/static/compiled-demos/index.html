@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-status="loading">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>BANG compiled browser demos</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">BANG · COMPILED WASM</p>
+      <h1>Real programs, already compiled.</h1>
+      <p class="lede">
+        These fixed BANG programs were emitted as WasmGC + exception-handling modules. Your browser
+        runs the selected artifact locally through one narrow host import: stdout only.
+      </p>
+
+      <nav id="demo-picker" aria-label="Choose a compiled demo"></nav>
+
+      <section class="result" aria-live="polite">
+        <div class="result-heading">
+          <div>
+            <p class="eyebrow">EXECUTION RESULT</p>
+            <h2 id="result-title">Loading manifest…</h2>
+          </div>
+          <p id="detail" data-status="loading">Loading…</p>
+        </div>
+        <div class="outputs">
+          <div><h3>Observed</h3><pre id="observed">…</pre></div>
+          <div><h3>Expected oracle</h3><pre id="expected">…</pre></div>
+        </div>
+      </section>
+
+      <section class="boundary">
+        <h2>What this demonstrates</h2>
+        <p>
+          The committed artifact executes on this browser and its bytes of stdout match the repository
+          oracle. It does not compile arbitrary source, grant ambient host I/O, establish support for
+          every browser, or add independent typing/link proof to the artifact.
+        </p>
+        <p>
+          Artifact provenance: <code id="provenance">loading…</code> ·
+          <a id="source" href="https://github.com/phibkro/bang">view selected source</a> ·
+          <a href="../../reference/compiled-browser-demos">read the evidence boundary</a>
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -21,6 +21,7 @@
     { "kind": "exact", "mode": "managed", "source": "CLAUDE.md", "route": "/CLAUDE" },
     { "kind": "exact", "mode": "managed", "source": "CHANGELOG.md", "route": "/CHANGELOG" },
     { "kind": "exact", "mode": "managed", "source": "docs/PRD.md", "route": "/PRD" },
+    { "kind": "exact", "mode": "managed", "source": "docs/demos/compiled-browser.md", "route": "/reference/compiled-browser-demos" },
     {
       "kind": "tree",
       "mode": "managed",
@@ -189,6 +190,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
       "target": { "kind": "onboarding-page", "route": "/learn/common-journey-evidence", "contentKey": "common-journey-evidence" },
       "navigation": { "order": 15 }
+    },
+    {
+      "id": "compiled-browser-demos",
+      "title": "Compiled browser demos",
+      "section": "learn",
+      "audience": ["consumer", "contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["guided-tour"],
+      "status": { "kind": "not-applicable", "reason": "live-demo-page" },
+      "target": { "kind": "markdown", "path": "docs/demos/compiled-browser.md", "route": "/reference/compiled-browser-demos" },
+      "navigation": { "order": 17 }
     },
     {
       "id": "values-and-force",

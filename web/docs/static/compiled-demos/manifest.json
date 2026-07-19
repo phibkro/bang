@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "packId": "bang-compiled-browser-demo-v1",
+  "builtFrom": {
+    "repository": "https://github.com/phibkro/bang",
+    "commit": "3c9968afa61648976ec7dfeaa2f21ed67dd8e78c",
+    "compilerTree": "fee70060a608cc7186296a38ae239d3618a4c745",
+    "bangVersion": "bang 0.1.1",
+    "wasmToolsVersion": "wasm-tools 1.253.0"
+  },
+  "runtime": {
+    "format": "WebAssembly 3.0 modules using WasmGC and exception handling",
+    "hostContract": "wasi_snapshot_preview1.fd_write on stdout descriptor 1 only",
+    "refuses": [
+      "arbitrary BANG source compilation",
+      "ambient filesystem, network, clock, randomness, and process authority",
+      "imports other than wasi_snapshot_preview1.fd_write",
+      "claims of support beyond enrolled engines or universal compiler correctness"
+    ]
+  },
+  "demos": [
+    {
+      "id": "json",
+      "title": "JSON parser",
+      "source": "examples/json/main.bang",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/json",
+      "sourceFiles": [
+        {
+          "path": "examples/json/Json.bang",
+          "sha256": "7af04bbfce60a258ecb7fabba3959b05fc16146d1e08698728220568a283c7a4"
+        },
+        {
+          "path": "examples/json/Parse.bang",
+          "sha256": "743de4ed29d17c85b845e639d703dafbbac7e95f053f9b5b96e109000e9991a2"
+        },
+        {
+          "path": "examples/json/Print.bang",
+          "sha256": "081832a77361bc2fb8ff5c80ccf564a18f0fb13dba49f51d0c00ea6f0b064332"
+        },
+        {
+          "path": "examples/json/main.bang",
+          "sha256": "4f4e2f2a9119a246baa10a0646e28f8c6dea3358fe46da6667a118ef8e5626d7"
+        }
+      ],
+      "artifact": "json.wasm",
+      "artifactSha256": "0beb12b5d3b4c3d4434861ec679f6d7165f027dbbfb475ad42ee093f6792bca0",
+      "expectedOutput": "30163\n"
+    },
+    {
+      "id": "calc",
+      "title": "Calculator parser",
+      "source": "examples/calc/main.bang",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/calc",
+      "sourceFiles": [
+        {
+          "path": "examples/calc/Ast.bang",
+          "sha256": "4b195edc93f357d525f8afb45b7ac69fa323199bcf834efa21a79b02e1c63ca6"
+        },
+        {
+          "path": "examples/calc/Eval.bang",
+          "sha256": "b955e6a9c5fed0341d4e82984549e42cbcc464dff6ba41017bde37717434df64"
+        },
+        {
+          "path": "examples/calc/Lexer.bang",
+          "sha256": "992731533022fc7f1a7fdaea732dd4e20da1d995ce079d538d1bb4ea32270681"
+        },
+        {
+          "path": "examples/calc/Parser.bang",
+          "sha256": "bf757c67ad497751dc2dd7e5a1b8619747e12696b819a70a584c38eead216361"
+        },
+        {
+          "path": "examples/calc/Print.bang",
+          "sha256": "7432cda2c39990911ce2b50fab9bdc72ec1e0bd3f9fbfaff8dd7310165e0bf2d"
+        },
+        {
+          "path": "examples/calc/main.bang",
+          "sha256": "e4d76d2985e4a6ed922d996a6b5e45caa4935d6340616404aa0fcb3f2eab8c3b"
+        }
+      ],
+      "artifact": "calc.wasm",
+      "artifactSha256": "b8c75daa8e3981dd6136bc04b2231097902e4a4d707570abd9bf26400e834e53",
+      "expectedOutput": "11021193\n"
+    },
+    {
+      "id": "nqueens",
+      "title": "N-Queens (4 + 5 + 6)",
+      "source": "examples/nqueens/main.bang",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/nqueens",
+      "sourceFiles": [
+        {
+          "path": "examples/nqueens/main.bang",
+          "sha256": "7949d2dd73c4259a354b3a3f905229e3755ed029547053a7581b5e06dede5055"
+        }
+      ],
+      "artifact": "nqueens.wasm",
+      "artifactSha256": "1b1c1b152694d6a5430d12ef704a48bb71ee11e20e12dac76da022872cf67217",
+      "expectedOutput": "21004\n"
+    },
+    {
+      "id": "ndet-sim-kv-a",
+      "title": "sim-KV · first realization",
+      "source": "examples/ndet-sim-kv-a/main.bang",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/ndet-sim-kv-a",
+      "sourceFiles": [
+        {
+          "path": "examples/ndet-sim-kv-a/main.bang",
+          "sha256": "0b852e1260437d5fb6ae0ae0883d623a83dffa5099552146ce991ff55fe0ed6c"
+        }
+      ],
+      "artifact": "ndet-sim-kv-a.wasm",
+      "artifactSha256": "73c103ecae31e68f198b03121983f0cf9894286826a81b2957e3b35f62cb1c8d",
+      "expectedOutput": "1120\n"
+    },
+    {
+      "id": "ndet-sim-kv-b",
+      "title": "sim-KV · swapped realization",
+      "source": "examples/ndet-sim-kv-b/main.bang",
+      "sourceUrl": "https://github.com/phibkro/bang/tree/3c9968afa61648976ec7dfeaa2f21ed67dd8e78c/examples/ndet-sim-kv-b",
+      "sourceFiles": [
+        {
+          "path": "examples/ndet-sim-kv-b/main.bang",
+          "sha256": "617e5cf699f670e1496d3a8bb05b1b407057262e6cb3bb34c70bb18738656a5b"
+        }
+      ],
+      "artifact": "ndet-sim-kv-b.wasm",
+      "artifactSha256": "f27badaba1731b3faae9e01caf3b39ad5f88290e39df8fc1447e9527e1b324bf",
+      "expectedOutput": "1100\n"
+    }
+  ]
+}

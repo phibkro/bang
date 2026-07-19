@@ -4,12 +4,13 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (24)
+## gen (25)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
+| [`build-compiled-browser-demo.mjs`](build-compiled-browser-demo.mjs) | `manual` | `examples/json`, `examples/calc`, `examples/nqueens`, `examples/ndet-sim-kv-a`, `examples/ndet-sim-kv-b`, `web/docs/static/compiled-demos`, `tools/test-compiled-browser-demo.mjs` | Rebuild the committed ◊5.75 browser-demo artifacts and their exact provenance manifest |
 | [`check-architecture-assertions.py`](check-architecture-assertions.py) | `fitness` | `docfacts/architecture.json`, `docfacts/proof-claims.json`, `docfacts/proof.json`, `docfacts/schema/architecture.schema.json`, `docfacts/schema/proof-claims.schema.json`, `docfacts/schema/proof.schema.json`, `docs/architecture/core-overview.md`, `docfacts_architecture.py`, `docfacts_proof.py`, `genblock.py` | Render/check architecture and proof projections from committed documentation facts |
 | [`docfacts_architecture.py`](docfacts_architecture.py) | `fitness` | `Bang/**/*.lean`, `Main.lean`, `docs/decisions/*.md`, `docfacts/schema/architecture.schema.json`, `docfacts/architecture.json` | Generate and validate the source-derived BANG architecture documentation fact |
 | [`docfacts_language.py`](docfacts_language.py) | `fitness` | `Bang/Frontend/Surface.lean`, `Bang/Frontend/DiagCodes.lean`, `Bang/Frontend/Diagnostics.lean`, `Prelude.bang`, `Bang/Frontend/TypeCheck.lean`, `Main.lean`, `tools/cli_facts.py`, `docfacts/schema/language.schema.json`, `docfacts/schema/common.schema.json`, `docfacts/language.json` | Generate and validate the serialized language-reference fact bundle |
@@ -70,7 +71,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (44)
+## test (46)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -92,6 +93,8 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-cli-exit-status.sh`](test-cli-exit-status.sh) | `verify` | `tools/test-query.sh`, `tools/test-fmt.sh` | Falsifier for success-path stdout captures: a proxy emits the real expected bytes, then mutates |
 | [`test-cli-options.sh`](test-cli-options.sh) | `verify` | `Main.lean` | Fail-closed option grammar for #178: typed values, command scope, duplicates, and pre-effect validation |
 | [`test-cli.sh`](test-cli.sh) | `verify` | — | the non-interactive gate for `bang`'s TOP-LEVEL CLI hygiene (issue #66/#67) |
+| [`test-compiled-browser-demo.mjs`](test-compiled-browser-demo.mjs) | `manual` | `tools/test-compiled-browser-demo.sh`, `tools/build-compiled-browser-demo.mjs`, `web/docs/static/compiled-demos`, `examples/json`, `examples/calc`, `examples/nqueens`, `examples/ndet-sim-kv-a`, `examples/ndet-sim-kv-b` | Check committed demo provenance, source/oracle/artifact agreement, and the narrow host refusals |
+| [`test-compiled-browser-demo.sh`](test-compiled-browser-demo.sh) | `verify` | `tools/test-compiled-browser-demo.mjs`, `web/docs/static/compiled-demos`, `examples/json`, `examples/calc`, `examples/nqueens`, `examples/ndet-sim-kv-a`, `examples/ndet-sim-kv-b` | Enroll the Node/kernel ◊5.75 artifact differential in the standard verify battery driver |
 | [`test-compiled-dogfood.sh`](test-compiled-dogfood.sh) | `verify` | `examples/calc`, `examples/json`, `examples/reactive-spreadsheet`, `examples/reactive-recomputation`, `examples/reactive-observation-reuse`, `examples/first-class-multi-operation-cap` | the --compiled DIFFERENTIAL gate for the dogfood programs (#135) |
 | [`test-docfacts-architecture-proof.sh`](test-docfacts-architecture-proof.sh) | `fitness` | `CONTEXT.md`, `docfacts/architecture.json`, `docfacts/proof-claims.json`, `docfacts/proof.json`, `docfacts/schema/proof-claims.schema.json`, `tools/docfacts_architecture.py`, `tools/docfacts_proof.py`, `tools/gen-proof-state.py`, `tools/gen-dashboard.py` | (no purpose comment) |
 | [`test-docfacts-language.sh`](test-docfacts-language.sh) | `verify` | `docfacts/language.json`, `docs/reference/language.md`, `web/docs/bang.tmLanguage.json` | focused executable agreement for the language docfact seam |

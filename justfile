@@ -242,6 +242,11 @@ test-explain:
 test-compiled-dogfood:
     bash tools/test-compiled-dogfood.sh
 
+# Committed ◊5.75 Wasm artifacts: provenance/source hashes, live kernel-oracle differential,
+# Node execution through the same stdout-only browser runtime, and adverse import/fd refusals.
+test-compiled-browser-demo:
+    bash tools/test-compiled-browser-demo.sh
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:

@@ -11,7 +11,7 @@
 //   README.md    -> index.md            => /
 //   <NAME>.md    -> <name>.md  (root)   => /<name>
 //   docs/<dir>/* -> <dir>/*             => /<dir>/<file>
-import { mkdirSync, rmSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
+import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -24,6 +24,8 @@ const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
 const pagesDir = join(siteDir, 'src', 'pages')
 const mermaidDir = join(siteDir, 'public', 'mermaid')
+const compiledDemoSource = join(siteDir, 'static', 'compiled-demos')
+const compiledDemoDestination = join(siteDir, 'public', 'demos', 'compiled')
 const site = compileSite({
   manifestPath: join(siteDir, 'page-manifest.json'),
   repoRoot,
@@ -128,6 +130,8 @@ function emit(sourcePath, outputPath) {
 rmSync(pagesDir, { recursive: true, force: true })
 mkdirSync(pagesDir, { recursive: true })
 rmSync(mermaidDir, { recursive: true, force: true })
+rmSync(compiledDemoDestination, { recursive: true, force: true })
+cpSync(compiledDemoSource, compiledDemoDestination, { recursive: true })
 const publicationPages = site.emittedPages.filter((page) => !page.source.startsWith('@'))
 for (const page of publicationPages) emit(page.source, page.outputPath)
 console.log(
