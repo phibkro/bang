@@ -1119,6 +1119,14 @@ that structural round-trip from missing independent type validation: `producerCh
 `structurallyRoundTripped=true`, but `independentlyTypeValidated=false`, `cacheKeySafe=false`, and
 `linkReady=false`.
 
+The same point query reports a domain-separated SHA-256 `address` over the exact canonical artifact
+bytes plus sorted `(semanticName, canonicalLabel)` relocation rows. Runtime labels are excluded, so an
+unrelated earlier effect can move a contextual label without moving the address; changing the semantic
+effect identity does move it even when canonical code bytes coincide. `integrityVerified=true` means the
+producer recomputed this envelope and the verified backend entry point rejects substitution before
+decode/compile/run. It is an integrity claim only: independent typing, cache reuse, and complete linking
+remain false.
+
 `python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external
 consumer of this view. It compares complete projected exports (using the digest only as a consistency
 check), joins moved/added/removed/topology-changed modules to the validated reverse dependency closure,

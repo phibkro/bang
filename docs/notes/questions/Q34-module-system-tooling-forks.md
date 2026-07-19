@@ -425,3 +425,22 @@ entry or a separately linked module. Its metadata says `producerChecked=true` an
 independent validation/link contract: type evidence or revalidation, collision-safe version-domain
 addressing, and explicit import/initializer slots. ADR-0117 still forbids guessing those initializer
 joins from flattened binder identity.
+
+## Body-artifact integrity input (2026-07-19): collision-safe identity without validation laundering
+
+`PATH-body-artifact-integrity` binds the exact canonical artifact bytes and sorted
+`(semanticName, canonicalLabel)` relocation rows under the domain
+`sha256-bang-module-body-artifact-v1`. Runtime labels remain contextual link input and are excluded:
+inserting an unrelated earlier effect still moves runtime label `4 → 5` without moving the address.
+Conversely, equal canonical code using `Lib_Alpha` versus `Lib_Beta` has different addresses even when
+both effects occupy canonical label 4. The point-query producer reports `integrityVerified=true`, and
+`Bang.BodyArtifactConsumer` exposes verified compile/run entries that compare the trusted address before
+decoding and then enforce the existing structural/canonical/relocation checks.
+
+This deliberately closes only the substitution/corruption seam. `TypeCheck.checkC` is a historical
+pure-fragment checker that rejects current capability, perform, and handler constructors; the production
+checker operates on annotated `Surf` before lowering. Neither can honestly revalidate supplied `Comp`
+bytes. Reusing one would turn a convenient green flag into sustained correctness debt. Therefore
+`independentlyTypeValidated=false`, `cacheKeySafe=false`, and `linkReady=false` remain authoritative.
+A complete executable core checker (connected to `HasCTy`) and explicit import/initializer/link inputs
+open only when a real cache or linker consumer pulls them.

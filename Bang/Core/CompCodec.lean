@@ -2,8 +2,10 @@ module
 
 meta import Lean.Data.Json
 meta import Bang.Core.IR
+meta import Bang.Core.SHA256
 public import Lean.Data.Json
 public import Bang.Core.IR
+public import Bang.Core.SHA256
 
 /-!
   Bang/Core/CompCodec.lean — the versioned structural interchange codec for kernel `Comp` values.
@@ -33,6 +35,9 @@ def defaultMaxBytes : Nat := 1024 * 1024
 
 /-- Default maximum constructor nesting accepted by the structural decoder. -/
 def defaultMaxDepth : Nat := 512
+
+/-- Domain and algorithm name for collision-resistant body-envelope addresses. -/
+def addressAlgorithm : String := "sha256-bang-module-body-artifact-v1"
 
 /-- A constructor-shaped JSON node. -/
 def node (tag : String) (args : List Json := []) : Json :=
@@ -221,6 +226,104 @@ def decodeArtifact (s : String) (maxBytes : Nat := defaultMaxBytes)
   let json ← Json.parse s |>.mapError fun e => s!"comp artifact: invalid JSON: {e}"
   decodeArtifactJson json maxDepth
 
+/-! ### Collision-resistant envelope integrity
+
+The canonical code alone cannot name its semantic effects: two bodies using differently named effects
+can have identical canonical labels and bytes. The address therefore binds the exact artifact bytes plus
+the stable `(semanticName, canonicalLabel)` table. Contextual runtime labels are deliberately excluded.
+-/
+
+/-- Validate the stable half of an effect relocation table: semantic-name sorted, unique, and assigned
+the dense canonical labels `4, 5, …`. -/
+def validateStableRelocations (rows : List (String × Nat)) : Except String Unit := do
+  let rec go (previous : Option String) (expected : Nat) : List (String × Nat) → Except String Unit
+    | [] => pure ()
+    | (name, label) :: rest => do
+        if name.isEmpty then throw "body artifact address: semantic effect name must not be empty"
+        match previous with
+        | some prior =>
+            unless prior < name do
+              throw "body artifact address: semantic effect names must be strictly increasing"
+        | none => pure ()
+        unless label = expected do
+          throw s!"body artifact address: canonical label {label} is not expected dense label {expected}"
+        go (some name) (expected + 1) rest
+  go none 4 rows
+
+mutual
+/-- Collect every effect label mentioned structurally by a value. -/
+partial def artifactLabelsVal : Val → List Nat
+  | .vunit | .vint _ | .vvar _ => []
+  | .vcap _ label => [label]
+  | .vthunk c => artifactLabelsComp c
+  | .inl v | .inr v | .fold v => artifactLabelsVal v
+  | .pair a b => artifactLabelsVal a ++ artifactLabelsVal b
+
+/-- Collect every effect label mentioned structurally by a computation. -/
+partial def artifactLabelsComp : Comp → List Nat
+  | .ret v | .force v | .unfold v => artifactLabelsVal v
+  | .letC m n => artifactLabelsComp m ++ artifactLabelsComp n
+  | .lam m => artifactLabelsComp m
+  | .app m v => artifactLabelsComp m ++ artifactLabelsVal v
+  | .perform c _ v => artifactLabelsVal c ++ artifactLabelsVal v
+  | .handle h m => artifactLabelsHandler h ++ artifactLabelsComp m
+  | .case v n1 n2 => artifactLabelsVal v ++ artifactLabelsComp n1 ++ artifactLabelsComp n2
+  | .split v n => artifactLabelsVal v ++ artifactLabelsComp n
+  | .binop _ v w => artifactLabelsVal v ++ artifactLabelsVal w
+  | .oom | .wrong _ => []
+
+/-- Collect every effect label mentioned structurally by a handler and its carried code/data. -/
+partial def artifactLabelsHandler : Handler → List Nat
+  | .state label v => label :: artifactLabelsVal v
+  | .throws label => [label]
+  | .transaction label values => label :: values.flatMap artifactLabelsVal
+  | .custom label param clauses =>
+      label :: artifactLabelsVal param ++ clauses.flatMap (artifactLabelsComp ·.2)
+end
+
+/-- Sorted unique relocatable labels actually occurring in canonical artifact code. Built-ins 0-3
+are fixed by contract and therefore need no relocation row. -/
+def artifactRelocatableLabels (comp : Comp) : List Nat :=
+  (artifactLabelsComp comp).filter (· >= 4) |>.eraseDups |>.mergeSort (· < ·)
+
+/-- Validate the canonical artifact/relocation envelope and retain its decoded computation. -/
+def validateEnvelope (artifact : String) (stableRelocations : List (String × Nat)) :
+    Except String Comp := do
+  let decoded ← decodeArtifact artifact
+  unless encodeArtifact decoded = artifact do
+    throw "body artifact address: artifact bytes are not the canonical encoding"
+  validateStableRelocations stableRelocations
+  unless stableRelocations.map (·.2) = artifactRelocatableLabels decoded do
+    throw "body artifact address: stable relocation labels do not match canonical code"
+  pure decoded
+
+/-- Unvalidated canonical JSON framing for one body-envelope address. Keeping this constructor separate
+lets a consumer reject a mismatched trusted address before parsing attacker-controlled artifact bytes. -/
+def framedAddressPreimage (artifact : String) (stableRelocations : List (String × Nat)) : String :=
+  let rows : List Json := stableRelocations.map fun (name, label) =>
+    Json.arr #[.str name, label]
+  (Json.arr #[.str addressAlgorithm, .str artifact, Json.arr rows.toArray]).compress
+
+/-- Canonical JSON bytes hashed for one body-envelope address. The artifact is a JSON string here so
+the address binds its exact canonical bytes; the outer constructor array prevents concatenation
+ambiguity. This rejects non-canonical artifacts and non-canonical stable relocation rows. -/
+def addressPreimage (artifact : String) (stableRelocations : List (String × Nat)) :
+    Except String String := do
+  let _ ← validateEnvelope artifact stableRelocations
+  pure (framedAddressPreimage artifact stableRelocations)
+
+/-- Collision-resistant address for canonical bytes plus stable semantic relocation identity. -/
+def address (artifact : String) (stableRelocations : List (String × Nat)) : Except String String :=
+  Bang.SHA256.hash <$> addressPreimage artifact stableRelocations
+
+/-- Verify the claimed envelope address, then return the already structurally decoded canonical term. -/
+def verifyAddress (artifact : String) (stableRelocations : List (String × Nat))
+    (claimed : String) : Except String Comp := do
+  let actual := Bang.SHA256.hash (framedAddressPreimage artifact stableRelocations)
+  unless claimed = actual do
+    throw s!"body artifact address: mismatch; claimed '{claimed}', computed '{actual}'"
+  validateEnvelope artifact stableRelocations
+
 private def fullShapeSample : Comp :=
   .letC (.ret (.pair (.vint (-3)) (.vvar 7)))
     (.handle (.custom 9 (.inl .vunit)
@@ -249,6 +352,24 @@ private def rejected {α : Type} : Except String α → Bool
 #guard rejected (decodeArtifact "[\"bang-core-comp-json-v1\",[\"oom\"]] trailing")
 #guard rejected (decodeArtifact (encodeArtifact (.ret .vunit)) defaultMaxBytes 1)
 #guard rejected (decodeArtifact (encodeArtifact (.ret .vunit)) 1 defaultMaxDepth)
+
+private def addressedSample := encodeArtifact
+  (.handle (.state 4 .vunit) (.handle (.throws 5) (.ret (.vint 42))))
+private def addressedRows : List (String × Nat) := [("Lib_Log", 4), ("Lib_Net", 5)]
+
+-- The address is fixed-width, stable, and binds bytes plus semantic relocation identity.
+#guard match address addressedSample addressedRows with
+  | .ok digest => digest.length == 64 && digest.toList.all (fun c =>
+      "0123456789abcdef".toList.contains c)
+  | .error _ => false
+#guard match address addressedSample addressedRows, address addressedSample [("Lib_Map", 4), ("Lib_Net", 5)] with
+  | .ok a, .ok b => a != b
+  | _, _ => false
+#guard rejected (address addressedSample [("Lib_Net", 5), ("Lib_Log", 4)])
+#guard rejected (address (addressedSample ++ " ") addressedRows)
+#guard match address addressedSample addressedRows with
+  | .ok digest => rejected (verifyAddress addressedSample addressedRows (digest ++ "0"))
+  | .error _ => false
 
 end
 

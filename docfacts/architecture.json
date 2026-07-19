@@ -3654,7 +3654,7 @@
         "Bang.Backend.EnvMachine",
         "Bang.Core.CompCodec"
       ],
-      "loc": 63,
+      "loc": 92,
       "name": "Bang.Backend.BodyArtifact",
       "path": "Bang/Backend/BodyArtifact.lean",
       "publicSymbols": [
@@ -3668,6 +3668,18 @@
           "kind": "def",
           "line": 31,
           "name": "run",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 36,
+          "name": "compileVerified",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 42,
+          "name": "runVerified",
           "visibilityBasis": "public-section"
         }
       ],
@@ -6101,154 +6113,221 @@
     },
     {
       "directImports": [
-        "Bang.Core.IR"
+        "Bang.Core.IR",
+        "Bang.Core.SHA256"
       ],
-      "loc": 257,
+      "loc": 378,
       "name": "Bang.Core.CompCodec",
       "path": "Bang/Core/CompCodec.lean",
       "publicSymbols": [
         {
           "kind": "def",
-          "line": 29,
+          "line": 31,
           "name": "format",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 32,
+          "line": 34,
           "name": "defaultMaxBytes",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 35,
+          "line": 37,
           "name": "defaultMaxDepth",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 38,
+          "line": 40,
+          "name": "addressAlgorithm",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 43,
           "name": "node",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 42,
+          "line": 47,
           "name": "nodeView",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 50,
+          "line": 55,
           "name": "descend",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 54,
+          "line": 59,
           "name": "expectNat",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 57,
+          "line": 62,
           "name": "expectInt",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 60,
+          "line": 65,
           "name": "expectString",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 63,
+          "line": 68,
           "name": "expectArray",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 68,
+          "line": 73,
           "name": "encodeBinOp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 77,
+          "line": 82,
           "name": "decodeBinOp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 88,
+          "line": 93,
           "name": "encodeClauseKey",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 93,
+          "line": 98,
           "name": "decodeClauseKey",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 101,
+          "line": 106,
           "name": "encodeVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 113,
+          "line": 118,
           "name": "encodeComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 129,
+          "line": 134,
           "name": "encodeHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 140,
+          "line": 145,
           "name": "decodeVal",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 155,
+          "line": 160,
           "name": "decodeComp",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 177,
+          "line": 182,
           "name": "decodeHandler",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 199,
+          "line": 204,
           "name": "encodeArtifactJson",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 202,
+          "line": 207,
           "name": "encodeArtifact",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 205,
+          "line": 210,
           "name": "decodeArtifactJson",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 217,
+          "line": 222,
           "name": "decodeArtifact",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 238,
+          "name": "validateStableRelocations",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 255,
+          "name": "artifactLabelsVal",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 263,
+          "name": "artifactLabelsComp",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 276,
+          "name": "artifactLabelsHandler",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 286,
+          "name": "artifactRelocatableLabels",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 290,
+          "name": "validateEnvelope",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 302,
+          "name": "framedAddressPreimage",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 310,
+          "name": "addressPreimage",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 316,
+          "name": "address",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 320,
+          "name": "verifyAddress",
           "visibilityBasis": "public-section"
         }
       ],
@@ -6906,6 +6985,129 @@
           "kind": "class",
           "line": 423,
           "name": "EffSig",
+          "visibilityBasis": "public-section"
+        }
+      ],
+      "tier": "Core"
+    },
+    {
+      "directImports": [],
+      "loc": 139,
+      "name": "Bang.Core.SHA256",
+      "path": "Bang/Core/SHA256.lean",
+      "publicSymbols": [
+        {
+          "kind": "def",
+          "line": 15,
+          "name": "k",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "structure",
+          "line": 25,
+          "name": "State",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 35,
+          "name": "initial",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 39,
+          "name": "rotr",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 42,
+          "name": "choose",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 45,
+          "name": "majority",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 48,
+          "name": "bigSigma0",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 49,
+          "name": "bigSigma1",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 50,
+          "name": "smallSigma0",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 51,
+          "name": "smallSigma1",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 53,
+          "name": "padded",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 64,
+          "name": "wordAt",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 70,
+          "name": "schedule",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 80,
+          "name": "compress",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 104,
+          "name": "digestState",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 111,
+          "name": "hexDigit",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 114,
+          "name": "hexWord",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 122,
+          "name": "hashBytes",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 128,
+          "name": "hash",
           "visibilityBasis": "public-section"
         }
       ],
@@ -8430,7 +8632,7 @@
         "Bang.Core.Fingerprint",
         "Bang.Frontend.Diagnostics"
       ],
-      "loc": 1897,
+      "loc": 1906,
       "name": "Bang.Frontend.Query",
       "path": "Bang/Frontend/Query.lean",
       "publicSymbols": [
@@ -8748,235 +8950,235 @@
         },
         {
           "kind": "def",
-          "line": 1186,
+          "line": 1189,
           "name": "ModuleBodyArtifactFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1202,
+          "line": 1207,
           "name": "moduleBodyArtifactOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1235,
+          "line": 1244,
           "name": "moduleBodyArtifactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1264,
+          "line": 1273,
           "name": "moduleInterfaceAlgorithm",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1269,
+          "line": 1278,
           "name": "DeclaredLawFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1287,
+          "line": 1296,
           "name": "DeclaredLawFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1294,
+          "line": 1303,
           "name": "ModuleExportFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1306,
+          "line": 1315,
           "name": "ModuleInterfaceFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1321,
+          "line": 1330,
           "name": "ModuleExportFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1329,
+          "line": 1338,
           "name": "ModuleInterfaceFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1348,
+          "line": 1357,
           "name": "moduleInterfaceFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1390,
+          "line": 1399,
           "name": "dumpJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1436,
+          "line": 1445,
           "name": "dumpJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1476,
+          "line": 1485,
           "name": "symbolsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1482,
+          "line": 1491,
           "name": "symbolsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1495,
+          "line": 1504,
           "name": "typeJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1506,
+          "line": 1515,
           "name": "typeJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1514,
+          "line": 1523,
           "name": "effectsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1525,
+          "line": 1534,
           "name": "effectsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1533,
+          "line": 1542,
           "name": "lawsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1542,
+          "line": 1551,
           "name": "lawsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1560,
+          "line": 1569,
           "name": "defJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1567,
+          "line": 1576,
           "name": "defJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1580,
+          "line": 1589,
           "name": "refsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1588,
+          "line": 1597,
           "name": "refsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1617,
+          "line": 1626,
           "name": "HoverFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1638,
+          "line": 1647,
           "name": "hoverAtP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1658,
+          "line": 1667,
           "name": "hoverJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1665,
+          "line": 1674,
           "name": "hoverJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1724,
+          "line": 1733,
           "name": "holeMarkersIn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1753,
+          "line": 1762,
           "name": "holesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1770,
+          "line": 1779,
           "name": "holesJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1775,
+          "line": 1784,
           "name": "holesJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1799,
+          "line": 1808,
           "name": "dependentsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1816,
+          "line": 1825,
           "name": "impactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1827,
+          "line": 1836,
           "name": "impactJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1857,
+          "line": 1866,
           "name": "semverDiff",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1880,
+          "line": 1889,
           "name": "semverDiffJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1888,
+          "line": 1897,
           "name": "semverDiffJson",
           "visibilityBasis": "public-modifier"
         }
@@ -13156,17 +13358,17 @@
       "name": "Apex"
     },
     {
-      "loc": 18092,
+      "loc": 18121,
       "moduleCount": 7,
       "name": "Backend"
     },
     {
-      "loc": 8839,
-      "moduleCount": 14,
+      "loc": 9099,
+      "moduleCount": 15,
       "name": "Core"
     },
     {
-      "loc": 18881,
+      "loc": 18890,
       "moduleCount": 12,
       "name": "Frontend"
     },

@@ -230,6 +230,10 @@ Two names are worth reserving for future, program-pulled work:
   the interface-rendering and law-contract arc currently engineers operationally: law text remains
   merge-qualification invariant and digests remain insertion invariant. This is vocabulary for the
   design pressure, not a claim that Bang constructs or proves a Beck–Chevalley condition.
+- When Q43 exports law evidence, use **proof-relevant** for the content-addressed Lean term that a
+  consumer can inspect and distinguish. Use **proof-irrelevant** / Omega-valued for evidence confined
+  to the trusted implementation boundary. The architectural constraint is unchanged: exported evidence
+  remains outside the TCB; nothing enters the TCB merely because the vocabulary becomes more precise.
 
 ---
 

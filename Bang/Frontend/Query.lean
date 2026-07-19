@@ -1171,6 +1171,9 @@ public structure ModuleBodyArtifactFact where
   digestAlgorithm            : String
   digest                     : String
   format                     : String
+  addressAlgorithm            : String
+  address                     : String
+  integrityVerified           : Bool
   cacheKeySafe               : Bool
   producerChecked            : Bool
   structurallyRoundTripped   : Bool
@@ -1187,6 +1190,8 @@ public def ModuleBodyArtifactFact.toJson (f : ModuleBodyArtifactFact) : String :
   jsonObj [jsonStrField "id" f.id, jsonStrField "scope" f.scope,
     jsonStrField "digestAlgorithm" f.digestAlgorithm, jsonStrField "digest" f.digest,
     jsonStrField "format" f.format,
+    jsonStrField "addressAlgorithm" f.addressAlgorithm, jsonStrField "address" f.address,
+    jsonField "integrityVerified" (if f.integrityVerified then "true" else "false"),
     jsonField "cacheKeySafe" (if f.cacheKeySafe then "true" else "false"),
     jsonField "producerChecked" (if f.producerChecked then "true" else "false"),
     jsonField "structurallyRoundTripped" (if f.structurallyRoundTripped then "true" else "false"),
@@ -1220,13 +1225,17 @@ public def moduleBodyArtifactOf (p : Prog) (declModule : List (String × String)
       let observed ← (canonicalModuleBody comp effects).mapError fun e =>
         s!"module body artifact '{id}': canonicalization failed: {e}"
       let artifact := Bang.CompCodec.encodeArtifact observed.canonical
-      let decoded ← Bang.CompCodec.decodeArtifact artifact |>.mapError fun e =>
-        s!"module body artifact '{id}': producer round-trip failed: {e}"
+      let relocations := moduleBodyEffectRelocations observed.used
+      let stableRelocations := relocations.map fun row => (row.name, row.canonicalLabel)
+      let address ← Bang.CompCodec.address artifact stableRelocations |>.mapError fun e =>
+        s!"module body artifact '{id}': address construction failed: {e}"
+      let decoded ← Bang.CompCodec.verifyAddress artifact stableRelocations address |>.mapError fun e =>
+        s!"module body artifact '{id}': producer integrity verification failed: {e}"
       if Bang.CompCodec.encodeArtifact decoded != artifact then
         throw s!"module body artifact '{id}': producer round-trip changed canonical bytes"
       pure ⟨id, "resolved-program-module-body-slice", moduleBodyAlgorithm, observed.digest,
-        Bang.CompCodec.format, false, true, true, false, false,
-        moduleBodyEffectRelocations observed.used, artifact⟩
+        Bang.CompCodec.format, Bang.CompCodec.addressAlgorithm, address, true,
+        false, true, true, false, false, relocations, artifact⟩
   | .fnD .. => throw s!"module body artifact: export '{id}' is an unsupported generic fn template"
   | _ => throw s!"module body artifact: export '{id}' has no value body"
 

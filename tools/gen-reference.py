@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Fingerprint.lean,Bang/Core/CompCodec.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Frontend/Query.lean,Bang/Backend/BodyArtifact.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
+# tool: role=gen couples=docfacts/language.json,Bang/Frontend/Surface.lean,Bang/Core/IR.lean,Bang/Core/Fingerprint.lean,Bang/Core/SHA256.lean,Bang/Core/CompCodec.lean,Bang/Core/Semantics/Eval.lean,Bang/Frontend/TypeCheck.lean,Bang/Frontend/Query.lean,Bang/Backend/BodyArtifact.lean,Bang/Examples.lean,docs/reference/language.md runs-in=fitness
 """Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained.
 
 Sources of truth (the generate rung of the derivation ladder):
@@ -1787,6 +1787,26 @@ def render():
         "`structurallyRoundTripped=true`, but `independentlyTypeValidated=false`, `cacheKeySafe=false`, and"
     )
     L.append("`linkReady=false`.")
+    L.append("")
+    L.append(
+        "The same point query reports a domain-separated SHA-256 `address` over the exact canonical artifact"
+    )
+    L.append(
+        "bytes plus sorted `(semanticName, canonicalLabel)` relocation rows. Runtime labels are excluded, so an"
+    )
+    L.append(
+        "unrelated earlier effect can move a contextual label without moving the address; changing the semantic"
+    )
+    L.append(
+        "effect identity does move it even when canonical code bytes coincide. `integrityVerified=true` means the"
+    )
+    L.append(
+        "producer recomputed this envelope and the verified backend entry point rejects substitution before"
+    )
+    L.append(
+        "decode/compile/run. It is an integrity claim only: independent typing, cache reuse, and complete linking"
+    )
+    L.append("remain false.")
     L.append("")
     L.append(
         "`python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external"
