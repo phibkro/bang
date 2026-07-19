@@ -68,6 +68,11 @@ check-examples:
 check-examples-env:
     bash tools/check-examples-env.sh
 
+# Resolver-aware differential for entry-rooted body slices. The full corpus is the positive lane;
+# a strict divergent top-level initializer is the retained red boundary for future link semantics.
+test-slice-fidelity:
+    bash tools/test-slice-fidelity.sh
+
 # Non-interactive gate for `bang repl` (issue #7): pipes scripted transcripts
 # through the binary and asserts stdout/stderr/exit-code, mirroring
 # check-examples.sh's shape. Part of the default `verify` chain.

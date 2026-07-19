@@ -1066,8 +1066,12 @@ no standalone concrete instantiation; structural declarations have `status=no-bo
 `digest:null`. If any supposedly sliceable export fails production lowering, the entire
 `moduleBodies` projection is `null` rather than a partial list. `cacheKeySafe=false` and
 `linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,
-and dense runtime effect labels can still move a sliced body when an unrelated earlier effect is
-inserted. No artifact validation, linking, skip, storage, or reuse authority follows from this fact.
+and the slice is not a standalone executable. The execution-classification gate agrees across all 61
+current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict
+top-level initializer diverges in the whole lexical chain while the pruned selected body returns.
+A future linker therefore needs an explicit module-initialization contract in addition to runtime
+label/import-slot agreement. No artifact validation, linking, skip, storage, or reuse authority
+follows from this fact.
 
 `python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external
 consumer of this view. It compares complete projected exports (using the digest only as a consistency

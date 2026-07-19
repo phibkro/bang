@@ -281,3 +281,25 @@ reversed through the production elaborator table nulls the complete `moduleBodie
 labels and `linkReady=false`; hand relocation and import-slot validation to the next link-contract tracer
 where those representations finally have a consumer. Keep `cacheKeySafe=false`: the composite remains a
 versioned 64-bit change detector, not an artifact address or reuse authorization.
+
+## Slice-execution input (2026-07-18): corpus fidelity is positive; initialization refutes generality
+
+`PATH-slice-execution-boundary` executed entry-rooted slices rather than inferring meaning from their
+digests. A hidden resolver-aware differential converts the resolved trailing body into a synthetic
+declaration, applies the production `reachableValueSliceProg`, lowers both programs, and compares the
+kernel oracle plus env engine at identical fuel. All **61/61** current examples agree; the env lane also
+matches every committed `expected.txt`. This is useful corpus-relative confidence, not a theorem.
+
+The stop-condition probe found the missing contract. Top-level declarations lower through
+`foldLetDecls` as strict lets. If an unreachable top-level initializer calls a divergent function, the
+whole program never reaches `main`, while the reachable body slice removes that initializer and returns.
+The permanent witness reports whole oracle `outOfFuel` / env `stuck` versus slice `done:1` on both lanes.
+Retaining every value declaration would recover that observation only by erasing the body-slice boundary
+whose identity was just established.
+
+**Decision:** keep the body schema unchanged and `linkReady=false`; body identity does not imply
+standalone executability. A link contract must account for module initialization as well as runtime
+effect labels and import slots. Before choosing a mechanism, census real top-level initializer shapes:
+if inert descriptions dominate, consider making strict module initialization unrepresentable; if strict
+computations are common, specify their order/effects explicitly. The census measures this fork and does
+not itself impose a new surface restriction.

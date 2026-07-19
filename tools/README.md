@@ -70,7 +70,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (42)
+## test (43)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -116,6 +116,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-resource-contract.sh`](test-resource-contract.sh) | `verify` | `Bang/Frontend/TypeCheck.lean`, `Bang/Backend/WasmEmit.lean`, `Bang/Frontend/Query.lean` | Resource-contract tracer: acceptance, refusals, query join, laws, and observable Wasm erasure |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
 | [`test-role-lab-frontend.sh`](test-role-lab-frontend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `web/docs/page-manifest.json` | Executable agreement between the generated frontend lab and its content-owned practice fixture |
+| [`test-slice-fidelity.sh`](test-slice-fidelity.sh) | `verify` | `Main.lean`, `Bang/Frontend/Query.lean`, `examples/*/main.bang`, `examples/*/expected.txt` | classify entry-rooted slice execution against the resolved whole program |
 | [`test-squash-provenance.py`](test-squash-provenance.py) | `fitness` | `docfacts/proof-claims.json`, `provenance.py`, `gen-changelog.py`, `gen-proof-state.py`, `check-sha-reachable.sh`, `.github/workflows/verify.yml` | Integration/falsifier suite for squash-stable generated provenance |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 

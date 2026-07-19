@@ -7,6 +7,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+INTERNAL_TOP_LEVEL_COMMANDS = frozenset({"internal"})
+
 
 class CliFactsError(ValueError):
     """The CLI authority no longer has one unambiguous typed parser shape."""
@@ -61,7 +63,7 @@ def derive_allowed_option_families(main_source: str) -> dict[str, tuple[str, ...
         inventories[command] = allowed
 
     dispatched = set(re.findall(r'else if cmd == "([^"]+)" then', main_block))
-    expected = dispatched - {"--help", "--version"}
+    expected = dispatched - {"--help", "--version"} - INTERNAL_TOP_LEVEL_COMMANDS
     if set(inventories) != expected:
         raise CliFactsError(
             "typed parser/dispatcher command mismatch: "

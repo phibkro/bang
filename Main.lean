@@ -863,6 +863,113 @@ def runResolvedProg (typecheck : Bool) (engine : Engine) (fuel : Nat) (prog : Pr
     | .error e => IO.eprintln s!"error: {e}"; pure 1
     | .ok c    => runComp engine fuel c
 
+/-! ## Internal lifecycle probes
+
+These commands exist for repository gates, not as supported user/API surface. They are deliberately
+absent from `usage` and the generated command reference; their output may change with the gate that
+owns them. Keeping the resolver-aware probe here avoids either duplicating module resolution in a
+test executable or prematurely extracting the resolver into the public library. Reconsider that
+extraction when a third non-CLI consumer needs it. -/
+
+/-- An impossible-to-parse source identifier used to turn a resolved program's trailing body into
+one ordinary value declaration. `reachableValueSliceProg` can then exercise its production
+declaration-reference closure unchanged. The collision check is retained even though source cannot
+spell this name: synthesized `Prog` consumers need the same fail-loud boundary. -/
+def sliceFidelityEntryName : String := "$<bang-internal-slice-entry>$"
+
+/-- Entry-rooted pruning as MEASUREMENT APPARATUS. This is not a shipped DCE optimization: it adds a
+synthetic declaration for the already-resolved trailing body, selects that declaration through the
+same slicer body digests use, and leaves every non-value environment root under the slicer's existing
+conservative policy. -/
+def sliceFidelityEntryProg (p : Bang.Surface.Prog) : Except String Bang.Surface.Prog := do
+  if p.decls.any (fun d => d.name == sliceFidelityEntryName) then
+    throw s!"reserved internal slice entry already exists: {sliceFidelityEntryName}"
+  let augmented : Bang.Surface.Prog :=
+    { p with
+      decls := p.decls ++ [.letD sliceFidelityEntryName none p.body]
+      body := .var sliceFidelityEntryName
+      isLibrary := false }
+  return Bang.Query.reachableValueSliceProg augmented sliceFidelityEntryName
+
+/-- Three-way classification used before execution. Identical refusal is agreement; success on only
+one side or different errors is an asymmetric failure. The guards pin the adverse paths independently
+of today's all-runnable example corpus. -/
+inductive SliceLoweringPair where
+  | bothOk
+  | sameError
+  | asymmetric
+  deriving DecidableEq
+
+def classifySliceLowerings {α β : Type} : Except String α → Except String β → SliceLoweringPair
+  | .ok _, .ok _ => .bothOk
+  | .error a, .error b => if a == b then .sameError else .asymmetric
+  | _, _ => .asymmetric
+
+#guard classifySliceLowerings (α := Unit) (β := Unit) (.error "same") (.error "same") == .sameError
+#guard classifySliceLowerings (α := Unit) (β := Unit) (.error "left") (.error "right") == .asymmetric
+#guard classifySliceLowerings (α := Unit) (β := Unit) (.ok ()) (.error "right") == .asymmetric
+#guard classifySliceLowerings (α := Unit) (β := Unit) (.ok ()) (.ok ()) == .bothOk
+
+/-- The exact observable vocabulary used by the internal differential. Values use the same printer
+as `bang run`; non-values retain the reference engine's distinct terminals. -/
+def sliceOracleOutcome : Result Val → String
+  | .done v => s!"done:{valPretty v}"
+  | .outOfFuel => "outOfFuel"
+  | .escapedCap => "escapedCap"
+  | .stuck => "stuck"
+
+/-- Resolver-aware entry-slice fidelity probe, continuously owned by
+`tools/test-slice-fidelity.sh`. The kernel oracle is authoritative; the environment engine is a
+second differential lane. Both whole and sliced lowerings receive the SAME printed fuel. Exit 0
+means identical refusal or exact agreement on both engines; every asymmetric lowering or outcome is
+loud and nonzero. This is empirical corpus evidence, not a theorem or a public output contract. -/
+def runInternalSliceFidelity (file : String) (fuel : Nat := defaultFuel) : IO UInt32 := do
+  match ← resolveEntryFile file with
+  | .error e => IO.eprintln s!"slice-fidelity resolve-error: {e}"; pure 1
+  | .ok wholeProg =>
+    match sliceFidelityEntryProg wholeProg with
+    | .error e => IO.eprintln s!"slice-fidelity apparatus-error: {e}"; pure 1
+    | .ok slicedProg =>
+      let wholeLower := Bang.TypeCheck.checkAndLowerProg wholeProg
+      let slicedLower := Bang.TypeCheck.checkAndLowerProg slicedProg
+      match classifySliceLowerings wholeLower slicedLower with
+      | .sameError =>
+          let .error e := wholeLower | unreachable!
+          IO.println s!"slice-fidelity agree-refusal fuel={fuel} error={e}"
+          pure 0
+      | .asymmetric =>
+          let lowerTag : Except String Comp → String
+            | .ok _ => "ok"
+            | .error e => s!"error:{e}"
+          IO.eprintln s!"slice-fidelity asymmetric-lowering fuel={fuel} whole={lowerTag wholeLower} slice={lowerTag slicedLower}"
+          pure 1
+      | .bothOk =>
+          let .ok wholeComp := wholeLower | unreachable!
+          let .ok slicedComp := slicedLower | unreachable!
+          let wholeOracle := sliceOracleOutcome (Bang.Source.eval fuel wholeComp)
+          let slicedOracle := sliceOracleOutcome (Bang.Source.eval fuel slicedComp)
+          let wholeEnv := sliceOracleOutcome (Bang.EnvMachine.runE fuel wholeComp)
+          let slicedEnv := sliceOracleOutcome (Bang.EnvMachine.runE fuel slicedComp)
+          if wholeOracle == slicedOracle && wholeEnv == slicedEnv then
+            IO.println s!"slice-fidelity agree fuel={fuel} oracle={wholeOracle} env={wholeEnv}"
+            pure 0
+          else
+            IO.eprintln <|
+              s!"slice-fidelity asymmetric-execution fuel={fuel} " ++
+              s!"oracle-whole={wholeOracle} oracle-slice={slicedOracle} " ++
+              s!"env-whole={wholeEnv} env-slice={slicedEnv}"
+            pure 1
+
+/-- Batch sibling used by the corpus gate so one compiled process pays startup cost once. Results
+remain one line per input, in input order; any disagreement makes the aggregate exit nonzero after
+all subjects have still been classified. -/
+def runInternalSliceFidelityBatch (files : List String) : IO UInt32 := do
+  let mut aggregate : UInt32 := 0
+  for file in files do
+    let code ← runInternalSliceFidelity file
+    if code != 0 then aggregate := 1
+  return aggregate
+
 /-- `bang emit <file> [-o out.wat]` — lower an entry FILE to a WasmGC `.wat` MODULE and print it (to
 stdout, or to `-o`/`--out` PATH). Shares the runner's `resolveEntryFile` (ADR-0093 D1-D5 module
 resolution + merge) so the emitter sees the SAME flat, module-resolved `Comp` `bang run` lowers —
@@ -2857,6 +2964,13 @@ def main (args : List String) : IO UInt32 := do
     else if cmd == "--version" || cmd == "-v" then
       if rest.isEmpty then IO.println s!"bang {bangVersion}"; pure 0
       else cliError s!"bang {cmd}: unexpected argument '{rest.head!}'"
+    else if cmd == "internal" then
+      -- Repository-lifecycle instrumentation, intentionally absent from `usage` and the generated
+      -- public command reference. Its owning battery is the contract; no output compatibility is
+      -- promised outside this checkout.
+      match rest with
+      | "slice-fidelity" :: file :: files => runInternalSliceFidelityBatch (file :: files)
+      | _ => cliError "bang internal: expected `slice-fidelity <file.bang>...`"
     else if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
       -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file

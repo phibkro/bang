@@ -12,10 +12,18 @@ from pathlib import Path
 from jsonschema.exceptions import ValidationError
 
 try:
-    from cli_facts import CliFactsError, derive_allowed_option_families
+    from cli_facts import (
+        INTERNAL_TOP_LEVEL_COMMANDS,
+        CliFactsError,
+        derive_allowed_option_families,
+    )
     from docfacts_common import schema_validator
 except ModuleNotFoundError:
-    from tools.cli_facts import CliFactsError, derive_allowed_option_families
+    from tools.cli_facts import (
+        INTERNAL_TOP_LEVEL_COMMANDS,
+        CliFactsError,
+        derive_allowed_option_families,
+    )
     from tools.docfacts_common import schema_validator
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -520,6 +528,14 @@ def _validate_cli_agreement(commands, main_text, allowed_by_command):
     paths = {tuple(row["path"]) for row in commands}
     usage_top = {path[0] for path in paths if not path[0].startswith("-")}
     dispatcher_top = set(re.findall(r'else if cmd == "([^"]+)" then', main_text))
+    # Repository lifecycle instrumentation is executable so CI can reuse Main's resolver, but is
+    # intentionally not supported/documented CLI surface. Keep the exclusion explicit and narrow:
+    # every other dispatcher arm must still have a usage/reference row, and the internal namespace
+    # itself must not accidentally become public documentation.
+    internal_top = INTERNAL_TOP_LEVEL_COMMANDS
+    if usage_top & internal_top:
+        _fail("internal lifecycle commands must not appear in public CLI usage")
+    dispatcher_top -= internal_top
     if usage_top != dispatcher_top:
         _fail(
             f"CLI usage/dispatcher mismatch: usage={sorted(usage_top)} dispatcher={sorted(dispatcher_top)}"

@@ -726,7 +726,9 @@ public structure ModuleBodyExportFact where
   deriving Repr
 
 /-- One logical module's complete export-body projection. `linkReady=false` is load-bearing: these
-are measurements through a whole environment, not independently validated artifacts. -/
+are measurements through a whole environment, not independently validated artifacts. In particular,
+they are not standalone executables: pruning an unreachable strict top-level initializer can change
+termination before the selected body is reached (`tools/test-slice-fidelity.sh` pins the witness). -/
 public structure ModuleBodyFact where
   module       : String
   scope        : String

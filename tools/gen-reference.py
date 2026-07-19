@@ -1672,11 +1672,21 @@ def render():
         "`linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,"
     )
     L.append(
-        "and dense runtime effect labels can still move a sliced body when an unrelated earlier effect is"
+        "and the slice is not a standalone executable. The execution-classification gate agrees across all 61"
     )
     L.append(
-        "inserted. No artifact validation, linking, skip, storage, or reuse authority follows from this fact."
+        "current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict"
     )
+    L.append(
+        "top-level initializer diverges in the whole lexical chain while the pruned selected body returns."
+    )
+    L.append(
+        "A future linker therefore needs an explicit module-initialization contract in addition to runtime"
+    )
+    L.append(
+        "label/import-slot agreement. No artifact validation, linking, skip, storage, or reuse authority"
+    )
+    L.append("follows from this fact.")
     L.append("")
     L.append(
         "`python3 tools/interface-diff.py old-dump.json new-dump.json` is the repository's first external"
