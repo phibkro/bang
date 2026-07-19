@@ -73,6 +73,10 @@ synthetic collision: both candidate attribution strategies fail on ordinary acce
 - Reopen only when another concrete consumer raises that demand, or a future elaboration representation
   supplies provenance as part of independently justified work.
 - No executable or schema changes landed from this probe.
+- Operator ruling (2026-07-19): [ADR-0117](../docs/decisions/0117-per-binding-effect-facts-require-source-provenance.md)
+  preserves current strict top-level semantics, keeps aggregate rows authoritative, and gates
+  attribution-dependent consumers on explicit occurrence provenance. This converts the stop result
+  into a durable no-shortcut rule without turning it into an inert-library language decision.
 
 ## Owner
 

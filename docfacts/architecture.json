@@ -1717,6 +1717,21 @@
       "status": "Accepted",
       "summary": "Surface the first value quantity as `use [q] x in body`. It checks the free use of an existing binding at `q = 0` or `q = 1`, treats `omega` as the unrestricted compatible ceiling, then erases before kernel lowering. Rows remain sets. Concrete grade-zero evidence omits the unused bound value's environment cell while still evaluating its `let` RHS.",
       "title": "quantities are erased local use assertions"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0117",
+      "lifecycle": [],
+      "path": "docs/decisions/0117-per-binding-effect-facts-require-source-provenance.md",
+      "relationships": {
+        "dependsOn": "[0066](0066-surface-type-system.md) (authoritative checked rows), [0075](0075-polymorphism-elaborates-to-mono-kernel-bidirectional-decidability.md) (monomorphizing elaboration), [0093](0093-module-system-v1-file-modules-elaborate-flat.md) (strict flat module lowering)"
+      },
+      "status": "Accepted",
+      "summary": "Preserve BANG's current strict top-level declaration semantics, but do not publish or consume initializer-local effect rows until explicit source binding-occurrence provenance survives elaboration. Aggregate checked rows remain authoritative; names, generated prefixes, let-spine positions, and separately re-elaborated RHSs are not valid attribution mechanisms.",
+      "title": "per-binding effect facts require source provenance"
     }
   ],
   "arrows": [

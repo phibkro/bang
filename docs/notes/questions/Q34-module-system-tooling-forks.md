@@ -351,6 +351,14 @@ today is per-binding rows; file-aware diagnostics are a plausible half-consumer,
 the representation. Reopen when a second concrete consumer arrives or independently justified
 elaboration work supplies provenance.
 
+The operator subsequently fixed the architectural boundary in ADR-0117: this result does **not** change
+the language or make top-level declarations inert. Strict initializers remain legal and aggregate rows
+remain authoritative. What is forbidden is building an attribution-dependent consumer from binder
+names, let positions, cumulative-row subtraction, or isolated RHS re-elaboration. Provenance becomes
+prerequisite work—not optional polish—when a second concrete consumer appears or when separate
+compilation, per-definition capability manifests, initializer optimization, or source-precise effect
+diagnostics needs it.
+
 The enumerable fallback closes the immediate decision input without that machinery. Manual inspection
 of all 17 computation forms finds 2 pure terminating and 15 effectful/Div-capable initializers. Every one
 is entry-owned: 14 are `main` bindings (including `nqueens.main`), while the remaining three are
