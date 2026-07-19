@@ -69,7 +69,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (43)
+## test (44)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -116,6 +116,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-role-lab-frontend.sh`](test-role-lab-frontend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `web/docs/page-manifest.json` | Executable agreement between the generated frontend lab and its content-owned practice fixture |
 | [`test-role-lab-kernel-proof.sh`](test-role-lab-kernel-proof.sh) | `verify` | `web/docs/role-lab-content.mjs`, `Bang/Audit.lean`, `tools/audit_facts.py` | Dynamic exact-suggestion completion and kernel axiom evidence for the proof role lab |
 | [`test-role-lab-machine-backend.sh`](test-role-lab-machine-backend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `Bang/Backend/AbstractMachine.lean`, `Bang/Backend/WasmEmit.lean`, `tools/emit-rung1-diff.sh` | Public verify battery for the disposable machine/backend role-lab journey |
+| [`test-role-lab-tooling-docs-examples.sh`](test-role-lab-tooling-docs-examples.sh) | `verify` | `web/docs/role-lab-content.mjs`, `examples/logger-counting`, `docfacts/examples/logger-counting.json`, `docs/reference/examples/logger-counting.md` | Exact-HEAD example-to-fact-to-public-page journey for the tooling/docs/examples role lab |
 | [`test-squash-provenance.py`](test-squash-provenance.py) | `fitness` | `docfacts/proof-claims.json`, `provenance.py`, `gen-changelog.py`, `gen-proof-state.py`, `check-sha-reachable.sh`, `.github/workflows/verify.yml` | Integration/falsifier suite for squash-stable generated provenance |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 

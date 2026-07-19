@@ -42,6 +42,10 @@ test-role-lab-kernel-proof:
 test-role-lab-machine-backend:
     bash tools/test-role-lab-machine-backend.sh
 
+# Exact-HEAD checked-example → validated fact → generated public-page role lab.
+test-role-lab-tooling-docs-examples:
+    bash tools/test-role-lab-tooling-docs-examples.sh
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:

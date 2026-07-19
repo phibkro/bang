@@ -45,6 +45,10 @@ assert.ok(
   'the displayed command list runs the Agree battery owner',
 )
 assert.equal(practice.commands.at(-1), 'test -z "$(git status --porcelain)"')
+const expectedCommand = `printf '${machineBackendReference.expectedOutput.replaceAll('\n', '\\n')}' > "$expected"`
+const compiledCommand = './.lake/build/bin/bang run --engine=compiled "$practice" > "$bundle/compiled.txt" && diff -u "$expected" "$bundle/compiled.txt"'
+assert.equal(practice.commands[2], expectedCommand, 'expected-output post-condition stays anchored to its command')
+assert.equal(practice.commands[5], compiledCommand, 'engine post-condition stays anchored to the compiled command')
 
 function result(command, args, { cwd = repoRoot, env = process.env } = {}) {
   return spawnSync(command, args, { cwd, env, encoding: 'utf8' })
@@ -103,6 +107,7 @@ try {
     runPractice(command, lane, practicePath, expectedPath, bundle)
 
     if (index === 2) {
+      assert.equal(command, expectedCommand, 'expected-output observation follows its materialization command')
       assert.equal(
         readFileSync(expectedPath, 'utf8'),
         machineBackendReference.expectedOutput,
@@ -117,6 +122,7 @@ try {
     }
 
     if (index === 5) {
+      assert.equal(command, compiledCommand, 'engine observation follows the compiled command')
       for (const engine of ['env', 'oracle', 'compiled']) {
         const outputPath = join(bundle, `${engine}.txt`)
         assert.equal(
