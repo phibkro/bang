@@ -135,6 +135,7 @@ existing answer-in-the-frame reopening trigger.
 | completed invalidation-fanout measurement | `paths/PATH-module-invalidation-measurement.md` |
 | completed queryable module-graph tracer | `paths/PATH-queryable-module-graph.md` |
 | completed multi-operation first-class capability dispatch | `paths/PATH-wasm-first-class-multi-operation-caps.md` |
+| active wgcexec capability-lifetime tracer and pure/state floor boundary | `paths/PATH-wgcexec-pure-state-floor.md` · `Bang/Backend/WgcCapCode.lean` |
 | completed observation-scoped reuse and stale-cache evidence | `paths/PATH-reactive-within-observation-reuse.md` |
 | completed recomputation measurement and cache-decision evidence | `paths/PATH-reactive-recomputation-measurement.md` |
 | completed dependency-observation evidence | `paths/PATH-reactive-dependency-observation.md` |

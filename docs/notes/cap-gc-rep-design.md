@@ -2,10 +2,13 @@
 <!-- describes: Bang/Backend/WasmEmit.lean tools/emit-escape-diff.sh @ 569cca42fa09aeae47529aafc9cd2d7c68831d60 -->
 # First-class-capability GC rep — design (#133)
 
-> **Re-audit (2026-07-18, `569cca42`):** the current escape differential is hard-green: all four
-> raw/surface witnesses fail loud in wasmtime with rc 134, with no known-red exceptions. The effects
-> corpus also remains green at 46 emitted whole programs (23 effectful), and the module-aware
-> readback corpus is green at 23. Older counts below are retained as dated implementation snapshots.
+> **Scope correction (2026-07-19):** the scalar `$liveTop` repair is **not** exact live-frame
+> membership. The legal stale-state witness exits cap 0, mints cap 1, then uses cap 0: env/oracle/
+> compiled fail loud (`5/3/5`), while emitted Wasm prints `7` with rc 0 because `0 < liveTop = 2`.
+> `Bang/Backend/WgcCapCode.lean` proves the scalar revival and exact-membership rejection as bounded,
+> axiom-clean witnesses. Thus the four older immediate-escape cases remain green, but the differential
+> now carries one known-red lifetime residual. Claims below that the watermark is exact, closes the
+> entire #134 class, or transfers directly from `WellCounted` are superseded by this correction.
 
 > **Multi-operation successor (2026-07-18):** the single-operation guard described in §8.3 has now
 > been replaced by exact module-local operation interning and runtime clause records carrying
@@ -28,8 +31,8 @@ cap" — it is **"how does a cap value fail loud when its handler has popped"** 
 `.escapedCap`). A naive `$cap` that carries the clause closures directly **silently succeeds on an
 escaped cap** (witnessed: prints `42` where the kernel produces `.escapedCap`). The faithful fix is
 a **generation-stamped `$cap`** — carry the kernel's identity `n` (ADR-0055) and gate every perform
-on a runtime live-frame watermark (`n < $liveTop`), which is the RUNTIME IMAGE of `idDispatch`'s
-`splitAtId K n = none`. Witnessed: the stamped cap **traps (fail-loud)** on escape, and still
+on the current scalar watermark (`n < $liveTop`). This rejects the immediate witness but is only an
+approximation to `splitAtId`; stale reentry refutes general equivalence. The stamped cap still
 resolves nested same-label caps by IDENTITY (`210`, not the nearest-label `30`) — no ADR-0052 back
 door. Candidate (b) (handler-passing closure conversion) is **not an escape from this wall**: it
 relocates the identical escape hazard and adds a whole-program pass, so it needs the SAME stamp for
@@ -95,7 +98,7 @@ lexical path emits, sourced from a runtime value instead of a compile-time `CapS
 State/throws/txn caps generalize the same way (`$cap` carries the `$ref` box / tag / `$txbox`
 respectively); the witnesses use custom (clauses) and state (box) — the two structural shapes.
 
-### 3.2 The escape check — the runtime image of `splitAtId`
+### 3.2 The escape check — scalar watermark versus exact `splitAtId`
 
 The kernel's `idDispatch K n ℓ op v` calls `splitAtId K n`: walk the LIVE handler chain `K`, find
 the frame whose minted identity is `n`. An ESCAPED cap names a frame no longer on `K` ⇒ `splitAtId
@@ -103,37 +106,29 @@ the frame whose minted identity is `n`. An ESCAPED cap names a frame no longer o
 live handler identity on `K` is `< g`** (`Invariants.lean:31`, ADR-0055); the mint arm pushes
 `handleF g` with counter `g+1`.
 
-The runtime image (witnessed, `escape-stamped-cap.wat`):
+The current scalar helper (witnessed for immediate escape by `escape-stamped-cap.wat`):
 
 ```
-global $liveTop  ;; = the kernel's g watermark: the count of currently-open handlers
+global $liveTop  ;; scalar upper watermark, not the exact set of live ids
 global $nextId   ;; the mint counter
 
 handle:  myId := $nextId++ ;  $liveTop := $nextId   ;; ENTER — this frame + those below are live
          … run body …
          $liveTop := myId                            ;; EXIT — this frame pops (its id no longer < liveTop)
 
-perform on cap c:  if c.$id >= $liveTop then TRAP    ;; = splitAtId none = .escapedCap (fail-loud)
+perform on cap c:  if c.$id >= $liveTop then TRAP    ;; rejects known-dead ids above the watermark
                    else $clausecell/call_ref as usual
 ```
 
-`c.$id >= $liveTop` is EXACTLY `¬(id < g among the live)` — `splitAtId` finding nothing. This is not
-a new mechanism bolted on; it is the ADR-0055 freshness theory the kernel already proves, made
-runtime. **Invariant #4 holds**: the check falls out of `WellCounted`/`idDispatch`, it is not a
-hand-designed instruction justified after the fact.
+`WellCounted` proves the one-way fact `id ∈ live(K) → id < g`. The converse is false: globally fresh
+ids are never reused, but every later mint raises the scalar bound above all older ids. After cap 0
+exits and cap 1 enters, cap 0 satisfies `0 < 2` while it is absent from the live chain. Global
+freshness prevents identity collision; it does not make an upper bound a membership test.
 
-> **Subtlety — a monotone watermark is a conservative approximation, and the design must not let it
-> become wrong.** A single `$liveTop` high-water mark models a STACK of handlers (LIFO
-> enter/exit), which is what the kernel's `K` is. It correctly rejects a cap whose handler has
-> popped. It could in principle be too permissive if a NEW handler with a higher id reopens after an
-> old one popped AND an old cap's id happens to fall below the new watermark — but ids are
-> globally-fresh monotone (`$nextId` never reused, ADR-0055's exact anti-collision property), so a
-> popped handler's id is strictly below every later mint and can never be "revived" by a later
-> frame's watermark. The stamp is sound BECAUSE ADR-0055 already killed id-reuse. (This is the
-> place a careless implementation would reintroduce the ADR-0054 impostor collision; the global
-> counter is load-bearing, not incidental.) A per-cap check against a reified live-id SET would be
-> exact but heavier; the watermark suffices given monotone fresh ids, and matches `WellCounted`'s
-> own `< g` bound one-for-one. **This equivalence is the key proof obligation for S-proof (§6).**
+The required runtime condition is exact membership in the current handler identities, or another
+representation with a proved equivalence. `WgcCapCode.scalar_revives_stale_cap_after_reentry` and
+`exact_rejects_stale_cap_after_reentry` pin the difference. Until the emitter changes, the scalar
+gate may be cited only for the immediate-escape cases it actually rejects.
 
 ### 3.3 Identity dispatch is preserved — no ADR-0052 back door
 
@@ -179,18 +174,16 @@ continuations arrive (ADR-0015 frontier).
   harness auto-discovers `examples/stage-swap` and will gate its wasmtime stdout (`30005`) against
   `expected.txt`. `cap-as-arg`/`cap-lexical` (`scratch/calcjson/`) join as a discriminator pair if
   promoted to `examples/`.
-- **Add an ESCAPE gate** the corpus does not currently have on the GC path: an example whose kernel
+- **Retain the ESCAPE gate** on the GC path: an example whose kernel
   outcome is `.escapedCap` must EMIT and then **trap** on wasmtime (a non-zero exit / `wasm trap`),
   not print a value. This is the differential test for §3.2 — without it, a regression to the naive
   rep (dropping the stamp) would pass silently (the `42` failure). The gate asserts the emitted
   module traps where the kernel `#guard`s `.escapedCap` (`Bang/Examples.lean:262` `capEscape`). A
-  surface program can't easily express escape in v1 (needs scoped-cap types, post-v1), so this gate
-  is driven from a hand-authored `Comp` or a `scratch/` witness, not an `examples/*/main.bang`.
+  legal surface programs do express escape in v1, so the gate drives both a hand-authored `Comp`
+  catalog and `scratch/cap-gc/surface-escape/*.bang`. Stale reentry remains an explicit XFAIL.
 - The `wexec ≡ Source.eval` proof-grade obligation (rung-5 S5, `rung5-s5-proofgrade-refutation.md`)
-  gains one clause: the `$liveTop`/`$id` watermark ≡ `WellCounted`'s `< g` bound (§3.2's key
-  equivalence). This is stateable against the proof-carrying backend (unlike the `$env↔store`
-  bijection, which stays the post-v1 GC-machine item) — it is the runtime realization of an
-  invariant the kernel already proves, so it is a transfer, not a new theory.
+  needs an exact-liveness clause. The scalar `$liveTop`/`$id` predicate cannot supply it;
+  `WellCounted` gives only the live-id-implies-below-bound direction.
 
 ## 6 · Slice map (post-v1, size L)
 
@@ -213,8 +206,8 @@ C3  differential re-gate              remove stage-swap from KNOWN_REFUSALS; add
                                      (examples/calc) now EMITS (its Eval.eval takes tr:Cap Trace as an
                                      arg — the #133 headline consumer) once the frontend module-resolve
                                      harness gap (W3, calcjson-compiled-diagnosis.md) is also closed.
-C4  proof-grade clause                $liveTop watermark ≡ WellCounted < g (§3.2); state against the
-                                     proof-carrying backend (rung5-s5). Tested-superset until then (inv#1).
+C4  proof-grade clause                REFUTED as stated: scalar watermark is not exact membership.
+                                     Choose/fix the representation, then prove its live-id relation.
 ```
 
 `C0`–`C2` are the feature (a first-class cap that dispatches AND fails loud); `C3` lands the #133
@@ -227,8 +220,9 @@ headline (`calc`/`stage-swap` emit); `C4` is the tested→verified lift. No clos
 > is already a runtime `$val` in the env slot). It is: **a first-class cap value must reproduce
 > ADR-0063 `.escapedCap` fail-loud** — the kernel does this by `idDispatch`/`splitAtId` walking the
 > LIVE handler chain, and the GC path discarded that chain when handlers became structured control
-> flow. The design is a `$cap` carrying the ADR-0055 identity `n` + a runtime live-frame watermark
-> (`n < $liveTop`), the runtime image of `WellCounted`'s `< g` bound. Sized L because the stamp is a
+> flow. The current design is a `$cap` carrying the ADR-0055 identity `n` + a scalar watermark
+> (`n < $liveTop`), which is insufficient after stale reentry. The successor needs exact live-id
+> membership (or a proved-equivalent representation). Sized L because lifetime is a
 > freshness-counter thread through the emitter plus an escape-differential gate the corpus lacks,
 > not a one-arm change; and because v1 does NOT statically exclude escape (scoped-cap types are
 > post-v1, ADR-0063), so the runtime fail-loud is mandatory, not optional.
@@ -324,11 +318,11 @@ flip the gate green) before C0 (the first-class headline).** The escape gate's `
 `XFAIL` is now understood as masking a surface-reachable defect, not a theoretical one — sharpening
 the urgency of removing it.
 
-### 8.2 · C2 LANDED — the `$liveTop` stamp closes #134
+### 8.2 · C2 LANDED for immediate escape — stale reentry remains open
 
-**C2 is implemented and the escape gate is GREEN.** The `$liveTop`/`$nextId` globals + `$capMint`/
-`$capExit`/`$capGate` helpers (`gcHelpers`) are the runtime image of ADR-0055's global-fresh counter
-+ `WellCounted`'s `< g` bound. Each cap-carrying type (`$ref` state cell, `$txbox` txn/custom cap)
+**C2's scalar helpers are implemented.** The `$liveTop`/`$nextId` globals + `$capMint`/
+`$capExit`/`$capGate` helpers (`gcHelpers`) pair ADR-0055's global-fresh counter with a scalar
+upper-bound check; they are not exact live membership. Each cap-carrying type (`$ref` state cell, `$txbox` txn/custom cap)
 gained an `$id` field (field 0; the payload moved to field 1, `$box`/`$list`). Every `handle` arm
 (state/throws/custom/transaction) mints an id (`$capMint` bumps `$liveTop`), stamps its cap value,
 runs the body, saves the value, and restores `$liveTop` (`$capExit`); every `perform` on a state/txn/
@@ -337,16 +331,16 @@ nested state/custom cap gets a correctly-ordered id); a `raise` on an escaped th
 naturally (its `try_table` has exited).
 
 Measured (wasmtime 45, `-W gc=y,function-references=y,exceptions=y`):
-- **All 4 escape witnesses now TRAP** (rc=134) where they previously silently returned a value —
+- **The original 4 immediate-escape witnesses TRAP** (rc=134) where they previously silently returned a value —
   `capEscape-get`, `surface:b3` (0→trap), `surface:c1` (7→trap), `surface:d2` (0→trap). The
-  `emit-escape-diff.sh` `XFAIL_UNTIL_STAMP` list is now EMPTY; the gate is hard-green.
+  stale reentry is a fifth witness and remains known-red: oracle `.escapedCap`, emitted `7` rc 0.
 - **Zero regression**: the rung-5 effects corpus (40 programs, 22 effectful — state/stm/throws/
   logger/custom/dst/ndet) all still == `bang run`. The stamp does not false-fire on legitimate
   in-region perform (witnessed `structured-noescape-witness.wat` ⇒ 5, and the whole corpus).
 
-`lake build` EXIT 0 · `just fitness` EXIT 0 · axioms baseline unchanged (`emitModuleGC` is a
-tested-stratum text emitter, no proof headline). The tag-gating #134 miscompile is CLOSED. C0 (the
-first-class-cap headline — stage-swap/calc emit) rides this stamped infra next.
+The original C2 checkpoint closed immediate escape only. It did not close the whole #134 lifetime
+class; the exact-membership emitter fix is a separate successor. `emitModuleGC` remains a
+tested-stratum text emitter, not a proof headline.
 
 ### 8.3 · C0 LANDED — first-class caps emit (the #133 headline)
 
@@ -360,8 +354,8 @@ sourced from the runtime value — gate the `$id` (#134 stamp), then `$clausecel
   threaded as an argument, two handlers ×10/+1). Removed from `emit-rung5-effects-diff.sh`'s
   `KNOWN_REFUSALS`; the corpus grew **40 → 41**.
 - **Identity dispatch intact**: `handle-custom-nested` still `210` (not the nearest-label `30`).
-- **First-class escape is trap-safe**: a first-class cap forced past its handler TRAPS (the `$capGate`
-  in the C0 route fires) — the #134 stamp covers the new dispatch path by construction.
+- **Immediate first-class escape is trap-safe**: the `$capGate` in the C0 route fires before any
+  later mint. Stale reentry is not covered by that observation.
 - **POSITION**: the emitter has no compile-time op→position map for a first-class cap, so it emits
   position 0 GUARDED by a runtime `$clauselen == 1` single-op check (else trap). The entire shippable
   corpus is single-op (calc `Trace`.log, stage-swap `Net`.fetch). A multi-op first-class cap traps
@@ -405,8 +399,8 @@ gate — the module-resolving mechanism already existed; C3 was a one-line enrol
 fix. The rung-5 EFFECTS gate's `calc`/`json` `KNOWN_REFUSALS` entries are documented as a HARNESS-scope
 split (the single-file `rung4-shape` exe), not emitter walls.
 
-The #133/#134 arc is complete at the emit stratum: escape fixed (C2), first-class caps emit (C0),
-both headline consumers (stage-swap 30005, calc 11021193) run on wasmtime == the kernel oracle.
+The #133 first-class-cap arc is complete at the emit stratum for the stated consumers. The #134
+lifetime arc is not: stale reentry still diverges from the oracle.
 
 ### 8.5 · C4 (proof-grade) INPUTS — handed to the wgcexec calculated-machine probe
 
@@ -414,11 +408,9 @@ both headline consumers (stage-swap 30005, calc 11021193) run on wasmtime == the
 (the `wexec ≡ Source.eval` obligation on a GC machine, calculated not verified-after per inv#4). This
 section is the INPUT handoff for that lane; two concrete obligations the #134 stamp introduces:
 
-1. **The watermark-equivalence clause** (§3.2 + §8.2): the runtime `$liveTop`/`$id` gate ≡ the
-   kernel's `WellCounted (g,K,_)` `< g` bound (`Invariants.lean:31`) — `capId < $liveTop` is the
-   image of `splitAtId K n ≠ none`. This is a TRANSFER (the kernel already proves `WellCounted`),
-   not a new theory. It is stateable against the proof-carrying backend (§8.2), unlike the
-   `$env↔store` bijection (which needs the post-v1 GC machine).
+1. **Exact live-membership representation and relation** (§3.2 + §8.2): the proposed scalar
+   equivalence is refuted. Choose a runtime representation that rejects stale reentry, then prove
+   its gate equivalent to `splitAtId K n ≠ none`. `WellCounted` supplies only one direction.
 2. **The txn-abort restore RESIDUAL** (§8.2, the honesty note + the txn arm comment): the `throw_ref`
    unwind on a txn ABORT skips the txn's `$capExit`, leaving `$liveTop` transiently HIGH. This is the
    SAFE direction (more caps look live ⇒ never a wrong-trap on a legit cap; worst case = failing to
@@ -447,10 +439,9 @@ section is the INPUT handoff for that lane; two concrete obligations the #134 st
   refusal this note lifts); `rung5-s5-proofgrade-refutation.md` (the proof-grade split)
 - `Bang/Backend/WasmEmit.lean:707` (`CapSlot`), `:978-1041` (the custom perform arm + the runtime-cap
   refusal), `:1093-1138` (`emitClauses` — the clause-closure list this rep reuses)
-- `Bang/Core/Semantics/Invariants.lean:31,46-63` (`WellCounted`, the `< g` bound = the watermark's
-  soundness); `Bang/Core/Semantics/Dispatch.lean:78,186` (`splitAtId`/`idDispatch` — what the
-  watermark images)
-- ADR-0055 (global-fresh identity — the anti-reuse property the watermark relies on), ADR-0054
+- `Bang/Core/Semantics/Invariants.lean:31,46-63` (`WellCounted`, the one-way `< g` bound);
+  `Bang/Core/Semantics/Dispatch.lean:78,186` (`splitAtId`/`idDispatch` — exact membership)
+- ADR-0055 (global-fresh identity — prevents collision but not scalar stale revival), ADR-0054
   (identity representation), ADR-0052 (lexical/identity dispatch, nearest-label REFUTED — §3.3's
   back door), ADR-0063 (capability-escape = defined fail-loud, scoped-cap types deferred post-v1 —
   why the runtime check is mandatory)

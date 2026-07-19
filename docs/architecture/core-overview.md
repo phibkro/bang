@@ -64,7 +64,7 @@ _Generated from validated committed architecture and proof facts. The JSON is th
 | Source equivalence | binary biorthogonal LR: `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; `Bang/Spec.lean`, `Bang/Meta/LR.lean`, `Bang/Meta/BinaryLR.lean`, `Bang/Audit.lean`; validate: `lake env lean Bang/Audit.lean` |
 | Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`, `docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md`; validate: `lake env lean Bang/Audit.lean` |
 | CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases `compiled` | `Bang/Backend/EnvMachine.lean`, `Main.lean`, `docs/decisions/0094-env-semantics-in-the-machine-layer.md` |
-| Module graph | 62 modules · 127 internal edges · Apex 4 · Backend 7 · Core 15 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 62 serialized module records in `docfacts/architecture.json` |
+| Module graph | 63 modules · 129 internal edges · Apex 4 · Backend 8 · Core 15 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 63 serialized module records in `docfacts/architecture.json` |
 | Architecture lineage | ADR-0016 two-hop shape; product target refined by ADR-0059; evidence boundary amended by ADR-0110 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented), [ADR-0110](../decisions/0110-wasm-proof-model-concrete-emitter-boundary.md) (Accepted; implemented) |
 <!-- END GENERATED architecture-assertions -->
 
@@ -153,7 +153,7 @@ BANG uses the [C4 abstraction hierarchy](https://c4model.com/abstractions) to ch
 | Software system | BANG implementation and toolchain | Shown as the outer boundary |
 | Container | Lean compiler/reference toolchain | Shown as the application boundary |
 | Component | 7 repository tiers (`Frontend`, `Core`, …) | Dependency nodes below |
-| Code | 62 Lean modules and 127 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
+| Code | 63 Lean modules and 129 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
 
 A C4 [component](https://c4model.com/abstractions/component) is related functionality behind a defined interface and is not separately deployable. That matches these tiers better than C4's application/data-store [container](https://c4model.com/abstractions/container) term.
 
@@ -163,7 +163,7 @@ flowchart LR
     subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
       component_Frontend["Frontend<br/>12 modules · 18959 LOC"]
       component_Core["Core<br/>15 modules · 9099 LOC"]
-      component_Backend["Backend<br/>7 modules · 18121 LOC"]
+      component_Backend["Backend<br/>8 modules · 18322 LOC"]
       component_Meta["Meta<br/>2 modules · 4094 LOC"]
       component_Witness["Witness<br/>19 modules · 3653 LOC"]
       component_Reify["Reify<br/>3 modules · 1883 LOC"]
@@ -171,7 +171,7 @@ flowchart LR
     end
   end
   component_Frontend -->|7 code imports| component_Core
-  component_Backend -->|9 code imports| component_Core
+  component_Backend -->|10 code imports| component_Core
   component_Meta -->|7 code imports| component_Core
   component_Witness -->|5 code imports| component_Frontend
   component_Witness -->|28 code imports| component_Core
@@ -182,13 +182,13 @@ flowchart LR
   component_Apex -->|2 code imports| component_Meta
 ```
 
-**Reading the diagram:** arrows are dependencies between C4 components; edge labels aggregate the 74 code-level imports that cross a component boundary. Internal module-to-module imports are deliberately omitted from the visual.
+**Reading the diagram:** arrows are dependencies between C4 components; edge labels aggregate the 75 code-level imports that cross a component boundary. Internal module-to-module imports are deliberately omitted from the visual.
 
 | Component (repository tier) | Responsibility | Modules | LOC | Depends on |
 |---|---|---:|---:|---|
 | `Frontend` | text → typed core | 12 | 18959 | `Core` (7) |
 | `Core` | IR · typing · semantics · soundness | 15 | 9099 | — |
-| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 7 | 18121 | `Core` (9) |
+| `Backend` | calculated + abstract target machines · separate WasmGC emitter | 8 | 18322 | `Core` (10) |
 | `Meta` | contextual-equivalence metatheory | 2 | 4094 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3653 | `Frontend` (5), `Core` (28), `Backend` (4) |
 | `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |
