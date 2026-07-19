@@ -87,14 +87,14 @@
 3. [x] Implement hidden resolver-aware classification and batch corpus execution.
 4. [x] Gate 61 positive subjects, identity tie-back, determinism, adverse classes, and retained red.
 5. [x] Update the live map/Q34, run full convergence, and close skeptical advisor review.
-6. [ ] Publish the converged measurement and scope the top-level initializer census.
+6. [x] Publish the converged measurement and scope the top-level initializer census.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [x] In flight: implementation and convergence complete; publication next
+- [ ] In flight: none; successor is the checked-row top-level initializer census
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-18
 - Focused evidence: `tools/test-slice-fidelity.sh` passes **64/64**; `tools/test-query.sh` passes
   **268/268**; `just autoquality` passes.
 - Convergence evidence: `CHANGELOG_STABLE_REF=a4c5cea1 just fitness` and
@@ -102,6 +102,7 @@
   **32/32** batteries and both **61-example** engine journeys, and matches live proof facts. The
   persistent Fable 5 skeptical audit found no publication blocker after independently checking the
   apparatus accounting, hidden CLI boundary, exact non-value outcomes, and fuel-overhead limitation.
+- Published baseline: `132a31ef` on `origin/codex/slice-execution-fidelity`.
 - Retained failed gates / successors: strict initializer asymmetry → top-level initializer census →
   initialization-contract fork.
 - Reopen / observe: `linkReady` stays false until initialization, runtime labels, import slots, and
