@@ -232,6 +232,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **query** — encode canonical body artifacts (`change:ff836a300aa10c3c1da4c7b2d28353b1bf1c123176a1ebb8a7ce3ef7e9aaf52c`)
 - **query** — verify body artifact integrity (`change:f2a1889b0a1454c8fb2076da9cf8d5941c38decf690e499f2583a75dee6f0f04`)
 - **tooling** — probe inert initializer contract (`change:46dbff4a7e282c110d87b5695e3a4ddcd32055ac3a1414d1f62a3fec5facae51`)
+- **frontend** — enforce inert top-level descriptions (`change:ce1c4d6cc9712f34f396d37741a92ca341a3d1d1ee9664e33d35525a8f6eb422`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
