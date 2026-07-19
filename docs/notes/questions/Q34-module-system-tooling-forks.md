@@ -381,3 +381,22 @@ The companion metadata is the limit, not boilerplate: `elaborationProvenance=fal
 initializer blocks, faithfully exposing today's observable order. No row, runtime label, or import slot
 is joined to these source occurrences. Runtime relocation and slot validation remain the next artifact
 wall, and crossing it must satisfy ADR-0117 rather than infer identity from the flattened let spine.
+
+## Body-effect relocation input (2026-07-19): expose the quotient, not an artifact
+
+The body-digest tracer already computed a complete, fail-closed mapping from used runtime user-effect
+labels to qualified semantic names and digest-local canonical labels. `PATH-body-effect-relocations`
+stops discarding that intermediate result: every sliced export now carries
+`effectRelocations=[{name, canonicalLabel, runtimeLabel}]`. Effect-free sliced bodies carry `[]`;
+generic/structural decided-absence rows carry `null`.
+
+The contextual pole is now explicit. Inserting unrelated `Earlier` before `Target` preserves the
+`Lib_Target` name, canonical label 4, and body digest while moving the runtime label from 4 to 5.
+Symmetric `Alpha` and `Beta` bodies retain distinct semantic rows and digests despite both receiving
+canonical label 4. The rows and digest come from one `canonicalBodyEffects` result, so no second label
+analysis can drift.
+
+**Decision:** treat these rows as relocation input only. No production `Comp` is canonicalized or
+serialized, built-ins 0-3 remain implicit/fixed, and `linkReady=false` remains authoritative. The next
+body-side tracer may encode a canonical artifact and apply/validate this table. Import and initializer
+slots still require ADR-0117 provenance and must not be inferred from source occurrence order.

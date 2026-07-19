@@ -695,6 +695,7 @@ print("|".join([
   str(selected[0]["digest"]!=selected[2]["digest"]),
   str(interfaces[0]["digest"]==interfaces[1]["digest"]==interfaces[2]["digest"]),
   str(selected[3]["status"]=="sliced" and len(selected[3]["digest"])==16),
+  str(selected[0]["effectRelocations"]==[]),
   str([[x["module"] for x in d["moduleBodies"]] for d in ds]
       == [[x["module"] for x in d["moduleInterfaces"]] for d in ds])]))
 ' 2>/dev/null <<< "$body_base_dump
@@ -702,7 +703,7 @@ $body_sibling_dump
 $body_reachable_dump
 $body_env_dump"
 check "module-body-extractor-exit" "$body_rows_exit" "0"
-check "module-body-reachability-boundary" "$body_rows" "resolved-program-module-body-slice|bang-module-body-slice-comp-v2-uint64|false|false|16|sliced|True|True|True|True|True|True"
+check "module-body-reachability-boundary" "$body_rows" "resolved-program-module-body-slice|bang-module-body-slice-comp-v2-uint64|false|false|16|sliced|True|True|True|True|True|True|True"
 
 # Coverage is explicit, never inferred from omitted rows. Generic templates have no concrete
 # instantiation at this seam; structural kinds have no value body; concrete let/letRec rows do.
@@ -712,13 +713,16 @@ capture body_coverage_rows body_coverage_rows_exit python3 -c '
 import json,sys
 d=json.load(sys.stdin)
 lib=next(x for x in d["moduleBodies"] if x["module"]=="@entry")
-print("|".join("{}:{}:{}:{}".format(x["name"],x["kind"],x["status"],str(x["digest"] is not None).lower()) for x in lib["exports"]))
+print("|".join("{}:{}:{}:{}:{}".format(x["name"],x["kind"],x["status"],
+  str(x["digest"] is not None).lower(),str(x["effectRelocations"] is not None).lower())
+  for x in lib["exports"]))
 ' 2>/dev/null <<< "$body_coverage_dump"
 check "module-body-coverage-extractor-exit" "$body_coverage_rows_exit" "0"
-check "module-body-explicit-export-coverage" "$body_coverage_rows" "Box:data:no-body-kind:false|Marker:trait:no-body-kind:false|generic:fn:unsupported-generic-fn:false|countdown:letRec:sliced:true|selected:let:sliced:true"
+check "module-body-explicit-export-coverage" "$body_coverage_rows" "Box:data:no-body-kind:false:false|Marker:trait:no-body-kind:false:false|generic:fn:unsupported-generic-fn:false:false|countdown:letRec:sliced:true:true|selected:let:sliced:true:true"
 
 # Digest-side quotient: an unrelated earlier effect preserves both the checked interface and the
-# environment-relative body observation. Runtime labels are deliberately outside this query fact.
+# environment-relative body observation. The same semantic/canonical row remains stable while its
+# runtime label shifts with the whole-program allocation; this is the relocation residual.
 capture body_effect_base_dump body_effect_base_exit "$bang" query dump "$tmpdir/body-slice-effect-base/main.bang" 2>/dev/null
 capture body_effect_shifted_dump body_effect_shifted_exit "$bang" query dump "$tmpdir/body-slice-effect-shifted/main.bang" 2>/dev/null
 check "module-body-effect-base-exit" "$body_effect_base_exit" "0"
@@ -729,11 +733,16 @@ ds=[json.loads(line) for line in sys.stdin if line.strip()]
 def module(d,table): return next(x for x in d[table] if x["module"]=="Lib")
 interfaces=[module(d,"moduleInterfaces") for d in ds]
 bodies=[module(d,"moduleBodies")["exports"][0] for d in ds]
-print("|".join([str(interfaces[0]["digest"]==interfaces[1]["digest"]),str(bodies[0]["digest"]==bodies[1]["digest"]),bodies[0]["status"],bodies[1]["status"]]))
+relocs=[b["effectRelocations"] for b in bodies]
+print("|".join([str(interfaces[0]["digest"]==interfaces[1]["digest"]),
+  str(bodies[0]["digest"]==bodies[1]["digest"]),bodies[0]["status"],bodies[1]["status"],
+  str(relocs[0][0]["name"]==relocs[1][0]["name"]=="Lib_Target"),
+  str(relocs[0][0]["canonicalLabel"]==relocs[1][0]["canonicalLabel"]==4),
+  "{}>{}".format(relocs[0][0]["runtimeLabel"],relocs[1][0]["runtimeLabel"])]))
 ' 2>/dev/null <<< "$body_effect_base_dump
 $body_effect_shifted_dump"
 check "module-body-effect-extractor-exit" "$body_effect_rows_exit" "0"
-check "module-body-quotients-unrelated-effect" "$body_effect_rows" "True|True|sliced|sliced"
+check "module-body-quotients-unrelated-effect" "$body_effect_rows" "True|True|sliced|sliced|True|True|4>5"
 
 # Semantic discrimination: equal shapes using differently named effects must not collapse merely
 # because each used-name set receives the same singleton canonical rank.
@@ -746,11 +755,14 @@ import json,sys
 ds=[json.loads(line) for line in sys.stdin if line.strip()]
 def body(d): return next(x for x in d["moduleBodies"] if x["module"]=="Lib")["exports"][0]
 rows=[body(d) for d in ds]
-print("|".join([str(rows[0]["digest"]!=rows[1]["digest"]),rows[0]["status"],rows[1]["status"]]))
+relocs=[x["effectRelocations"] for x in rows]
+print("|".join([str(rows[0]["digest"]!=rows[1]["digest"]),rows[0]["status"],rows[1]["status"],
+  relocs[0][0]["name"],relocs[1][0]["name"],
+  str(relocs[0][0]["canonicalLabel"]==relocs[1][0]["canonicalLabel"]==4)]))
 ' 2>/dev/null <<< "$body_effect_alpha_dump
 $body_effect_beta_dump"
 check "module-body-effect-identity-extractor-exit" "$body_effect_identity_rows_exit" "0"
-check "module-body-binds-effect-identity" "$body_effect_identity_rows" "True|sliced|sliced"
+check "module-body-binds-effect-identity" "$body_effect_identity_rows" "True|sliced|sliced|Lib_Alpha|Lib_Beta|True"
 
 # Interface and implementation are distinct invalidation boundaries. All four projects type-check;
 # body/private changes move the current flat core but not Lib's checked public interface, while a

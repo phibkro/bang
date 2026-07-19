@@ -823,13 +823,23 @@ public def ModuleBodyStatus.toJson : ModuleBodyStatus → String
   | .noBodyKind => "\"no-body-kind\""
 
 /-- One public export's environment-relative body observation. `digest` is present exactly for
-`status=sliced`; the two decided-absence states carry `null`. -/
+`status=sliced`; the two decided-absence states carry `null`. `effectRelocations` follows the same
+presence rule. Its rows cover every user-effect label occurring in the lowered slice; built-ins
+0-3 are fixed and therefore absent. The canonical label is digest-local today, while the runtime
+label is the context-dependent runtime allocation—this is relocation input, not an artifact. -/
+public structure ModuleBodyEffectRelocationFact where
+  name           : String
+  canonicalLabel : Bang.EffectRow.Label
+  runtimeLabel   : Bang.EffectRow.Label
+  deriving Repr, DecidableEq
+
 public structure ModuleBodyExportFact where
-  id     : String
-  name   : String
-  kind   : DeclKind
-  status : ModuleBodyStatus
-  digest : Option String
+  id                : String
+  name              : String
+  kind              : DeclKind
+  status            : ModuleBodyStatus
+  digest            : Option String
+  effectRelocations : Option (List ModuleBodyEffectRelocationFact)
   deriving Repr
 
 /-- One logical module's complete export-body projection. `linkReady=false` is load-bearing: these
@@ -846,7 +856,8 @@ public structure ModuleBodyFact where
   deriving Repr
 
 attribute [nolint unusedArguments] instReprModuleBodyStatus.repr
-  instReprModuleBodyExportFact.repr instReprModuleBodyFact.repr
+  instReprModuleBodyEffectRelocationFact.repr instReprModuleBodyExportFact.repr
+  instReprModuleBodyFact.repr
 
 /-- Versioned body-slice fingerprint name. Version 2 canonicalizes the user-effect labels occurring
 in the lowered slice and binds their sorted qualified names into the digest. The underlying `Comp`
@@ -1045,23 +1056,45 @@ def hashCanonicalBodyEffects (used : List (String × Bang.EffectRow.Label)) : UI
       (Bang.CoreFingerprint.hashStr name))
     (Bang.CoreFingerprint.tag 72)
 
-/-- Fresh-domain v2 digest for one successfully lowered reachable body slice. Binding order is
+/-- Project the exact digest-side user-effect quotient into relocation rows. The list is already
+semantic-name sorted. `runtimeLabel` is deliberately retained so a consumer can observe the
+contextual allocation that an eventual linker must replace; no production `Comp` is rewritten. -/
+public def moduleBodyEffectRelocations
+    (used : List (String × Bang.EffectRow.Label)) : List ModuleBodyEffectRelocationFact :=
+  used.zipIdx.map fun ((name, runtimeLabel), rank) =>
+    ⟨name, 4 + rank, runtimeLabel⟩
+
+/-- Fresh-domain v2 digest plus the exact relocation table for one successfully lowered reachable
+body slice. Both are derived from ONE fail-closed `canonicalBodyEffects` result. Binding order is
 canonical `Comp` hash, then the sorted semantic-name table hash; the empty table is bound uniformly. -/
-def moduleBodyDigest (comp : Bang.Comp) (effects : List (String × Bang.EffectRow.Label)) :
-    Except String String := do
+def moduleBodyObservation (comp : Bang.Comp) (effects : List (String × Bang.EffectRow.Label)) :
+    Except String (String × List ModuleBodyEffectRelocationFact) := do
   let used ← canonicalBodyEffects comp effects
   let canonical := mapBodyCompLabels (canonicalBodyLabel used) comp
-  return Bang.CoreFingerprint.toHex16 <|
+  let digest := Bang.CoreFingerprint.toHex16 <|
     Bang.CoreFingerprint.step
       (Bang.CoreFingerprint.step (Bang.CoreFingerprint.tag 71)
         (Bang.CoreFingerprint.hashComp canonical))
       (hashCanonicalBodyEffects used)
+  return (digest, moduleBodyEffectRelocations used)
+
+#guard moduleBodyEffectRelocations [("B_E", 9), ("C_F", 4)] ==
+  [⟨"B_E", 4, 9⟩, ⟨"C_F", 5, 4⟩]
+
+/-- One body-effect relocation row rendered with semantic identity and both label domains. -/
+public def ModuleBodyEffectRelocationFact.toJson
+    (f : ModuleBodyEffectRelocationFact) : String :=
+  jsonObj [jsonStrField "name" f.name,
+    jsonField "canonicalLabel" (toString f.canonicalLabel),
+    jsonField "runtimeLabel" (toString f.runtimeLabel)]
 
 /-- One export row rendered with every key present. -/
 public def ModuleBodyExportFact.toJson (f : ModuleBodyExportFact) : String :=
   jsonObj [jsonStrField "id" f.id, jsonStrField "name" f.name,
     jsonField "kind" f.kind.toJson, jsonField "status" f.status.toJson,
-    jsonOptStrField "digest" f.digest]
+    jsonOptStrField "digest" f.digest,
+    jsonField "effectRelocations" (f.effectRelocations.map
+      (fun rows => jsonArr (rows.map ModuleBodyEffectRelocationFact.toJson)) |>.getD "null")]
 
 /-- One module body projection rendered independently from `moduleInterfaces`; nesting body facts
 inside the interface record would make body edits destroy the checked-interface firewall. -/
@@ -1089,11 +1122,11 @@ public def moduleBodyFactsOf (p : Prog) (declModule : List (String × String))
           match Bang.TypeCheck.checkAndLowerProgWithEffects (reachableValueSliceProg p name) with
           | .error e => throw s!"module bodies '{moduleName}': slice for exported declaration '{name}' failed to lower: {e}"
           | .ok (comp, effects) =>
-              let digest ← (moduleBodyDigest comp effects).mapError fun e =>
+              let (digest, relocations) ← (moduleBodyObservation comp effects).mapError fun e =>
                 s!"module bodies '{moduleName}': slice for exported declaration '{name}' failed to canonicalize: {e}"
-              pure ⟨id, localName, DeclKind.of d, .sliced, some digest⟩
-      | .fnD .. => pure ⟨id, localName, DeclKind.of d, .unsupportedGenericFn, none⟩
-      | _ => pure ⟨id, localName, DeclKind.of d, .noBodyKind, none⟩
+              pure ⟨id, localName, DeclKind.of d, .sliced, some digest, some relocations⟩
+      | .fnD .. => pure ⟨id, localName, DeclKind.of d, .unsupportedGenericFn, none, none⟩
+      | _ => pure ⟨id, localName, DeclKind.of d, .noBodyKind, none, none⟩
     pure ⟨moduleName, "resolved-program-module-body-slice", moduleBodyAlgorithm,
       false, false, exports⟩
 

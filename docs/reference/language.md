@@ -985,7 +985,9 @@ not six independent implementations.
     "exports": [ { "id": "Module::localName", "name": "localName",
                    "kind": "..",
                    "status": "sliced|unsupported-generic-fn|no-body-kind",
-                   "digest": "16 lowercase hex digits"|null } ]
+                   "digest": "16 lowercase hex digits"|null,
+                   "effectRelocations": [ { "name": "qualified effect",
+                     "canonicalLabel": 4, "runtimeLabel": 7 } ]|null } ]
   } ] | null,
   "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],
   "moduleDeps": [ { "from": "module", "to": "direct dependency" } ],
@@ -1085,12 +1087,20 @@ Every retained non-value declaration is also a closure root: implicit impl/handl
 a syntactic reference edge, so its value dependencies are safely over-retained rather than silently
 omitted. This can cause false invalidation in impl-heavy programs, but not false preservation.
 
+For each sliced export, `effectRelocations` exposes the exact user-effect table already used by
+the v2 digest: qualified semantic `name`, dense digest-local `canonicalLabel` from 4, and the
+current whole-program `runtimeLabel`. Built-ins 0-3 are fixed and omitted. An effect-free sliced
+body carries `[]`; decided-absence rows carry `null`. Inserting an unrelated earlier effect may
+move only `runtimeLabel`, making the relocation obligation observable without rewriting the `Comp`.
+
 Coverage is explicit. A bounded generic `fn` row has `status=unsupported-generic-fn` because it has
 no standalone concrete instantiation; structural declarations have `status=no-body-kind`; both carry
-`digest:null`. If any supposedly sliceable export fails production lowering, the entire
-`moduleBodies` projection is `null` rather than a partial list. `cacheKeySafe=false` and
+`digest:null` and `effectRelocations:null`. If any supposedly sliceable export fails production
+lowering, the entire `moduleBodies` projection is `null` rather than a partial list.
+`cacheKeySafe=false` and
 `linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,
-and the slice is not a standalone executable. The execution-classification gate agrees across all 61
+and neither the slice nor its digest-local canonical labels are an encoded artifact. The
+execution-classification gate agrees across all 61
 current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict
 top-level initializer diverges in the whole lexical chain while the pruned selected body returns.
 A future linker therefore needs an explicit module-initialization contract in addition to runtime

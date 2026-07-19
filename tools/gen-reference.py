@@ -1474,7 +1474,9 @@ def render():
     L.append(
         '                   "status": "sliced|unsupported-generic-fn|no-body-kind",'
     )
-    L.append('                   "digest": "16 lowercase hex digits"|null } ]')
+    L.append('                   "digest": "16 lowercase hex digits"|null,')
+    L.append('                   "effectRelocations": [ { "name": "qualified effect",')
+    L.append('                     "canonicalLabel": 4, "runtimeLabel": 7 } ]|null } ]')
     L.append("  } ] | null,")
     L.append(
         '  "modules": [ { "name": "@entry|logical module name", "origin": "entry|project|bundled" } ],'
@@ -1705,23 +1707,41 @@ def render():
     )
     L.append("")
     L.append(
+        "For each sliced export, `effectRelocations` exposes the exact user-effect table already used by"
+    )
+    L.append(
+        "the v2 digest: qualified semantic `name`, dense digest-local `canonicalLabel` from 4, and the"
+    )
+    L.append(
+        "current whole-program `runtimeLabel`. Built-ins 0-3 are fixed and omitted. An effect-free sliced"
+    )
+    L.append(
+        "body carries `[]`; decided-absence rows carry `null`. Inserting an unrelated earlier effect may"
+    )
+    L.append(
+        "move only `runtimeLabel`, making the relocation obligation observable without rewriting the `Comp`."
+    )
+    L.append("")
+    L.append(
         "Coverage is explicit. A bounded generic `fn` row has `status=unsupported-generic-fn` because it has"
     )
     L.append(
         "no standalone concrete instantiation; structural declarations have `status=no-body-kind`; both carry"
     )
     L.append(
-        "`digest:null`. If any supposedly sliceable export fails production lowering, the entire"
+        "`digest:null` and `effectRelocations:null`. If any supposedly sliceable export fails production"
     )
     L.append(
-        "`moduleBodies` projection is `null` rather than a partial list. `cacheKeySafe=false` and"
+        "lowering, the entire `moduleBodies` projection is `null` rather than a partial list."
     )
+    L.append("`cacheKeySafe=false` and")
     L.append(
         "`linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,"
     )
     L.append(
-        "and the slice is not a standalone executable. The execution-classification gate agrees across all 61"
+        "and neither the slice nor its digest-local canonical labels are an encoded artifact. The"
     )
+    L.append("execution-classification gate agrees across all 61")
     L.append(
         "current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict"
     )
