@@ -64,7 +64,7 @@ _Generated from validated committed architecture and proof facts. The JSON is th
 | Source equivalence | binary biorthogonal LR: `Bang.lr_fundamental`, `Bang.lr_sound` | implemented; flagged support: `Bang.lr_fundamental`, `Bang.lr_sound`; `Bang/Spec.lean`, `Bang/Meta/LR.lean`, `Bang/Meta/BinaryLR.lean`, `Bang/Audit.lean`; validate: `lake env lean Bang/Audit.lean` |
 | Compilation correctness | annotated forward simulation: `Bang.compile_forward_sim` | proven; `Bang/Spec.lean`, `Bang/Backend/Wasm.lean`, `Bang/Audit.lean`, `docs/decisions/0059-wasm3-grade-directed-pluggable-backend.md`, `docs/decisions/0110-wasm-proof-model-concrete-emitter-boundary.md`; validate: `lake env lean Bang/Audit.lean` |
 | CLI engines | `oracle`, `compiled`, `env`; default **`env`**; `--compiled` aliases `compiled` | `Bang/Backend/EnvMachine.lean`, `Main.lean`, `docs/decisions/0094-env-semantics-in-the-machine-layer.md` |
-| Module graph | 62 modules · 127 internal edges · Apex 4 · Backend 7 · Core 15 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 62 serialized module records in `docfacts/architecture.json` |
+| Module graph | 63 modules · 129 internal edges · Apex 5 · Backend 7 · Core 15 · Frontend 12 · Meta 2 · Reify 3 · Witness 19 | 63 serialized module records in `docfacts/architecture.json` |
 | Architecture lineage | ADR-0016 two-hop shape; product target refined by ADR-0059; evidence boundary amended by ADR-0110 | [ADR-0016](../decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md) (Accepted; implemented), [ADR-0059](../decisions/0059-wasm3-grade-directed-pluggable-backend.md) (Accepted; implemented), [ADR-0110](../decisions/0110-wasm-proof-model-concrete-emitter-boundary.md) (Accepted; implemented) |
 <!-- END GENERATED architecture-assertions -->
 
@@ -92,9 +92,9 @@ Do not describe compiler correctness as “the Benton–Hur LR.” The LR and si
 ### Audited theorem census
 
 <!-- BEGIN GENERATED audited-axioms (just architecture-assertions) — do not hand-edit -->
-**Census:** 33 enrolled theorems · 27 trusted · 6 flagged · 2 with no axioms.
+**Census:** 38 enrolled theorems · 32 trusted · 6 flagged · 4 with no axioms.
 
-**Semantic inventory:** 17 strong scoped claims · 3 structural · 2 bounded · 3 partial · 1 conjectural · 1 placeholder · 6 aliases. Alias and placeholder rows never increase the strong count.
+**Semantic inventory:** 17 strong scoped claims · 4 structural · 6 bounded · 3 partial · 1 conjectural · 1 placeholder · 6 aliases. Alias and placeholder rows never increase the strong count.
 
 **Strong, precisely scoped claims:** `Bang.seq_unit`, `Bang.compile_forward_sim`, `Bang.compile_forward_sim_pure`, `Bang.source_eval_to_exec`, `Bang.Rung5ProofGrade.s5_exec_wexec_lockstep`, `Bang.subst_value`, `Bang.preservation`, `Bang.progress`, `Bang.type_safety`, `Bang.no_accidental_handling`, `Bang.no_accidental_handling_custom`, `Bang.closed_fully_handled_program_no_unclassified_stuck`, `Bang.CalcVM.compile_correct`, `Bang.CalcVM.evalD_agrees_source`, `Bang.CalcVM.sim`, `Bang.CalcVM.run_evalD`, `Bang.EnvMachine.evalE_agrees_evalD`.
 
@@ -137,6 +137,11 @@ Axiom trust and semantic strength are independent axes. `trusted` means only tha
 | `Bang.CalcVM.sim`<br>`Bang/Backend/AbstractMachine.lean:2521` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role supporting | calcvm<br>load-bearing: evalD result, store correspondence, handler-stack correspondence, freshness and disjointness invariants; unused: none | The invariant-rich calculation theorem relates evalD outcomes to CalcVM execution. Scope: Term and raised outcomes under the stated machine invariants. Limitations: Internal proof infrastructure rather than a direct end-user compiler equation. Statement: `evalD result plus store and handler-stack invariants -> matching exec behavior and preserved invariants` |
 | `Bang.CalcVM.run_evalD`<br>`Bang/Backend/AbstractMachine.lean:6161` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role supporting | calcvm-to-source-config-run<br>load-bearing: evalD result, store and context correspondence, capability-label coherence, freshness, NoResume for raised results; unused: none | Relates evalD term and raised outcomes to source configuration execution under explicit invariants. Scope: Invariant-rich internal bridge to the source CK configuration runner. Limitations: Not a premise-free whole-program evaluator equality. Statement: `evalD term or raised result plus correspondence, coherence, freshness, and NoResume premises -> matching Config.run behavior` |
 | `Bang.EnvMachine.evalE_agrees_evalD`<br>`Bang/Backend/EnvMachine.lean:3269` | trusted<br>`Classical.choice`, `Quot.sound`, `propext` | strong · machine-correspondence · kernel-checked-theorem · role canonical | environment-machine-to-calcvm<br>load-bearing: environment agreement, environment well-formedness, closure well-formedness, source scoping, handler well-formedness, successful empty-store evalE return; unused: none | A successful default environment-machine return is reproduced by evalD after closing the source term and reading back the value. Scope: Empty input stores, agreeing well-formed environments, scoped handler-well-formed source terms, and successful returned outcomes. Limitations: Concludes evalD correspondence, not direct Source.eval agreement.; Does not cover non-success outcomes or arbitrary initial stores. Statement: `EnvAgrees rho gamma -> MEnv.WF rho -> MEnv.WFClos rho -> ScopedC gamma.length M -> HandlerWF gamma.length M -> evalE f 0 [] [] [] rho M = some (mterm (mret mv), g', eSigma', eTau', eKappa') -> exists g'' sigma' tau' kappa', evalD f 0 [] [] [] (substEnv gamma M) = some (term (ret (readback mv)), g'', sigma', tau', kappa')` |
+| `Bang.Distribution.LatticeStore.le_join`<br>`Bang/Distribution/LatticeStore.lean:74` | trusted<br>— | bounded · example-law · kernel-checked-theorem · role supporting | join-only-lattice-store<br>load-bearing: SemilatticeSup instance; unused: none | A represented join update never retracts the store's current lattice value. Scope: One update in the abstract join-only lattice-store model. Limitations: Does not establish monotonicity for arbitrary user effects or emitted programs. Statement: `store.current <= (store.join value).current` |
+| `Bang.Distribution.LatticeStore.join_commutes`<br>`Bang/Distribution/LatticeStore.lean:79` | trusted<br>`Quot.sound`, `propext` | bounded · example-law · kernel-checked-theorem · role canonical | join-only-lattice-store<br>load-bearing: SemilatticeSup instance; unused: none | Two join updates produce the same store in either delivery order. Scope: Exactly two updates in the abstract join-only lattice-store model. Limitations: Does not prove whole-trace permutation invariance or network convergence. Statement: `(store.join x).join y = (store.join y).join x` |
+| `Bang.Distribution.LatticeStore.join_idempotent`<br>`Bang/Distribution/LatticeStore.lean:86` | trusted<br>`propext` | bounded · example-law · kernel-checked-theorem · role canonical | join-only-lattice-store<br>load-bearing: SemilatticeSup instance; unused: none | Redelivering one join update does not change the resulting store. Scope: Duplicate delivery of one update in the abstract join-only lattice-store model. Limitations: Does not prove arbitrary trace deduplication or transport exactly-once behavior. Statement: `(store.join x).join x = store.join x` |
+| `Bang.Distribution.LatticeStore.pair_converges_after_exchange`<br>`Bang/Distribution/LatticeStore.lean:95` | trusted<br>`propext` | bounded · example-law · kernel-checked-theorem · role canonical | join-only-lattice-store<br>load-bearing: SemilatticeSup instance, both replica values participate in the exchange; unused: none | A symmetric exchange computes the same joined value at both replicas. Scope: One idealized anti-entropy exchange between two abstract replicas. Limitations: Does not establish network liveness, eventual delivery, or convergence without an exchange. Statement: `left.merge right = right.merge left` |
+| `Bang.Distribution.LatticeStore.updates_are_join_only`<br>`Bang/Distribution/LatticeStore.lean:103` | trusted<br>— | structural · structural-invariant · kernel-checked-theorem · role supporting | join-only-lattice-store<br>load-bearing: exhaustive JoinUpdate constructor coverage; unused: none | Every update representable by this fragment is a join update. Scope: The current single-constructor JoinUpdate datatype. Limitations: A future constructor requires an explicit semantic and proof review; this does not forbid extending the datatype. Statement: `for every JoinUpdate update, exists value such that update = JoinUpdate.join value` |
 <!-- END GENERATED audited-axioms -->
 
 ## 3. C4 component dependencies
@@ -153,7 +158,7 @@ BANG uses the [C4 abstraction hierarchy](https://c4model.com/abstractions) to ch
 | Software system | BANG implementation and toolchain | Shown as the outer boundary |
 | Container | Lean compiler/reference toolchain | Shown as the application boundary |
 | Component | 7 repository tiers (`Frontend`, `Core`, …) | Dependency nodes below |
-| Code | 62 Lean modules and 127 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
+| Code | 63 Lean modules and 129 direct imports | Serialized in `docfacts/architecture.json`; intentionally not drawn |
 
 A C4 [component](https://c4model.com/abstractions/component) is related functionality behind a defined interface and is not separately deployable. That matches these tiers better than C4's application/data-store [container](https://c4model.com/abstractions/container) term.
 
@@ -167,7 +172,7 @@ flowchart LR
       component_Meta["Meta<br/>2 modules · 4094 LOC"]
       component_Witness["Witness<br/>19 modules · 3653 LOC"]
       component_Reify["Reify<br/>3 modules · 1883 LOC"]
-      component_Apex["Apex<br/>4 modules · 1060 LOC"]
+      component_Apex["Apex<br/>5 modules · 1183 LOC"]
     end
   end
   component_Frontend -->|7 code imports| component_Core
@@ -192,7 +197,7 @@ flowchart LR
 | `Meta` | contextual-equivalence metatheory | 2 | 4094 | `Core` (7) |
 | `Witness` | executable evidence and counterexamples | 19 | 3653 | `Frontend` (5), `Core` (28), `Backend` (4) |
 | `Reify` | calculated-machine proof laboratory | 3 | 1883 | — |
-| `Apex` | public theorem façade · audit · distribution | 4 | 1060 | `Frontend` (3), `Core` (4), `Backend` (5), `Meta` (2) |
+| `Apex` | public theorem façade · audit · distribution | 5 | 1183 | `Frontend` (3), `Core` (4), `Backend` (5), `Meta` (2) |
 <!-- END GENERATED import-graph -->
 
 The generated graph reports aggregate direct imports that cross component boundaries. It shows coupling pressure; it does not by itself prove semantic correctness or justify moving code.

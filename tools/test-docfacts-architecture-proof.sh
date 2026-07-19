@@ -33,7 +33,7 @@ architecture = json.loads((root / "docfacts/architecture.json").read_text(encodi
 proof = json.loads((root / "docfacts/proof.json").read_text(encoding="utf-8"))
 
 assert len(proof["specHeadlines"]) == 23, "Spec headline cardinality pole moved"
-assert len(proof["enrollments"]) == 33, "Audit enrollment cardinality pole moved"
+assert len(proof["enrollments"]) == 38, "Audit enrollment cardinality pole moved"
 assert {item["kind"] for item in proof["specHeadlines"]} == {"theorem"}
 assert all(item["claimKind"] != "theorem" for item in proof["enrollments"]), (
     "syntactic Lean theorem kind collapsed into semantic claim status"

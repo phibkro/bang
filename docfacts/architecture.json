@@ -2010,10 +2010,11 @@
         "Bang.Backend.AbstractMachine",
         "Bang.Backend.EnvMachine",
         "Bang.Backend.Rung5ProofGrade",
+        "Bang.Distribution.LatticeStore",
         "Bang.Frontend.Surface",
         "Bang.Spec"
       ],
-      "loc": 82,
+      "loc": 90,
       "name": "Bang.Audit",
       "path": "Bang/Audit.lean",
       "publicSymbols": [],
@@ -8376,12 +8377,118 @@
     },
     {
       "directImports": [
+        "Bang.Distribution.LatticeStore",
         "Bang.Spec"
       ],
-      "loc": 67,
+      "loc": 70,
       "name": "Bang.Distribution",
       "path": "Bang/Distribution.lean",
       "publicSymbols": [],
+      "tier": "Apex"
+    },
+    {
+      "directImports": [],
+      "loc": 112,
+      "name": "Bang.Distribution.LatticeStore",
+      "path": "Bang/Distribution/LatticeStore.lean",
+      "publicSymbols": [
+        {
+          "kind": "inductive",
+          "line": 26,
+          "name": "JoinUpdate",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "structure",
+          "line": 32,
+          "name": "LatticeStore",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 41,
+          "name": "empty",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 44,
+          "name": "apply",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 48,
+          "name": "join",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 53,
+          "name": "applyAll",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "def",
+          "line": 58,
+          "name": "merge",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 61,
+          "name": "current_empty",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 64,
+          "name": "current_apply",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 67,
+          "name": "current_join",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 70,
+          "name": "current_merge",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 74,
+          "name": "le_join",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 79,
+          "name": "join_commutes",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 86,
+          "name": "join_idempotent",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 95,
+          "name": "pair_converges_after_exchange",
+          "visibilityBasis": "public-section"
+        },
+        {
+          "kind": "theorem",
+          "line": 103,
+          "name": "updates_are_join_only",
+          "visibilityBasis": "public-section"
+        }
+      ],
       "tier": "Apex"
     },
     {
@@ -13386,8 +13493,8 @@
   },
   "tiers": [
     {
-      "loc": 1060,
-      "moduleCount": 4,
+      "loc": 1183,
+      "moduleCount": 5,
       "name": "Apex"
     },
     {

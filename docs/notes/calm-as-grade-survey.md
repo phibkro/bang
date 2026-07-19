@@ -20,12 +20,21 @@
 > states `rowmonotone_coordination_free` as a marked, off-spine **conjecture** (a `sorry`),
 > and this note is the design study behind that marker.
 
+> **IMPLEMENTATION STATUS (2026-07-19):** an axiom-clean generic core now exists at
+> `Bang/Distribution/LatticeStore.lean`; its first `Int/max` BANG consumer is retained as an
+> expected refusal in `examples/lattice-store/`. ADR-0114's value-shape gate does not yet admit the
+> pure computed components needed for the update pair. The same wall is consumer-pulled by the
+> allocator transition, so one shared follow-on increment—not this lane—must validate both. The
+> proved convergence statement is only equality after one symmetric pairwise exchange. There is no
+> runnable coordination-free BANG fragment here, no concrete coordinating consumer requiring
+> `coord`, and no discharge of `rowmonotone_coordination_free` or the distinct grade fork.
+
 ---
 
 ## 0 · TL;DR (the verdict, up front)
 
 ```
-recommended arm  : (iii) LATTICE-TYPED DATA (LVars-style monotone store) as the KERNEL primitive,
+recommended arm  : (iii) LATTICE-TYPED DATA (LVars-style monotone store) as the ENFORCING core,
                    + (i) a `coord` EFFECT that non-monotone ops must carry as the SURFACE display.
                    The grade-on-the-arrow (ii) is the WRONG shape (grades the row → forbidden multiset).
 smallest pub unit: "a monotone `lat`-typed fragment + a coordination-free replication handler with

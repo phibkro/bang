@@ -176,6 +176,11 @@ test-release-integrity:
 test-law:
     bash tools/test-law.sh
 
+# Lattice-store consumer probes: ADR-0114's pure-computed-update wall plus an independent CAS
+# exclusion.
+test-lattice-store:
+    bash tools/test-lattice-store.sh
+
 # Rank duplicated code windows in Bang/ (extraction candidates; triage lives in
 # docs/notes/clone-triage.md). ARGS pass through, e.g. `just clones --window 8`.
 clones *ARGS:

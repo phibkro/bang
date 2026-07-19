@@ -62,7 +62,7 @@
             "source-to-calcvm", "source-to-project-wasm-oriented-abstract-machine",
             "calcvm-to-project-wasm-oriented-abstract-machine", "calcvm-to-source-ck-machine",
             "calcvm-to-source-config-run", "surface-example", "handler-lowering-placeholder",
-            "environment-machine-to-calcvm"
+            "environment-machine-to-calcvm", "join-only-lattice-store"
           ]
         },
         "statementShape": { "$ref": "common.schema.json#/$defs/nonemptyString" },
