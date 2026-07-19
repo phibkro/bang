@@ -120,9 +120,10 @@ R1  NONDETERMINISM   `Choice` as ordinary effect · seeded-deterministic DST han
 R2  DISTRIBUTED      sim-KV grows into the replicated-KV under DST — nondeterminism-as-effect ·
      SYSTEMS         DST-as-handler · certified CRDTs (docs/notes/distributed-story.md)
      status: story mapped · first slice follows R1 (same lattice of handlers)
-R3  CALM-AS-GRADE    lattice-store core + `coord` row label; the monotone fragment discharges
-     coordination-freeness (docs/notes/calm-as-grade-survey.md)
-     status: SURVEYED · probe after R2's lattice-store exists to grade
+R3  CALM-AS-GRADE    generic lattice-store core first; `coord` only after a concrete coordinating
+     consumer proves it is needed (docs/notes/calm-as-grade-survey.md)
+     status: CORE BANKED · BANG max-join consumer pins ADR-0114's pure-computed-update wall;
+     no runnable coordination-free fragment or CALM discharge claimed
 R4  CONCURRENCY      Q21, the multikernel: STM's privileged concurrent form returns; shared-
      nothing per ADR-0037. KEY SEQUENCING INSIGHT: R1's deterministic scheduler
      makes concurrency semantics TESTABLE-BY-SIMULATION before any real threads —

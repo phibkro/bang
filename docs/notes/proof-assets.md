@@ -18,7 +18,7 @@ template lemmas by convention (see the design notes for each spine, e.g.
 docs/notes/clone-triage.md for why the top clone families are not
 tactic-shaped.
 
-## `@[simp]` sets by module (111 lemmas)
+## `@[simp]` sets by module (115 lemmas)
 
 Calling `simp` in a module's proofs implicitly uses these; when writing
 new proofs in a module, check its set before re-proving a rewrite.
@@ -151,4 +151,11 @@ new proofs in a module, check its set before re-proving a rewrite.
 - `handlerCount_appF` (Dispatch.lean:223)
 - `handlerCount_handleF` (Dispatch.lean:225)
 - `handlesOp_substFrom` (Dispatch.lean:275)
+
+### `Bang/Distribution/LatticeStore.lean` (4)
+
+- `current_empty` (LatticeStore.lean:61)
+- `current_apply` (LatticeStore.lean:64)
+- `current_join` (LatticeStore.lean:67)
+- `current_merge` (LatticeStore.lean:70)
 

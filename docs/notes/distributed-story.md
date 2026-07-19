@@ -115,3 +115,32 @@ consistency" made visible as one more fold. Zero kernel changes; all three engin
 round, not one write independently), same distinct-bound technique. After that, rung 3's
 CALM-as-grade typing needs a non-monotone op (compare-and-swap) to contrast against the
 monotone LWW merge this whole family has used so far.
+
+## 6 · R3 probe — lattice core plus the consumer-pulled wall
+
+**LANDED (2026-07-19):** `Bang/Distribution/LatticeStore.lean` plus
+`examples/lattice-store/`. The Lean leaf module supplies the missing concrete core:
+`JoinUpdate` has one constructor (`join`), store application is `current ⊔ payload`, and
+anti-entropy is the same join. It proves exactly four facts for that fragment: updates are
+inflationary, two deliveries commute, a duplicate is idempotent, and two replicas agree after
+one symmetric exchange. The last statement assumes the exchange happens; it is not a network
+liveness or fairness theorem.
+
+The first concrete BANG consumer does **not** run yet. Its honest `Int/max` updating clause must
+compute both the resume value and next handler parameter from `param` and the payload. ADR-0114's
+current frontend value-shape gate rejects that pure computed pair with the generic
+`must return a value pair` diagnostic. `computed-update-wall.bang` retains this exact refusal.
+The allocator S0 transition independently found the same boundary, so one follow-on increment must
+own pure computed update components once and carry both consumers in its acceptance matrix. This
+branch does not implement that feature or replace generic join with constant operations.
+
+CAS remains independently excluded: `cas-excluded.bang` uses an ADR-0114-accepted direct value pair,
+then calls the absent `store.cas((expected, replacement))`. `just test-lattice-store` pins both
+diagnostics, proving that the CAS refusal is not masked by the computed-update wall.
+
+This is therefore a banked lattice core plus consumer-pulled wall finding, not a completed
+end-to-end CALM tracer and not coordination-free execution evidence. Deliberate exclusions remain:
+effectful updating clauses, finalizers, the full D5 proof port, grade-polymorphism, consumer-specific
+operations, a general `rowmonotone_coordination_free` proof, arbitrary merge certification,
+consensus/CAS, a kernel primitive, and a `coord` row label. Later work must also add a delivery or
+fairness model before strengthening the scoped convergence result.

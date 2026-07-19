@@ -1,0 +1,14 @@
+-- Negative pole for tools/test-lattice-store.sh. A compare-and-swap would need both an expected
+-- state and a replacement and could conditionally overwrite the current value. The public Store
+-- effect has no such operation, so this program must fail during checking rather than silently
+-- treating CAS as a join.
+import LatticeStore
+
+handle
+  store.cas((0, 300))
+with (LatticeStore_Store 0) as store {
+  -- A direct value pair is accepted by ADR-0114. This keeps the CAS diagnostic independent of the
+  -- computed-update wall pinned by computed-update-wall.bang.
+  update joinPut(value) => (value, value),
+  observe(ignored) => param
+}

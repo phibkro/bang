@@ -71,7 +71,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (46)
+## test (48)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -87,6 +87,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`run-batteries.sh`](run-batteries.sh) | `verify` | `justfile`, `tools/test-*.sh` | concurrent driver for the independent verify batteries (plan 004) |
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
 | [`test-82-verbs.sh`](test-82-verbs.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for the #82 agent-tooling verbs over the landed |
+| [`test-allocator-tracer-probe.sh`](test-allocator-tracer-probe.sh) | `manual` | `scratch/allocator-tracer/`, `Bang/Frontend/TypeCheck.lean`, `Bang/Core/Semantics/Eval.lean` | Allocator S0: update-envelope bisect, structured handler state, exact-once result binding, |
 | [`test-annotate.sh`](test-annotate.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite annotate` (#82 item 1) |
 | [`test-bang-build.sh`](test-bang-build.sh) | `verify` | `Main.lean`, `Bang/Backend/WasmEmit.lean` | the CLI gate for `bang build` (issue #136 productized) |
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |
@@ -105,6 +106,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-host-authority.sh`](test-host-authority.sh) | `verify` | `Main.lean`, `std/Io.bang` | #169: explicit real-host authority, trusted bundled-service identity, and Fs root containment |
 | [`test-hostio-seam.sh`](test-hostio-seam.sh) | `verify` | `Main.lean`, `Bang/Backend/EnvMachine.lean`, `std/Io.bang` | the SEAM + CLI-surface gate for the host-IO wedge (ADR-0104) |
 | [`test-initializer-census.sh`](test-initializer-census.sh) | `verify` | `Main.lean`, `Bang/Frontend/Query.lean`, `Bang/Frontend/TypeCheck.lean`, `examples/*/main.bang` | pin the inert-initializer language contract and its census lineage |
+| [`test-lattice-store.sh`](test-lattice-store.sh) | `verify` | `Bang/Distribution/LatticeStore.lean`, `examples/lattice-store` | Lattice-store surface probes: pin the shared computed-update wall and fail-closed CAS boundary |
 | [`test-law.sh`](test-law.sh) | `verify` | — | the non-interactive gate for `bang test` (issue #60's CLI wiring) |
 | [`test-lean-warnings.sh`](test-lean-warnings.sh) | `verify` | `Main.lean`, `tools/lean-warnings.py`, `docfacts/lean-warning-budget.json`, `justfile` | Falsification poles for the deterministic, reduction-friendly Lean warning budget |
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |

@@ -145,6 +145,11 @@ test-cli:
 test-out-of-fuel-naming:
     bash tools/test-out-of-fuel-naming.sh
 
+# Allocator systems-wedge S0: structured handler state and exact-once results are positive poles;
+# computed private-state transition and at-pop audit remain explicit semantic stops.
+test-allocator-tracer-probe:
+    bash tools/test-allocator-tracer-probe.sh
+
 # Fail-closed, command-scoped option grammar (#178): unknown/inappropriate flags, malformed or
 # duplicate values, host-authority parsing, mixed-order compatibility, and pre-effect validation.
 # Part of the default `verify` chain.
@@ -175,6 +180,11 @@ test-release-integrity:
 # Part of the default `verify` chain.
 test-law:
     bash tools/test-law.sh
+
+# Lattice-store consumer probes: ADR-0114's pure-computed-update wall plus an independent CAS
+# exclusion.
+test-lattice-store:
+    bash tools/test-lattice-store.sh
 
 # Rank duplicated code windows in Bang/ (extraction candidates; triage lives in
 # docs/notes/clone-triage.md). ARGS pass through, e.g. `just clones --window 8`.

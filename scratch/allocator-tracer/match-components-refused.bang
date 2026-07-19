@@ -1,0 +1,16 @@
+-- S0 negative pole: literal pair components that use pure matches over param are also rejected.
+-- The ascriptions keep the probe focused on the update envelope rather than match inference.
+data Live = Empty | Cell(Int, Live)
+data ArenaState = State(Int, Live)
+
+effect AllocMatchComponents { alloc : Int -> Int }
+
+handle
+  alloc.alloc(1)
+with (AllocMatchComponents (State(0, Empty) : ArenaState)) as alloc {
+  update alloc(bytes) =>
+    ((match (param : ArenaState) { State(next, live) -> next }),
+     (match (param : ArenaState) {
+        State(next, live) -> State(next + 1, Cell(next, live))
+      }))
+}

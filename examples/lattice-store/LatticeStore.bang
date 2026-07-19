@@ -1,0 +1,6 @@
+-- The intended public surface of the first lattice-store fragment. `joinPut` is the only update;
+-- a lawful handler would combine the payload with its current parameter using a join. ADR-0114's
+-- current value-shape gate cannot yet express that computed next parameter, so the adjacent probe
+-- retains the exact wall instead of presenting this declaration as a runnable implementation.
+-- There is deliberately no `cas`, overwrite, or remove operation.
+pub effect Store { joinPut : Int -> Int, observe : Int -> Int }

@@ -1,6 +1,7 @@
 module
 
 public import Bang.Backend.AbstractMachine
+public import Bang.Backend.WgcCapCode
 
 /-!
   WasmEmit.lean — the ◊5.5 EMISSION rung-1 SPIKE (pure ⊥-row arithmetic → real `.wat`).
@@ -1299,9 +1300,10 @@ def gcTypes : String :=
   -- the unified-rep move (rung-5 design (b) Candidate 1): the compile-time inline `.state` LOCAL
   -- becomes a runtime heap box, reachable through the env cons-list.
   -- #134 ESCAPE STAMP (C2): field $id = the generative handler identity (ADR-0055). For a STATE cap
-  -- cell it is the minting handle's id; a `get`/`put` gates `$id < $liveTop` (the runtime image of
-  -- `splitAtId K n ≠ none` / `WellCounted`'s `< g` bound) else traps = the defined `escapedCap`
-  -- fail-loud (ADR-0063). For a TXN data cell (also a $ref) the id is inert (id 0) — txn cells are
+  -- cell it is the minting handle's id; a `get`/`put` gates `$id < $liveTop`, which rejects immediate
+  -- escape but is only a scalar approximation to live-frame membership (a later mint can revive a
+  -- stale id; `WgcCapCode` pins the counterexample). For a TXN data cell (also a $ref) the id is inert
+  -- (id 0) — txn cells are
   -- never performed on as caps; only the $txbox is the cap. `$box` (field 1) is the mutable payload.
   "    (type $ref  (sub $val (struct (field $id i64) (field $box (mut (ref null $val))))))\n" ++
   -- RUNG 5 S4: a runtime clause record carries exact module-local operation identity, that clause's
@@ -1328,28 +1330,15 @@ and `struct.get`/`struct.set` it — the SAME in-place resume as state (one-shot
 = reset `H` to null (the journal drops; empty-start restore, rung-3 §Q3). -/
 def gcHelpers : String :=
   -- #134 ESCAPE STAMP (C2): the runtime image of the kernel's global-fresh handler-identity counter
-  -- (ADR-0055) + the live-frame chain (`splitAtId`). `$nextId` mints a fresh id per `handle`;
-  -- `$liveTop` is the high-water mark = the count of currently-OPEN handlers. A `handle` bumps
+  -- (ADR-0055). `$nextId` mints a fresh id per `handle`;
+  -- `$liveTop` is a scalar high-water mark. A `handle` bumps
   -- `$liveTop := ++$nextId` on entry and restores it to its own minted id on exit; a `perform` on a
   -- cap with id `n` gates `n < $liveTop` (its minting frame still live) else TRAPS = the defined
-  -- `escapedCap` fail-loud (ADR-0063). This is EXACTLY `WellCounted`'s `< g` bound (Invariants.lean:31)
-  -- made runtime: ids are monotone-fresh (never reused), so a popped handler's id is strictly below
-  -- every later mint and can never be revived by a later frame's watermark (the ADR-0054 impostor
-  -- collision the global counter kills). `$capMint` = mint+open; `$capExit` = restore; `$capGate`
-  -- = the liveness check (traps on escape).
-  "  (global $liveTop (mut i64) (i64.const 0))\n" ++
-  "  (global $nextId  (mut i64) (i64.const 0))\n" ++
-  -- mint a fresh id, OPEN the frame ($liveTop = ++$nextId), return the minted id (for the later exit).
-  "  (func $capMint (result i64) (local $m i64)\n" ++
-  "    (local.set $m (global.get $nextId))\n" ++
-  "    (global.set $nextId (i64.add (global.get $nextId) (i64.const 1)))\n" ++
-  "    (global.set $liveTop (global.get $nextId))\n" ++
-  "    (local.get $m))\n" ++
-  -- EXIT: the handle pops — restore $liveTop to the minting id (frames minted above it are now dead).
-  "  (func $capExit (param $m i64) (global.set $liveTop (local.get $m)))\n" ++
-  -- GATE: trap (= escapedCap) if the cap's id names a handler that has popped ($id >= $liveTop).
-  "  (func $capGate (param $id i64)\n" ++
-  "    (if (i64.ge_s (local.get $id) (global.get $liveTop)) (then (unreachable))))\n" ++
+  -- This rejects an immediately escaped cap, but it is NOT exact live-frame membership: a later
+  -- mint raises `$liveTop` and revives an older popped id. `WgcCapCode` is the theorem-visible,
+  -- mechanically rendered slice that pins both facts; the stale re-entry surface witness remains
+  -- a known-red differential outside the proved fragment. Do not claim `$liveTop ≡ splitAtId`.
+  WgcCapCode.render WgcCapCode.scalarCapCode ++
   "  (func $box (param $n i64) (result (ref null $val)) (struct.new $ival (local.get $n)))\n" ++
   "  (func $lookup (param $e (ref null $env)) (param $n i32) (result (ref null $val))\n" ++
   "    (block $done (loop $l\n" ++

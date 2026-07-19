@@ -1,0 +1,13 @@
+-- S0 negative pole: even with a literal outer pair, pure computed components over param are
+-- not values. This separates component computation from let-wrapped outer pair formation.
+data Live = Empty | Cell(Int, Live)
+
+effect AllocComputedComponents { alloc : Int -> Int }
+
+handle
+  alloc.alloc(1)
+with (AllocComputedComponents (0, Empty)) as alloc {
+  update alloc(bytes) =>
+    ((let (next, live) = param in next),
+     (let (next, live) = param in (next + 1, Cell(next, live))))
+}

@@ -1,7 +1,7 @@
 {
   "enrollments": [
     {
-      "auditLine": 34,
+      "auditLine": 35,
       "axiomTrust": "flagged",
       "axioms": [
         "Classical.choice",
@@ -36,7 +36,7 @@
       "writtenRef": "lr_sound"
     },
     {
-      "auditLine": 35,
+      "auditLine": 36,
       "axiomTrust": "flagged",
       "axioms": [
         "Classical.choice",
@@ -72,7 +72,7 @@
       "writtenRef": "lr_fundamental"
     },
     {
-      "auditLine": 36,
+      "auditLine": 37,
       "axiomTrust": "flagged",
       "axioms": [
         "Classical.choice",
@@ -107,7 +107,7 @@
       "writtenRef": "lr_fundamental_closed"
     },
     {
-      "auditLine": 38,
+      "auditLine": 39,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -139,7 +139,7 @@
       "writtenRef": "seq_unit"
     },
     {
-      "auditLine": 39,
+      "auditLine": 40,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -176,7 +176,7 @@
       "writtenRef": "compile_forward_sim"
     },
     {
-      "auditLine": 42,
+      "auditLine": 43,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -212,7 +212,7 @@
       "writtenRef": "Bang.compile_forward_sim_pure"
     },
     {
-      "auditLine": 43,
+      "auditLine": 44,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -248,7 +248,7 @@
     },
     {
       "aliasOf": "compile_forward_sim",
-      "auditLine": 50,
+      "auditLine": 51,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -283,7 +283,7 @@
       "writtenRef": "Bang.Rung5ProofGrade.s5_effectful_forward_sim"
     },
     {
-      "auditLine": 51,
+      "auditLine": 52,
       "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
@@ -318,7 +318,7 @@
       "writtenRef": "Bang.Rung5ProofGrade.s5_exec_wexec_lockstep"
     },
     {
-      "auditLine": 52,
+      "auditLine": 53,
       "axiomTrust": "trusted",
       "axioms": [
         "propext"
@@ -352,7 +352,7 @@
     },
     {
       "aliasOf": "compileC_satisfies_current_instrWF",
-      "auditLine": 53,
+      "auditLine": 54,
       "axiomTrust": "trusted",
       "axioms": [
         "propext"
@@ -384,7 +384,7 @@
       "writtenRef": "compile_well_typed"
     },
     {
-      "auditLine": 54,
+      "auditLine": 55,
       "axiomTrust": "flagged",
       "axioms": [
         "sorryAx"
@@ -418,7 +418,7 @@
     },
     {
       "aliasOf": "handler_lowering_placeholder",
-      "auditLine": 55,
+      "auditLine": 56,
       "axiomTrust": "flagged",
       "axioms": [
         "sorryAx"
@@ -450,7 +450,7 @@
       "writtenRef": "handler_compiles"
     },
     {
-      "auditLine": 56,
+      "auditLine": 57,
       "axiomTrust": "trusted",
       "axioms": [
         "propext"
@@ -484,7 +484,7 @@
     },
     {
       "aliasOf": "compileC_emits_no_locals",
-      "auditLine": 57,
+      "auditLine": 58,
       "axiomTrust": "trusted",
       "axioms": [
         "propext"
@@ -516,7 +516,7 @@
       "writtenRef": "zero_grade_no_code"
     },
     {
-      "auditLine": 58,
+      "auditLine": 59,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -552,7 +552,7 @@
       "writtenRef": "subst_value"
     },
     {
-      "auditLine": 59,
+      "auditLine": 60,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -587,7 +587,7 @@
       "writtenRef": "preservation"
     },
     {
-      "auditLine": 60,
+      "auditLine": 61,
       "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
@@ -623,7 +623,7 @@
       "writtenRef": "progress"
     },
     {
-      "auditLine": 61,
+      "auditLine": 62,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -660,7 +660,7 @@
       "writtenRef": "type_safety"
     },
     {
-      "auditLine": 62,
+      "auditLine": 63,
       "axiomTrust": "trusted",
       "axioms": [],
       "claimKind": "dispatch-isolation",
@@ -692,7 +692,7 @@
       "writtenRef": "no_accidental_handling"
     },
     {
-      "auditLine": 65,
+      "auditLine": 66,
       "axiomTrust": "trusted",
       "axioms": [
         "propext"
@@ -727,7 +727,7 @@
       "writtenRef": "no_accidental_handling_custom"
     },
     {
-      "auditLine": 66,
+      "auditLine": 67,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -763,7 +763,7 @@
     },
     {
       "aliasOf": "closed_fully_handled_program_no_unclassified_stuck",
-      "auditLine": 67,
+      "auditLine": 68,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -797,7 +797,7 @@
       "writtenRef": "custom_program_safe"
     },
     {
-      "auditLine": 68,
+      "auditLine": 69,
       "axiomTrust": "trusted",
       "axioms": [],
       "claimKind": "definition-projection",
@@ -827,7 +827,7 @@
       "writtenRef": "rowinst_requires_disjoint"
     },
     {
-      "auditLine": 72,
+      "auditLine": 73,
       "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
@@ -864,7 +864,7 @@
     },
     {
       "aliasOf": "evalTrace_dispatches_within_recorded_live_bound",
-      "auditLine": 73,
+      "auditLine": 74,
       "axiomTrust": "trusted",
       "axioms": [
         "Quot.sound",
@@ -899,7 +899,7 @@
       "writtenRef": "effect_sound"
     },
     {
-      "auditLine": 74,
+      "auditLine": 75,
       "axiomTrust": "flagged",
       "axioms": [
         "propext",
@@ -933,7 +933,7 @@
       "writtenRef": "zero_usage_erasable"
     },
     {
-      "auditLine": 75,
+      "auditLine": 76,
       "axiomTrust": "trusted",
       "axioms": [
         "propext"
@@ -963,7 +963,7 @@
       "writtenRef": "Bang.Surface.cell_reflects_latest"
     },
     {
-      "auditLine": 76,
+      "auditLine": 77,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -997,7 +997,7 @@
       "writtenRef": "Bang.CalcVM.compile_correct"
     },
     {
-      "auditLine": 77,
+      "auditLine": 78,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -1032,7 +1032,7 @@
       "writtenRef": "Bang.CalcVM.evalD_agrees_source"
     },
     {
-      "auditLine": 79,
+      "auditLine": 80,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -1069,7 +1069,7 @@
       "writtenRef": "Bang.CalcVM.sim"
     },
     {
-      "auditLine": 80,
+      "auditLine": 81,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -1107,7 +1107,7 @@
       "writtenRef": "Bang.CalcVM.run_evalD"
     },
     {
-      "auditLine": 81,
+      "auditLine": 82,
       "axiomTrust": "trusted",
       "axioms": [
         "Classical.choice",
@@ -1145,6 +1145,164 @@
       "statementShape": "EnvAgrees rho gamma -> MEnv.WF rho -> MEnv.WFClos rho -> ScopedC gamma.length M -> HandlerWF gamma.length M -> evalE f 0 [] [] [] rho M = some (mterm (mret mv), g', eSigma', eTau', eKappa') -> exists g'' sigma' tau' kappa', evalD f 0 [] [] [] (substEnv gamma M) = some (term (ret (readback mv)), g'', sigma', tau', kappa')",
       "targetModelKind": "environment-machine-to-calcvm",
       "writtenRef": "Bang.EnvMachine.evalE_agrees_evalD"
+    },
+    {
+      "auditLine": 85,
+      "axiomTrust": "trusted",
+      "axioms": [],
+      "claimKind": "example-law",
+      "claimRole": "supporting",
+      "claimStrength": "bounded",
+      "definitionSource": {
+        "line": 74,
+        "path": "Bang/Distribution/LatticeStore.lean"
+      },
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A represented join update never retracts the store's current lattice value.",
+      "id": "bang-distribution-latticestore-le-join",
+      "limitations": [
+        "Does not establish monotonicity for arbitrary user effects or emitted programs."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "SemilatticeSup instance"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.Distribution.LatticeStore.le_join",
+      "scope": "One update in the abstract join-only lattice-store model.",
+      "specHeadline": false,
+      "statementShape": "store.current <= (store.join value).current",
+      "targetModelKind": "join-only-lattice-store",
+      "writtenRef": "Bang.Distribution.LatticeStore.le_join"
+    },
+    {
+      "auditLine": 86,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "Quot.sound",
+        "propext"
+      ],
+      "claimKind": "example-law",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
+      "definitionSource": {
+        "line": 79,
+        "path": "Bang/Distribution/LatticeStore.lean"
+      },
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Two join updates produce the same store in either delivery order.",
+      "id": "bang-distribution-latticestore-join-commutes",
+      "limitations": [
+        "Does not prove whole-trace permutation invariance or network convergence."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "SemilatticeSup instance"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.Distribution.LatticeStore.join_commutes",
+      "scope": "Exactly two updates in the abstract join-only lattice-store model.",
+      "specHeadline": false,
+      "statementShape": "(store.join x).join y = (store.join y).join x",
+      "targetModelKind": "join-only-lattice-store",
+      "writtenRef": "Bang.Distribution.LatticeStore.join_commutes"
+    },
+    {
+      "auditLine": 87,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "propext"
+      ],
+      "claimKind": "example-law",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
+      "definitionSource": {
+        "line": 86,
+        "path": "Bang/Distribution/LatticeStore.lean"
+      },
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Redelivering one join update does not change the resulting store.",
+      "id": "bang-distribution-latticestore-join-idempotent",
+      "limitations": [
+        "Does not prove arbitrary trace deduplication or transport exactly-once behavior."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "SemilatticeSup instance"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.Distribution.LatticeStore.join_idempotent",
+      "scope": "Duplicate delivery of one update in the abstract join-only lattice-store model.",
+      "specHeadline": false,
+      "statementShape": "(store.join x).join x = store.join x",
+      "targetModelKind": "join-only-lattice-store",
+      "writtenRef": "Bang.Distribution.LatticeStore.join_idempotent"
+    },
+    {
+      "auditLine": 88,
+      "axiomTrust": "trusted",
+      "axioms": [
+        "propext"
+      ],
+      "claimKind": "example-law",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
+      "definitionSource": {
+        "line": 95,
+        "path": "Bang/Distribution/LatticeStore.lean"
+      },
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "A symmetric exchange computes the same joined value at both replicas.",
+      "id": "bang-distribution-latticestore-pair-converges-after-exchange",
+      "limitations": [
+        "Does not establish network liveness, eventual delivery, or convergence without an exchange."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "SemilatticeSup instance",
+          "both replica values participate in the exchange"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.Distribution.LatticeStore.pair_converges_after_exchange",
+      "scope": "One idealized anti-entropy exchange between two abstract replicas.",
+      "specHeadline": false,
+      "statementShape": "left.merge right = right.merge left",
+      "targetModelKind": "join-only-lattice-store",
+      "writtenRef": "Bang.Distribution.LatticeStore.pair_converges_after_exchange"
+    },
+    {
+      "auditLine": 89,
+      "axiomTrust": "trusted",
+      "axioms": [],
+      "claimKind": "structural-invariant",
+      "claimRole": "supporting",
+      "claimStrength": "structural",
+      "definitionSource": {
+        "line": 103,
+        "path": "Bang/Distribution/LatticeStore.lean"
+      },
+      "evidenceKind": "kernel-checked-theorem",
+      "guarantee": "Every update representable by this fragment is a join update.",
+      "id": "bang-distribution-latticestore-updates-are-join-only",
+      "limitations": [
+        "A future constructor requires an explicit semantic and proof review; this does not forbid extending the datatype."
+      ],
+      "premiseUsage": {
+        "loadBearing": [
+          "exhaustive JoinUpdate constructor coverage"
+        ],
+        "unused": []
+      },
+      "reportName": "Bang.Distribution.LatticeStore.updates_are_join_only",
+      "scope": "The current single-constructor JoinUpdate datatype.",
+      "specHeadline": false,
+      "statementShape": "for every JoinUpdate update, exists value such that update = JoinUpdate.join value",
+      "targetModelKind": "join-only-lattice-store",
+      "writtenRef": "Bang.Distribution.LatticeStore.updates_are_join_only"
     }
   ],
   "evidence": [
@@ -1222,7 +1380,7 @@
   "schemaVersion": 2,
   "sourceFingerprint": {
     "algorithm": "sha256-sorted-path-content",
-    "digest": "8892e1f0609a941edf5c51071ecff521d30f701db4710a8c55a0dc4f1d7948da",
+    "digest": "ca901ee229109cc42529aea26064fa6d81703b85cbf9c195caedb3c29b32c567",
     "paths": [
       "Bang/Audit.lean",
       "Bang/Backend/AbstractMachine.lean",
@@ -1232,6 +1390,7 @@
       "Bang/Backend/U5bComplete.lean",
       "Bang/Backend/Wasm.lean",
       "Bang/Backend/WasmEmit.lean",
+      "Bang/Backend/WgcCapCode.lean",
       "Bang/Core/CapCoh.lean",
       "Bang/Core/CompCodec.lean",
       "Bang/Core/EffectRow.lean",
@@ -1248,6 +1407,7 @@
       "Bang/Core/Soundness.lean",
       "Bang/Core/Typing.lean",
       "Bang/Distribution.lean",
+      "Bang/Distribution/LatticeStore.lean",
       "Bang/Examples.lean",
       "Bang/Frontend/Annotate.lean",
       "Bang/Frontend/DiagCodes.lean",

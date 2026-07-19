@@ -86,10 +86,11 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`wasm-concurrency-survey.md`](wasm-concurrency-survey.md) — Wasm components + concurrency — how bang should model concurrent execution (design survey)
 - [`wgcexec-calculation-plan.md`](wgcexec-calculation-plan.md) — The calculated `wgcexec` machine — calculation plan + tractability spike (Wave D, 2026-07-12)
 
-## archival (13)
+## archival (14)
 
 _Spike / experiment / pivot record — input to a specific ADR; preserved, not current._
 
+- [`allocator-tracer-probe.md`](allocator-tracer-probe.md) — Allocator tracer S0 — banked at the computed-update boundary
 - [`calc-typer-experiment-findings.md`](calc-typer-experiment-findings.md) — Experiment: does Cousot's calculate-the-rules method port to bang's graded CBPV?
 - [`calculated-type-system-frontier.md`](calculated-type-system-frontier.md) — Calculating the type system — a post-v1 research frontier
 - [`cap-representation-spike-findings.md`](cap-representation-spike-findings.md) — Cap-representation feasibility spike — findings (→ ADR-0053 GO on absolute caps)

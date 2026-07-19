@@ -17,7 +17,15 @@ IMPORT_RE = re.compile(
     re.MULTILINE,
 )
 TIER_DIRS = frozenset({"Core", "Frontend", "Backend", "Meta", "Witness", "Reify"})
-APEX_MODULES = frozenset({"Bang.Spec", "Bang.Audit", "Bang.Distribution", "Bang.Examples"})
+APEX_MODULES = frozenset(
+    {
+        "Bang.Spec",
+        "Bang.Audit",
+        "Bang.Distribution",
+        "Bang.Distribution.LatticeStore",
+        "Bang.Examples",
+    }
+)
 
 
 class ImportFactsError(ValueError):
@@ -93,11 +101,17 @@ def scan_bang(root: str | Path = ".") -> ImportFacts:
         if imported not in modules
     )
     if missing:
-        details = "\n".join(f"  {source} imports missing {target}" for source, target in missing)
+        details = "\n".join(
+            f"  {source} imports missing {target}" for source, target in missing
+        )
         raise ImportFactsError(f"internal imports have no source module:\n{details}")
 
     edges = tuple(
-        sorted((fact.name, imported) for fact in modules.values() for imported in fact.imports)
+        sorted(
+            (fact.name, imported)
+            for fact in modules.values()
+            for imported in fact.imports
+        )
     )
     return ImportFacts(root=root_path, modules=modules, edges=edges)
 
@@ -115,11 +129,14 @@ def self_test(root: str | Path = ".") -> None:
 /- public import Bang.Fake.Block -/
 public import Bang.Spec -- import Bang.Fake.Trailing
 """
-    assert parse_imports(comment_probe) == ("Bang.Spec",), "comment-shaped imports became edges"
+    assert parse_imports(comment_probe) == ("Bang.Spec",), (
+        "comment-shaped imports became edges"
+    )
 
     assert facts.modules["Bang.Backend.Wasm"].tier == "Backend"
     assert facts.modules["Bang.Meta.BinaryLR"].tier == "Meta"
     assert facts.modules["Bang.Spec"].tier == "Apex"
+    assert facts.modules["Bang.Distribution.LatticeStore"].tier == "Apex"
     assert len(facts.edges) > len(facts.modules), "implausibly sparse module graph"
 
 
@@ -130,7 +147,9 @@ def main() -> int:
         default=os.environ.get("REFS_ROOT", "."),
         help="repository root (default: REFS_ROOT or current directory)",
     )
-    parser.add_argument("--self-test", action="store_true", help="run parser and classification poles")
+    parser.add_argument(
+        "--self-test", action="store_true", help="run parser and classification poles"
+    )
     args = parser.parse_args()
 
     try:
@@ -142,7 +161,9 @@ def main() -> int:
                 "classic/public/comment poles hold."
             )
         else:
-            print(f"import-facts: {len(facts.modules)} modules, {len(facts.edges)} internal edges")
+            print(
+                f"import-facts: {len(facts.modules)} modules, {len(facts.edges)} internal edges"
+            )
         return 0
     except (ImportFactsError, AssertionError) as exc:
         print(f"import-facts: FAIL — {exc}")

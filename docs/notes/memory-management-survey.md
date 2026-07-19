@@ -548,6 +548,8 @@ Internal anchors:
   ADR-INPUT), `docs/notes/kernel-substrate-survey.md` §2a (the grade family, U as the linearity axis,
   R as the region axis), `docs/notes/laws-taxonomy.md` §5 (grade-axis admissibility — how a region
   lattice becomes a legal grade).
+- **Banked S0 evidence**: `docs/notes/allocator-tracer-probe.md` (structured arena state fits;
+  effect-free computed update envelope is the shared allocator/CALM follow-on door).
 - **Invariants**: #3 (STM privilege is concurrency-only), #5 (five primitives — regions are a grade,
   not a sixth), #7 (performance second-class — the R0→R1→R2 sequencing), #1 (one construct per problem
   — scoped-cap types = region types, §4).

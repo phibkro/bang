@@ -8,6 +8,7 @@ public import Bang.Frontend.Surface   -- rung 4: the reactive-cell liveness law 
 public import Bang.Backend.AbstractMachine    -- ◊3: the calculated-machine compile_correct (verification spine)
 public import Bang.Backend.Rung5ProofGrade    -- rung-5 S5: the effectful-obligation re-exports (durable axiom pin)
 public import Bang.Backend.EnvMachine          -- default engine: environment-to-evalD correspondence
+public import Bang.Distribution.LatticeStore   -- CALM floor: the join-only replicated-store laws
 
 /-!
   Audit.lean — the headline-theorem axiom census.
@@ -79,3 +80,10 @@ open Bang
 #print axioms Bang.CalcVM.sim
 #print axioms Bang.CalcVM.run_evalD
 #print axioms Bang.EnvMachine.evalE_agrees_evalD
+-- Join-only distributed-state floor. These five claims are product-facing proof assets, so enroll
+-- them in the fail-closed baseline rather than merely printing them from their leaf module.
+#print axioms Bang.Distribution.LatticeStore.le_join
+#print axioms Bang.Distribution.LatticeStore.join_commutes
+#print axioms Bang.Distribution.LatticeStore.join_idempotent
+#print axioms Bang.Distribution.LatticeStore.pair_converges_after_exchange
+#print axioms Bang.Distribution.LatticeStore.updates_are_join_only

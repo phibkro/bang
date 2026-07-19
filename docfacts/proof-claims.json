@@ -436,6 +436,71 @@
       "guarantee": "A successful default environment-machine return is reproduced by evalD after closing the source term and reading back the value.",
       "scope": "Empty input stores, agreeing well-formed environments, scoped handler-well-formed source terms, and successful returned outcomes.",
       "limitations": ["Concludes evalD correspondence, not direct Source.eval agreement.", "Does not cover non-success outcomes or arbitrary initial stores."]
+    },
+    {
+      "writtenRef": "Bang.Distribution.LatticeStore.le_join",
+      "claimRole": "supporting",
+      "claimStrength": "bounded",
+      "claimKind": "example-law",
+      "evidenceKind": "kernel-checked-theorem",
+      "targetModelKind": "join-only-lattice-store",
+      "statementShape": "store.current <= (store.join value).current",
+      "premiseUsage": { "loadBearing": ["SemilatticeSup instance"], "unused": [] },
+      "guarantee": "A represented join update never retracts the store's current lattice value.",
+      "scope": "One update in the abstract join-only lattice-store model.",
+      "limitations": ["Does not establish monotonicity for arbitrary user effects or emitted programs."]
+    },
+    {
+      "writtenRef": "Bang.Distribution.LatticeStore.join_commutes",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
+      "claimKind": "example-law",
+      "evidenceKind": "kernel-checked-theorem",
+      "targetModelKind": "join-only-lattice-store",
+      "statementShape": "(store.join x).join y = (store.join y).join x",
+      "premiseUsage": { "loadBearing": ["SemilatticeSup instance"], "unused": [] },
+      "guarantee": "Two join updates produce the same store in either delivery order.",
+      "scope": "Exactly two updates in the abstract join-only lattice-store model.",
+      "limitations": ["Does not prove whole-trace permutation invariance or network convergence."]
+    },
+    {
+      "writtenRef": "Bang.Distribution.LatticeStore.join_idempotent",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
+      "claimKind": "example-law",
+      "evidenceKind": "kernel-checked-theorem",
+      "targetModelKind": "join-only-lattice-store",
+      "statementShape": "(store.join x).join x = store.join x",
+      "premiseUsage": { "loadBearing": ["SemilatticeSup instance"], "unused": [] },
+      "guarantee": "Redelivering one join update does not change the resulting store.",
+      "scope": "Duplicate delivery of one update in the abstract join-only lattice-store model.",
+      "limitations": ["Does not prove arbitrary trace deduplication or transport exactly-once behavior."]
+    },
+    {
+      "writtenRef": "Bang.Distribution.LatticeStore.pair_converges_after_exchange",
+      "claimRole": "canonical",
+      "claimStrength": "bounded",
+      "claimKind": "example-law",
+      "evidenceKind": "kernel-checked-theorem",
+      "targetModelKind": "join-only-lattice-store",
+      "statementShape": "left.merge right = right.merge left",
+      "premiseUsage": { "loadBearing": ["SemilatticeSup instance", "both replica values participate in the exchange"], "unused": [] },
+      "guarantee": "A symmetric exchange computes the same joined value at both replicas.",
+      "scope": "One idealized anti-entropy exchange between two abstract replicas.",
+      "limitations": ["Does not establish network liveness, eventual delivery, or convergence without an exchange."]
+    },
+    {
+      "writtenRef": "Bang.Distribution.LatticeStore.updates_are_join_only",
+      "claimRole": "supporting",
+      "claimStrength": "structural",
+      "claimKind": "structural-invariant",
+      "evidenceKind": "kernel-checked-theorem",
+      "targetModelKind": "join-only-lattice-store",
+      "statementShape": "for every JoinUpdate update, exists value such that update = JoinUpdate.join value",
+      "premiseUsage": { "loadBearing": ["exhaustive JoinUpdate constructor coverage"], "unused": [] },
+      "guarantee": "Every update representable by this fragment is a join update.",
+      "scope": "The current single-constructor JoinUpdate datatype.",
+      "limitations": ["A future constructor requires an explicit semantic and proof review; this does not forbid extending the datatype."]
     }
   ]
 }

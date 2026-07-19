@@ -477,7 +477,7 @@ def validate_fact(fact: dict) -> None:
         (item.written_ref, item.line) for item in source_enrollments
     ]:
         raise ValidationError("Audit enrollment inventory is stale")
-    if len(fact["specHeadlines"]) != 23 or len(fact["enrollments"]) != 33:
+    if len(fact["specHeadlines"]) != 23 or len(fact["enrollments"]) != 38:
         raise ValidationError("current Spec/Audit cardinality pole moved")
     semantics_by_ref = {item["writtenRef"]: item for item in claim_semantics()}
     if set(item["writtenRef"] for item in fact["enrollments"]) != set(semantics_by_ref):

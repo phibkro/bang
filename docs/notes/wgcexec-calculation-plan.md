@@ -1,6 +1,15 @@
 <!-- note-status: active -->
 # The calculated `wgcexec` machine — calculation plan + tractability spike (Wave D, 2026-07-12)
 
+> **Scope correction (2026-07-19, first bounded tracer):** the premise that scalar
+> `$liveTop` is equivalent to exact live-frame membership is **refuted**. After cap 0 exits,
+> minting cap 1 sets `liveTop = 2`, so `0 < 2` revives the stale cap although `splitAtId`
+> cannot find it. `Bang/Backend/WgcCapCode.lean` now mechanically renders only the fixed
+> globals/mint/exit/gate prelude and proves bounded live-get, put/get, immediate-escape, and
+> stale-reentry witnesses over one state cell. This is an axiom-clean calculated-helper floor,
+> **not** `compileGC`, a `Comp` machine, Wasm semantics, or pure+state adequacy. The full
+> differential remains load-bearing; exact live membership is a separately priced emitter fix.
+
 > **Verdict (one sentence).** The 3-step unlock the S5 refutation priced (calculate a
 > WasmGC machine from the kernel · prove it ≡ `Source.eval` · show `emitModuleGC` is its
 > text image) is **STATEABLE and — for the load-bearing state fragment — TRACTABLE**: a
@@ -11,14 +20,14 @@
 > PROVEN axiom-clean and the only residual `sorry` being the STANDARD env-machine
 > substitution-coherence debt — **not** a structural mismatch in the machine's shape. The
 > machine is NOT mispriced. It remains **post-v1** (gated on ADR-0059 per prior ruling);
-> the price is now REAL, and the **pure+state fragment is cheap enough to bank early as a
-> standing adequacy gate** if the operator wants a verified floor under the GC emitter.
+> the price is now REAL. Its **pure+state fragment was proposed for an early adequacy bank**;
+> the 2026-07-19 correction above records the additional exact-liveness prerequisite.
 
 Spike: `scratch/WgcexecSpike.lean` (builds green, EXIT 0; 8 `#guard`s pass; `reifyHeap_get`
 + `closeEnv_nil/cons` + `ret_leaf_reifies` proved; one honest `sorry` at the top-level
 simulation marking the subst-coherence debt). This note refines:
 `rung5-s5-proofgrade-refutation.md` (the priced unlock), `cap-gc-rep-design.md` §8.2-8.3
-(the C4 stamp clause folds in here), `emission-rung4-design.md` + `emission-rung5-design.md` (the rep).
+(the refuted scalar C4 handoff), `emission-rung4-design.md` + `emission-rung5-design.md` (the rep).
 
 ---
 
@@ -127,9 +136,10 @@ structurally the SAME shape the inline path already has (`compile` → `Code`; `
   The FIRST line is the machine ≡ oracle (proven by a fuel forward-simulation, ADR-0035
   shape). The SECOND is the text image (a syntactic equality at instruction granularity —
   each `WgcCode` instr renders to a fixed `.wat` fragment, an `exec_wexec`-style lowering
-  lemma). Composed: `emitModuleGC c`'s text is the faithful image of a machine that ≡ the
-  kernel — the miscompile class #134 exposed becomes UNREPRESENTABLE (a should-fail path
-  can't emit a value-returning module, because the machine it images fails loud).
+  lemma). If both lines are eventually proved for a corrected exact-liveness representation,
+  their composition would rule out the #134 class inside the stated fragment. Neither line is
+  established by the bounded helper extraction, and the current scalar emitter still has the
+  stale-reentry counterexample.
 
 - **Syntactic image at which granularity?** Per-instruction (the `WgcCode` inductive's
   constructors), NOT per-whole-module-string. `emitModuleGC` = a module wrapper (type
@@ -227,10 +237,8 @@ transaction         B (the $txbox list) + rollback     MEDIUM-LARGE — the   jo
 custom (user eff)   B ($txbox clause $clos) + the      MEDIUM — the clause  the inline-service sub-
                      call_ref clause-resume            call_ref = customUp-  eval (rung-5 S4); one-
                                                       date image            shot, no reification
-caps-stamp (escape) the $liveTop watermark ≡           SMALL-MEDIUM — this  cap-gc-rep §8.2 C4:
- = the C4 clause     WellCounted < g                   IS the C4 clause,     "$liveTop ≡ WellCounted
-                                                      folds into THIS       < g", stateable against
-                                                      proof                 wgcexec (§3.3)
+caps lifetime       scalar $liveTop vs exact live      REFUTATION LANDED;    WgcCapCode proves the
+                    membership                         emitter fix separate  stale-reentry contrast
 ```
 
 ### 3.2 · Transferable infrastructure
@@ -249,24 +257,25 @@ caps-stamp (escape) the $liveTop watermark ≡           SMALL-MEDIUM — this  
   (`VcapFree ∧` the fragment predicates).
 - **`evalD_agrees_source`** — the tie-back to the kernel. Reused verbatim: `wgcexec ≡
   evalD ≡ Source.eval` composes through it.
-- **The `#134` escape stamp** (`gcHelpers` $capMint/$capExit/$capGate, cap-gc-rep §8.2) —
-  ALREADY implements the runtime watermark; the C4 proof clause ("$liveTop ≡ WellCounted
-  < g") is a lemma ABOUT `wgcexec`'s stamp arms, folds into `wgcexec_reifies`.
+- **The `#134` escape helpers** (`gcHelpers` `$capMint`/`$capExit`/`$capGate`) —
+  `WgcCapCode.scalarCapCode` is their byte-preserving code extraction. The scalar gate is a
+  concrete subject for proof, but it cannot transfer `WellCounted` into exact membership:
+  `WellCounted` gives a necessary upper bound for live ids, not the converse.
 
-### 3.3 · The caps-stamp clause belongs in THIS proof (per the brief)
+### 3.3 · Scope correction: scalar watermark equivalence is refuted
 
-cap-gc-rep §8.2-8.3's C4 ("$liveTop watermark ≡ WellCounted < g") and the txn-abort
-`$capExit` residual are NOT a lane-local C4 — they are the escape-soundness CLAUSE of
-`wgcexec_reifies`. Concretely: `wgcexec`'s `handle` arm mints `id := g` and pushes it
-(the $capMint watermark bump), its `perform` arm gates `id < liveTop` (the $capGate); the
-simulation must show this gate FIRES exactly when `evalD`'s `splitAtId`/`idDispatch`
-returns `.escapedCap` (i.e. when `n` is in no live store). That is `WellCounted (g, K, _)`
-transported to the box-heap machine — the "runtime realization of an invariant the kernel
-already proves" (cap-gc-rep §5), a transfer, not a new theory. The txn-abort `$capExit`
-residual (restore $liveTop on rollback) is the frame-pop image, discharged by the same
-push/pop bookkeeping the state arm uses. So the escape-fail-loud that #134 exposed as a
-LIVE miscompile becomes a PROVEN conjunct of the GC machine's correctness — the strongest
-argument for banking at least the state fragment (§4).
+`WellCounted (g, K, _)` proves every live identity is below `g`; it does not prove every
+identity below `g` is still in `K`. The current helper restores `$liveTop` on exit but a
+later globally fresh mint raises it again. The concrete trace is cap 0 mint/exit, cap 1
+mint, cap 0 gate: the scalar helper accepts and exact `splitAtId`-style membership rejects.
+Global freshness prevents identity collision; it does not prevent a scalar upper bound from
+reviving old identities.
+
+Accordingly, a future `wgcexec_reifies` proof must model exact live membership (or another
+representation with a proved equivalence) and show every emitter gate images that model. The
+bounded tracer proves only the helper-level contrast plus live get/put and immediate escape.
+Transaction abort restoration remains additional debt after the base lifetime representation
+is corrected; none of throws, transactions, custom handlers, or full handler adequacy is claimed.
 
 ### 3.4 · The honest multi-session estimate
 
@@ -282,13 +291,14 @@ calculation"). Concretely, banking on the transfers above:
 - **closures + recursion**: ~2 sessions (the μ-knot + the thunk≠lam coherence).
 - **throws + transaction + custom**: ~3-4 sessions (the abort/rollback/clause-resume
   arms, each a MEDIUM per §3.1).
-- **the caps-stamp escape clause**: ~1 session (folded into the state/custom arms).
+- **the capability-lifetime representation and escape clause**: reprice separately; the scalar
+  transfer assumption was false, so this is no longer a one-session lemma.
 - **the `emitGC` text-image lemma** (per-instr syntactic image): ~1-2 sessions.
 
-Total: **~10-13 sessions**, i.e. a full increment, gated on ADR-0059 landing (the machine
-is the ADR-0059 GC abstract machine; building it before ADR-0059 formalizes the target
-would be premature). This matches the refutation's "rung-5-scale, post-v1" pricing — the
-spike CONFIRMS the price rather than discovering a hidden multiplier.
+The prior **~10-13 session** whole-machine estimate did not price a replacement for the scalar
+lifetime representation and therefore is no longer a complete total. The remaining machine is
+still a full, post-v1 increment gated on ADR-0059; exact liveness is the next separate design/fix
+door and must be estimated before recomputing the total.
 
 ---
 
@@ -299,27 +309,24 @@ spike CONFIRMS the price rather than discovering a hidden multiplier.
 and confirms it is not mispriced. The `emitModuleGC` text backend stays differential-tested
 (inv #1) as the sanctioned tested-stratum oracle in the interim.
 
-**The early-bank option (recommended for consideration).** The **pure + state fragment is
-cheap enough to bank NOW as a standing adequacy gate**, independently of the full machine:
+**The early-bank option is now split.** The first helper/state-cell tracer is banked, but it
+does not yet constitute a standing pure+state adequacy gate:
 
 - It is ~2-3 sessions on top of the `compileGC` extraction (~1 session).
-- It closes the HIGHEST-VALUE slice: #134 proved the GC emit path can SILENTLY miscompile a
-  should-fail (escape) path on state caps, and the differential harness only catches value
-  disagreements someone thought to test. A calculated pure+state `wgcexec` + the escape
-  clause (§3.3) makes the state-cap miscompile class UNREPRESENTABLE — a verified floor
-  under exactly the defect #134 exposed as LIVE.
-- It is a genuine adequacy GATE (a Lean theorem `wgcexec_reifies` over the state fragment,
-  axiom-gated), not another differential test — the stratification's verified core
-  extended one fragment up the GC path.
+- It exposes the HIGHEST-VALUE lifetime slice: the scalar helper and exact reference agree
+  on live get/put and immediate escape, then disagree on stale reentry.
+- The actual adequacy gate still requires a corrected emitter representation, a `Comp`-level
+  calculated machine/compile step, and a scoped reification theorem. Until those land, the
+  stale witness and the broader differential harness remain authoritative at the emit stratum.
 
-**Against banking early**: it needs the `emitCompGC`→`compileGC` refactor, which touches the
-live emitter (owner coordination); and the fragment gate only covers state/pure programs,
-so the harness stays load-bearing for the rest — a partial floor, honestly labelled.
+**Completing the early bank** needs an exact-liveness emitter change plus the
+`emitCompGC`→`compileGC` refactor, which touches the live emitter. Even then, a state/pure
+fragment gate would leave the harness load-bearing for the rest.
 
 **The whole-machine decision** stays where the ruling put it: post-v1, an increment, opened
 when ADR-0059 lands and the operator wants the GC path on the verified stratum. This probe's
-contribution: the price is REAL (~10-13 sessions, §3.4), the shape is PROVEN tractable (the
-spike), and the caps-stamp escape soundness is IN the story (§3.3), not a separate debt.
+contribution: the base machine shape remains tractable, while exact capability lifetime is now
+an explicit prerequisite rather than an assumed transfer (§3.3).
 
 ---
 
@@ -342,14 +349,13 @@ ADEQUACY SEAM       two-stage: compileGC : Comp→WgcCode (= emitCompGC with cod
 SPIKE VERDICT       pure+closures+state TRACTABLE: 3 witnesses value-agree (incl. state-
                     through-captured-closure), heap+leaf legs PROVED axiom-clean, the one
                     sorry = STANDARD subst-coherence (known-tractable), NOT a machine wall.
-                    No refutation appeared.
-CAPS-STAMP          the $liveTop ≡ WellCounted<g clause (cap-gc-rep §8.2 C4) is a CONJUNCT
-                    of wgcexec_reifies (the escape-fail-loud #134 exposed → PROVEN), not a
-                    lane-local C4.
-PRICE               ~10-13 sessions (full machine), rung-5-scale, post-v1, gated ADR-0059.
-                    Confirms the refutation's pricing; no hidden multiplier.
-EARLY-BANK          pure+state fragment ~2-3 sessions (+ ~1 for compileGC extract) = a
-                    standing adequacy GATE that makes the #134 state-cap miscompile class
-                    UNREPRESENTABLE. Recommended for operator consideration; the rest stays
-                    differential-tested (inv #1). Whole-machine stays post-v1 per ruling.
+                    The earlier spike did not exercise stale reentry; that refutation now exists.
+CAPS-LIFETIME       scalar $liveTop ≡ exact membership is REFUTED. WgcCapCode pins live
+                    state-cell observations, immediate rejection, and stale revival versus
+                    exact rejection; it proves no compiler adequacy statement.
+PRICE               prior ~10-13 session total is incomplete: exact liveness needs its own
+                    design/fix estimate before the whole-machine total is recomputed.
+EARLY-BANK          first bounded helper tracer LANDED; the real pure+state adequacy floor
+                    remains behind an exact-liveness emitter fix plus Comp-level calculation
+                    and reification. Differential testing remains load-bearing.
 ```

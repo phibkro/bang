@@ -1,11 +1,14 @@
 module
 
 public import Bang.Spec
+public import Bang.Distribution.LatticeStore
 
 /-!
   Distribution.lean — cashing the semilattice asset.
   NOT part of the verification spine (Spec.lean). This connects the effect
-  algebra to the DISTRIBUTION axis of the Trinity. Two claims, clearly tiered:
+  algebra to the DISTRIBUTION axis of the Trinity. The imported
+  `Bang.Distribution.LatticeStore` is the concrete join-only fragment with scoped,
+  proved laws. The older general markers below remain clearly tiered:
     • `eff_join_semilattice` is PROVABLE from the semiring laws + idempotence.
     • `rowmonotone_coordination_free` is a CONJECTURE / research direction —
       stated to mark the asset, NOT to be proven as part of the spec.

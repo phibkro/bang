@@ -33,7 +33,7 @@ architecture = json.loads((root / "docfacts/architecture.json").read_text(encodi
 proof = json.loads((root / "docfacts/proof.json").read_text(encoding="utf-8"))
 
 assert len(proof["specHeadlines"]) == 23, "Spec headline cardinality pole moved"
-assert len(proof["enrollments"]) == 33, "Audit enrollment cardinality pole moved"
+assert len(proof["enrollments"]) == 38, "Audit enrollment cardinality pole moved"
 assert {item["kind"] for item in proof["specHeadlines"]} == {"theorem"}
 assert all(item["claimKind"] != "theorem" for item in proof["enrollments"]), (
     "syntactic Lean theorem kind collapsed into semantic claim status"
@@ -115,31 +115,31 @@ role_counts = {}
 for record in semantic_inventory.values():
     role_counts[record["claimRole"]] = role_counts.get(record["claimRole"], 0) + 1
 assert role_counts == {
-    "canonical": 18,
-    "supporting": 8,
+    "canonical": 21,
+    "supporting": 10,
     "deprecated-alias": 5,
     "alias": 1,
     "placeholder": 1,
 }, "proof-state semantic roles drifted"
 context = (root / "CONTEXT.md").read_text(encoding="utf-8")
-assert "**claims:** 22 trusted-axiom (⊆ trusted-3) · 0 pending (build in flight) · 4 flagged (aliases/placeholders excluded)" in context
-assert "**enrollment roles:** 18 canonical · 8 supporting · 6 aliases · 1 placeholder" in context
+assert "**claims:** 27 trusted-axiom (⊆ trusted-3) · 0 pending (build in flight) · 4 flagged (aliases/placeholders excluded)" in context
+assert "**enrollment roles:** 21 canonical · 10 supporting · 6 aliases · 1 placeholder" in context
 assert "**flagged:** `handler_compiles`" not in context
 assert "**placeholder:** `handler_lowering_placeholder`" in context
 
 dashboard = runpy.run_path(str(root / "tools/gen-dashboard.py"))
 health = dashboard["parse_health"](context)
 assert health == dashboard["ProofHealth"](
-    trusted_axiom=22,
+    trusted_axiom=27,
     pending=0,
     flagged=4,
     strong=17,
-    structural=3,
-    bounded=2,
+    structural=4,
+    bounded=6,
     partial=3,
     conjectural=1,
-    canonical=18,
-    supporting=8,
+    canonical=21,
+    supporting=10,
     aliases=6,
     placeholders=1,
     sorries=8,
@@ -154,16 +154,16 @@ rendered_dashboard = dashboard["render"](
     health,
     [("proof", "fixture", "deadbeef")],
 )
-assert "22 trusted-axiom claims" in rendered_dashboard
-assert "17 strong · 3 structural · 2 bounded · 3 partial · 1 conjectural" in rendered_dashboard
-assert "18 canonical · 8 supporting · 6 aliases · 1 placeholder" in rendered_dashboard
+assert "27 trusted-axiom claims" in rendered_dashboard
+assert "17 strong · 4 structural · 6 bounded · 3 partial · 1 conjectural" in rendered_dashboard
+assert "21 canonical · 10 supporting · 6 aliases · 1 placeholder" in rendered_dashboard
 assert "aliases/placeholders excluded from claim totals" in rendered_dashboard
 assert "headlines clean" not in rendered_dashboard
 
 for stale_context in (
     context.replace("**claims:**", "**headlines:**", 1),
     context.replace("- **claims:**", "- **claims:** 0 trusted-axiom (⊆ trusted-3) · 0 pending (build in flight) · 0 flagged (aliases/placeholders excluded)\n- **claims:**", 1),
-    context.replace("**claims:** 22", "**claims:** many", 1),
+    context.replace("**claims:** 27", "**claims:** many", 1),
     context.replace("**semantic strength:** 17", "**semantic strength:** 18", 1),
     context.replace("- **semantic strength:**", "- **old semantic strength:**", 1),
     context.replace("- **enrollment roles:**", "- **old enrollment roles:**", 1),

@@ -1,0 +1,14 @@
+-- Expected-refusal probe for the first BANG consumer of the generic Lean lattice-store core.
+-- Both components are pure Int/max computations, but ADR-0114 currently accepts only components
+-- that are already syntactic values. Keeping this source rejected is more honest than replacing
+-- generic join with one constant operation per lattice element.
+import LatticeStore
+
+handle
+  store.joinPut(300)
+with (LatticeStore_Store 100) as store {
+  update joinPut(value) =>
+    (if param < value then value else param,
+     if param < value then value else param),
+  observe(ignored) => param
+}
