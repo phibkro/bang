@@ -82,14 +82,23 @@ checker plus a soundness connection to `HasCTy` is a separate, consumer-pulled p
 2. [x] Implement and standard-vector gate a pure SHA-256 utility.
 3. [x] Bind canonical bytes plus stable relocation identity and add verified backend entry points.
 4. [x] Expose the address on demand and gate identity/tamper journeys end to end.
-5. [ ] Regenerate projections, run full convergence, publish, and hand core typing/link inputs forward.
+5. [x] Regenerate projections, run full convergence, publish, and hand core typing/link inputs forward.
 
 ## Status
 
 - [x] Started 2026-07-19
-- [x] In flight: implementation and the 289/289 point-query journey are green; full convergence pending
+- [ ] In flight: body artifact integrity tracer
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-19 at `e60d2426`
+- Convergence evidence: the full build passes **1456 jobs**; `tools/test-query.sh` passes **289/289**
+  with an independent Python `hashlib` oracle, runtime-label invariance, semantic-name discrimination,
+  and negative trust flags; all **33/33** end-to-end batteries pass; live proof facts agree at **23 Spec
+  headlines / 33 Audit reports**; `just audit`, the exact-tree `just verify`, and the commit hook's
+  independent fitness + verify rerun all pass with `CHANGELOG_STABLE_REF=934d1512`.
+- Reopen / observe: the SHA-256 address is integrity authority for exact canonical body bytes and stable
+  effect identity only. Open a separate path when a concrete cache/link consumer pulls an executable
+  core checker or explicit import/initializer/relocation application envelope; do not reinterpret
+  integrity as typing, cache-hit, or link authority.
 
 ## Owner
 

@@ -230,6 +230,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **query** — expose module initialization order (`change:07be75b3c68ba7dd56b9acb032a09b04866df6e93a9fd6aea3635ab6a0d97d44`)
 - **query** — expose body effect relocations (`change:81faf029b74ce26e039bc4b8ba204a4aa84763e223cd0e551c8a7c8bf5b6f4ba`)
 - **query** — encode canonical body artifacts (`change:ff836a300aa10c3c1da4c7b2d28353b1bf1c123176a1ebb8a7ce3ef7e9aaf52c`)
+- **query** — verify body artifact integrity (`change:f2a1889b0a1454c8fb2076da9cf8d5941c38decf690e499f2583a75dee6f0f04`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
