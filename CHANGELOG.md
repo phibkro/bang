@@ -227,6 +227,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **query** — expose reachable module body slices (`change:8b0d1390c47cac4b0522831d7dc2160d960e3e9d436114255ae602bd04a1c48e`)
 - **query** — classify module body slice execution (`change:746bf89aeeb87d20e47ddd269b258df7d64efa51e1261aa2bca245c1d8931058`)
 - **tooling** — census top-level initializer shapes (`change:97b3db70a4c468c20a1bef2cbf07c16f829a4d7980a752f78df8431da9d6718a`)
+- **query** — expose module initialization order (`change:07be75b3c68ba7dd56b9acb032a09b04866df6e93a9fd6aea3635ab6a0d97d44`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

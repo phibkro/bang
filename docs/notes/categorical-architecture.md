@@ -212,6 +212,25 @@ not new safety. Spend the proof budget there only if the categorical layer start
 theorem we cannot get operationally** — which, so far, it has not. This note exists to make
 the structure legible, not to schedule its formalization.
 
+## 10. Independent convergence and vocabulary addendum (2026-07-19)
+
+An independent first-principles derivation from propositions-as-types, higher-order logic, and
+category theory converged on the already-shipped `codec-contract` / `stage-swap` plus rung-5
+emission demo shape. That is evidence for §9's narrower claim: the informal categorical reading
+can steer concrete design choices without first becoming a formalization project. It does not add
+a schema, kernel obligation, or tracer.
+
+Two names are worth reserving for future, program-pulled work:
+
+- In a hyperdoctrine, quantifiers are adjoints to reindexing/substitution:
+  `exists ⊣ substitution ⊣ forall`. Use that as the design guide only if the law language grows
+  genuinely higher-order laws—such as quantifying over a comparison function or predicate. Today's
+  law language cannot express that shape, so no implementation is scheduled.
+- **Beck–Chevalley** names the class of substitution/context-stability conditions analogous to what
+  the interface-rendering and law-contract arc currently engineers operationally: law text remains
+  merge-qualification invariant and digests remain insertion invariant. This is vocabulary for the
+  design pressure, not a claim that Bang constructs or proves a Beck–Chevalley condition.
+
 ---
 
 *References:* ADR-0016 (two-hop) · ADR-0001/0018 (row lattice) · ADR-0054/0055 (cap-by-

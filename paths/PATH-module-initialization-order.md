@@ -76,14 +76,14 @@
 2. [x] Add the pure duplicate-safe source occurrence projection and negative contract metadata.
 3. [x] Gate single-file shape, duplicate names, recursive-knot mode, and reversed import order.
 4. [x] Regenerate public views and run full convergence.
-5. [ ] Publish the increment and hand the remaining runtime-label/import-slot wall forward.
+5. [x] Publish the increment and hand the remaining runtime-label/import-slot wall forward.
 
 ## Status
 
 - [x] Started 2026-07-19
-- [x] In flight: source initialization contract tracer
+- [ ] In flight: source initialization contract tracer
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-19 at `1df84044`
 - Convergence evidence: `lake build Bang.Frontend.Query bang` passes **1452 jobs**;
   `tools/test-query.sh` passes **276/276**, and
   `CHANGELOG_STABLE_REF=2d92d9f1 just verify` passes the full repository gate.

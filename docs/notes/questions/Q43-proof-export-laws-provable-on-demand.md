@@ -49,6 +49,13 @@ hash? a proofs/ dir?); what fragment is exportable v1 (⊥-row total fragment fi
 fuel question vanishes there); how the obligation names bang-level variables readably
 (agent-first: the goal should be readable by the prover-agent).
 
+**Vocabulary input (2026-07-19)**: keep the boundary proof-relevant on the export side and
+proof-irrelevant on the trusted-language side. Exported law evidence is **proof-relevant**: a concrete,
+content-addressed Lean term whose identity and validity travel with the obligation. The BANG TCB's
+internal truth boundary remains proposition-valued / proof-irrelevant; proof artifacts are checked by
+the existing Lean boundary and do not become new trusted language mechanisms. No proof term enters or
+widens the BANG TCB. This names the intended fork; it does not decide the artifact format.
+
 **Blocked on**: ADR-0093 modules (laws from imports), #60 (`bang test` — the default rung the
 export escalates FROM), and practically the ◊-schedule (post-#44-arc).
 
