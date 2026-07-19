@@ -145,6 +145,11 @@ test-cli:
 test-out-of-fuel-naming:
     bash tools/test-out-of-fuel-naming.sh
 
+# Allocator systems-wedge S0: structured handler state and exact-once results are positive poles;
+# computed private-state transition and at-pop audit remain explicit semantic stops.
+test-allocator-tracer-probe:
+    bash tools/test-allocator-tracer-probe.sh
+
 # Fail-closed, command-scoped option grammar (#178): unknown/inappropriate flags, malformed or
 # duplicate values, host-authority parsing, mixed-order compatibility, and pre-effect validation.
 # Part of the default `verify` chain.

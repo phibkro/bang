@@ -1,0 +1,10 @@
+-- S0 positive pole: a result returned by an effect operation can be bound under an exact-once
+-- local obligation. This preserves the static resource door without claiming handle lifetime.
+effect AllocProbe { alloc : Int -> Int }
+
+handle
+  (let h = alloc.alloc(7) in
+   use [1] h in h)
+with AllocProbe as alloc {
+  alloc(bytes) => bytes
+}

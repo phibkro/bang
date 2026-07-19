@@ -1,0 +1,23 @@
+-- S0 positive pole: a userland handler parameter can carry the arena shape the allocator
+-- tracer needs. This is representation evidence only: the handler exposes an explicit audit,
+-- and does not claim that alloc/free transitions are expressible.
+data Live = Empty | Cell(Int, Live) deriving (Eq)
+
+effect Arena {
+  audit : Int -> (Int * Live)
+  law audit_stable(arena):
+    let first = arena.audit(0) in
+    let second = arena.audit(0) in
+    first == second
+}
+
+handle
+  (let snapshot = arena.audit(0) in
+   let (next, live) = snapshot in
+   match live {
+     Empty -> next * 100,
+     Cell(h, rest) -> next * 100 + h
+   })
+with (Arena (4, Cell(3, Empty))) as arena {
+  audit(ignored) => param
+}

@@ -24,6 +24,7 @@ Live PATHs stay in `paths/`. Currently the only live umbrella is
 | `PATH-cap45-resume-composition.md` | SUPERSEDED | ◊4.5 resume-composition; subsumed by the scoped-seam landing + pivot. |
 | `PATH-cap5-dispatch.md` | DONE | ◊5 GAP-2 dispatch transfer lemma; `compile_forward_sim` merged to main. |
 | `PATH-cap-assignment-spike.md` | DONE (spike) | ADR-0045 cap-assignment de-risk spike; findings fed ADR-0052/0053/0054. |
+| `PATH-allocator-tracer-probe.md` | DONE (probe) | Allocator S0 banked the shared effect-free computed-update door for allocator + CALM max-join. |
 | `PATH-typed-static-pivot.md` | SUPERSEDED | ADR-0045 pivot build sequence; superseded by the identity rework (ADR-0054/0055). |
 | `PATH-typed-lr-reindex.md` | SUPERSEDED | ADR-0053 absolute-caps LR re-index; REVERTED by the identity representation (ADR-0054/0055). The inc-5 work in `PATH-identity-representation.md` is the live successor. |
 

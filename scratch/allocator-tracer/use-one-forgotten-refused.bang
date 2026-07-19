@@ -1,0 +1,9 @@
+-- S0 negative pole: an operation-result binder under use [1] must be consumed once, not zero times.
+effect AllocProbe { alloc : Int -> Int }
+
+handle
+  (let h = alloc.alloc(7) in
+   use [1] h in 0)
+with AllocProbe as alloc {
+  alloc(bytes) => bytes
+}

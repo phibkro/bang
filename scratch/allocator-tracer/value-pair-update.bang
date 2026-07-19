@@ -1,0 +1,16 @@
+-- S0 control pole: an updating clause whose envelope is already a pair of values is accepted.
+-- This deliberately does not claim a state transition; it isolates the accepted ret-pair shape.
+effect AllocValue {
+  alloc : Int -> Int
+  audit : Int -> (Int * Int)
+}
+
+handle
+  (let h = alloc.alloc(7) in
+   let snapshot = alloc.audit(0) in
+   let (next, live) = snapshot in
+   h * 100 + next * 10 + live)
+with (AllocValue (0, 0)) as alloc {
+  update alloc(bytes) => (bytes, param),
+  audit(ignored) => param
+}

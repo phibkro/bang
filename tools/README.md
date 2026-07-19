@@ -71,7 +71,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (46)
+## test (47)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -87,6 +87,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`run-batteries.sh`](run-batteries.sh) | `verify` | `justfile`, `tools/test-*.sh` | concurrent driver for the independent verify batteries (plan 004) |
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
 | [`test-82-verbs.sh`](test-82-verbs.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for the #82 agent-tooling verbs over the landed |
+| [`test-allocator-tracer-probe.sh`](test-allocator-tracer-probe.sh) | `manual` | `scratch/allocator-tracer/`, `Bang/Frontend/TypeCheck.lean`, `Bang/Core/Semantics/Eval.lean` | Allocator S0: update-envelope bisect, structured handler state, exact-once result binding, |
 | [`test-annotate.sh`](test-annotate.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite annotate` (#82 item 1) |
 | [`test-bang-build.sh`](test-bang-build.sh) | `verify` | `Main.lean`, `Bang/Backend/WasmEmit.lean` | the CLI gate for `bang build` (issue #136 productized) |
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |

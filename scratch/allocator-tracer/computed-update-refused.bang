@@ -1,0 +1,20 @@
+-- S0 negative pole: the desired allocator transition must inspect the private structured
+-- parameter and compute a replacement. ADR-0114's ret-shaped update envelope requires a pair of
+-- values, so this let-wrapped pair is rejected before the arena can distinguish any free misuse.
+data Live = Empty | Cell(Int, Live)
+
+effect Alloc {
+  alloc : Int -> Int
+  free : Int -> Int
+  audit : Int -> (Int * Live)
+}
+
+handle
+  alloc.alloc(1)
+with (Alloc (0, Empty)) as alloc {
+  update alloc(bytes) =>
+    let (next, live) = param in
+    (next, (next + 1, Cell(next, live))),
+  update free(address) => (address, param),
+  audit(ignored) => param
+}

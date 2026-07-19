@@ -1,0 +1,9 @@
+-- S0 negative pole: the same operation-result binder is rejected with B018 when consumed twice.
+effect AllocProbe { alloc : Int -> Int }
+
+handle
+  (let h = alloc.alloc(7) in
+   use [1] h in h + h)
+with AllocProbe as alloc {
+  alloc(bytes) => bytes
+}
