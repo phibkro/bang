@@ -77,20 +77,21 @@
 3. [x] Implement uniform composite v2 hashing and fail-closed reverse lookup.
 4. [x] Gate five exact label positions and end-to-end invariance plus semantic discrimination.
 5. [x] Regenerate public projections, run full convergence, and close skeptical advisor review.
-6. [ ] Publish the converged increment and hand its residual to the link-seam successor.
+6. [x] Publish the converged increment and hand its residual to the link-seam successor.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [x] In flight: implementation and convergence complete; publication next
+- [ ] In flight: none; successor is the import-slot/link contract measurement tracer
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-18
 - Focused evidence: `Bang/Frontend/Query.lean` compiles; `tools/test-query.sh` passes **268/268**;
   `just autoquality` passes.
 - Convergence evidence: `CHANGELOG_STABLE_REF=5e57d4a9 just fitness` and `just verify` pass;
   the latter builds **1452 jobs**, passes all **31/31** batteries and both **61-example** engine
   journeys, and matches live proof facts. The persistent Fable 5 skeptical audit found no blockers
   after independently checking every kernel label carrier and `ClauseKey`.
+- Published baseline: `2d42df8f` on `origin/codex/canonical-body-effect-identity`.
 - Reopen / observe: `linkReady` remains false until runtime label relocation and import-slot
   validation have a real link consumer; `cacheKeySafe` retains the body-slice collision/version bar.
 
