@@ -26,7 +26,7 @@ no project pulling it is a signal to question the feature, not schedule it.
 generated DAG; bang's own roadmap is bang-shaped). A project is DONE when its required features land
 AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
 
-## Committed sequence (updated 2026-07-18)
+## Committed sequence (updated 2026-07-19)
 
 ```
 ✓  ▸ PARSER-COMBINATOR LIBRARY   higher-order composition + polymorphism now run as a corpus example.
@@ -38,51 +38,28 @@ AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
                                  B018 parity/location, quiet route, and frozen-packet replay are green.
    ↷ ORGANIC CORRECTION          DEFERRED BY OPERATOR 2026-07-18, not completed: one unfamiliar developer
      still must run the repaired public journey before ◊6/release (`PATH-organic-resource-validation`).
-0  ▸ SPREADSHEET (reactivity)     ← LIVE EDGE: live/stale behavior and the stable formula DAG are now
-     observable; repeated evaluation is not yet measured. NB the
-     reactive MECHANISM is already proven (`reactiveCell` runs + a liveness law in the Audit gate,
-     ADR-0005); the project EXTENDS it to a reactive-programming surface (not build-from-scratch).
-     Rehearses incremental compilation (same hash-staleness shape, ADR-0076).
+✓  ▸ SPREADSHEET (reactivity)     live/stale behavior, stable formula DAG, measured recomputation, and
+                                  within-observation reuse run end to end; the natural two-operation
+                                  capability wall was then closed in concrete Wasm.
+✓  ▸ QUERYABLE TOOLCHAIN SPINE    resolver DAG → invalidation measurement → core/interface/body identity
+                                  → first BANG fact consumer → canonical artifact + integrity boundary;
+                                  inert top-level descriptions now make module execution honest.
+✓  ▸ COMPILED BROWSER PACK        JSON, calculator, N-Queens, and sim-KV A/B execute as provenance-pinned
+                                  WasmGC+EH artifacts in Chromium and byte-match the live kernel oracle.
+?  ▸ NEXT NORTH-STAR LANE         operator-sequenced fork: allocator systems wedge · lattice-store/CALM
+                                  distributed branch · wgcexec pure+state verified floor. No evidence
+                                  selects one default, and none substitutes for the deferred outside loop.
 ── wishlist (further out, roughly in dependency order) ──
    kv-store (STM — full payoff needs post-v1 concurrency) · web server · graphics (2048) · OS/distributed
 ```
 
-**Near-term tooling (docs-as-data · ADR-0078):**
-- **the gh-BRIDGE** — extend `gen-questions-index` to RESOLVE `see-also: [#N]` issue-edges via `gh`
-  (validate the issue exists, pull live title/open-closed status, render it in the tie-graph beside Q- and
-  ADR-nodes). Makes issues ↔ questions ↔ ADRs ONE queryable graph from two stores (git docs + GitHub
-  issues) — no third tool. The unification move of ADR-0078.
-- **CI gate (GitHub Actions)** — run `just verify` / `just fitness` on every PR, so "gate the committed
-  content" is platform-enforced, not just local.
-- **GitHub Milestones ↔ this DAG** — one milestone per PROJECT (tokenizer ✓ · parser-combinator · …), so
-  the product-axis checkpoints live in GitHub too; issues group under them.
-- **complete the ledger migration** — Q1–Q34 into OKF files, `OPEN_QUESTIONS.md` a fully generated
-  multi-view index (in flight).
-
-**Visual progress tracker + doc site (the operator's glanceable, low-reading view · ADR-0077 product face):**
-A "video-game tracker" — a GENERATED VIEW over data we already have (proof-state · the project-DAG · the
-question ledger · GitHub issues/milestones via `gh`), rendered VISUALLY: a progress MAP (◊-map + this DAG as
-a level-map: done ✓ / current / locked) · HEALTH BARS (proof-state headlines clean, burndown) · a QUEST LOG
-(issues under milestones) · a PULSE feed (recent landings / CHANGELOG — the Linear-pulse analog). Build
-spectrum, cheapest first:
-- **Zero-build TODAY (GitHub-native):** Projects (v2) roadmap/board + Milestones (one per PROJECT, progress
-  bars) + the Insights → **Pulse** tab (merged PRs, closed issues — the activity pulse). Glanceable, no new
-  dependency. The immediate tracker.
-- **Custom dashboard site (richer, game-like):** an **Astro** site (content-collections — the surveyed
-  state-of-art: typed frontmatter → validated → generated) on **GitHub Pages**, rendering BOTH the
-  structured docs (the product face) AND a dashboard page (the level-map / health-bars / pulse). Cost: adds
-  a Node/Astro build toolchain. Auto-rebuilds on push via Actions.
-- **Incremental feedback:** GitHub Actions posts a status update on each landing (issue-close / PR-merge /
-  milestone-complete) — the notification pulse — and the site rebuilds.
-- **Doc-SITE generator (DEFERRED — only when the docs go multi-page as the ADR-0077 product face; the
-  dashboard is a separate single page, already live):** candidates, all taking git-native markdown+frontmatter
-  (respects ADR-0078) → a static site on Pages: **Astro Starlight** (mature, big plugin ecosystem incl.
-  `starlight-llms-txt` → llms.txt / `starlight-md-txt` → raw-markdown URLs — concrete agent-friendliness) ·
-  **vocs** ("Minimal Docs for Agents & Humans" — wevm/viem team; minimal, MDX, TS-Twoslash, agent-branded —
-  its ethos matches our human-or-agent thesis; Twoslash is TS-specific so less of an edge for `.bang`) · plain
-  Astro content-collections. All add a Node toolchain — hence deferred until multi-page. **CHEAP AGENT WIN
-  available NOW, no SSG:** generate an **`llms.txt`** (the emerging LLM-doc-index standard) from the git docs —
-  same generator pattern as `gen-questions-index`.
+**Tooling/product-face state (docs-as-data · ADR-0077/0078):** the previously proposed CI, generated
+question ledger, `llms.txt`, dashboard, multi-page Vocs site, Site/Pages workflows, role-oriented
+onboarding, and production route smoke are shipped. The docs site now includes the compiled-browser
+journey rather than merely describing a future playground. Two optional GitHub-native projections remain
+unbuilt—the live `gh` issue-edge bridge and project milestones—but neither binds a product journey. Open
+them only when issue/milestone state becomes a real consumer input rather than duplicating GitHub for
+completeness.
 
 ## The graph (projects ▸ the features they pull ▸ what they stress)
 
@@ -93,6 +70,10 @@ DONE ─────────────────────────
   ✓ semantic contracts  laws · named/swappable handlers · policy state      (examples/codec-contract/,
                                                                                 stage-swap/, stateful-quota/)
   ✓ one-shot permit     local 0/1/omega · refusal · erased Wasm · evidence  (examples/resource-contract/)
+  ✓ spreadsheet        live/stale samples · formula DAG · measured calls ·  (examples/reactive-*/)
+                       scoped reuse · multi-operation cap on concrete Wasm
+  ✓ compiled demos     fixed JSON/calc/N-Queens/sim-KV artifacts execute     (web/docs/static/compiled-demos/)
+                       in the deployed browser path and match live oracles
 
 COMPLETED SEAM — the resource description is safe to consume (PATH-contract-query-integrity)
   evidence integrity    subject validity · stable qualified IDs · B018       automation + outsider recovery;
@@ -102,16 +83,16 @@ DEFERRED LOOP — real unfamiliar use remains required before ◊6 (PATH-organic
   organic validation    goal-only public journey · chronological trace ·      external correction before another
                         consent · adjudicated findings                         release claim; no validation credit yet
 
-FRONTIER — next projects that pull new capability
-  JSON codec             recursive ADTs · Outcome/error handling · strings    grounds the SCHEMA/contract story (Q37)
+FRONTIER — available projects that pull new capability
+  JSON codec ✓           recursive ADTs · Outcome/error handling · strings    shipped; now part of browser pack
   2048 (logic)           polymorphic List · refinement types (2^x invariant)  make-illegal-states-unrepresentable
                          · randomness (state capability)                       (the exponent = a power-of-2 by construction)
 
-LIVE PROJECT / KERNEL-EXERCISER — pull an UNDER-USED kernel feature
+AVAILABLE PROJECT / KERNEL-EXERCISER — pull an UNDER-USED kernel feature
   key-value store        STM (the ONE privileged primitive — under-exercised   stresses STM/transactions directly
     w/ transactions      in v1) · concurrency · persistence
-  spreadsheet /          REACTIVITY (`=`, ADR-0005/6 — the distinctive         stresses the reactivity operator;
-    reactive dataflow    operator) · dependency DAGs · incremental recompute   same shape as incremental compilation
+  spreadsheet ✓          REACTIVITY (`=`, ADR-0005/6) · dependency DAGs ·      shipped through measured recomputation
+    reactive dataflow    scoped reuse · capability-backed memo state           and concrete-Wasm capability closure
 
 EXTERNAL SEAM — pull IO / FFI-as-effect (Q37)
   2048 (graphical)       FFI-as-effect (raylib) · effectful recursion (#48)    the interactive-program capability
@@ -138,19 +119,20 @@ when the project at its left produces evidence for the feature work at its right
 
 | horizon | project evidence | capability it earns | systemic-review posture |
 |---|---|---|---|
-| **paved** | tokenizer, parser combinators, semantic contracts, one-shot permit, compiled examples | real surface; polymorphism; laws and swappable realizations; local quantities; verified/tested execution chain to Wasm | preserve these as the stable semantic-description substrate |
+| **paved** | tokenizer, parser combinators, semantic contracts, one-shot permit, reactive spreadsheet, queryable toolchain spine, compiled browser pack | real surface; polymorphism; laws/swappable realizations; local quantities; observable dependency/artifact boundaries; verified/tested execution chain to Wasm and browser | preserve these as the stable semantic-description substrate |
 | **deferred pre-◊6 loop** | first unassisted outsider run against repaired contract evidence | external correction loop over a trustworthy machine view | consciously deferred, not complete; prevent leakage/overclaiming and adjudicate observed friction before release claims |
-| **now** | the first BANG-written tool witness reads two live compiler dumps through Console + the BANG JSON library and compares module-interface status | moved/preserved/added/removed lines match the canonical Python consumer; malformed structure refuses before a partial verdict | keep Python canonical and skips/reuse/performance unclaimed; then isolate lowered module identity/body/link constraints before any store |
+| **operator-sequenced fork** | allocator project **or** lattice-store/CALM probe **or** wgcexec pure+state floor | systems destination progress **or** distributed momentum **or** deeper checked backing beneath the public compiled stratum | design-first in isolated lanes; compare kill shots before choosing consolidation order; none counts as external validation |
 | **toolchain project** | BANG tools consume the compiler fact graph | incremental/content-addressed compilation, module graph, LSP/MCP/CLI as views | preserve schema evolution and observation points now; build the scheduler when this consumer measures it |
 | **systems wedge** | allocator → cooperative scheduler → filesystem → driver | resource protocols, one-shot scheduling, persistence/location, least-authority IO | scope each rung only when reached; local quantities preserve the allocator door without pre-building ownership |
 | **distributed branch** | actor/chat system → replicated log/Raft | sendability, message passing, network capability security, deterministic replay | stays beside the cooperative-OS path until a project requires actor transfer or multi-shot behavior |
 | **north star** | verified xv6/unikernel running real workloads | the description/realization thesis at OS scale: effects as syscalls, handlers as runtimes/drivers, grades as resource/capability boundaries | success is an evidence chain, not feature count |
 
-The operator consciously changed the immediate ordering to **spreadsheet evidence now**, while retaining
-external correction as an open pre-◊6/release obligation rather than pretending it happened. Evidence
-repair is paved. The systems ladder is the destination-bearing branch; the toolchain and distributed projects are
-rehearsals for its dependency, authority, observability, and concurrency problems rather than a
-detour into completeness.
+The spreadsheet, evidence-integrity, toolchain-artifact, inert-declaration, and compiled-demo rotations
+are now paved. External correction remains an open pre-◊6/release obligation rather than something an
+internal lane can simulate. The next internal move is therefore an explicit three-way operator fork:
+systems destination, distributed rehearsal, or verified-floor depth. The systems ladder remains the
+destination-bearing branch; toolchain and distributed projects rehearse its dependency, authority,
+observability, and concurrency problems rather than forming a completeness detour.
 
 ## How to read / use it
 
