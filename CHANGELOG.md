@@ -229,6 +229,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **tooling** — census top-level initializer shapes (`change:97b3db70a4c468c20a1bef2cbf07c16f829a4d7980a752f78df8431da9d6718a`)
 - **query** — expose module initialization order (`change:07be75b3c68ba7dd56b9acb032a09b04866df6e93a9fd6aea3635ab6a0d97d44`)
 - **query** — expose body effect relocations (`change:81faf029b74ce26e039bc4b8ba204a4aa84763e223cd0e551c8a7c8bf5b6f4ba`)
+- **query** — encode canonical body artifacts (`change:ff836a300aa10c3c1da4c7b2d28353b1bf1c123176a1ebb8a7ce3ef7e9aaf52c`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

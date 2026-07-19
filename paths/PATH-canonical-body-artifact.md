@@ -77,14 +77,22 @@
 2. [x] Implement the exhaustive versioned `Comp` JSON encoder/decoder with resource bounds.
 3. [x] Emit one canonical encoding on demand from the same body observation as digest and relocations.
 4. [x] Consume decoded code through the existing backend and gate round-trip/adverse/equivalence poles.
-5. [ ] Regenerate public projections, run full convergence, publish, and hand validation/linking forward.
+5. [x] Regenerate public projections, run full convergence, publish, and hand validation/linking forward.
 
 ## Status
 
 - [x] Started 2026-07-19
-- [x] In flight: canonical body artifact tracer
+- [ ] In flight: canonical body artifact tracer
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-19 at `0085f879`
+- Convergence evidence: the full build passes **1454 jobs**; `tools/test-query.sh` passes **285/285**
+  including on-demand, strict-round-trip, unrelated-effect, dump-absence, and unsupported-export poles;
+  all **33/33** end-to-end batteries pass; live proof facts agree at **23 Spec headlines / 33 Audit
+  reports**; `just fitness`, the exact-tree `just verify`, and the commit hook's independent fitness +
+  verify rerun all pass with `CHANGELOG_STABLE_REF=13737e76`.
+- Reopen / observe: `artifact` is intentionally structural and producer-checked only. Open a new path
+  when a concrete consumer pulls independent type validation, collision-safe addressing, or explicit
+  import/initializer link slots; do not reinterpret this artifact as cache or link authority meanwhile.
 
 ## Owner
 
