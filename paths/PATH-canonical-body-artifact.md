@@ -91,8 +91,9 @@
   reports**; `just fitness`, the exact-tree `just verify`, and the commit hook's independent fitness +
   verify rerun all pass with `CHANGELOG_STABLE_REF=13737e76`.
 - Reopen / observe: `artifact` is intentionally structural and producer-checked only. Open a new path
-  when a concrete consumer pulls independent type validation, collision-safe addressing, or explicit
-  import/initializer link slots; do not reinterpret this artifact as cache or link authority meanwhile.
+  when a concrete consumer pulls independent type validation or explicit import/link inputs. ADR-0118
+  later removed eager library initializer slots from valid programs; do not reinterpret this artifact
+  as cache or link authority meanwhile.
 
 ## Owner
 

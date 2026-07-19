@@ -9,8 +9,9 @@
   census bounded real usage; ADR-0117 preserved the language while forbidding guessed per-binding rows.
 - **To checkpoint**: `bang query dump` exposes the complete resolver-source `let`/`let rec` occurrence
   sequence, dependency-first and source-ordered, with duplicate-safe snapshot-local identities.
-- **Contract preserved**: accepted programs, initialization semantics, checking, lowering, runtime label
-  allocation, body/interface digests, and the kernel are unchanged.
+- **Contract preserved at publication**: accepted programs, initialization semantics, checking,
+  lowering, runtime label allocation, body/interface digests, and the kernel were unchanged.
+  ADR-0118 later restricted ordinary declaration RHSs without changing this source inventory schema.
 
 ## Layer
 
@@ -88,7 +89,9 @@
   `tools/test-query.sh` passes **276/276**, and
   `CHANGELOG_STABLE_REF=2d92d9f1 just verify` passes the full repository gate.
 - Reopen / observe: source occurrence rows remain useful if provenance later lands, but their IDs are
-  snapshot-local and must not be retroactively treated as elaborated binding identities.
+  snapshot-local and must not be retroactively treated as elaborated binding identities. After
+  ADR-0118 they record inert binding construction plus entry `main`, not permission for arbitrary
+  ordered initializer computation.
 
 ## Owner
 

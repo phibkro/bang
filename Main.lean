@@ -656,15 +656,24 @@ body becomes a bare reference to `main` (CBPV: `Surf.lett`-bound names are direc
 absent + script mode (a real trailing expr) ⟹ unchanged (today's whole corpus); BOTH present ⟹ a
 loud error (ADR-0046, no silent precedence); NEITHER ⟹ a pure library file — running it directly is
 a loud error naming that fact, not a silent "prints 0". -/
-def applyEntryRule (p : Prog) : Except String Prog :=
-  let hasMain := p.decls.any (fun d => match d with
+def hasMainDecl (p : Prog) : Bool :=
+  p.decls.any (fun d => match d with
     | .letD n _ _ | .letRecD n _ _ => n == "main"
     | _ => false)
-  match hasMain, p.isLibrary with
+
+def applyEntryRule (p : Prog) : Except String Prog :=
+  match hasMainDecl p, p.isLibrary with
   | true,  true  => .ok { p with body := Surf.var "main", isLibrary := false }   -- program mode
   | false, false => .ok p                                                        -- script mode, unchanged
   | true,  false => .error "both a `main` decl and a trailing expression are present — ADR-0093 D5 forbids silent precedence (remove one)"
   | false, true  => .error "this file is a library (no `main` decl, no trailing expression) — nothing to run; import it from an entry file instead"
+
+/-- Give a standalone tooling subject its entry role when it declares `main`, while continuing to
+accept declaration-only library subjects. This is the query/rewrite counterpart of D5: it applies
+the meaningful half of `applyEntryRule` without turning "inspect this library" into "run this
+library". -/
+def applyOptionalEntryRule (p : Prog) : Except String Prog :=
+  if hasMainDecl p then applyEntryRule p else .ok p
 
 /- The D1 resolution + D2/D3/D4 merge, from an entry FILE, WITHOUT the D5 entry rule
 (`applyEntryRule`) applied — parse it, resolve every `import`/`use` it names (transitively,
@@ -882,7 +891,7 @@ extraction when a third non-CLI consumer needs it. -/
 one ordinary value declaration. `reachableValueSliceProg` can then exercise its production
 declaration-reference closure unchanged. The collision check is retained even though source cannot
 spell this name: synthesized `Prog` consumers need the same fail-loud boundary. -/
-def sliceFidelityEntryName : String := "$<bang-internal-slice-entry>$"
+def sliceFidelityEntryName : String := Bang.TypeCheck.internalSliceEntryName
 
 /-- Entry-rooted pruning as MEASUREMENT APPARATUS. This is not a shipped DCE optimization: it adds a
 synthetic declaration for the already-resolved trailing body, selects that declaration through the
@@ -1035,57 +1044,13 @@ def initializerSyntaxCounts (p : Bang.Surface.Prog) : InitializerSyntaxCounts :=
         { counts with recursiveDefinitions := counts.recursiveDefinitions + 1 }
     | some .computationForm => { counts with computationForms := counts.computationForms + 1 }) {}
 
-/-- One declaration the proposed inert-top-level contract would reject. This is probe evidence only:
-the ordinary checker does not call it and the language contract remains unchanged. -/
-structure InitializerContractRefusal where
-  moduleName : String
-  name       : String
-  deriving Repr
-
-/-- Dry-run the proposed contract over the fully merged resolver program. Recursive definitions and
-`main` are allowed; every other top-level plain `let` must be an enforcement-grade inert value.
-Resolver provenance recovers library ownership without guessing from qualified spellings. -/
-def initializerContractRefusals (p : Bang.Surface.Prog) (declModules : List (String × String))
-    (ctors : List (String × Bang.TypeCheck.CtorInfo)) : List InitializerContractRefusal :=
-  p.decls.filterMap fun d => match d with
-    | .letD name _ rhs =>
-        let moduleName := (declModules.lookup name).getD "@entry"
-        if name == "main" || Bang.TypeCheck.isInertInitializerValue ctors rhs then none
-        else some ⟨moduleName, name⟩
-    | _ => none
-
-/-- Resolver-aware pre-decision kill shot for the inert-top-level contract. It validates each subject
-through the existing elaborator to obtain the authoritative constructor environment, then reports the
-plain bindings that would become ill-formed. No checking, lowering, or runtime behavior changes. -/
-def runInternalInitializerContractProbeBatch (files : List String) : IO UInt32 := do
-  let mut aggregate : UInt32 := 0
-  let mut resolvedSubjects := 0
-  let mut wouldRefuse := 0
-  for file in files do
-    match ← resolveEntryFileWithProvenance file with
-    | .error e =>
-        IO.eprintln s!"initializer-contract-probe resolve-error subject={file} error={e}"
-        aggregate := 1
-    | .ok resolved =>
-        match Bang.TypeCheck.initializerCtorEnv resolved.prog with
-        | .error e =>
-            IO.eprintln s!"initializer-contract-probe elaboration-error subject={file} error={e}"
-            aggregate := 1
-        | .ok ctors =>
-            resolvedSubjects := resolvedSubjects + 1
-            let rows := initializerContractRefusals resolved.prog resolved.declModules ctors
-            wouldRefuse := wouldRefuse + rows.length
-            for row in rows do
-              IO.println s!"initializer-contract-probe subject={file} module={row.moduleName} name={row.name}"
-  IO.println (s!"initializer-contract-probe total requested-subjects={files.length} " ++
-    s!"resolved-subjects={resolvedSubjects} would-refuse={wouldRefuse}")
-  return aggregate
-
-/-- Resolver-aware, occurrence-weighted syntax census for strict initializers. Imported declarations
+/-- Resolver-aware, occurrence-weighted syntax census for top-level binding forms. Imported declarations
 are counted once per consuming subject on purpose: this is a journey-weighted corpus measurement,
 not a unique-source inventory (the current facts do not expose collision-safe source identities).
 Manifest-value and recursive-definition are sound inert-description candidates modulo fuel;
-computation-form is deliberately one-sided/unknown, never a claim that an effect occurs. -/
+computation-form is deliberately one-sided/unknown, never a claim that an effect occurs. Under
+ADR-0118 a valid post-resolution program may contain that final bucket only at bare entry `main`; the
+hidden census remains useful for migration/accounting and invalid-source tie-backs. -/
 def runInternalInitializerCensusBatch (files : List String) : IO UInt32 := do
   let mut aggregate : UInt32 := 0
   let mut total : InitializerSyntaxCounts := {}
@@ -1829,6 +1794,20 @@ entry-source location supplied by the resolver-aware caller; rendering remains c
 def checkFailJson (msg : String) (span : Option Bang.Surface.Span := none) : String :=
   Bang.Diagnostics.typeFailJson msg span
 
+/-- Check one already-parsed/resolved program while retaining best-effort locations in its entry
+source. Shared by the single-file entry-selected lane and the genuine multi-file resolver lane. -/
+def runCheckProg (json : Bool) (src : String) (p : Bang.Surface.Prog) : IO UInt32 := do
+  match Bang.TypeCheck.checkAndLowerProg p with
+  | .error e =>
+      let sp := Bang.Surface.locateInMsg src e
+      if json then IO.println (checkFailJson e sp) else match sp with
+        | some s => IO.eprintln s!"{errWord e} at {s.loc}: {e}"
+        | none => IO.eprintln s!"{errWord e}: {e}"
+      pure 1
+  | .ok _ =>
+      if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
+      pure 0
+
 /-- `bang check [FLAGS] [<file.bang>]` (issue #59): type-check ONLY (no run), human-readable by
 default or `--json` for the agent-facing structured schema (`Bang.Diagnostics`). Reads a file if
 given, else stdin (mirrors `fmt`'s file-or-stdin convention).
@@ -1857,7 +1836,7 @@ to resolve relative to, matching `eval`'s same limitation on `bang run`) and sta
 string-based `checkJson`/`checkAndLower` path (full span support, unaffected by any of the above).
 
 SINGLE-FILE FAST PATH (#75 fix, 2026-07-10 — the span regression this closes): a file with NO
-`import`/`use` header never needs `resolveEntryFile`/`checkAndLowerProg` at all — it stays on the
+`import`/`use` header normally needs no resolver and stays on the
 exact string-based `checkJson`/`checkAndLower` pipeline stdin already uses, which is where FULL
 `Diagnostics`-schema spans (parse AND type/elaboration) come from. Round-1 of the stranger test
 praised these exact spans; routing every FILE argument through the resolver (even an import-free
@@ -1870,6 +1849,13 @@ resolver's own internal parse used the un-located `parseProg`); a successful par
 `imports`/`uses` header stays on the string pipeline (`checkJson`/`checkAndLower`, full span for
 type errors too); only a header that NAMES an import/use falls through to `resolveEntryFile` below
 — the genuine multi-file case the documented limitation covers.
+
+ADR-0118 adds one role-sensitive exception: a standalone FILE containing `main` must pass through
+`applyEntryRule` before checking, exactly like `run`; otherwise the import-free fast path would parse
+it as a decls-only library and refuse its one legal computed declaration. This still avoids resolution
+and retains best-effort source spans through `runCheckProg`. Stdin has no entry-file role and therefore
+remains on the library-context string path. An imported module's `main` is resolver-qualified before
+checking and receives no exemption.
 
 KNOWN v1 LIMITATION: resolver-aware checking can locate only a named token in the ENTRY source.
 Imported-file diagnostics and messages without a locatable token still carry `span:null`; full
@@ -1902,10 +1888,23 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
               | none   => IO.eprintln s!"error: {m}"
             pure 1
         | .ok headerProg =>
-          -- single-file fast path (#75): no import/use header ⟹ the full-span string pipeline
-          -- (`checkJson`/`checkAndLower`, the SAME one stdin uses), not the resolver.
+          -- single-file fast path (#75), refined by ADR-0118: a FILE containing `main` is an entry
+          -- subject and must receive the same D5 selection as `run`; other import-free files retain
+          -- the original full-span string pipeline (the SAME one stdin uses).
           if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
-            if json then runCheckJson src else runCheckHuman src
+            let hasMain := headerProg.decls.any (fun d => match d with
+              | .letD n _ _ | .letRecD n _ _ => n == "main"
+              | _ => false)
+            if hasMain then
+              match applyEntryRule headerProg with
+              | .error e =>
+                  let sp := Bang.Surface.locateInMsg src e
+                  if json then IO.println (checkFailJson e sp) else match sp with
+                    | some s => IO.eprintln s!"{errWord e} at {s.loc}: {e}"
+                    | none => IO.eprintln s!"{errWord e}: {e}"
+                  pure 1
+              | .ok entry => runCheckProg json src entry
+            else if json then runCheckJson src else runCheckHuman src
           else
             -- Genuine multi-file program: resolver + `Prog`-taking pipeline. A diagnostic that
             -- names an entry-file token receives that best-effort span; imported-only locations
@@ -1917,17 +1916,7 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
                   | some s => IO.eprintln s!"{errWord e} at {s.loc}: {e}"
                   | none => IO.eprintln s!"{errWord e}: {e}"
                 pure 1
-            | .ok merged =>
-                match Bang.TypeCheck.checkAndLowerProg merged with
-                | .error e =>
-                    let sp := Bang.Surface.locateInMsg src e
-                    if json then IO.println (checkFailJson e sp) else match sp with
-                      | some s => IO.eprintln s!"{errWord e} at {s.loc}: {e}"
-                      | none => IO.eprintln s!"{errWord e}: {e}"
-                    pure 1
-                | .ok _ =>
-                    if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
-                    pure 0
+            | .ok merged => runCheckProg json src merged
 
 /-! ## `bang query <op>` (#80) — the agent LSP as stateless CLI subcommands.
 
@@ -1964,11 +1953,11 @@ def readQuerySrc (file : Option String) : IO (Except UInt32 (String × Bang.Surf
       | .ok headerProg => pure (.ok (src, headerProg))
 
 /-- Resolve `(src, headerProg, file)` to the `Prog` a resolver-aware query op should run against:
-the single-file fast path (no `import`/`use` header ⟹ just re-parse `src` directly, matching
-`Bang.Query`'s own `src`-taking entries) or the genuine multi-file resolver (`resolveEntryFile`,
+the single-file fast path (no `import`/`use` header ⟹ re-parse `src`, then select a declared `main`
+when a named file supplies entry role) or the genuine multi-file resolver (`resolveEntryFile`,
 the SAME D1-D5 machinery `bang run`/`check --json` use) when a `file` path is available to resolve
 relative to (STDIN has none — the SAME limitation `bang run`'s own `eval` has, `runCheck`'s doc
-comment). On the resolver path, `.error` is a resolution/merge failure (missing import, cycle,
+comment). Stdin remains a library context. On the resolver path, `.error` is a resolution/merge failure (missing import, cycle,
 private access) — printed as `errorJsonOk` and mapped to exit `1`, matching `check --json`'s SAME
 failure's exit code (ADR-0093 D1-D5).
 
@@ -1985,7 +1974,14 @@ def resolveQueryProgWithProvenance (src : String) (headerProg : Bang.Surface.Pro
     (Bang.TypeCheck.expandDerives p).toOption.getD p
   if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
     match Bang.Surface.parseProgLocated src with
-    | .ok p         => pure (.ok { prog := withDerives p })
+    | .ok p         =>
+        let p := withDerives p
+        match file with
+        | none => pure (.ok { prog := p })
+        | some _ =>
+            match applyOptionalEntryRule p with
+            | .ok entry => pure (.ok { prog := entry })
+            | .error e => IO.println (Bang.Query.errorJsonOk e); pure (.error 1)
     | .error (m, _) => IO.println (Bang.Query.errorJsonOk m); pure (.error 1)
   else
     match file with
@@ -2013,8 +2009,9 @@ def printQueryOk (json : String) : IO UInt32 := IO.println json *> pure 0
 
 /-- `bang query dump <file>` / stdin — THE key operation (#80's operator refinement): the COMPLETE
 fact base in one export, so a caller composes ARBITRARY queries over it (a `jq`/`python`/Lean
-script) rather than waiting on a new fixed verb. SINGLE-FILE/STDIN fast path uses `Query.dumpJson`
-directly; the MULTI-FILE resolver path uses `Query.dumpJsonP` on the merged `Prog`, whose
+script) rather than waiting on a new fixed verb. Stdin uses `Query.dumpJson` directly; a named
+single file selects a declared entry `main` before `Query.dumpJsonP`; the MULTI-FILE resolver path
+uses `Query.dumpJsonP` on the merged `Prog`, whose
 `lawInstancesOfProg` route discovers laws directly from retained declarations (no original
 contiguous source needed). Written directly
 (not via `resolveQueryProg`, which always RE-PARSES from `src` and would silently drop the
@@ -2024,7 +2021,13 @@ def runQueryDump (file : Option String) : IO UInt32 := do
   | .error code => pure code
   | .ok (src, headerProg) =>
       if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
-        printQueryOk (Bang.Query.dumpJson src bangVersion)
+        match file with
+        | none => printQueryOk (Bang.Query.dumpJson src bangVersion)
+        | some _ =>
+            let p := (Bang.TypeCheck.expandDerives headerProg).toOption.getD headerProg
+            match applyOptionalEntryRule p with
+            | .error e => IO.println (Bang.Query.errorJsonOk e); pure 1
+            | .ok entry => printQueryOk (Bang.Query.dumpJsonP entry bangVersion)
       else
         match file with
         | none      => printQueryOk (Bang.Query.dumpJsonP headerProg bangVersion)   -- stdin, no resolver path
@@ -2138,7 +2141,12 @@ def runQueryHover (file : Option String) (line col : Nat) : IO UInt32 := do
   | .error code => pure code
   | .ok (src, headerProg) =>
       if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
-        printQueryOk (Bang.Query.hoverJson src line col)
+        match file with
+        | none => printQueryOk (Bang.Query.hoverJson src line col)
+        | some _ =>
+            match applyOptionalEntryRule headerProg with
+            | .error e => IO.println (Bang.Query.errorJsonOk e); pure 1
+            | .ok entry => printQueryOk (Bang.Query.hoverJsonP src entry line col)
       else
         match file with
         | none      => printQueryOk (Bang.Query.hoverJsonP src headerProg line col)   -- stdin, no resolver path
@@ -2274,7 +2282,10 @@ are compared via `valPretty`/an outcome-tag string — the SAME rendering `runCo
 already uses for `.done`, so "the same value" here means exactly what `bang run --engine=oracle`
 would print for both programs. -/
 def preservationCheck (orig rewritten : Bang.Surface.Prog) : IO (Option String) := do
-  match Bang.TypeCheck.checkAndLowerProg orig, Bang.TypeCheck.checkAndLowerProg rewritten with
+  let checkEntry (p : Bang.Surface.Prog) : Except String Bang.Comp := do
+    let p <- applyOptionalEntryRule p
+    Bang.TypeCheck.checkAndLowerProg p
+  match checkEntry orig, checkEntry rewritten with
   | .error e, .ok _ => pure (some s!"preservation: original program failed to elaborate ({e}) — refusing to gate against a broken baseline")
   | .ok _, .error e => pure (some s!"preservation: rewritten program FAILED TO ELABORATE ({e}) — the rewrite is unsound, aborting")
   | .error e1, .error e2 =>
@@ -2383,17 +2394,23 @@ def runRewriteAnnotate (write : Bool) (file : Option String) : IO UInt32 := do
   match Bang.Surface.parseProg src with
   | .error e => IO.eprintln s!"error: {e}"; pure 1
   | .ok p    =>
-      let outcomes := Bang.Rewrite.annotateOutcomes p
+      -- A file containing `main` is analyzed in entry role so its one computed declaration remains
+      -- legal. Restore the source program's original body/role before rendering: D5 selection is a
+      -- tooling context, not a rewrite the user requested.
+      let analysisP := (applyOptionalEntryRule p).toOption.getD p
+      let outcomes := Bang.Rewrite.annotateOutcomes analysisP
       for (d, o) in outcomes do
         match o with
         | .annotated ty => IO.eprintln s!"  + {d.name} : {Bang.Format.showTy ty}"
         | .skipped why  => IO.eprintln s!"  · {d.name} — {renderSkipReason why}"
-      match Bang.Rewrite.annotate p with
+      match Bang.Rewrite.annotate analysisP with
       | .error e => IO.eprintln s!"error: {e}"; pure 1
-      | .ok p'   =>
-          match Bang.TypeCheck.checkAndLowerProg p' with
+      | .ok analyzedP'   =>
+          match Bang.TypeCheck.checkAndLowerProg analyzedP' with
           | .error e => IO.eprintln s!"error: annotate produced a program that fails to elaborate ({e}) — this is a bug in annotate's own round-trip claim, aborting"; pure 1
-          | .ok _    => emitRewrite write file src p' none
+          | .ok _    =>
+              let p' := { analyzedP' with body := p.body, isLibrary := p.isLibrary }
+              emitRewrite write file src p' none
 
 /-- Default sample count and RNG seed for `bang test` — fixed (not randomized per-run) so a CI
 run is byte-reproducible (`Bang.LawTest.genIntSamples`'s own documented requirement: "the SAME
@@ -3139,9 +3156,7 @@ def main (args : List String) : IO UInt32 := do
       match rest with
       | "slice-fidelity" :: file :: files => runInternalSliceFidelityBatch (file :: files)
       | "initializer-census" :: file :: files => runInternalInitializerCensusBatch (file :: files)
-      | "initializer-contract-probe" :: file :: files =>
-          runInternalInitializerContractProbeBatch (file :: files)
-      | _ => cliError "bang internal: expected `slice-fidelity|initializer-census|initializer-contract-probe <file.bang>...`"
+      | _ => cliError "bang internal: expected `slice-fidelity|initializer-census <file.bang>...`"
     else if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
       -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file

@@ -237,7 +237,7 @@ def registry : List DiagEntry := [
         ++ "trailing `in` to end the RHS on the SAME line (`let name = e in …`, script mode), or make "
         ++ "sure the value after `=` is followed IMMEDIATELY by the next `let`/decl keyword with "
         ++ "nothing else on that line (top-level-decl mode, ADR-0093)."
-    example? := some "let x = 3\nlet y = 4\nx + y" },
+    example? := some "let x = 3\nlet main = 4\nx + main\ndata Marker = M\n0" },
   { code := "B017"
     anchors := ["conflicting instantiations for type variable"]
     summary := "a bound-free generic's call site names two different types for the same type variable"
@@ -250,7 +250,7 @@ def registry : List DiagEntry := [
         ++ "refused loud rather than silently picking one annotation over the other. Annotate "
         ++ "consistently, or drop whichever annotation is redundant."
     example? := some
-      "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)" },
+      "let rec passThroughOpt : Option a -> Option a = fun o => o in ($passThroughOpt (Some(3) : Option Int) : Option Char)" },
   { code := "B018"
     anchors := ["quantity mismatch", "requires", "use"]
     summary := "a local value-use assertion does not match the body's quantitative use"
@@ -259,7 +259,18 @@ def registry : List DiagEntry := [
         ++ "on every alternative path. Sequential uses add and saturate at `omega`. Either remove "
         ++ "the duplicate/forgotten use or widen the local assertion to `[omega]`. Quantities are "
         ++ "a value axis beside effect rows, never weights inside a row (ADR-0116)."
-    example? := some "let x = 1 in use [1] x in 7" }
+    example? := some "let x = 1 in use [1] x in 7" },
+  { code := "B019"
+    anchors := ["top-level initializer", "must be an inert description"]
+    summary := "a non-`main` top-level declaration performs eager computation"
+    teaching :=
+      "Top-level declarations are semantic descriptions (ADR-0118). An ordinary top-level `let` "
+        ++ "must bind an inert value; only the bare `main` declaration in an entry program may "
+        ++ "compute. Suspend deferred work in a thunk (`let x = {…}` and force it where needed), "
+        ++ "or move entry-only computation beneath `main`. `let rec` remains a suspended definition. "
+        ++ "Constructor applications are inert only when every payload is inert, so `Some(3)` is "
+        ++ "accepted while `Some(1 + 2)` is refused."
+    example? := some "let eager = 1 + 2\nlet main = eager" }
 ]
 
 /-! ## 3. The two total functions over the registry. -/
@@ -312,6 +323,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "app: callee is not a function — '4' is a literal, never a callable; the next line's `x` looks like it was folded in as an application argument. A top-level `let` needs `in` to end its RHS on the SAME line" == some "B016"
 #guard codeForMsg "'passThroughOpt': conflicting instantiations for type variable 'a' — one call site names both 'Int' and 'Char' (an argument annotation and the call's own result annotation disagree, or two arguments disagree) — annotate consistently, or drop the redundant annotation" == some "B017"
 #guard codeForMsg "quantity mismatch: 'use [1] x' requires one use, but the body has zero" == some "B018"
+#guard codeForMsg "top-level initializer 'eager' must be an inert description — only entry 'main' may compute; suspend the work in `{…}`, or move it under 'main' (ADR-0118)" == some "B019"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none
@@ -323,6 +335,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard (explain "B015").map (·.code) == some "B015"
 #guard (explain "B016").map (·.code) == some "B016"
 #guard (explain "B018").map (·.code) == some "B018"
+#guard (explain "B019").map (·.code) == some "B019"
 
 -- codes are UNIQUE (a duplicate would make `explain` ambiguous).
 #guard (registry.map (·.code)).eraseDups.length == registry.length

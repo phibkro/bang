@@ -1,7 +1,7 @@
 # PATH-slice-execution-boundary — classify body-slice execution without inventing an artifact
 
-> Differentially execute resolved whole programs and entry-rooted body slices, retain the strict
-> initializer counterexample, and turn it into the first measured requirement for a future linker.
+> Differentially execute resolved whole programs and entry-rooted body slices, retain the historical
+> strict-initializer counterexample, and use it to drive an explicit language/link decision.
 
 ## Seam
 
@@ -106,7 +106,10 @@
 - Retained failed gates / successors: strict initializer asymmetry → top-level initializer census →
   initialization-contract fork.
 - Reopen / observe: `linkReady` stays false until initialization, runtime labels, import slots, and
-  independently validated linking are jointly answered.
+  independently validated linking are jointly answered. ADR-0118 later made the strict-initializer
+  execution asymmetry unrepresentable for valid programs; the fixture now expects B019, while runtime
+  classification remains a backstop. Runtime labels, import slots, and independent validation still
+  keep `linkReady=false`.
 
 ## Owner
 

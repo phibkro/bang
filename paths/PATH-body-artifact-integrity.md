@@ -97,7 +97,8 @@ checker plus a soundness connection to `HasCTy` is a separate, consumer-pulled p
   independent fitness + verify rerun all pass with `CHANGELOG_STABLE_REF=934d1512`.
 - Reopen / observe: the SHA-256 address is integrity authority for exact canonical body bytes and stable
   effect identity only. Open a separate path when a concrete cache/link consumer pulls an executable
-  core checker or explicit import/initializer/relocation application envelope; do not reinterpret
+  core checker or explicit import/relocation application envelope. ADR-0118 later removed eager
+  library initializer slots from valid programs; do not reinterpret
   integrity as typing, cache-hit, or link authority.
 
 ## Owner

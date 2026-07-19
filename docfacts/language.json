@@ -593,7 +593,7 @@
           "looks like it was folded in as an application argument"
         ],
         "code": "B016",
-        "example": "let x = 3\nlet y = 4\nx + y",
+        "example": "let x = 3\nlet main = 4\nx + main\ndata Marker = M\n0",
         "summary": "a top-level `let` with no `in` absorbed the next line as an application (issue #129)",
         "teaching": "A top-level `let name = e` with no trailing `in` parses `e` with the SAME juxtaposition-application grammar an ordinary call site uses — a bare newline carries no meaning (ADR-0046). So `let x = 3` followed on the next line by `let y = 4` followed by `x + y` folds `4` against the following line's leading token before that line's own `let` boundary is found, producing `4 x` (`.app`) instead of two separate declarations. Add a trailing `in` to end the RHS on the SAME line (`let name = e in …`, script mode), or make sure the value after `=` is followed IMMEDIATELY by the next `let`/decl keyword with nothing else on that line (top-level-decl mode, ADR-0093)."
       },
@@ -602,7 +602,7 @@
           "conflicting instantiations for type variable"
         ],
         "code": "B017",
-        "example": "let rec passThroughOpt : Option a -> Option a = fun o => o\nlet main = 0\n($passThroughOpt (Some(3) : Option Int) : Option Char)",
+        "example": "let rec passThroughOpt : Option a -> Option a = fun o => o in ($passThroughOpt (Some(3) : Option Int) : Option Char)",
         "summary": "a bound-free generic's call site names two different types for the same type variable",
         "teaching": "ADR-0103's monomorphization pass discovers a bound-free `let rec`'s (e.g. `mapOpt : (a -> b) -> Option a -> Option b`) concrete instantiation from EITHER an argument's own annotation or (Amendment ②) the call's own result annotation — but never guesses: if one call site names the SAME type variable at two different concrete types (an argument says `Int`, the result says `Char`, or two arguments disagree), that is a genuinely contradictory program, refused loud rather than silently picking one annotation over the other. Annotate consistently, or drop whichever annotation is redundant."
       },
@@ -616,6 +616,16 @@
         "example": "let x = 1 in use [1] x in 7",
         "summary": "a local value-use assertion does not match the body's quantitative use",
         "teaching": "`use [0] x in body` requires no free use of `x`; `use [1] x in body` requires one use on every alternative path. Sequential uses add and saturate at `omega`. Either remove the duplicate/forgotten use or widen the local assertion to `[omega]`. Quantities are a value axis beside effect rows, never weights inside a row (ADR-0116)."
+      },
+      {
+        "anchors": [
+          "top-level initializer",
+          "must be an inert description"
+        ],
+        "code": "B019",
+        "example": "let eager = 1 + 2\nlet main = eager",
+        "summary": "a non-`main` top-level declaration performs eager computation",
+        "teaching": "Top-level declarations are semantic descriptions (ADR-0118). An ordinary top-level `let` must bind an inert value; only the bare `main` declaration in an entry program may compute. Suspend deferred work in a thunk (`let x = {…}` and force it where needed), or move entry-only computation beneath `main`. `let rec` remains a suspended definition. Constructor applications are inert only when every payload is inert, so `Some(3)` is accepted while `Some(1 + 2)` is refused."
       }
     ]
   },

@@ -161,7 +161,7 @@ A C4 [component](https://c4model.com/abstractions/component) is related function
 flowchart LR
   subgraph system_BANG["Software system: BANG implementation"]
     subgraph container_Lean_toolchain["Container: Lean compiler/reference toolchain"]
-      component_Frontend["Frontend<br/>12 modules · 18922 LOC"]
+      component_Frontend["Frontend<br/>12 modules · 18959 LOC"]
       component_Core["Core<br/>15 modules · 9099 LOC"]
       component_Backend["Backend<br/>7 modules · 18121 LOC"]
       component_Meta["Meta<br/>2 modules · 4094 LOC"]
@@ -186,7 +186,7 @@ flowchart LR
 
 | Component (repository tier) | Responsibility | Modules | LOC | Depends on |
 |---|---|---:|---:|---|
-| `Frontend` | text → typed core | 12 | 18922 | `Core` (7) |
+| `Frontend` | text → typed core | 12 | 18959 | `Core` (7) |
 | `Core` | IR · typing · semantics · soundness | 15 | 9099 | — |
 | `Backend` | calculated + abstract target machines · separate WasmGC emitter | 7 | 18121 | `Core` (9) |
 | `Meta` | contextual-equivalence metatheory | 2 | 4094 | `Core` (7) |

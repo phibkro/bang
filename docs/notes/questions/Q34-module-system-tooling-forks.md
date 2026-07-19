@@ -400,20 +400,43 @@ The remaining choice is now priced rather than guessed:
 Choose by explicit operator ruling and ADR; do not smuggle Option A in as a checker cleanup or Option B in
 as an accidental consequence of today's flattening.
 
+## Initializer-contract ruling (2026-07-19): Option A is now the language
+
+The operator chose Option A in ADR-0118. Every ordinary top-level `let` must now be an inert
+description; the one computed declaration is bare `main` after the entry rule has selected program
+mode. `let rec` remains a suspended knot and the trailing program-body form remains legal. Constructor
+classification reuses the elaborator's authoritative environment and fails closed on eager payloads.
+Stable B019 names the binding and teaches suspension (`{…}`) or relocation under `main`.
+
+The exact migration moved `nqueens.q4/q5/q6` into local lets under `main`, preserving `21004`. The
+post-migration 61-journey census is **233 manifest values + 24 recursive definitions + 14 computed
+`main`s = 271 occurrences**. The historical strict-initializer divergence source is now refused before
+checking or either runtime lane, including `--no-typecheck`; query dump retains only structural source
+facts and nulls checked/core facts for that invalid subject. A valid divergent `main` still makes
+declaration query rows chain-cumulative, so ADR-0117's no-attribution rule remains necessary.
+
+**Decision:** initialization divergence is no longer a module link input for valid programs. Keep
+`linkReady=false` for the remaining independent type-validation, import-slot, runtime-relocation, and
+actual-linker work. Do not infer per-binding effects or source provenance from the new restriction.
+The conservative refusal of pure non-main computation is intentional; reopen only when a real
+compute-once library journey or independently authoritative totality/effect provenance pulls it.
+
 ## Source initialization-order input (2026-07-19): preserve semantics without guessing effects
 
-ADR-0117 leaves strict top-level computation legal, so initialization remains a first-class link input.
-`PATH-module-initialization-order` exposes the resolver-owned source portion directly: imported modules
+Historically ADR-0117 left strict top-level computation legal, so initialization was a first-class link
+input. `PATH-module-initialization-order` exposed the resolver-owned source portion directly: imported modules
 in dependency-first traversal order, entry last, and each module's `let`/`let rec` declarations in full
 source-declaration order. `(module, sourceIndex)` distinguishes duplicate names before merge or
 elaboration can destroy occurrence identity; ordinary lets are `strict-rhs`, recursive definitions are
 `recursive-knot`.
 
-The companion metadata is the limit, not boilerplate: `elaborationProvenance=false`,
+ADR-0118 subsequently made ordinary rows inert and left computation only at entry `main`. The inventory
+still records binding construction/scoping order, but it no longer licenses an ordered initializer
+effect contract. Its companion metadata remains the limit, not boilerplate: `elaborationProvenance=false`,
 `perBindingEffects=false`, and `linkReady=false`. Reversed independent imports reverse their published
-initializer blocks, faithfully exposing today's observable order. No row, runtime label, or import slot
-is joined to these source occurrences. Runtime relocation and slot validation remain the next artifact
-wall, and crossing it must satisfy ADR-0117 rather than infer identity from the flattened let spine.
+source blocks. No row, runtime label, or import slot is joined to these source occurrences. Runtime
+relocation and slot validation remain artifact inputs, and crossing them must satisfy ADR-0117 rather
+than infer identity from the flattened let spine.
 
 ## Body-effect relocation input (2026-07-19): expose the quotient, not an artifact
 
@@ -456,8 +479,8 @@ entry or a separately linked module. Its metadata says `producerChecked=true` an
 `structurallyRoundTripped=true`, but `independentlyTypeValidated=false`, `cacheKeySafe=false`, and
 `linkReady=false`. Do not add a store, scheduler, or reuse skip yet. The next body-side demand is an
 independent validation/link contract: type evidence or revalidation, collision-safe version-domain
-addressing, and explicit import/initializer slots. ADR-0117 still forbids guessing those initializer
-joins from flattened binder identity.
+addressing, explicit import slots, and entry-root selection. ADR-0117 still forbids guessing any
+source-to-elaboration identity from the flattened binder spine.
 
 ## Body-artifact integrity input (2026-07-19): collision-safe identity without validation laundering
 
@@ -475,5 +498,5 @@ pure-fragment checker that rejects current capability, perform, and handler cons
 checker operates on annotated `Surf` before lowering. Neither can honestly revalidate supplied `Comp`
 bytes. Reusing one would turn a convenient green flag into sustained correctness debt. Therefore
 `independentlyTypeValidated=false`, `cacheKeySafe=false`, and `linkReady=false` remain authoritative.
-A complete executable core checker (connected to `HasCTy`) and explicit import/initializer/link inputs
+A complete executable core checker (connected to `HasCTy`) and explicit import/link inputs
 open only when a real cache or linker consumer pulls them.

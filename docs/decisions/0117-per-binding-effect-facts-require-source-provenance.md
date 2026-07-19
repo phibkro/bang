@@ -3,10 +3,10 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Accepted
-- **Summary**: Preserve BANG's current strict top-level declaration semantics, but do not publish or
-  consume initializer-local effect rows until explicit source binding-occurrence provenance survives
-  elaboration. Aggregate checked rows remain authoritative; names, generated prefixes, let-spine
-  positions, and separately re-elaborated RHSs are not valid attribution mechanisms.
+- **Summary**: Do not publish or consume initializer-local effect rows until explicit source
+  binding-occurrence provenance survives elaboration. Aggregate checked rows remain authoritative;
+  names, generated prefixes, let-spine positions, and separately re-elaborated RHSs are not valid
+  attribution mechanisms. ADR-0118 later amended this ADR's temporary language-preservation outcome.
 - **Depends-on**: [0066](0066-surface-type-system.md) (authoritative checked rows),
   [0075](0075-polymorphism-elaborates-to-mono-kernel-bidirectional-decidability.md)
   (monomorphizing elaboration), [0093](0093-module-system-v1-file-modules-elaborate-flat.md)
@@ -94,3 +94,10 @@ work, not optional polish.
 Reopen before implementing any of the gated consumers above, when a second concrete consumer requires
 binding identity, or when independently justified elaborator work can carry occurrence provenance at
 low marginal cost. Once one of those triggers fires, continuing to defer becomes technical debt.
+
+## Later amendment
+
+ADR-0118 independently justified and shipped an inert-top-level language rule, amending Decision 1's
+temporary preservation of eager non-main declarations. The provenance, aggregate-row, and forbidden-
+attribution decisions remain fully in force: a valid computed `main` can still contribute its row to
+every declaration projection, and no per-binding fact follows from the surface restriction.

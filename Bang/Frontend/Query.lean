@@ -209,9 +209,14 @@ def withQueryBody (p : Prog) (name : String) : Prog :=
 /-- **PUBLIC (TIER 1):** the checker's `type ! row` string for the WHOLE `withQueryBody p name`
 projection, or the checker's own error message on failure (an ill-typed program, or `name` not bound
 as a VALUE — e.g. naming a `trait`/`data`/`effect`, which `Surf.var` can never resolve to). Because
+the projection deliberately sets `isLibrary=false`, this asks "what checked type would this binding
+have as a selected body?", not "is the enclosing source accepted in its current entry/library
+role?" A stdin library's computed `main` can therefore have a clean per-decl projection even though
+whole-program checking correctly refuses it with B019; `tools/test-query.sh` pins that distinction.
+Because
 `checkAndLowerProg` folds every top-level `letD`/`letRecD` around that query body, the rendered row
-is CHAIN-CUMULATIVE, not the named declaration's RHS-local initializer row: an unrelated strict
-initializer can contribute its effects. `tools/test-initializer-census.sh` pins that distinction.
+is CHAIN-CUMULATIVE, not the named declaration's RHS-local row: ADR-0118's one computed entry `main`
+can contribute its effects to every projection. `tools/test-initializer-census.sh` pins that distinction.
 `public`:
 `Bang.Rewrite.annotate` (#82) reuses this DIRECTLY (a `letD`'s own annotate-outcome needs exactly
 this per-decl checked fact) rather than re-deriving a second `withQueryBody`-style projection. -/
@@ -252,8 +257,8 @@ public structure DeclFact where
   three-way split. -/
   type      : Option String
   /-- The rendered effect row of the WHOLE `withQueryBody p name` projection, alongside `type`
-  (`some` under the same condition). This is chain-cumulative through every strict top-level
-  initializer, not an RHS-local row; see `typeStringOfDecl` and
+  (`some` under the same condition). This is chain-cumulative through the whole top-level binding
+  chain—including the one computed entry `main`—not an RHS-local row; see `typeStringOfDecl` and
   `tools/test-initializer-census.sh`. -/
   row       : Option String
   /-- The checker's error message, `some` when a value-typed decl's `type`/`row` came back `none`
@@ -403,15 +408,16 @@ public structure ModuleDepFact where
   tgt : String
   deriving Repr
 
-/-- How one source value declaration enters the current strict top-level initialization chain.
-`strictRhs` evaluates an ordinary `let` RHS immediately. `recursiveKnot` constructs the current
-`let rec` knot immediately but does not execute its suspended function body. -/
+/-- How one source value declaration enters top-level binding construction. `strictRhs` evaluates an
+ordinary `let` RHS immediately, but ADR-0118 requires that RHS to be inert except for bare entry
+`main`. `recursiveKnot` constructs the current `let rec` knot immediately but does not execute its
+suspended function body. The JSON spellings are retained for schema compatibility. -/
 public inductive ModuleInitializerMode where
   | strictRhs | recursiveKnot
   deriving Repr, DecidableEq
 
 /-- **PUBLIC (TIER 1):** one source declaration occurrence in the exact dependency-first,
-source-order initialization sequence consumed by today's flat module lowering. `id` is an
+source-order binding sequence consumed by today's flat module lowering. `id` is an
 occurrence address within this resolved source snapshot, not a cross-edit content identity.
 `sourceIndex` counts every declaration in its owning source module, so duplicate binder names remain
 distinct without guessing from post-elaboration names. No effect row is attributed here. -/
@@ -491,8 +497,8 @@ private structure InitializerOccurrence where
   kind        : DeclKind
   mode        : ModuleInitializerMode
 
-/-- **PUBLIC (TIER 1):** project resolver-owned, unmerged source modules into the exact strict
-initializer occurrence sequence. Callers provide modules in the same dependency-first order handed
+/-- **PUBLIC (TIER 1):** project resolver-owned, unmerged source modules into the exact top-level
+binding occurrence sequence. Callers provide modules in the same dependency-first order handed
 to `mergeModules`, with `@entry` last. This deliberately stops before rows, lowering, slots, or
 artifacts: it records the initialization input without pretending source occurrences survived
 elaboration. -/
@@ -845,9 +851,9 @@ public structure ModuleBodyExportFact where
   deriving Repr
 
 /-- One logical module's complete export-body projection. `linkReady=false` is load-bearing: these
-are measurements through a whole environment, not independently validated artifacts. In particular,
-they are not standalone executables: pruning an unreachable strict top-level initializer can change
-termination before the selected body is reached (`tools/test-slice-fidelity.sh` pins the witness). -/
+are measurements through a whole environment, not independently validated artifacts. ADR-0118 made
+the historical eager-sibling execution counterexample invalid, but independent typing, import-slot
+validation, runtime relocation, and an actual linker remain absent. -/
 public structure ModuleBodyFact where
   module       : String
   scope        : String

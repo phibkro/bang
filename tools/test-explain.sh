@@ -59,11 +59,13 @@ data IntList = Nil | Cons(Int, IntList)
 Nil'                                                               'B012'
 trigger_carries_code 'let rec outer : Int -> Int ! {Div} = fun n => let rec a : Int -> Int ! {Div} = fun m => ($b) m in let rec b : Int -> Int ! {Div} = fun m => ($a) m in ($a) n in ($outer) 3' 'B013'
 trigger_carries_code 'let x = 3
-let y = 4
-x + y'                                                             'B016'
-trigger_carries_code 'let rec passThroughOpt : Option a -> Option a = fun o => o
-let main = 0
-($passThroughOpt (Some(3) : Option Int) : Option Char)'           'B017'
+let main = 4
+x + main
+data Marker = M
+0'                                                                   'B016'
+trigger_carries_code 'let rec passThroughOpt : Option a -> Option a = fun o => o in ($passThroughOpt (Some(3) : Option Int) : Option Char)' 'B017'
+trigger_carries_code 'let eager = 1 + 2
+let main = eager'                                                 'B019'
 
 # ── B011 RETIRED (#144): its FORMER trigger now type-checks CLEAN, no diagnostic at all — the
 # positive regression for the payload-arity-≤2 cap being lifted (a ≥3-ary ctor constructs/matches
@@ -137,7 +139,7 @@ check "explain-no-arg-exit-1" "$noarg_exit" "1"
 
 echo "──────────────────────────────"
 echo "explain: $pass passed, $fail failed"
-want_total=25
+want_total=26
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

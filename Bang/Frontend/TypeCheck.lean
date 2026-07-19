@@ -3157,7 +3157,7 @@ public def resolveCtorFrom (ctors : List (String × CtorInfo)) (x : String) :
 def resolveCtor (env : ElabEnv) (x : String) : Option (Except String CtorInfo) :=
   resolveCtorFrom env.ctors x
 
-/-- Enforcement-grade inert initializer predicate used by the initialization-contract probe.
+/-- Enforcement-grade inert initializer predicate for ADR-0118's initialization contract.
 It extends the checker's ordinary syntactic-value restriction at exactly one program-informed seam:
 a named data-constructor application is inert when all of its payload syntax is inert. Constructor
 identity is resolved through the same qualified/bare ambiguity rule as elaboration; an ordinary
@@ -3178,6 +3178,35 @@ public partial def isInertInitializerValue (ctors : List (String × CtorInfo)) :
   | _ => false
 
 #guard isInertInitializerValue [] (.app (.var "ordinaryFunction") (.lit 3)) == false
+
+/-- Reserved executable declaration used only by `Main`'s slice-fidelity apparatus. Source cannot
+spell this tokenizer-hostile name. Keeping the spelling here makes the sole non-language exemption
+part of the initializer contract rather than a duplicated CLI convention. -/
+public def internalSliceEntryName : String := "$<bang-internal-slice-entry>$"
+
+/-- ADR-0118 / B019: every ordinary top-level `let` is an inert description. The bare `main`
+declaration may compute only in an ENTRY program; a library's own `main` has no exception (and module
+merge qualifies it anyway). `let rec` is a suspended definition and therefore needs no arm here.
+The impossible-to-spell slice entry is the one measurement-apparatus exemption. -/
+def enforceInertTopLevelInitializers (p : Prog) (ctors : List (String × CtorInfo)) : Except String Unit := do
+  for d in p.decls do
+    match d with
+    | .letD name _ rhs =>
+        let executable := (!p.isLibrary && name == "main") || name == internalSliceEntryName
+        if !executable && !isInertInitializerValue ctors rhs then
+          throw (s!"top-level initializer '{name}' must be an inert description — " ++
+            "only entry 'main' may compute; suspend the work in `{…}`, or move it under 'main' (ADR-0118)")
+    | _ => pure ()
+
+#guard (match enforceInertTopLevelInitializers
+  { decls := [.letD "eager" none (.binopS .add (.lit 1) (.lit 2))], body := .lit 0,
+    isLibrary := false } [] with | .error _ => true | .ok _ => false)
+#guard (enforceInertTopLevelInitializers
+  { decls := [.letD "main" none (.binopS .add (.lit 1) (.lit 2))], body := .lit 0,
+    isLibrary := false } []).isOk
+#guard (match enforceInertTopLevelInitializers
+  { decls := [.letD "main" none (.binopS .add (.lit 1) (.lit 2))], body := .lit 0,
+    isLibrary := true } [] with | .error _ => true | .ok _ => false)
 
 /-- **#101**: expand a match's wildcard arm `_ -> body` (if present) into one fresh arm per
 constructor of the scrutinee's data type NOT already covered by an earlier, EXPLICIT arm — so
@@ -6679,9 +6708,9 @@ Also returns `env.ctors`/`env.gen` (issue #100) — the μ-re-fold display sites
 (`foldDataTyOrRaw`), and re-parsing/re-`buildEnv`-ing a second time just to recover it would risk
 drift from whatever THIS elaboration actually resolved (e.g. prelude-injection order). Additive
 tuple fields — every existing `(e, effects)`/`(e, _)` destructure widens to match. -/
-def elabProg (p : Prog) :
+def elabProg (sourceProg : Prog) :
     Except String (Surf × List (String × EffectInfo) × List (String × CtorInfo) × List (String × GenData)) := do
-  let p ← expandDerives p
+  let p ← expandDerives sourceProg
   let p ← injectPrelude p
   let p := Bang.Surface.eraseLettMultiProg p
   -- #139 fix (was: `wrapPendingKnots env.pendingKnots foldedBody`, wrapping the KNOTS OUTSIDE
@@ -6710,6 +6739,11 @@ def elabProg (p : Prog) :
   -- misalignment, `data Pair = Mk(Int,Int) deriving (Eq)` + a later `let main = …Mk(1,2)==Mk(1,2)…`
   -- regressed to `unbound variable '#opknot0'` under the two lists' index skew).
   let env ← buildEnv (prelude ++ p.decls)
+  -- ADR-0118: enforce against the resolver-produced/source declaration list, not generated prelude
+  -- or derive machinery. `env.ctors` is nevertheless authoritative over that source: it includes
+  -- the exact injected/declared constructor identities `elabS` will resolve below. This is the last
+  -- source-structured point before `foldLetDecls` erases declaration boundaries into one let spine.
+  enforceInertTopLevelInitializers sourceProg env.ctors
   -- #112: knot-wrap BEFORE `elabS` (RAW `letRecS` nodes feeding its OWN `.letRecS` arm, which does
   -- the real elaboration+fixpoint-build) — NOT wrap an already-elaborated body, which would need a
   -- second `elabS` pass over the wrapper alone. `declIdx` re-based to `p.decls`'s OWN 0-indexed
@@ -6735,12 +6769,6 @@ def elabProg (p : Prog) :
   let monomorphized ← monomorphizeLetRec env.gen env.aliases bigFuel dealiased
   let e ← elabS env [] monomorphized   -- bounded-fn uses/mono residues → elaborate (bite-2 + ADR-0103)
   return (e, env.effects, env.ctors, env.gen)
-
-/-- Public probe projection of `elabProg`'s authoritative constructor environment. This deliberately
-does not expose or duplicate the elaboration pipeline; callers still pay the complete existing pass. -/
-public def initializerCtorEnv (p : Prog) : Except String (List (String × CtorInfo)) := do
-  let (_, _, ctors, _) ← elabProg p
-  pure ctors
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -6977,18 +7005,11 @@ unit test of the fallback, decoupled from any actual program). -/
 #guard (match checkAndLower "let f = 3 in f 5" with
         | .error (m, _) => (Bang.Surface.locateInMsg "let f = 3 in f 5" m).map (·.loc) == some "1:5"
         | .ok _ => false)
--- issue #129: a top-level `let` with no `in` absorbs the next line's leading token as a juxtaposition
--- application (`4 x` from `let x = 3` ⏎ `let y = 4` ⏎ `x + y`). The retrofitted `absorbedLetHint`
--- fires (the `looks like it was folded in` anchor B016 keys on) AND `locateInMsg` finds a real span
--- for the literal callee — was a spanless, uncoded message before this fix (the exact regression).
+-- issue #129's top-level ambiguity witness now violates ADR-0118 before elaboration: the parser
+-- absorbs the trailing `x` into `y`'s initializer, making it executable. B019 intentionally has
+-- precedence over the older B016 elaboration hint on this source shape.
 #guard (match checkAndLower "let x = 3\nlet y = 4\nx + y" with
-        | .error (m, _) => (m.splitOn "looks like it was folded in as an application argument").length > 1
-        | .ok _ => false)
-#guard (match checkAndLower "let x = 3\nlet y = 4\nx + y" with
-        | .error (m, _) => (Bang.Surface.locateInMsg "let x = 3\nlet y = 4\nx + y" m).map (·.loc) == some "2:9"
-        | .ok _ => false)
-#guard (match checkAndLower "let x = 3\nlet y = 4\nx + y" with
-        | .error (m, _) => Bang.DiagCodes.codeForMsg m == some "B016"
+        | .error (m, _) => Bang.DiagCodes.codeForMsg m == some "B019"
         | .ok _ => false)
 -- `match: scrutinee is not a sum` — matching a plain Int variable names it.
 #guard (match checkAndLower "let x = 3 in match x { Left(a) -> a, Right(b) -> b }" with
@@ -9627,31 +9648,28 @@ def runMergedOutcome (fuel : Nat) (p : Prog) : Outcome :=
   | .error _ => false
   | .ok merged => runMergedYieldsInt 200 merged == some 7
 
-/-! ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
+/-! ### ADR-0093 D5, refined by ADR-0118 — top-level declarations bind descriptions.
 
-`foldLetDecls`'s desugaring is proven end-to-end via `runTypedYieldsInt` (parse → elaborate →
-type-check → lower → `Source.eval`), not just structurally (the `parsesTo`/round-trip guards above
-only prove the AST shape) — this is the "does the ADR's own payoff actually happen" check. -/
+`foldLetDecls` still gives declarations lexical scope, while ADR-0118 restricts ordinary non-main
+initializers to inert syntax. These guards prove inert descriptions compose and `let rec` remains
+suspended; actual computation occurs in the trailing body or entry `main`. -/
 
 -- a single top-level `let` decl, referenced by the trailing body. `data Marker` terminates the
 -- bound expression before the body — a bare literal FOLLOWED by an identifier (`3 x`) would
 -- otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.
 #guard runTypedYieldsInt 50 "let x = 3 data Marker = M x + 1" 4
--- MULTIPLE let decls, in order — a later one sees an earlier one (nested-let scoping). A second
--- `data` decl (a reserved keyword, never a valid application-argument atom) terminates `y`'s bound
--- expression before the trailing `x + y` — the same disambiguating role `data Marker` already
--- plays after `x`'s own binding.
-#guard runTypedYieldsInt 50 "let x = 3 data Marker = M let y = x + 1 data Marker2 = M2 x + y" 7
+-- MULTIPLE inert let decls remain ordered and visible to the trailing computation.
+#guard runTypedYieldsInt 50 "let x = 3 data Marker = M let y = 4 data Marker2 = M2 x + y" 7
 -- a top-level `let rec` decl recurses, exactly like the expression-level `let rec` it desugars to
 -- (ADR-0073's declared-row discipline carries over unchanged — same `Div` row). `data Marker`
 -- terminates the bound expression before the trailing call (the SAME "value followed by another
 -- atom parses as application" ambiguity this whole file's `let`-decl corpus works around).
 -- `data Marker = M` (bare ctor, no payload — a payload-carrying `M(...)` would instead have its
 -- FOLLOWING `(` swallowed as a ctor-payload TYPE, not a value application; the separator here must
--- be follow-by-a-KEYWORD, not follow-by-`(`) then `let call = …` isolates the recursive CALL as
--- its own decl, avoiding both this and the earlier literal-adjacency traps in one move.
+-- be follow-by-a-KEYWORD, not follow-by-`(`). `let call = {…}` then suspends the recursive call
+-- as an inert ordinary declaration, and the trailing body forces it.
 #guard runTypedYieldsInt 200
-  "let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1)) data Marker = M let call = ($fact) 5 data Marker2 = M2 call" 120
+  "let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1)) data Marker = M let call = {($fact) 5} data Marker2 = M2 $call" 120
 -- `let`/`let rec` decls compose with OTHER decl kinds (`data`), interleaved.
 #guard runTypedYieldsInt 50
   "data Pair = Mk(Int, Int) let p = Mk(3, 4) match (p : Pair) { Mk(a, b) -> a + b }" 7
@@ -9747,7 +9765,7 @@ def hostIoP : Prog :=
   let entryP : Prog := (Bang.Surface.parseProg "import Io let main = Io.print(SNil)").toOption.get!
   match mergeModules [("Io", hostIoP)] entryP with
   | .error _ => false
-  | .ok merged => match elabProg merged with
+  | .ok merged => match elabProg { merged with body := .var "main", isLibrary := false } with
     | .error _ => false
     | .ok (e, effects, _, _) => match runInferC (synthSC [] e) effects with
       | .error _ => false
@@ -9762,7 +9780,7 @@ def hostIoP : Prog :=
   let entryP : Prog := (Bang.Surface.parseProg "import Io let main = Io.print(SNil)").toOption.get!
   match mergeModules [("Io", hostIoP)] entryP with
   | .error _ => false
-  | .ok merged => runMergedOutcome 200 merged == .escaped
+  | .ok merged => runMergedOutcome 200 { merged with body := .var "main", isLibrary := false } == .escaped
 
 -- THE REFUTATION WITNESS (H1b's motivating pin — ADR-0104's nearness correction): a
 -- lexically-ENCLOSING `with Io_Console as con { … }` does NOT catch a module-qualified
@@ -9779,7 +9797,7 @@ def hostIoP : Prog :=
     "import Io let main = handle Io.print(SNil) with Io_Console as con { print(s) => () }").toOption.get!
   match mergeModules [("Io", hostIoP)] entryP with
   | .error _ => false
-  | .ok merged => runMergedOutcome 200 merged == .escaped
+  | .ok merged => runMergedOutcome 200 { merged with body := .var "main", isLibrary := false } == .escaped
 
 -- COMPANION POSITIVE (the pre-existing path, UNAFFECTED by H1): the ORDINARY named-cap spelling
 -- (`con.print(x)`, NOT module-qualified) still resolves entirely within the user's OWN handler —
@@ -9791,7 +9809,7 @@ def hostIoP : Prog :=
     "import Io let main = handle con.print(SNil) with Io_Console as con { print(s) => () }").toOption.get!
   match mergeModules [("Io", hostIoP)] entryP with
   | .error _ => false
-  | .ok merged => match runMergedOutcome 200 merged with
+  | .ok merged => match runMergedOutcome 200 { merged with body := .var "main", isLibrary := false } with
     | .yields _ => true    -- the ordinary named-cap path RUNS TO A VALUE (untouched by H1)
     | _         => false
 

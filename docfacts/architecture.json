@@ -1730,8 +1730,23 @@
         "dependsOn": "[0066](0066-surface-type-system.md) (authoritative checked rows), [0075](0075-polymorphism-elaborates-to-mono-kernel-bidirectional-decidability.md) (monomorphizing elaboration), [0093](0093-module-system-v1-file-modules-elaborate-flat.md) (strict flat module lowering)"
       },
       "status": "Accepted",
-      "summary": "Preserve BANG's current strict top-level declaration semantics, but do not publish or consume initializer-local effect rows until explicit source binding-occurrence provenance survives elaboration. Aggregate checked rows remain authoritative; names, generated prefixes, let-spine positions, and separately re-elaborated RHSs are not valid attribution mechanisms.",
+      "summary": "Do not publish or consume initializer-local effect rows until explicit source binding-occurrence provenance survives elaboration. Aggregate checked rows remain authoritative; names, generated prefixes, let-spine positions, and separately re-elaborated RHSs are not valid attribution mechanisms. ADR-0118 later amended this ADR's temporary language-preservation outcome.",
       "title": "per-binding effect facts require source provenance"
+    },
+    {
+      "derived": {
+        "amendedBy": [],
+        "supersededBy": []
+      },
+      "id": "0118",
+      "lifecycle": [],
+      "path": "docs/decisions/0118-top-level-declarations-are-inert-except-entry-main.md",
+      "relationships": {
+        "dependsOn": "[0007](0007-explicit-force-and-fixed-precedence.md) (description/force boundary), [0093](0093-module-system-v1-file-modules-elaborate-flat.md) (file modules and optional `main`), [0117](0117-per-binding-effect-facts-require-source-provenance.md) (no guessed initializer rows)"
+      },
+      "status": "Accepted",
+      "summary": "Ordinary top-level `let` declarations are semantic descriptions: their RHS must be an inert value. The one exception is the bare `main` declaration in an entry program, whose RHS may compute. Top-level `let rec` remains a suspended definition; a trailing entry body remains the program body and does not become a declaration. Enforcement uses the elaborator's authoritative constructor environment and reports stable diagnostic B019.",
+      "title": "top-level declarations are inert except entry `main`"
     }
   ],
   "arrows": [
@@ -8424,7 +8439,7 @@
     },
     {
       "directImports": [],
-      "loc": 331,
+      "loc": 344,
       "name": "Bang.Frontend.DiagCodes",
       "path": "Bang/Frontend/DiagCodes.lean",
       "publicSymbols": [
@@ -8448,19 +8463,19 @@
         },
         {
           "kind": "def",
-          "line": 268,
+          "line": 279,
           "name": "DiagEntry.matches",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 273,
+          "line": 284,
           "name": "codeForMsg",
           "visibilityBasis": "public-section"
         },
         {
           "kind": "def",
-          "line": 278,
+          "line": 289,
           "name": "explain",
           "visibilityBasis": "public-section"
         }
@@ -8632,7 +8647,7 @@
         "Bang.Core.Fingerprint",
         "Bang.Frontend.Diagnostics"
       ],
-      "loc": 1906,
+      "loc": 1912,
       "name": "Bang.Frontend.Query",
       "path": "Bang/Frontend/Query.lean",
       "publicSymbols": [
@@ -8662,523 +8677,523 @@
         },
         {
           "kind": "def",
-          "line": 218,
+          "line": 223,
           "name": "typeStringOfDecl",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 226,
+          "line": 231,
           "name": "splitTypeRow",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 245,
+          "line": 250,
           "name": "DeclFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 281,
+          "line": 286,
           "name": "declFactOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 299,
+          "line": 304,
           "name": "declFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 305,
+          "line": 310,
           "name": "DeclFact.withModule",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 310,
+          "line": 315,
           "name": "DeclFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 322,
+          "line": 327,
           "name": "declBodies",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 341,
+          "line": 346,
           "name": "surfUsesVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 350,
+          "line": 355,
           "name": "declMentionsVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 355,
+          "line": 360,
           "name": "RefEdge",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 370,
+          "line": 375,
           "name": "nameRefEdgesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "inductive",
-          "line": 382,
+          "line": 387,
           "name": "ModuleOrigin",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 387,
+          "line": 392,
           "name": "ModuleOrigin.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 394,
+          "line": 399,
           "name": "ModuleFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 401,
+          "line": 406,
           "name": "ModuleDepFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "inductive",
-          "line": 409,
+          "line": 415,
           "name": "ModuleInitializerMode",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 418,
+          "line": 424,
           "name": "ModuleInitializerFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 431,
+          "line": 437,
           "name": "ModuleInitializationContractFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 446,
+          "line": 452,
           "name": "entryModuleFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 449,
+          "line": 455,
           "name": "ModuleFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 453,
+          "line": 459,
           "name": "ModuleDepFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 457,
+          "line": 463,
           "name": "ModuleInitializerMode.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 462,
+          "line": 468,
           "name": "ModuleInitializerFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 469,
+          "line": 475,
           "name": "moduleInitializationContract",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 479,
+          "line": 485,
           "name": "ModuleInitializationContractFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 499,
+          "line": 505,
           "name": "moduleInitializerFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 587,
+          "line": 593,
           "name": "QuantityFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 645,
+          "line": 651,
           "name": "quantityFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 668,
+          "line": 674,
           "name": "contractJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 688,
+          "line": 694,
           "name": "contractJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 744,
+          "line": 750,
           "name": "schemaVersion",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 763,
+          "line": 769,
           "name": "CoreFingerprintFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 774,
+          "line": 780,
           "name": "CoreFingerprintFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 782,
+          "line": 788,
           "name": "coreFingerprintOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "inductive",
-          "line": 815,
+          "line": 821,
           "name": "ModuleBodyStatus",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 822,
+          "line": 828,
           "name": "ModuleBodyStatus.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 832,
+          "line": 838,
           "name": "ModuleBodyEffectRelocationFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 838,
+          "line": 844,
           "name": "ModuleBodyExportFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 851,
+          "line": 857,
           "name": "ModuleBodyFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 867,
+          "line": 873,
           "name": "moduleBodyAlgorithm",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 901,
+          "line": 907,
           "name": "reachableValueSliceProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1064,
+          "line": 1070,
           "name": "moduleBodyEffectRelocations",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1099,
+          "line": 1105,
           "name": "ModuleBodyEffectRelocationFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1106,
+          "line": 1112,
           "name": "ModuleBodyExportFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1115,
+          "line": 1121,
           "name": "ModuleBodyFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1125,
+          "line": 1131,
           "name": "moduleBodyFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1168,
+          "line": 1174,
           "name": "ModuleBodyArtifactFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1189,
+          "line": 1195,
           "name": "ModuleBodyArtifactFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1207,
+          "line": 1213,
           "name": "moduleBodyArtifactOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1244,
+          "line": 1250,
           "name": "moduleBodyArtifactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1273,
+          "line": 1279,
           "name": "moduleInterfaceAlgorithm",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1278,
+          "line": 1284,
           "name": "DeclaredLawFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1296,
+          "line": 1302,
           "name": "DeclaredLawFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1303,
+          "line": 1309,
           "name": "ModuleExportFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1315,
+          "line": 1321,
           "name": "ModuleInterfaceFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1330,
+          "line": 1336,
           "name": "ModuleExportFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1338,
+          "line": 1344,
           "name": "ModuleInterfaceFact.toJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1357,
+          "line": 1363,
           "name": "moduleInterfaceFactsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1399,
+          "line": 1405,
           "name": "dumpJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1445,
+          "line": 1451,
           "name": "dumpJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1485,
+          "line": 1491,
           "name": "symbolsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1491,
+          "line": 1497,
           "name": "symbolsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1504,
+          "line": 1510,
           "name": "typeJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1515,
+          "line": 1521,
           "name": "typeJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1523,
+          "line": 1529,
           "name": "effectsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1534,
+          "line": 1540,
           "name": "effectsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1542,
+          "line": 1548,
           "name": "lawsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1551,
+          "line": 1557,
           "name": "lawsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1569,
+          "line": 1575,
           "name": "defJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1576,
+          "line": 1582,
           "name": "defJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1589,
+          "line": 1595,
           "name": "refsJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1597,
+          "line": 1603,
           "name": "refsJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "structure",
-          "line": 1626,
+          "line": 1632,
           "name": "HoverFact",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1647,
+          "line": 1653,
           "name": "hoverAtP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1667,
+          "line": 1673,
           "name": "hoverJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1674,
+          "line": 1680,
           "name": "hoverJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1733,
+          "line": 1739,
           "name": "holeMarkersIn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1762,
+          "line": 1768,
           "name": "holesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1779,
+          "line": 1785,
           "name": "holesJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1784,
+          "line": 1790,
           "name": "holesJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1808,
+          "line": 1814,
           "name": "dependentsOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1825,
+          "line": 1831,
           "name": "impactJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1836,
+          "line": 1842,
           "name": "impactJson",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1866,
+          "line": 1872,
           "name": "semverDiff",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1889,
+          "line": 1895,
           "name": "semverDiffJsonP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 1897,
+          "line": 1903,
           "name": "semverDiffJson",
           "visibilityBasis": "public-modifier"
         }
@@ -10245,7 +10260,7 @@
         "Bang.Frontend.Format",
         "Bang.Frontend.Surface"
       ],
-      "loc": 9946,
+      "loc": 9964,
       "name": "Bang.Frontend.TypeCheck",
       "path": "Bang/Frontend/TypeCheck.lean",
       "publicSymbols": [
@@ -10389,133 +10404,133 @@
         },
         {
           "kind": "def",
-          "line": 4933,
+          "line": 3185,
+          "name": "internalSliceEntryName",
+          "visibilityBasis": "public-modifier"
+        },
+        {
+          "kind": "def",
+          "line": 4962,
           "name": "buildEnv",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 5772,
+          "line": 5801,
           "name": "mergeModules",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6009,
+          "line": 6038,
           "name": "surfUsesVar",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6504,
+          "line": 6533,
           "name": "expandDerives",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6640,
+          "line": 6669,
           "name": "lawTestSourceOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6741,
-          "name": "initializerCtorEnv",
-          "visibilityBasis": "public-modifier"
-        },
-        {
-          "kind": "def",
-          "line": 6750,
+          "line": 6778,
           "name": "elaborateToComp",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6765,
+          "line": 6793,
           "name": "checkAndLower",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6786,
+          "line": 6814,
           "name": "checkAndLowerProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6797,
+          "line": 6825,
           "name": "checkAndLowerProgWithEffects",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6807,
+          "line": 6835,
           "name": "elaborateToCompProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6819,
+          "line": 6847,
           "name": "checkProgRow",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6869,
+          "line": 6897,
           "name": "typeStringOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6882,
+          "line": 6910,
           "name": "typeStringOfProgP",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6928,
+          "line": 6956,
           "name": "assertTypedOutOfFuel",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 6933,
+          "line": 6961,
           "name": "assertTypedOom",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7059,
+          "line": 7080,
           "name": "sampleVT",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7082,
+          "line": 7103,
           "name": "checkLawOn",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7247,
+          "line": 7268,
           "name": "lawInstancesOf",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7255,
+          "line": 7276,
           "name": "lawInstancesOfProg",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7267,
+          "line": 7288,
           "name": "lawInstanceOpCallDiagnostics",
           "visibilityBasis": "public-modifier"
         },
         {
           "kind": "def",
-          "line": 7310,
+          "line": 7331,
           "name": "unreachableIntImplDiagnostics",
           "visibilityBasis": "public-modifier"
         }
@@ -13386,7 +13401,7 @@
       "name": "Core"
     },
     {
-      "loc": 18922,
+      "loc": 18959,
       "moduleCount": 12,
       "name": "Frontend"
     },

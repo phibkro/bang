@@ -821,11 +821,11 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => x * 2 + param }` ⟹ `110`  — just the op-arg).
 - `effect R { fetch : Int -> Int } handle (let paramX = 7 in net.fetch(paramX)) with (R 100) as net { fetch(x) => x + param }` ⟹ `107`  — clause body — the reservation is exact-string, not a prefix block.
 - `effect R { fetch : Int -> Int } effect Q { ping : Int -> Int } handle ((handle (net.fetch(5)) with (R 100) as net { fetch(x) => x + param }) + (q.ping(1))) with Q as q { ping(n) => n }` ⟹ `106`  — second `with` on one `handle`.
-### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
+### ADR-0093 D5, refined by ADR-0118 — top-level declarations bind descriptions.
 
 - `let x = 3 data Marker = M x + 1` ⟹ `4`  — otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.
-- `let x = 3 data Marker = M let y = x + 1 data Marker2 = M2 x + y` ⟹ `7`  — plays after `x`'s own binding.
-- `let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1)) data Marker = M let call = ($fact) 5 data Marker2 = M2 call` ⟹ `120`  — its own decl, avoiding both this and the earlier literal-adjacency traps in one move.
+- `let x = 3 data Marker = M let y = 4 data Marker2 = M2 x + y` ⟹ `7`  — MULTIPLE inert let decls remain ordered and visible to the trailing computation.
+- `let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1)) data Marker = M let call = {($fact) 5} data Marker2 = M2 $call` ⟹ `120`  — as an inert ordinary declaration, and the trailing body forces it.
 - `data Pair = Mk(Int, Int) let p = Mk(3, 4) match (p : Pair) { Mk(a, b) -> a + b }` ⟹ `7`  — `let`/`let rec` decls compose with OTHER decl kinds (`data`), interleaved.
 - `let main = 42 data Marker = M main` ⟹ `42`  — form has no special elaboration path (D5: no main-only special case).
 - `let x : Int = 3 data Marker = M x + 1` ⟹ `4`  — REAL type checker (a wrong ascription, e.g. `let x : Unit = 3`, would be caught below).
@@ -1028,19 +1028,28 @@ invalidation relation. Rows are deterministic, but their semantics are sets; no 
 path, content hash, cache policy, or dependency kind is implied. The source-taking stdin
 route has no resolver walk and therefore reports only `@entry` and zero edges.
 
-`moduleInitialization` and `moduleInitializers` expose the resolver-owned source portion of
-today's strict initialization contract. Imported modules appear dependency-first in the exact
+A named `<file.bang>` is also an explicit entry-role selection: when it declares bare `main`, query
+uses the same D5 entry rule as `run` and `check`, so computed `main` contributes to checked facts and
+the resolved-core fingerprint. Stdin has no such file role and remains a library subject. If stdin
+contains a computed `main`, structural declaration rows remain inspectable but checked whole-program
+facts such as `coreFingerprint` are `null`; the tool never silently promotes piped source to an
+executable entry.
+
+`moduleInitialization` and `moduleInitializers` expose resolver-owned source binding order
+after ADR-0118. Imported modules appear dependency-first in the exact
 resolver traversal order, followed by `@entry`; declarations retain source order. Each `let`
-is `strict-rhs`, while `let rec` is `recursive-knot` because knot construction is eager but the
+uses the mechanical `strict-rhs` mode (its RHS must now be inert), while `let rec` is
+`recursive-knot` because knot construction is eager but the
 function body remains suspended. `(module, sourceIndex)` gives duplicate binder occurrences
 distinct snapshot-local IDs. Reversing independent imports therefore reverses their initializer
-blocks; the projection records that observable choice rather than sorting it away.
+blocks; the projection records source/scoping order rather than sorting it away. Only bare entry
+`main` may compute, so these rows no longer imply arbitrary ordered initializer effects.
 
 The metadata is intentionally negative beyond that source boundary: `elaborationProvenance=false`,
 `perBindingEffects=false`, and `linkReady=false`. Prelude injection, alias elimination,
 monomorphization, ANF, checking, and lowering can add or erase bindings after this inventory.
 ADR-0117 forbids joining those transformed bindings back to source occurrences by name or position.
-The rows specify source initialization order; they do not authorize initializer DCE/reordering or
+The rows specify source binding order; they do not authorize DCE/reordering or
 constitute import slots or a separately linkable artifact.
 
 `coreFingerprint` is an **experimental result-hash observation** over the exact typed lowering path
@@ -1101,10 +1110,11 @@ lowering, the entire `moduleBodies` projection is `null` rather than a partial l
 `linkReady=false` remain load-bearing: the 64-bit digest is a measurement, the environment is global,
 and the complete dump deliberately does not duplicate canonical code across exports. The
 execution-classification gate agrees across all 61
-current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict
-top-level initializer diverges in the whole lexical chain while the pruned selected body returns.
-A future linker therefore needs an explicit module-initialization contract in addition to runtime
-label/import-slot agreement. No independent type validation, linking, skip, storage, or reuse authority
+current examples at fixed fuel. Its historical counterexample—an unreachable eager
+top-level declaration diverging while the pruned body returned—is now refused by B019 before
+execution. The runtime classifier retains that source as a backstop.
+A future linker still needs runtime
+label/import-slot agreement and independent type validation. No linking, skip, storage, or reuse authority
 follows from this fact.
 
 `bang query body-artifact <export-id> [<file.bang>]` materializes canonical code **on demand** for
@@ -1157,10 +1167,17 @@ nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`f
 type-checks; `typeError` carries the checker's message when it doesn't; `shape` carries
 a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`/`handler`, which have no
 value-level type. `refs` is DECL-granularity (which decl's body mentions which name).
+A per-declaration type/effect query is role-agnostic by design: `withQueryBody` selects the
+named binding as a synthetic program body. It answers what checked type that binding would have,
+not whether the enclosing source is accepted in its current entry/library role. Thus a stdin
+library's computed `main` may project a clean type even while whole-program checking refuses it
+with B019; the distinction is gated rather than inferred from a mixed result.
 A value declaration's `row` is the checked row of the WHOLE `withQueryBody` projection:
-all strict top-level `let`/`letRec` initializers still wrap the selected result. It is therefore
-chain-cumulative, not the named RHS's initializer-local row; an unrelated divergent sibling can
-make manifest values before and after it all report `{Div}`. The retained initializer-census gate
+all top-level `let`/`letRec` bindings still wrap the selected result. Under ADR-0118 ordinary
+non-main RHSs are inert, but the one computed entry `main` can still contribute its effects to every
+selected declaration. The row is therefore
+chain-cumulative, not the named RHS's local row; a divergent `main` can
+make otherwise manifest values report `{Div}`. The retained initializer-census gate
 also pins one runnable generic `letRec` whose bare query projection reports `row:null`, so consumers
 must treat `row` as neither per-binding effect evidence nor complete initializer coverage.
 
@@ -1345,6 +1362,9 @@ BOTH under the kernel ORACLE (`Bang.Source.eval`, the SAME reference `--engine=o
 uses) — if the two outcomes disagree (a value that differs, one side elaborating and
 the other not, or elaboration failing with a genuinely different error), the rewrite
 ABORTS: no diff, no write, a loud message naming the divergence, nonzero exit.
+For a file that declares `main`, both sides receive the same entry-role selection before this
+comparison; the implicit D5 entry edge therefore participates in preservation rather than making a
+valid computed `main` look like an invalid library initializer.
 
 This is a RUNG-1 (differential) preservation check, not a proof — `docs/notes/
 proof-export-survey.md`'s rung-2 (the binary LR's contextual-equivalence certificate)
@@ -1371,6 +1391,12 @@ ascription — `let rec`/bounded `fn` decls already carry a mandatory one (ADR-0
 bite-2's own grammar), so they are always a no-op; a `let` that already has
 `: T` is left untouched even if the checker would infer something different-looking.
 A human-written ascription is authoritative.
+
+Under ADR-0118 a computed reusable result is represented as a thunk. If the checker renders an
+effectful thunk as a shape the surface ascription parser cannot yet round-trip, `annotate` leaves
+that declaration unannotated and reports the skip; forcing it from entry `main` can still receive an
+ordinary computation-row ascription. This is the same fail-closed self-verification rule, not an
+exception to the inert-initializer contract.
 
 **Row annotations name only the four BUILTIN effects today** (`throws`/`state`/`stm`/
 `Div`) — a known gap, not a bug: naming a USER-declared `effect`'s label in a `! {ρ}`
@@ -1611,4 +1637,5 @@ and docs can reference it durably.
 | `B016` | a top-level `let` with no `in` absorbed the next line as an application (issue #129) | yes |
 | `B017` | a bound-free generic's call site names two different types for the same type variable | yes |
 | `B018` | a local value-use assertion does not match the body's quantitative use | yes |
+| `B019` | a non-`main` top-level declaration performs eager computation | yes |
 

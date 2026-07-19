@@ -1552,17 +1552,33 @@ def render():
     )
     L.append("")
     L.append(
-        "`moduleInitialization` and `moduleInitializers` expose the resolver-owned source portion of"
+        "A named `<file.bang>` is also an explicit entry-role selection: when it declares bare `main`, query"
     )
     L.append(
-        "today's strict initialization contract. Imported modules appear dependency-first in the exact"
+        "uses the same D5 entry rule as `run` and `check`, so computed `main` contributes to checked facts and"
     )
+    L.append(
+        "the resolved-core fingerprint. Stdin has no such file role and remains a library subject. If stdin"
+    )
+    L.append(
+        "contains a computed `main`, structural declaration rows remain inspectable but checked whole-program"
+    )
+    L.append(
+        "facts such as `coreFingerprint` are `null`; the tool never silently promotes piped source to an"
+    )
+    L.append("executable entry.")
+    L.append("")
+    L.append(
+        "`moduleInitialization` and `moduleInitializers` expose resolver-owned source binding order"
+    )
+    L.append("after ADR-0118. Imported modules appear dependency-first in the exact")
     L.append(
         "resolver traversal order, followed by `@entry`; declarations retain source order. Each `let`"
     )
     L.append(
-        "is `strict-rhs`, while `let rec` is `recursive-knot` because knot construction is eager but the"
+        "uses the mechanical `strict-rhs` mode (its RHS must now be inert), while `let rec` is"
     )
+    L.append("`recursive-knot` because knot construction is eager but the")
     L.append(
         "function body remains suspended. `(module, sourceIndex)` gives duplicate binder occurrences"
     )
@@ -1570,7 +1586,10 @@ def render():
         "distinct snapshot-local IDs. Reversing independent imports therefore reverses their initializer"
     )
     L.append(
-        "blocks; the projection records that observable choice rather than sorting it away."
+        "blocks; the projection records source/scoping order rather than sorting it away. Only bare entry"
+    )
+    L.append(
+        "`main` may compute, so these rows no longer imply arbitrary ordered initializer effects."
     )
     L.append("")
     L.append(
@@ -1586,7 +1605,7 @@ def render():
         "ADR-0117 forbids joining those transformed bindings back to source occurrences by name or position."
     )
     L.append(
-        "The rows specify source initialization order; they do not authorize initializer DCE/reordering or"
+        "The rows specify source binding order; they do not authorize DCE/reordering or"
     )
     L.append("constitute import slots or a separately linkable artifact.")
     L.append("")
@@ -1743,16 +1762,15 @@ def render():
     )
     L.append("execution-classification gate agrees across all 61")
     L.append(
-        "current examples at fixed fuel, but deliberately retains a counterexample: an unreachable strict"
+        "current examples at fixed fuel. Its historical counterexample—an unreachable eager"
     )
     L.append(
-        "top-level initializer diverges in the whole lexical chain while the pruned selected body returns."
+        "top-level declaration diverging while the pruned body returned—is now refused by B019 before"
     )
+    L.append("execution. The runtime classifier retains that source as a backstop.")
+    L.append("A future linker still needs runtime")
     L.append(
-        "A future linker therefore needs an explicit module-initialization contract in addition to runtime"
-    )
-    L.append(
-        "label/import-slot agreement. No independent type validation, linking, skip, storage, or reuse authority"
+        "label/import-slot agreement and independent type validation. No linking, skip, storage, or reuse authority"
     )
     L.append("follows from this fact.")
     L.append("")
@@ -1891,16 +1909,33 @@ def render():
         "value-level type. `refs` is DECL-granularity (which decl's body mentions which name)."
     )
     L.append(
+        "A per-declaration type/effect query is role-agnostic by design: `withQueryBody` selects the"
+    )
+    L.append(
+        "named binding as a synthetic program body. It answers what checked type that binding would have,"
+    )
+    L.append(
+        "not whether the enclosing source is accepted in its current entry/library role. Thus a stdin"
+    )
+    L.append(
+        "library's computed `main` may project a clean type even while whole-program checking refuses it"
+    )
+    L.append(
+        "with B019; the distinction is gated rather than inferred from a mixed result."
+    )
+    L.append(
         "A value declaration's `row` is the checked row of the WHOLE `withQueryBody` projection:"
     )
     L.append(
-        "all strict top-level `let`/`letRec` initializers still wrap the selected result. It is therefore"
+        "all top-level `let`/`letRec` bindings still wrap the selected result. Under ADR-0118 ordinary"
     )
     L.append(
-        "chain-cumulative, not the named RHS's initializer-local row; an unrelated divergent sibling can"
+        "non-main RHSs are inert, but the one computed entry `main` can still contribute its effects to every"
     )
+    L.append("selected declaration. The row is therefore")
+    L.append("chain-cumulative, not the named RHS's local row; a divergent `main` can")
     L.append(
-        "make manifest values before and after it all report `{Div}`. The retained initializer-census gate"
+        "make otherwise manifest values report `{Div}`. The retained initializer-census gate"
     )
     L.append(
         "also pins one runnable generic `letRec` whose bare query projection reports `row:null`, so consumers"
@@ -2329,6 +2364,13 @@ def render():
     L.append(
         "ABORTS: no diff, no write, a loud message naming the divergence, nonzero exit."
     )
+    L.append(
+        "For a file that declares `main`, both sides receive the same entry-role selection before this"
+    )
+    L.append(
+        "comparison; the implicit D5 entry edge therefore participates in preservation rather than making a"
+    )
+    L.append("valid computed `main` look like an invalid library initializer.")
     L.append("")
     L.append(
         "This is a RUNG-1 (differential) preservation check, not a proof — `docs/notes/"
@@ -2387,6 +2429,20 @@ def render():
         "`: T` is left untouched even if the checker would infer something different-looking."
     )
     L.append("A human-written ascription is authoritative.")
+    L.append("")
+    L.append(
+        "Under ADR-0118 a computed reusable result is represented as a thunk. If the checker renders an"
+    )
+    L.append(
+        "effectful thunk as a shape the surface ascription parser cannot yet round-trip, `annotate` leaves"
+    )
+    L.append(
+        "that declaration unannotated and reports the skip; forcing it from entry `main` can still receive an"
+    )
+    L.append(
+        "ordinary computation-row ascription. This is the same fail-closed self-verification rule, not an"
+    )
+    L.append("exception to the inert-initializer contract.")
     L.append("")
     L.append(
         "**Row annotations name only the four BUILTIN effects today** (`throws`/`state`/`stm`/"

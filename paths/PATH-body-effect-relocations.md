@@ -86,6 +86,8 @@
   semantic/runtime/proof batteries and the staged `CHANGELOG_STABLE_REF=4baba161 just fitness` pass.
 - Reopen / observe: `runtimeLabel` is deliberately unstable under environment changes;
   `canonicalLabel` becomes an artifact contract only if future serialized code actually uses it.
+  ADR-0118 later removed eager library initializer slots from valid programs; import and relocation
+  inputs remain separate link work.
 
 ## Owner
 

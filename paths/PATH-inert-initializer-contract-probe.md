@@ -79,8 +79,8 @@
 ## Status
 
 - [x] Started 2026-07-19
-- [ ] In flight: none; successor is the Option A/Option B operator decision and ADR
-- [ ] Blockers: none in the probe; the successor intentionally requires operator guidance
+- [ ] In flight: none; successor completed in ADR-0118 and `PATH-inert-top-level-language-contract`
+- [ ] Blockers: none
 - [x] Completed 2026-07-19
 - Focused evidence: `tools/test-initializer-census.sh` passes **12/12**; compiled build passes **1456
   jobs**.
@@ -88,6 +88,9 @@
   compositions; focused evidence remains **12/12**, the compiled build remains **1456 jobs**, and no
   checker, query, lowering, runtime, or proof contract changed.
 - Published product commit: `d170f007` on `codex/inert-initializer-contract-probe`.
+- Successor outcome: the operator chose Option A. B019 now enforces inert non-main declarations, the
+  three predicted n-queens bindings moved under `main`, and the post-migration census is 271
+  occurrences (233 manifest, 24 recursive, 14 computed mains).
 - Retained failed gates / successors: cumulative-row attribution remains rejected by ADR-0117;
   compute-once constants retain an explicit-init/memoizing-handler door only if a program pulls it.
 - Reopen / observe: rerun exact corpus rows when initializer syntax, constructor resolution, the example

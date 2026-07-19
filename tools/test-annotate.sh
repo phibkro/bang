@@ -43,12 +43,12 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 # ── fixtures ──
 
-# a `letD` lacking an ascription (`triple`, a plain Int VALUE), a `letRecD` already carrying one
-# (mandatory, no-op), and a trailing use so the file type-checks.
+# a `letD` lacking an ascription (`triple`, an inert thunk), a `letRecD` already carrying one
+# (mandatory, no-op), and an entry `main` that forces the description.
 cat > "$tmpdir/plain.bang" <<'BANG'
 let rec double : Int -> Int = fun n => n + n
-let triple = $double 1 + 1
-let main = triple
+let triple = {$double 1 + 1}
+let main = $triple
 BANG
 
 # a `letD` referencing a `Div`-declared recursive function — its row is NOT `{}` (Div propagates
@@ -57,8 +57,8 @@ BANG
 # function gets `Int ! {Div}` the moment its own ascription is added or re-derived.
 cat > "$tmpdir/divrow.bang" <<'BANG'
 let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1))
-let result = $fact 5
-let main = result
+let result = {$fact 5}
+let main = $result
 BANG
 
 # ══ 1. `bang rewrite annotate` — the happy path: infers + splices a missing ascription ══
@@ -68,7 +68,7 @@ got_diff="$("$bang" rewrite annotate "$tmpdir/plain.bang" 2>/dev/null)" && got_d
 after_md5="$(md5sum "$tmpdir/plain.bang" | cut -d' ' -f1)"
 check "annotate-happy-exit" "$got_diff_exit" "0"
 check "annotate-happy-file-untouched-without-w" "$after_md5" "$before_md5"
-check "annotate-happy-diff-adds-triple-ascription" "$(printf '%s' "$got_diff" | grep -c '+let triple : Int' || true)" "1"
+check "annotate-happy-diff-adds-triple-ascription" "$(printf '%s' "$got_diff" | grep -c '+let triple : Thunk Int' || true)" "1"
 
 # the stderr SUMMARY names `triple` as annotated and `double` as already-annotated (`main` is
 # ALSO a plain `letD` lacking an ascription, so it's annotated too, not already-annotated).
@@ -84,7 +84,7 @@ got_run_before="$("$bang" run "$tmpdir/plain.bang" 2>/dev/null)" && got_run_befo
 got_run_after="$("$bang" run "$tmpdir/plain.bang" 2>/dev/null)" && got_run_after_exit=0 || got_run_after_exit=$?
 check "annotate-w-preserves-value" "$got_run_after" "$got_run_before"
 check "annotate-w-preserves-exit" "$got_run_after_exit" "$got_run_before_exit"
-check "annotate-w-triple-now-ascribed" "$(grep -c 'let triple : Int' "$tmpdir/plain.bang" || true)" "1"
+check "annotate-w-triple-now-ascribed" "$(grep -c 'let triple : Thunk Int' "$tmpdir/plain.bang" || true)" "1"
 
 # ══ 2. re-running on an ALREADY-annotated file: every decl reports already-annotated, no diff ══
 
@@ -96,7 +96,10 @@ check "annotate-rerun-nochange-exit" "$got_nochange_exit" "0"
 
 got_div_diff="$("$bang" rewrite annotate "$tmpdir/divrow.bang" 2>/dev/null)" && got_div_diff_exit=0 || got_div_diff_exit=$?
 check "annotate-div-row-exit" "$got_div_diff_exit" "0"
-check "annotate-div-row-visible-on-result" "$(printf '%s' "$got_div_diff" | grep -c '+let result : Int ! {Div}' || true)" "1"
+# The inferred thunk row is honest but not yet round-trippable as a declaration ascription; the
+# tool leaves that declaration unchanged rather than emitting a type it cannot reparse. Effect
+# creep is still diff-visible at the executable `main` force.
+check "annotate-div-row-result-left-unascribed" "$(printf '%s' "$got_div_diff" | grep -c '^ let result = {' || true)" "1"
 check "annotate-div-row-visible-on-main" "$(printf '%s' "$got_div_diff" | grep -c '+let main : Int ! {Div}' || true)" "1"
 
 # -w applies it, and the recursive call still evaluates to the SAME value (120 = 5!).
@@ -104,7 +107,7 @@ check "annotate-div-row-visible-on-main" "$(printf '%s' "$got_div_diff" | grep -
 got_div_run="$("$bang" run "$tmpdir/divrow.bang" 2>/dev/null)" && got_div_run_exit=0 || got_div_run_exit=$?
 check "annotate-div-row-w-preserves-value" "$got_div_run" "120"
 check "annotate-div-row-w-preserves-exit" "$got_div_run_exit" "0"
-check "annotate-div-row-w-visible-in-file" "$(grep -c 'let result : Int ! {Div}' "$tmpdir/divrow.bang" || true)" "1"
+check "annotate-div-row-w-result-remains-unascribed" "$(grep -c '^let result = {' "$tmpdir/divrow.bang" || true)" "1"
 
 # ══ 4. Usage / exit-code hygiene ══
 

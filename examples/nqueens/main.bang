@@ -33,10 +33,11 @@ let rec solve : Int -> Int -> Int -> List Int -> Int ! {Div} =
          else 0)
       + ($solve) n col (q + 1) board
 
--- 4-queens = 2, 5-queens = 10, 6-queens = 4. Encode all three:
+-- 4-queens = 2, 5-queens = 10, 6-queens = 4. ADR-0118 makes `main` the one
+-- top-level declaration allowed to compute, so the three runs live beneath that boundary:
 -- answer = q4 * 10000 + q5 * 100 + q6  =  2*10000 + 10*100 + 4 = 21004
-let q4 = ($solve) 4 0 0 Nil
-let q5 = ($solve) 5 0 0 Nil
-let q6 = ($solve) 6 0 0 Nil
-
-let main = q4 * 10000 + q5 * 100 + q6
+let main =
+  let q4 = ($solve) 4 0 0 Nil in
+  let q5 = ($solve) 5 0 0 Nil in
+  let q6 = ($solve) 6 0 0 Nil in
+  q4 * 10000 + q5 * 100 + q6

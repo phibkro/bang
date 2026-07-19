@@ -101,7 +101,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-fmt.sh`](test-fmt.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang fmt` (issue #58's CLI half) |
 | [`test-host-authority.sh`](test-host-authority.sh) | `verify` | `Main.lean`, `std/Io.bang` | #169: explicit real-host authority, trusted bundled-service identity, and Fs root containment |
 | [`test-hostio-seam.sh`](test-hostio-seam.sh) | `verify` | `Main.lean`, `Bang/Backend/EnvMachine.lean`, `std/Io.bang` | the SEAM + CLI-surface gate for the host-IO wedge (ADR-0104) |
-| [`test-initializer-census.sh`](test-initializer-census.sh) | `verify` | `Main.lean`, `Bang/Frontend/Query.lean`, `Bang/Frontend/TypeCheck.lean`, `examples/*/main.bang` | pin the syntax census, row stop conditions, and inert-contract probe |
+| [`test-initializer-census.sh`](test-initializer-census.sh) | `verify` | `Main.lean`, `Bang/Frontend/Query.lean`, `Bang/Frontend/TypeCheck.lean`, `examples/*/main.bang` | pin the inert-initializer language contract and its census lineage |
 | [`test-law.sh`](test-law.sh) | `verify` | — | the non-interactive gate for `bang test` (issue #60's CLI wiring) |
 | [`test-lean-warnings.sh`](test-lean-warnings.sh) | `verify` | `Main.lean`, `tools/lean-warnings.py`, `docfacts/lean-warning-budget.json`, `justfile` | Falsification poles for the deterministic, reduction-friendly Lean warning budget |
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |

@@ -141,7 +141,7 @@ re-cited.
 ## Status
 
 - [x] Started 2026-07-18
-- [ ] In flight: none; successor is the initialization-contract operator decision
+- [ ] In flight: none; successor completed in ADR-0118 and `PATH-inert-top-level-language-contract`
 - [ ] Blockers: none
 - [x] Completed 2026-07-18
 - Focused evidence: the successor contract probe extends `tools/test-initializer-census.sh` to
@@ -153,6 +153,9 @@ re-cited.
   resolve-failure behavior, actor-journey tie-backs, constructor under-approximation, and recursive
   knot assumptions.
 - Published baseline: `ab8ea3ea` on `origin/codex/top-level-initializer-census`.
+- Successor outcome: Option A removed the three `nqueens.q4/q5/q6` computation occurrences. The
+  current 61-journey census is 233 manifest + 24 recursive + 14 computed `main`s = 271; the 274/17
+  figures above remain the historical pre-decision baseline that priced the migration.
 - Retained successors: generic bare-projection coverage repair; explicit binding provenance only after a
   second concrete consumer; initialization-contract design now has complete corpus input.
 - Reopen / observe: `linkReady` stays false; this census changes no artifact or linking authority.

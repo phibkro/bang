@@ -158,32 +158,32 @@ for variant in body-slice-base body-slice-sibling body-slice-reachable; do
   mkdir -p "$tmpdir/$variant"
   cat > "$tmpdir/$variant/main.bang" <<'BANG'
 import Lib
-let main = Lib.selected
+let main = $(Lib.selected)
 BANG
 done
 cat > "$tmpdir/body-slice-base/Lib.bang" <<'BANG'
 let base : Int = 40
-let helper : Int = base + 1
-pub let selected : Int = helper
+let helper : Thunk Int = {base + 1}
+pub let selected : Thunk Int = helper
 let unrelated : Int = 7
 BANG
 cat > "$tmpdir/body-slice-sibling/Lib.bang" <<'BANG'
 let base : Int = 40
-let helper : Int = base + 1
-pub let selected : Int = helper
+let helper : Thunk Int = {base + 1}
+pub let selected : Thunk Int = helper
 let unrelated : Int = 8
 BANG
 cat > "$tmpdir/body-slice-reachable/Lib.bang" <<'BANG'
 let base : Int = 41
-let helper : Int = base + 1
-pub let selected : Int = helper
+let helper : Thunk Int = {base + 1}
+pub let selected : Thunk Int = helper
 let unrelated : Int = 7
 BANG
 cat > "$tmpdir/body-slice-env-root.bang" <<'BANG'
 let helper = {fun x => x + 1}
 trait Inc { fn inc(x) -> Int }
 impl Inc for Int { fn inc(x) = ($helper) x }
-pub let selected : Int = inc(1)
+pub let selected = {inc(1)}
 let unrelated : Int = 7
 BANG
 
@@ -203,17 +203,17 @@ for variant in body-slice-effect-base body-slice-effect-shifted; do
   mkdir -p "$tmpdir/$variant"
   cat > "$tmpdir/$variant/main.bang" <<'BANG'
 import Lib
-let main = Lib.selected
+let main = $(Lib.selected)
 BANG
 done
 cat > "$tmpdir/body-slice-effect-base/Lib.bang" <<'BANG'
 effect Target { ping : Int -> Int }
-pub let selected : Int = handle target.ping(1) with Target as target { ping(n) => n }
+pub let selected = {handle target.ping(1) with Target as target { ping(n) => n }}
 BANG
 cat > "$tmpdir/body-slice-effect-shifted/Lib.bang" <<'BANG'
 effect Earlier { pong : Int -> Int }
 effect Target { ping : Int -> Int }
-pub let selected : Int = handle target.ping(1) with Target as target { ping(n) => n }
+pub let selected = {handle target.ping(1) with Target as target { ping(n) => n }}
 BANG
 
 # Rank-only canonicalization would collapse these symmetric single-effect slices: both effects would
@@ -222,16 +222,16 @@ for variant in body-slice-effect-alpha body-slice-effect-beta; do
   mkdir -p "$tmpdir/$variant"
   cat > "$tmpdir/$variant/main.bang" <<'BANG'
 import Lib
-let main = Lib.selected
+let main = $(Lib.selected)
 BANG
 done
 cat > "$tmpdir/body-slice-effect-alpha/Lib.bang" <<'BANG'
 effect Alpha { ping : Int -> Int }
-pub let selected : Int = handle alpha.ping(1) with Alpha as alpha { ping(n) => n }
+pub let selected = {handle alpha.ping(1) with Alpha as alpha { ping(n) => n }}
 BANG
 cat > "$tmpdir/body-slice-effect-beta/Lib.bang" <<'BANG'
 effect Beta { ping : Int -> Int }
-pub let selected : Int = handle beta.ping(1) with Beta as beta { ping(n) => n }
+pub let selected = {handle beta.ping(1) with Beta as beta { ping(n) => n }}
 BANG
 
 # Structural declarations carry checked shapes rather than value types; retain a separate pole so
@@ -597,12 +597,16 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"8a70dde011d4e5b5","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v2-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"moduleInitialization":{"scope":"resolver-source-initializer-order","order":"dependency-first-source-order","sourceOccurrencesComplete":true,"elaborationProvenance":false,"perBindingEffects":false,"linkReady":false},"moduleInitializers":[{"id":"@entry::decl:0","module":"@entry","sourceIndex":0,"order":0,"name":"double","kind":"letRec","mode":"recursive-knot"},{"id":"@entry::decl:1","module":"@entry","sourceIndex":1,"order":1,"name":"quad","kind":"let","mode":"strict-rhs"},{"id":"@entry::decl:2","module":"@entry","sourceIndex":2,"order":2,"name":"main","kind":"let","mode":"strict-rhs"}],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.1","coreFingerprint":{"scope":"resolved-program","algorithm":"bang-comp-struct-v2-uint64","digest":"4b971e1cbcf3c5ff","cacheKeySafe":false},"moduleInterfaces":[{"module":"@entry","scope":"resolved-program-module-interface","algorithm":"bang-module-interface-json-v2-uint64","digest":"46434a463a92408a","cacheKeySafe":false,"separateCompilationReady":false,"exports":[]}],"moduleBodies":[{"module":"@entry","scope":"resolved-program-module-body-slice","algorithm":"bang-module-body-slice-comp-v2-uint64","cacheKeySafe":false,"linkReady":false,"exports":[]}],"modules":[{"name":"@entry","origin":"entry"}],"moduleDeps":[],"moduleInitialization":{"scope":"resolver-source-initializer-order","order":"dependency-first-source-order","sourceOccurrencesComplete":true,"elaborationProvenance":false,"perBindingEffects":false,"linkReady":false},"moduleInitializers":[{"id":"@entry::decl:0","module":"@entry","sourceIndex":0,"order":0,"name":"double","kind":"letRec","mode":"recursive-knot"},{"id":"@entry::decl:1","module":"@entry","sourceIndex":1,"order":1,"name":"quad","kind":"let","mode":"strict-rhs"},{"id":"@entry::decl:2","module":"@entry","sourceIndex":2,"order":2,"name":"main","kind":"let","mode":"strict-rhs"}],"decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
-# stdin agrees with file.
+# A named file has an entry role and therefore selects computed `main`; stdin remains a library
+# context. Structural declaration facts survive there, but no whole-program identity may pretend
+# the unselected computed declaration was a valid library initializer.
 capture got_stdin got_stdin_exit "$bang" query dump 2>/dev/null < "$tmpdir/simple.bang"
 check "dump-stdin-exit" "$got_stdin_exit" "0"
-check "dump-stdin-eq-file" "$got_stdin" "$got_out"
+capture dump_role_view dump_role_view_exit python3 -c 'import json,sys; ds=[json.loads(line) for line in sys.stdin if line.strip()]; print("{}|{}".format("present" if ds[0]["coreFingerprint"] else "null", "present" if ds[1]["coreFingerprint"] else "null"))' 2>/dev/null <<< "$got_out
+$got_stdin"
+check "dump-file-entry-vs-stdin-library-role" "$dump_role_view" "present|null"
 
 # The initializer contract reads unmerged resolver sources, not flattened binder names. Two source
 # declarations named `same` therefore retain different occurrence addresses, dependency rows precede
@@ -1586,6 +1590,16 @@ got_out="$(cat "$tmpdir/simple.bang" | "$bang" query effects double 2>/dev/null)
 check "effects-stdin-exit" "$got_exit" "0"
 check "effects-stdin-shape" "$got_out" '{"ok":true,"row":"{}"}'
 
+# Per-declaration projections are role-agnostic "what type would this selected binding have?"
+# questions. Pin the deliberate distinction: stdin remains a library subject for whole-program
+# acceptance, while selecting its `main` for a type/effect projection can still answer cleanly.
+role_src='let main = 1 + 2'
+got_role_check="$(printf '%s\n' "$role_src" | "$bang" check --json 2>/dev/null)" && got_role_check_exit=0 || got_role_check_exit=$?
+got_role_effects="$(printf '%s\n' "$role_src" | "$bang" query effects main 2>/dev/null)" && got_role_effects_exit=0 || got_role_effects_exit=$?
+check "stdin-computed-main-whole-program-refused" "$got_role_check_exit" "1"
+check "stdin-computed-main-whole-program-b019" "$(printf '%s' "$got_role_check" | grep -c '"explainCode":"B019"' || true)" "1"
+check "stdin-computed-main-projection-is-role-agnostic" "$got_role_effects_exit:$got_role_effects" '0:{"ok":true,"row":"{}"}'
+
 # naming a nonexistent decl is a LOUD op-level miss (ok:false ON STDOUT) but exit 0: the TOOL ran
 # successfully and produced a well-formed (negative) answer (exit 1 is reserved for "the op could
 # NOT run" — a parse/resolution failure — not an op-level negative answer).
@@ -1748,7 +1762,7 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (284 — dependency observation, recomputation, reuse, module graph, initializer order, structural
+# always runs (287 — dependency observation, recomputation, reuse, module graph, initializer order, structural
 # invalidation-fanout, resolved-core fingerprint, law-aware interface, and resolved-module-interface
 # checks included);
 # jq's three guarded blocks
@@ -1759,7 +1773,7 @@ echo "query: $pass passed, $fail failed"
 # duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
 # tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
 # regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=284
+want_total=287
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 5)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 2)); fi
 got_total=$((pass + fail))

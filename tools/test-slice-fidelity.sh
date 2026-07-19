@@ -3,10 +3,10 @@
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-slice-fidelity.sh — classify entry-rooted slice execution against the resolved whole program.
 #
-# The 61-example sweep is positive, corpus-relative evidence at one fixed fuel. The strict-initializer
-# fixture is deliberately RED: top-level lets are strict, so pruning an unreachable divergent
-# initializer changes execution. That witness prevents body identity from being promoted to standalone
-# executability and pins the module-initialization obligation a future link contract must answer.
+# The 61-example sweep is positive, corpus-relative evidence at one fixed fuel. ADR-0118 closed the
+# old strict-initializer asymmetry by refusing eager non-main declarations; its former counterexample
+# remains here as a B019 language-boundary regression. Body identity is still not link authority:
+# independent typing, import slots, and runtime effect relocation remain open.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -87,13 +87,12 @@ trap 'rm -rf "$tmpdir"' EXIT
 mkdir -p "$tmpdir/tie-back"
 cat > "$tmpdir/tie-back/Lib.bang" <<'BANG'
 let base : Int = 40
-let helper : Int = base + 1
-pub let selected : Int = helper
+pub let selected = {base + 1}
 let unrelated : Int = 7
 BANG
 cat > "$tmpdir/tie-back/main.bang" <<'BANG'
 import Lib
-let main = Lib.selected
+$(Lib.selected)
 BANG
 tie_want="slice-fidelity agree fuel=100000 oracle=done:41 env=done:41"
 tie_got="$("$bang" internal slice-fidelity "$tmpdir/tie-back/main.bang")"
@@ -116,25 +115,24 @@ else
   fail=$((fail + 1))
 fi
 
-# Retained red pole: whole-program strict initialization diverges before reaching `main`; the body
-# slice intentionally omits that unreachable initializer and returns. This is not a slicer bug to
-# normalize away — it is the witnessed reason `linkReady` remains false.
+# Historical red pole: this source once demonstrated whole/slice divergence. ADR-0118 now rejects it
+# before either evaluator, so the runtime classifier remains a backstop rather than a reachable
+# language asymmetry.
 cat > "$tmpdir/strict-initializer.bang" <<'BANG'
 let rec loop : Int -> Int ! {Div} = fun n => ($loop) n
 let unused = ($loop) 0
 let main = 1
 BANG
-strict_want="slice-fidelity asymmetric-execution fuel=100000 oracle-whole=outOfFuel oracle-slice=done:1 env-whole=stuck env-slice=done:1"
 if strict_got="$("$bang" internal slice-fidelity "$tmpdir/strict-initializer.bang" 2>&1)"; then
   strict_status=0
 else
   strict_status=$?
 fi
-if [ "$strict_status" -eq 1 ] && [ "$strict_got" = "$strict_want" ]; then
-  echo "✓ strict-initializer boundary classified"
+if [ "$strict_status" -eq 1 ] && [[ "$strict_got" == slice-fidelity\ asymmetric-lowering* ]] && [[ "$strict_got" == *"top-level initializer 'unused'"* ]] && [[ "$strict_got" == *"slice=ok"* ]]; then
+  echo "✓ strict-initializer asymmetry refused by language"
   pass=$((pass + 1))
 else
-  echo "✗ strict-initializer boundary — expected status 1 [$strict_want], got status $strict_status [$strict_got]"
+  echo "✗ strict-initializer refusal — expected status 1 with B019 for unused, got status $strict_status [$strict_got]"
   fail=$((fail + 1))
 fi
 
