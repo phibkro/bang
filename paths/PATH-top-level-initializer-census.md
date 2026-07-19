@@ -89,14 +89,14 @@
 2. [x] Correct published row semantics and retain both red poles.
 3. [x] Implement hidden resolver-aware syntax classification and census all 61 examples.
 4. [x] Update Q34/live map, regenerate derived views, and close skeptical advisor review.
-5. [ ] Run full convergence and publish the bounded measurement.
+5. [x] Run full convergence and publish the bounded measurement.
 
 ## Status
 
 - [x] Started 2026-07-18
-- [x] In flight: implementation and convergence complete; publication next
+- [ ] In flight: none; successor is checker-cooperative per-binding RHS rows
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-18
 - Focused evidence: `tools/test-initializer-census.sh` passes **8/8**; compiled build passes **1452
   jobs**.
 - Convergence evidence: `CHANGELOG_STABLE_REF=73af9668 just fitness` and
@@ -105,6 +105,7 @@
   audit found no blocker after independently checking classifier polarity, arithmetic/accounting,
   resolve-failure behavior, actor-journey tie-backs, constructor under-approximation, and recursive
   knot assumptions.
+- Published baseline: `ab8ea3ea` on `origin/codex/top-level-initializer-census`.
 - Retained successors: generic bare-projection coverage repair; checker-cooperative per-binding RHS
   rows → row-refined computation residue → initialization-contract design.
 - Reopen / observe: `linkReady` stays false; this census changes no artifact or linking authority.
