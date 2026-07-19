@@ -73,14 +73,14 @@
 2. [x] Return digest and relocation rows from one canonical-effect observation.
 3. [x] Gate contextual runtime movement, semantic discrimination, empty, and null coverage poles.
 4. [x] Regenerate public projections and run full convergence.
-5. [ ] Publish the increment and hand canonical artifact encoding forward.
+5. [x] Publish the increment and hand canonical artifact encoding forward.
 
 ## Status
 
 - [x] Started 2026-07-19
-- [x] In flight: body-effect relocation tracer
+- [ ] In flight: body-effect relocation tracer
 - [ ] Blockers: none
-- [ ] Completed
+- [x] Completed 2026-07-19 at `a958b7e3`
 - Convergence evidence: `lake build Bang.Frontend.Query bang` passes **1452 jobs**;
   `tools/test-query.sh` passes **276/276** without changing any body digest; the full `just verify`
   semantic/runtime/proof batteries and the staged `CHANGELOG_STABLE_REF=4baba161 just fitness` pass.
