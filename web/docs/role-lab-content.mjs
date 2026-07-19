@@ -21,6 +21,17 @@ export const machineBackendReference = Object.freeze({
   expectedOutput: '42\n',
 })
 
+export const toolingDocsExamplesReference = Object.freeze({
+  exampleId: 'logger-counting',
+  program: 'examples/logger-counting/main.bang',
+  expectedOutput: 'examples/logger-counting/expected.txt',
+  fact: 'docfacts/examples/logger-counting.json',
+  schema: 'docfacts/schema/example.schema.json',
+  projection: 'docs/reference/examples/logger-counting.md',
+  generator: 'tools/docfacts_logger.py',
+  evidenceHarness: 'tools/test-docfacts-logger.sh',
+})
+
 const machineBackendExpectedShell = machineBackendReference.expectedOutput.replaceAll('\n', '\\n')
 
 export const roleLabContent = [
@@ -251,17 +262,17 @@ you can name the statement owner, proof owner, and smallest falsifying gate.
       {
         id: 'retrieve-predict',
         prose: `
-Start from the existing \u0060${machineBackendReference.constructor}\u0060 constructor and
+Start from the existing \`${machineBackendReference.constructor}\` constructor and
 its source meaning. Locate the constructor in
-\u0060${machineBackendReference.sourceDefinition}\u0060, then the closed-integer reduction
-in \u0060${machineBackendReference.sourceSemantics}\u0060. Predict the disposable program's
+\`${machineBackendReference.sourceDefinition}\`, then the closed-integer reduction
+in \`${machineBackendReference.sourceSemantics}\`. Predict the disposable program's
 observable value before running any engine. The task is to follow an existing
 calculation, not to propose an instruction or optimize it.
 `,
         retrievalChecks: [
-          `Locate \u0060${machineBackendReference.constructor}\u0060 and \u0060${machineBackendReference.operation}\u0060 in \u0060${machineBackendReference.sourceDefinition}\u0060.`,
-          `Locate the closed-integer \u0060${machineBackendReference.constructor}\u0060 arm in \u0060${machineBackendReference.sourceSemantics}\u0060.`,
-          `Locate \u0060evalD\u0060, \u0060compile\u0060, \u0060exec\u0060, and \u0060Agree\u0060 in \u0060${machineBackendReference.machineSource}\u0060.`,
+          `Locate \`${machineBackendReference.constructor}\` and \`${machineBackendReference.operation}\` in \`${machineBackendReference.sourceDefinition}\`.`,
+          `Locate the closed-integer \`${machineBackendReference.constructor}\` arm in \`${machineBackendReference.sourceSemantics}\`.`,
+          `Locate \`evalD\`, \`compile\`, \`exec\`, and \`Agree\` in \`${machineBackendReference.machineSource}\`.`,
         ],
         predictionChecks: [
           'Predict the value of `19 + 23` before running env, oracle, or compiled.',
@@ -273,10 +284,10 @@ calculation, not to propose an instruction or optimize it.
         id: 'trace-seam',
         prose: `
 Trace one constructor through linked owners. The kernel step defines source
-meaning; \u0060evalD\u0060 is the state-explicit denotation from which \u0060compile\u0060 and
-\u0060exec\u0060 are calculated; \u0060Agree\u0060 ties \u0060exec ∘ compile\u0060 and \u0060Source.eval\u0060 to one
+meaning; \`evalD\` is the state-explicit denotation from which \`compile\` and
+\`exec\` are calculated; \`Agree\` ties \`exec ∘ compile\` and \`Source.eval\` to one
 observable value. The Wasm emitter is a separate tested path from the same
-\u0060Comp\u0060: its \u0060emitComp\u0060 arm emits supported arithmetic and its differential
+\`Comp\`: its \`emitComp\` arm emits supported arithmetic and its differential
 harness compares Wasmtime with the kernel oracle. The calculated machine remains
 an output of the calculation; this lab adds no instruction or semantic rule.
 `,
@@ -297,7 +308,7 @@ an output of the calculation; this lab adds no instruction or semantic rule.
 Create the fixture below only in the disposable exact-HEAD clone. Materialize its
 expected output beside it, then run the same source through env, oracle, and
 compiled; each engine must match that one expected file. Run the existing
-\u0060Agree\u0060 battery and, because integer addition is supported, the existing rung-1
+\`Agree\` battery and, because integer addition is supported, the existing rung-1
 emitter differential. Do not edit a production Lean file or add a new machine
 case. A refusal from a supported addition or any skipped engine is a failure.
 `,
@@ -325,7 +336,7 @@ case. A refusal from a supported addition or any skipped engine is a failure.
       {
         id: 'inspect-select',
         prose: `
-Keep the three engine outputs, \u0060Agree\u0060 check, emitter report, source, and expected
+Keep the three engine outputs, \`Agree\` check, emitter report, source, and expected
 file as one evidence bundle outside the disposable clone. Agreement means all
 observations equal the committed expected value. Unsupported means the emitter
 returns and reports an explicit refusal; it never means a missing result or an
@@ -341,6 +352,134 @@ module and the smallest gate that can falsify a change on this seam.
           'Record the real narrow and full gate exit statuses; a skipped gate is not a pass.',
         ],
         issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "backend OR CalcVM OR Wasm OR emitter"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Recommend one only after naming its owning module, semantic oracle, and smallest falsifying gate; do not claim, comment on, or mutate it.',
+      },
+    ],
+  },
+  {
+    key: 'tooling-docs-examples',
+    stages: [
+      {
+        id: 'retrieve-predict',
+        prose: `
+Start from the existing logger-counting chain. The canonical program owns source
+behavior; its checked \`expected.txt\` owns accepted stdout; the serialized example
+fact owns evidence metadata; the page manifest owns route identity and status; and
+the generated Markdown is only a public projection. Read each authority before
+editing and predict which files a source-only comment will change after regeneration.
+`,
+        retrievalChecks: [
+          `Locate the source and accepted stdout in \`${toolingDocsExamplesReference.program}\` and \`${toolingDocsExamplesReference.expectedOutput}\`.`,
+          `Locate the existing example vocabulary in \`${toolingDocsExamplesReference.schema}\` and its serialized record in \`${toolingDocsExamplesReference.fact}\`.`,
+          `Locate the generator \`${toolingDocsExamplesReference.generator}\` and the manifest page that publishes \`${toolingDocsExamplesReference.projection}\`.`,
+        ],
+        predictionChecks: [
+          'Predict the stdout under env, oracle, and compiled before running the edited example.',
+          'Predict that one shared source-only comment changes the example pair, fact, and page but not runner-produced stdout.',
+          'Predict why editing the Markdown or typing an evidence label would be overwritten or rejected.',
+        ],
+      },
+      {
+        id: 'trace-seam',
+        prose: `
+Trace one canonical example through the established owners. \`check-examples.sh
+--update\` is the only snapshot-acceptance interface and runs the lane-built binary.
+\`check --json\` and \`query dump\` expose source facts without becoming another
+authority. \`${toolingDocsExamplesReference.generator}\` reads the canonical source
+and accepted output, validates the existing example schema, serializes the fact,
+reloads that boundary, and renders the public Markdown. The page manifest resolves
+the validated evidence pointer and owns the public route; the Markdown owns neither.
+`,
+        checks: [
+          'Name the owners of source, accepted output, evidence status, route identity, and rendered page.',
+          'Explain why the update interface may write expected stdout while a hand-written expected value may not.',
+          'Explain how the generator check and manifest schema poles make copied evidence styling fail loud.',
+        ],
+        seams: [
+          toolingDocsExamplesReference.expectedOutput,
+          toolingDocsExamplesReference.fact,
+          toolingDocsExamplesReference.schema,
+          toolingDocsExamplesReference.projection,
+          toolingDocsExamplesReference.generator,
+          toolingDocsExamplesReference.evidenceHarness,
+          'web/docs/page-manifest.json',
+        ],
+      },
+      {
+        id: 'isolated-practice',
+        prose: `
+Use the fixture below as a bounded, semantic-preserving edit to the canonical
+logger-counting example inside the disposable exact-HEAD clone. Derive its related
+silent variant from the same fixture so the existing handler-clause-only evidence
+remains truthful. Remove the counting example's accepted
+output and recreate it only with \`just update-example logger-counting\`, which uses
+the binary built in that clone. Run every declared engine plus \`check --json\` and
+\`query dump\`. First require the stale fact check to reject the source change;
+then regenerate through the existing logger generator, inspect the source/fact/page
+diff, and prove a second regeneration is byte-identical. Do not edit production Lean,
+type expected stdout, copy an evidence label, or hand-edit the projection.
+`,
+        fixture: {
+          path: 'main.bang',
+          source: `-- Role-lab practice: canonical source flows through checked projections.
+effect Log { log : Int -> Int }
+
+handle
+  (logger.log(10)) + (logger.log(20)) + (logger.log(30))
+with Log as logger {
+  log(msg) => 1
+}
+`,
+        },
+        commands: [
+          'nix develop --command lake build bang',
+          'example="$lane/examples/logger-counting"',
+          'silent="$lane/examples/logger-silent"',
+          'fact="$lane/docfacts/examples/logger-counting.json"',
+          'page="$lane/docs/reference/examples/logger-counting.md"',
+          'cp "$example/main.bang" "$bundle/original-main.bang" && cp "$example/expected.txt" "$bundle/original-expected.txt" && cp "$silent/main.bang" "$bundle/original-silent-main.bang"',
+          "cp \"$practice\" \"$example/main.bang\" && sed 's/log(msg) => 1/log(msg) => 0/' \"$practice\" > \"$silent/main.bang\" && rm \"$practice\" \"$example/expected.txt\"",
+          'nix develop --command just update-example logger-counting 2>&1 | tee "$bundle/update.txt"',
+          './.lake/build/bin/bang run --engine=env "$example/main.bang" > "$bundle/env.txt" && diff -u "$example/expected.txt" "$bundle/env.txt"',
+          './.lake/build/bin/bang run --engine=oracle "$example/main.bang" > "$bundle/oracle.txt" && diff -u "$example/expected.txt" "$bundle/oracle.txt"',
+          './.lake/build/bin/bang run --engine=compiled "$example/main.bang" > "$bundle/compiled.txt" && diff -u "$example/expected.txt" "$bundle/compiled.txt"',
+          './.lake/build/bin/bang check --json "$example/main.bang" > "$bundle/check.json"',
+          './.lake/build/bin/bang query dump "$example/main.bang" > "$bundle/query.json"',
+          "if nix develop --command python3 tools/docfacts_logger.py --check > \"$bundle/stale-projection.txt\" 2>&1; then printf '%s\\n' 'STOP: stale example projection was accepted.' >&2; false; fi",
+          'nix develop --command python3 tools/docfacts_logger.py',
+          'git diff --check -- examples/logger-counting/main.bang examples/logger-counting/expected.txt examples/logger-silent/main.bang docfacts/examples/logger-counting.json docs/reference/examples/logger-counting.md',
+          'git diff -- examples/logger-counting/main.bang examples/logger-counting/expected.txt examples/logger-silent/main.bang docfacts/examples/logger-counting.json docs/reference/examples/logger-counting.md > "$bundle/practice.diff" && test -s "$bundle/practice.diff"',
+          'cp "$fact" "$bundle/logger-counting.json" && cp "$page" "$bundle/logger-counting.md"',
+          'sha256sum "$fact" "$page" > "$bundle/projection.sha256"',
+          'nix develop --command python3 tools/docfacts_logger.py',
+          'sha256sum --check "$bundle/projection.sha256"',
+          'nix develop --command just test-docfacts-logger > "$bundle/docfacts-check.txt" 2>&1',
+          'nix develop --command just docs-check > "$bundle/docs-check.txt" 2>&1',
+          'nix develop --command just test-role-lab-tooling-docs-examples > "$bundle/harness.txt" 2>&1',
+          'git restore -- examples/logger-counting/main.bang examples/logger-counting/expected.txt examples/logger-silent/main.bang docfacts/examples/logger-counting.json docs/reference/examples/logger-counting.md',
+          'test -z "$(git status --porcelain)"',
+        ],
+        boundedOutcome: 'The lane-built runner recreates the accepted output; env, oracle, and compiled agree; the mechanically related silent variant preserves the declared differential; check/query facts succeed; stale metadata is rejected; one existing generator deterministically updates the validated fact and public page; cleanup leaves the exact-HEAD clone clean.',
+      },
+      {
+        id: 'inspect-select',
+        prose: `
+Keep the original source/output, three engine observations, structured CLI facts,
+stale-check rejection, generated JSON/Markdown, deterministic hashes, and focused
+gate output as one external evidence bundle. Read the diff by authority: source is
+intent, expected output is runner acceptance, the fact is validated metadata, the
+manifest is route identity, and Markdown is derived presentation. Only then select
+current tooling, documentation, or example work through a read-only issue query.
+`,
+        evidenceChecks: [
+          'Require the accepted output to be absent before and recreated by the named update interface, never by a literal write.',
+          'Require env, oracle, and compiled to run from the exact-HEAD lane binary and match the one accepted output.',
+          'Require check --json and query dump to return successful structured facts for the edited source.',
+          'Require the stale projection to fail before regeneration and the existing schema/manifest poles to pass afterward.',
+          'Require source, fact, and page diffs plus byte-identical first and second generated outputs.',
+          'Confirm no production Lean source changed and cleanup returned the exact-HEAD clone to a clean state.',
+          'Record the real narrow and full gate exit statuses; a skipped gate is not a pass.',
+        ],
+        issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "tooling OR docs OR examples"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Recommend one only after naming the source, expected-output, fact, manifest, and projection owners plus the smallest falsifying gate; do not claim, comment on, or mutate it.',
       },
     ],
   },

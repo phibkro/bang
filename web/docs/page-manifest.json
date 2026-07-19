@@ -127,11 +127,11 @@
       "title": "Tooling / docs / examples",
       "summary": "Improve generated facts, checked examples, diagnostics, or contributor tooling.",
       "order": 40,
-      "targetPage": "contribution-workflow",
+      "targetPage": "tooling-docs-examples-role-lab",
       "seams": ["tools/check-examples.sh", "docs/architecture/core-overview.md", "examples/logger-counting/main.bang"],
       "firstChange": "Add one generated fact, checked example, or diagnostic projection without copying its source fact.",
-      "narrowGate": "just test-onboarding-journey",
-      "fullGate": "just verify"
+      "narrowGate": "nix develop --command bash -lc 'just check-examples && just check-examples-env && just docs-check'",
+      "fullGate": "nix develop --command just verify"
     },
     {
       "id": "coding-agent",
@@ -403,6 +403,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
       "target": { "kind": "onboarding-page", "route": "/contribute/routes/machine-backend", "contentKey": "machine-backend" },
       "navigation": { "order": 60 }
+    },
+    {
+      "id": "tooling-docs-examples-role-lab",
+      "title": "Tooling / docs / examples role lab",
+      "section": "contribute",
+      "audience": ["contributor", "agent"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["common-journey-evidence", "contributor-routes", "logger-counting-evidence"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/contribute/routes/tooling-docs-examples", "contentKey": "tooling-docs-examples" },
+      "navigation": { "order": 70 }
     },
     {
       "id": "current-architecture",
