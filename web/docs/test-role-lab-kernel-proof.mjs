@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { kernelProofReference, roleLabContent } from './role-lab-content.mjs'
+import { acquireRoleLabLane } from './role-lab-lane.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
@@ -112,20 +113,16 @@ assert.throws(() => extractSuggestion('Try this:\n  exact ih\n  exact ih'), /one
 assert.throws(() => extractSuggestion('Try this:\n  exact?'), /suggestion tactic/)
 
 const parent = mkdtempSync(join(tmpdir(), 'bang-role-lab-kernel-proof-'))
-const lane = join(parent, 'repo')
 const bundle = join(parent, 'evidence')
 const base = run('git', ['rev-parse', 'HEAD']).trim()
-const branch = `practice/kernel-proof-harness-${process.pid}-${Date.now()}`
-const practicePath = join(lane, practice.fixture.path)
 const theorem = 'Bang.GradeVec.zero_smul_scratch'
 let skipped = 0
 let negativesRun = false
 let referenceProbeRun = false
 
 try {
-  run(join(repoRoot, 'tools', 'new-worktree.sh'), [lane, branch, base])
-  assert.equal(run('git', ['rev-parse', 'HEAD'], { cwd: lane }).trim(), base, 'lane is exact source HEAD')
-  assert.equal(run('git', ['status', '--porcelain'], { cwd: lane }), '', 'exact-HEAD lane starts clean')
+  const { lane } = acquireRoleLabLane({ repoRoot, parent, base, labKey: 'kernel-proof', run })
+  const practicePath = join(lane, practice.fixture.path)
   run('mkdir', [bundle])
 
   writeFileSync(practicePath, practice.fixture.source)

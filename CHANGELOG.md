@@ -292,4 +292,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **lean** — cover native runner warnings (`change:24b4c0ec7f37ee8d234c118ee53e88939f6cf238a962e419d56ac6cb2b1ba60c`)
 - **core** — distinguish fuel exhaustion from out-of-memory (`change:0a29d3d55516becac67fb36829c7fcc92a987dc5eab2db11a3ea2909afc20b2a`)
 
+### Performance
+- **verify** — share role-lab build lane (`change:119e9c461c19e6fad373e94632066aa0fa143e098ea697f25b85d79f78bd6c3d`)
+
 <!-- END GENERATED changelog -->

@@ -5,10 +5,10 @@ import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { roleLabContent } from './role-lab-content.mjs'
+import { acquireRoleLabLane } from './role-lab-lane.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
-const bang = resolve(repoRoot, process.env.BANG_BIN ?? '.lake/build/bin/bang')
 const lab = roleLabContent.find((candidate) => candidate.key === 'frontend-language')
 assert.ok(lab, 'frontend-language role-lab content exists')
 const practice = lab.stages.find((stage) => stage.id === 'isolated-practice')
@@ -20,12 +20,28 @@ assert.equal(
 )
 
 const workdir = mkdtempSync(join(tmpdir(), 'bang-role-lab-frontend-'))
+const base = runInfra('git', ['rev-parse', 'HEAD']).trim()
+const handedOff = process.env.BANG_ROLE_LAB_LANE !== undefined && process.env.BANG_ROLE_LAB_LANE !== ''
+const executionRoot = handedOff
+  ? acquireRoleLabLane({ repoRoot, parent: workdir, base, labKey: 'frontend-language', run: runInfra }).lane
+  : repoRoot
+const bang = resolve(
+  executionRoot,
+  handedOff ? '.lake/build/bin/bang' : (process.env.BANG_BIN ?? '.lake/build/bin/bang'),
+)
 const practicePath = join(workdir, practice.fixture.path)
 let executed = 0
 
+function runInfra(command, args, { cwd = repoRoot } = {}) {
+  const result = spawnSync(command, args, { cwd, env: process.env, encoding: 'utf8' })
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+  assert.equal(result.status, 0, `command failed: ${command} ${args.join(' ')}\ncwd: ${cwd}\n${output}`)
+  return output
+}
+
 function run(command, { allowStderr = false } = {}) {
   const result = spawnSync('bash', ['-lc', command], {
-    cwd: repoRoot,
+    cwd: executionRoot,
     env: { ...process.env, bang, practice: practicePath },
     encoding: 'utf8',
   })
@@ -110,6 +126,13 @@ try {
   const idempotent = run('"$bang" fmt "$practice"')
   assert.equal(idempotent, canonical, 'formatting is idempotent')
   assert.equal(readFileSync(practicePath, 'utf8'), canonical.trimEnd())
+  if (handedOff) {
+    assert.equal(
+      runInfra('git', ['status', '--porcelain'], { cwd: executionRoot }),
+      '',
+      'frontend lab leaves the shared exact-HEAD lane clean',
+    )
+  }
 
   console.log(
     `role-lab-frontend: PASS — ${executed}/${practice.commands.length + 1} required commands executed; ` +

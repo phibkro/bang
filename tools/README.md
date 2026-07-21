@@ -57,7 +57,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-primitives.sh`](check-primitives.sh) | `fitness` | `Bang/Core/IR.lean` | kernel fitness function for CLAUDE.md Invariants #3 & #5 |
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |
 | [`check-release-version.sh`](check-release-version.sh) | `ci` | `Main.lean`, `tools/release.sh`, `tools/release-artifact.sh` | Exact release-tag ↔ compiler-provenance gate. One comparison seam for local |
-| [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
+| [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/test-role-labs.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
 | [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt`, `provenance.py` | Orientation-doc provenance gate. Untyped SHA tokens are commit claims and must |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `autoquality.sh`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
@@ -69,7 +69,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (44)
+## test (45)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -117,6 +117,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-role-lab-kernel-proof.sh`](test-role-lab-kernel-proof.sh) | `verify` | `web/docs/role-lab-content.mjs`, `Bang/Audit.lean`, `tools/audit_facts.py` | Dynamic exact-suggestion completion and kernel axiom evidence for the proof role lab |
 | [`test-role-lab-machine-backend.sh`](test-role-lab-machine-backend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `Bang/Backend/AbstractMachine.lean`, `Bang/Backend/WasmEmit.lean`, `tools/emit-rung1-diff.sh` | Public verify battery for the disposable machine/backend role-lab journey |
 | [`test-role-lab-tooling-docs-examples.sh`](test-role-lab-tooling-docs-examples.sh) | `verify` | `web/docs/role-lab-content.mjs`, `examples/logger-counting`, `docfacts/examples/logger-counting.json`, `docs/reference/examples/logger-counting.md` | Exact-HEAD example-to-fact-to-public-page journey for the tooling/docs/examples role lab |
+| [`test-role-labs.sh`](test-role-labs.sh) | `verify` | `web/docs/role-lab-lane.mjs`, `web/docs/test-role-lab-lane.mjs`, `tools/test-role-lab-frontend.sh`, `tools/test-role-lab-kernel-proof.sh`, `tools/test-role-lab-machine-backend.sh`, `tools/test-role-lab-tooling-docs-examples.sh` | Concurrent composite consuming one runner-owned, built exact-HEAD lane through |
 | [`test-squash-provenance.py`](test-squash-provenance.py) | `fitness` | `docfacts/proof-claims.json`, `provenance.py`, `gen-changelog.py`, `gen-proof-state.py`, `check-sha-reachable.sh`, `.github/workflows/verify.yml` | Integration/falsifier suite for squash-stable generated provenance |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 

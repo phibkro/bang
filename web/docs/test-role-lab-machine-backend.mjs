@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { machineBackendReference, roleLabContent } from './role-lab-content.mjs'
+import { acquireRoleLabLane } from './role-lab-lane.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
@@ -23,6 +24,7 @@ assert.equal(
 const practice = lab.stages[2]
 assert.equal(practice.fixture.path, 'main.bang')
 assert.equal(practice.fixture.source, 'let main = 19 + 23\n')
+assert.equal(practice.commands[0], 'nix develop --command lake build bang', 'lane binary is built first')
 assert.equal(
   practice.commands.filter((command) => command.includes('just test-role-lab-machine-backend')).length,
   1,
@@ -79,20 +81,16 @@ function runPractice(command, lane, practicePath, expectedPath, bundle) {
 }
 
 const parent = mkdtempSync(join(tmpdir(), 'bang-role-lab-machine-backend-'))
-const lane = join(parent, 'repo')
 const bundle = join(parent, 'evidence')
 const base = run('git', ['rev-parse', 'HEAD']).trim()
-const branch = `practice/machine-backend-harness-${process.pid}-${Date.now()}`
-const practicePath = join(lane, practice.fixture.path)
-const expectedPath = join(lane, 'expected.txt')
 let skipped = 0
 let wrongExpectedRejected = false
 let fixtureOnlyObserved = false
 
 try {
-  run(join(repoRoot, 'tools', 'new-worktree.sh'), [lane, branch, base])
-  assert.equal(run('git', ['rev-parse', 'HEAD'], { cwd: lane }).trim(), base, 'lane is exact source HEAD')
-  assert.equal(run('git', ['status', '--porcelain'], { cwd: lane }), '', 'exact-HEAD lane starts clean')
+  const { lane } = acquireRoleLabLane({ repoRoot, parent, base, labKey: 'machine-backend', run })
+  const practicePath = join(lane, practice.fixture.path)
+  const expectedPath = join(lane, 'expected.txt')
   run('mkdir', [bundle])
 
   writeFileSync(practicePath, practice.fixture.source)
