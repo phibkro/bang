@@ -210,6 +210,7 @@ increment to `main` → one clean entry per shipped unit with the same identity 
 - **frontend** — #164 S1 — subeffecting at the row-poly reuse site (issue #94) (`b9b327e3`)
 - **onboarding** — add read-only readiness preflight (`5b9620d9`)
 - **site** — generate onboarding routes and evidence (`94535248`)
+- **tools** — port release-version-check's decision logic to a compiled bang program (`change:0dd73232908aaa6618bbe07af11d00c98663f221dd7d4ea4d07c2b627c26afab`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
