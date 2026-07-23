@@ -56,7 +56,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-paths.sh`](check-paths.sh) | `fitness` | `paths/PATH-*.md`, `CONTEXT.md`, `ROADMAP.md` | PATH lifecycle fitness function |
 | [`check-primitives.sh`](check-primitives.sh) | `fitness` | `Bang/Core/IR.lean` | kernel fitness function for CLAUDE.md Invariants #3 & #5 |
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |
-| [`check-release-version.sh`](check-release-version.sh) | `ci` | `Main.lean`, `tools/release.sh`, `tools/release-artifact.sh` | Exact release-tag ↔ compiler-provenance gate. One comparison seam for local |
+| [`check-release-version.sh`](check-release-version.sh) | `ci` | `Main.lean`, `tools/release.sh`, `tools/release-artifact.sh`, `tools/bang/release-version-check.bang` | Exact release-tag ↔ compiler-provenance gate. One comparison seam for local |
 | [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/test-role-labs.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
 | [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt`, `provenance.py` | Orientation-doc provenance gate. Untyped SHA tokens are commit claims and must |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
