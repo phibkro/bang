@@ -34,6 +34,46 @@ export const toolingDocsExamplesReference = Object.freeze({
 
 const machineBackendExpectedShell = machineBackendReference.expectedOutput.replaceAll('\n', '\\n')
 
+export const frontendLanguageFixture = Object.freeze({
+  path: 'main.bang',
+  source: `let rec double : Int -> Int = fun n => n+n
+let quad = {fun n => $double ($double n)}
+let main = $quad 3
+`,
+})
+
+export const frontendLanguageCommands = Object.freeze([
+  'nix develop --command lake build Bang.Frontend.TypeCheck',
+  '"$bang" fmt "$practice"',
+  '"$bang" check --json "$practice"',
+  '"$bang" query dump "$practice"',
+  '"$bang" query symbols "$practice"',
+  '"$bang" query type "$practice" double',
+  '"$bang" query effects double "$practice"',
+  '"$bang" query def double "$practice"',
+  '"$bang" query refs double "$practice"',
+  '"$bang" impact "$practice" double',
+  '"$bang" run "$practice"',
+  '"$bang" rewrite fmt "$practice"',
+  '"$bang" rewrite fmt "$practice" -w',
+  'test "$(cat "$practice")" = "$("$bang" fmt "$practice")"',
+  '"$bang" check --json "$practice"',
+  '"$bang" query dump "$practice"',
+  '"$bang" impact "$practice" double',
+  '"$bang" run "$practice"',
+])
+
+const codingAgentCommands = Object.freeze([
+  'nix develop --command lake build bang',
+  ...frontendLanguageCommands.slice(1).map((command) =>
+    command.replaceAll('"$bang"', './.lake/build/bin/bang'),
+  ),
+  'rm "$practice"',
+  'test -z "$(git status --porcelain)"',
+  'nix develop --command just fitness',
+  'nix develop --command just verify',
+])
+
 export const roleLabContent = [
   {
     key: 'frontend-language',
@@ -87,33 +127,8 @@ lane. Observe its facts first, prove rewrite diff mode does not mutate it, then
 apply formatting with \`-w\`. Do not rename a declaration: this lab isolates
 the formatting boundary.
 `,
-        fixture: {
-          path: 'main.bang',
-          source: `let rec double : Int -> Int = fun n => n+n
-let quad = {fun n => $double ($double n)}
-let main = $quad 3
-`,
-        },
-        commands: [
-          'nix develop --command lake build Bang.Frontend.TypeCheck',
-          '"$bang" fmt "$practice"',
-          '"$bang" check --json "$practice"',
-          '"$bang" query dump "$practice"',
-          '"$bang" query symbols "$practice"',
-          '"$bang" query type "$practice" double',
-          '"$bang" query effects double "$practice"',
-          '"$bang" query def double "$practice"',
-          '"$bang" query refs double "$practice"',
-          '"$bang" impact "$practice" double',
-          '"$bang" run "$practice"',
-          '"$bang" rewrite fmt "$practice"',
-          '"$bang" rewrite fmt "$practice" -w',
-          'test "$(cat "$practice")" = "$("$bang" fmt "$practice")"',
-          '"$bang" check --json "$practice"',
-          '"$bang" query dump "$practice"',
-          '"$bang" impact "$practice" double',
-          '"$bang" run "$practice"',
-        ],
+        fixture: frontendLanguageFixture,
+        commands: frontendLanguageCommands,
         boundedOutcome: 'Only formatting changes: declarations, types, effects, reference edges, impact, and result remain equal.',
       },
       {
@@ -480,6 +495,91 @@ current tooling, documentation, or example work through a read-only issue query.
           'Record the real narrow and full gate exit statuses; a skipped gate is not a pass.',
         ],
         issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "tooling OR docs OR examples"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Recommend one only after naming the source, expected-output, fact, manifest, and projection owners plus the smallest falsifying gate; do not claim, comment on, or mutate it.',
+      },
+    ],
+  },
+  {
+    key: 'coding-agent',
+    stages: [
+      {
+        id: 'retrieve-predict',
+        prose: `
+Begin at this public route with no private handoff. Retrieve the repository
+invariants, contribution workflow, decision index, and manifest authority before
+choosing an edit. The manifest owns this route and its gates; the frontend role
+lab owns the disposable exercise reused below. Predict the files and generated
+pages that could change, and name the protected checkout before creating a lane.
+`,
+        retrievalChecks: [
+          'Read `CLAUDE.md` for repository invariants and prohibited actions.',
+          'Read `CONTRIBUTING.md` for the landing and verification workflow.',
+          'Use `docs/decisions/README.md` to locate applicable ADR authority.',
+          'Read `web/docs/page-manifest.json` for route, prerequisite, seam, and gate ownership.',
+        ],
+        predictionChecks: [
+          'Predict that the reused practice changes only disposable `main.bang` bytes.',
+          'Predict declarations, reference edges, impact closure, and result before querying.',
+          'Record the protected checkout path and predict that its HEAD and status remain identical.',
+        ],
+      },
+      {
+        id: 'trace-seam',
+        prose: `
+Create the independent exact-HEAD clone with the repository helper, then use the
+structured frontend read model rather than hidden context: \`query dump\`, \`symbols\`,
+\`refs\`, and \`impact\` expose the relevant declarations and edges. Trace formatting
+through its public CLI owner and focused gates. Do not publish \`CONTEXT.md\`, active
+filesystem paths, scratch notes, credentials, or other volatile operator state.
+`,
+        checks: [
+          'Prove the lane is a distinct checkout at the protected checkout exact HEAD and starts clean.',
+          'Locate formatter, query, rewrite, and CLI seams from tracked repository sources.',
+          'Bind every claimed result to the command output actually observed in the lane.',
+        ],
+        seams: [
+          'web/docs/page-manifest.json',
+          'tools/new-worktree.sh',
+          'Bang/Frontend/Format.lean',
+          'Bang/Frontend/Query.lean',
+          'Bang/Frontend/Rewrite.lean',
+          'Main.lean',
+          'tools/test-fmt.sh',
+          'tools/test-query.sh',
+          'tools/test-rewrite.sh',
+        ],
+      },
+      {
+        id: 'isolated-practice',
+        prose: `
+Reuse the frontend role lab's intentionally noncanonical fixture and its complete
+fmt/check/query/impact/rewrite/run sequence. The only execution adaptation is
+binary provenance: build \`bang\` inside this exact-HEAD lane and invoke that binary.
+Run the sequence in order, remove the disposable fixture, and require a clean lane.
+No production Lean source is part of this exercise.
+`,
+        fixture: frontendLanguageFixture,
+        commands: codingAgentCommands,
+        boundedOutcome: 'Only disposable formatting bytes change; declarations, types, effects, reference edges, impact, and result remain equal; the protected checkout is unchanged and the exact-HEAD lane is clean after removal.',
+      },
+      {
+        id: 'inspect-select',
+        prose: `
+Report a structured evidence record, not an unobserved success claim. It must bind
+\`base\` and \`head\` SHAs, the protected checkout and lane identities, changed \`files\`,
+ordered \`commands\`, each command's observed status and result, narrow and full gate
+results, and remaining \`uncertainty\`. A skipped or missing command is not a pass.
+After the evidence is complete, select matching live work read-only; recommendation
+does not replace human review or authorize autonomous issue execution.
+`,
+        evidenceChecks: [
+          'Require `base`, `head`, `protectedCheckout`, `lane`, `files`, `commands`, `results`, `gates`, and `uncertainty` fields.',
+          'Require `base` and `head` to equal the source SHA and require the lane path to differ from the protected checkout.',
+          'Require every displayed command and both gates to have an observed zero exit status; reject skipped, missing, or claimed-only success.',
+          'Require the changed-file record to contain only disposable `main.bang`, followed by a clean-lane observation.',
+          'Compare the protected checkout HEAD and porcelain status before and after the journey.',
+          'State uncertainty explicitly, including `none observed` when no uncertainty remains.',
+        ],
+        issueSelection: 'Run `gh issue list --repo phibkro/bang --state open --search "frontend OR formatter OR query OR agent"`; set `issue=<candidate-number>` and inspect it with `gh issue view "$issue" --repo phibkro/bang`. Record why its seams match the observed journey; do not claim, comment on, assign, close, edit, or otherwise mutate it.',
       },
     ],
   },

@@ -69,7 +69,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`test-gates.sh`](test-gates.sh) | `verify` | `tools/check.sh`, `tools/hooks/post-edit-check.sh`, `tools/burndown.sh`, `tools/docfacts_proof.py` | falsification tests for the fail-closed developer/proof gates |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (45)
+## test (46)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -113,11 +113,12 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-release-version.sh`](test-release-version.sh) | `verify` | `check-release-version.sh` | Known-good/known-bad poles for the exact release identity gate |
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
+| [`test-role-lab-coding-agent.sh`](test-role-lab-coding-agent.sh) | `verify` | `web/docs/role-lab-content.mjs`, `web/docs/page-manifest.json`, `web/docs/test-role-lab-coding-agent.mjs` | Exact-HEAD coding-agent journey reusing the frontend practice with structured evidence poles |
 | [`test-role-lab-frontend.sh`](test-role-lab-frontend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `web/docs/page-manifest.json` | Executable agreement between the generated frontend lab and its content-owned practice fixture |
 | [`test-role-lab-kernel-proof.sh`](test-role-lab-kernel-proof.sh) | `verify` | `web/docs/role-lab-content.mjs`, `Bang/Audit.lean`, `tools/audit_facts.py` | Dynamic exact-suggestion completion and kernel axiom evidence for the proof role lab |
 | [`test-role-lab-machine-backend.sh`](test-role-lab-machine-backend.sh) | `verify` | `web/docs/role-lab-content.mjs`, `Bang/Backend/AbstractMachine.lean`, `Bang/Backend/WasmEmit.lean`, `tools/emit-rung1-diff.sh` | Public verify battery for the disposable machine/backend role-lab journey |
 | [`test-role-lab-tooling-docs-examples.sh`](test-role-lab-tooling-docs-examples.sh) | `verify` | `web/docs/role-lab-content.mjs`, `examples/logger-counting`, `docfacts/examples/logger-counting.json`, `docs/reference/examples/logger-counting.md` | Exact-HEAD example-to-fact-to-public-page journey for the tooling/docs/examples role lab |
-| [`test-role-labs.sh`](test-role-labs.sh) | `verify` | `web/docs/role-lab-lane.mjs`, `web/docs/test-role-lab-lane.mjs`, `tools/test-role-lab-frontend.sh`, `tools/test-role-lab-kernel-proof.sh`, `tools/test-role-lab-machine-backend.sh`, `tools/test-role-lab-tooling-docs-examples.sh` | Concurrent composite consuming one runner-owned, built exact-HEAD lane through |
+| [`test-role-labs.sh`](test-role-labs.sh) | `verify` | `web/docs/role-lab-lane.mjs`, `web/docs/test-role-lab-lane.mjs`, `tools/test-role-lab-frontend.sh`, `tools/test-role-lab-kernel-proof.sh`, `tools/test-role-lab-machine-backend.sh`, `tools/test-role-lab-tooling-docs-examples.sh`, `tools/test-role-lab-coding-agent.sh` | Concurrent composite consuming one runner-owned, built exact-HEAD lane through |
 | [`test-squash-provenance.py`](test-squash-provenance.py) | `fitness` | `docfacts/proof-claims.json`, `provenance.py`, `gen-changelog.py`, `gen-proof-state.py`, `check-sha-reachable.sh`, `.github/workflows/verify.yml` | Integration/falsifier suite for squash-stable generated provenance |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 

@@ -46,6 +46,10 @@ test-role-lab-machine-backend:
 test-role-lab-tooling-docs-examples:
     bash tools/test-role-lab-tooling-docs-examples.sh
 
+# Exact-HEAD coding-agent discipline over the reused frontend fixture and evidence record.
+test-role-lab-coding-agent:
+    bash tools/test-role-lab-coding-agent.sh
+
 # One pinned formatter/linter entry point. The PostToolUse hook calls the same
 # underlying script with one safely quoted changed-file path.
 autoquality:

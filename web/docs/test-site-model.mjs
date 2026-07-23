@@ -73,6 +73,13 @@ function requireProductionRolePrerequisites(roleLabs) {
     'contributor-routes',
     'logger-counting-evidence',
   ])
+  assert.deepEqual(prerequisites['coding-agent'], [
+    'common-journey-evidence',
+    'contribution-workflow',
+    'agent-guide',
+    'contributor-routes',
+    'language-and-cli',
+  ])
 }
 requireProductionRolePrerequisites(resolveRoleLabContent(productionSite, roleLabContent))
 for (const [role, anchor] of [
@@ -80,6 +87,7 @@ for (const [role, anchor] of [
   ['kernel-proof', 'current-architecture'],
   ['machine-backend', 'current-architecture'],
   ['tooling-docs-examples', 'logger-counting-evidence'],
+  ['coding-agent', 'agent-guide'],
 ]) {
   const broken = structuredClone(productionSite)
   const page = broken.pages.find((candidate) => candidate.target.contentKey === role)
@@ -368,6 +376,7 @@ try {
       generatedPage('language-and-cli', 'reference', '/reference/language', 10),
       generatedPage('current-architecture', 'architecture', '/architecture/current', 10),
       generatedPage('logger-counting-evidence', 'reference', '/reference/logger-counting', 20),
+      generatedPage('agent-guide', 'contribute', '/CLAUDE', 15),
       generatedPage(
         'frontend-language-role-lab',
         'contribute',
@@ -396,11 +405,19 @@ try {
         50,
         ['common-journey-evidence', 'contributor-routes', 'logger-counting-evidence'],
       ),
+      generatedPage(
+        'coding-agent-role-lab',
+        'contribute',
+        '/contribute/routes/coding-agent',
+        60,
+        ['common-journey-evidence', 'contributor-routes', 'agent-guide', 'language-and-cli'],
+      ),
     )
     manifest.pages.find((page) => page.id === 'frontend-language-role-lab').target.contentKey = 'language'
     manifest.pages.find((page) => page.id === 'kernel-proof-role-lab').target.contentKey = 'proof'
     manifest.pages.find((page) => page.id === 'machine-backend-role-lab').target.contentKey = 'backend'
     manifest.pages.find((page) => page.id === 'tooling-docs-examples-role-lab').target.contentKey = 'tools'
+    manifest.pages.find((page) => page.id === 'coding-agent-role-lab').target.contentKey = 'agent'
     manifest.routeChoices[0].targetPage = 'frontend-language-role-lab'
     manifest.routeChoices.push({
       ...structuredClone(manifest.routeChoices[0]),
@@ -425,6 +442,14 @@ try {
       order: 40,
       targetPage: 'tooling-docs-examples-role-lab',
       seams: ['tools/check-examples.sh'],
+    })
+    manifest.routeChoices.push({
+      ...structuredClone(manifest.routeChoices[0]),
+      id: 'agent',
+      title: 'Coding agent',
+      order: 50,
+      targetPage: 'coding-agent-role-lab',
+      seams: ['docs/decisions/README.md'],
     })
   })
   const roleLabRecord = {
@@ -469,18 +494,22 @@ try {
   const toolingRoleLabRecord = structuredClone(roleLabRecord)
   toolingRoleLabRecord.key = 'tools'
   toolingRoleLabRecord.stages[1].seams = ['docfacts/examples/logger-counting.json']
-  const roleLabRecords = [roleLabRecord, proofRoleLabRecord, backendRoleLabRecord, toolingRoleLabRecord]
+  const agentRoleLabRecord = structuredClone(roleLabRecord)
+  agentRoleLabRecord.key = 'agent'
+  agentRoleLabRecord.stages[1].seams = ['web/docs/page-manifest.json']
+  const roleLabRecords = [roleLabRecord, proofRoleLabRecord, backendRoleLabRecord, toolingRoleLabRecord, agentRoleLabRecord]
   const resolvedRoleLabs = resolveRoleLabContent(roleLabSite, roleLabRecords)
-  assert.equal(resolvedRoleLabs.length, 4)
+  assert.equal(resolvedRoleLabs.length, 5)
   assert.deepEqual(
     resolvedRoleLabs.map((lab) => lab.routeChoice.id),
-    ['language', 'proof', 'backend', 'tools'],
+    ['language', 'proof', 'backend', 'tools', 'agent'],
     'one resolver preserves route-choice order for all role labs',
   )
   assert.equal(resolvedRoleLabs[0].page.id, 'frontend-language-role-lab')
   assert.equal(resolvedRoleLabs[1].page.id, 'kernel-proof-role-lab')
   assert.equal(resolvedRoleLabs[2].page.id, 'machine-backend-role-lab')
   assert.equal(resolvedRoleLabs[3].page.id, 'tooling-docs-examples-role-lab')
+  assert.equal(resolvedRoleLabs[4].page.id, 'coding-agent-role-lab')
   assert.deepEqual(
     resolvedRoleLabs[0].prerequisites.map((page) => page.id),
     ['common-journey-evidence', 'contributor-routes', 'language-and-cli'],
@@ -497,14 +526,20 @@ try {
     resolvedRoleLabs[3].prerequisites.map((page) => page.id),
     ['common-journey-evidence', 'contributor-routes', 'logger-counting-evidence'],
   )
+  assert.deepEqual(
+    resolvedRoleLabs[4].prerequisites.map((page) => page.id),
+    ['common-journey-evidence', 'contributor-routes', 'agent-guide', 'language-and-cli'],
+  )
   assert.ok(roleLabSite.pages.find((page) => page.id === 'frontend-language-role-lab').prerequisites.includes('language-and-cli'))
   assert.ok(roleLabSite.pages.find((page) => page.id === 'kernel-proof-role-lab').prerequisites.includes('current-architecture'))
   assert.ok(roleLabSite.pages.find((page) => page.id === 'machine-backend-role-lab').prerequisites.includes('current-architecture'))
   assert.ok(roleLabSite.pages.find((page) => page.id === 'tooling-docs-examples-role-lab').prerequisites.includes('logger-counting-evidence'))
+  assert.ok(roleLabSite.pages.find((page) => page.id === 'coding-agent-role-lab').prerequisites.includes('agent-guide'))
   assert.deepEqual(resolvedRoleLabs[0].seams, ['README.md', 'CONTRIBUTING.md'])
   assert.deepEqual(resolvedRoleLabs[1].seams, ['CLAUDE.md', 'ROADMAP.md'])
   assert.deepEqual(resolvedRoleLabs[2].seams, ['ONBOARDING.md', 'Bang/Backend/AbstractMachine.lean'])
   assert.deepEqual(resolvedRoleLabs[3].seams, ['tools/check-examples.sh', 'docfacts/examples/logger-counting.json'])
+  assert.deepEqual(resolvedRoleLabs[4].seams, ['docs/decisions/README.md', 'web/docs/page-manifest.json'])
   assert.equal(resolvedRoleLabs[0].narrowGate, 'just check Bang/Frontend/TypeCheck.lean')
   assert.equal(resolvedRoleLabs[0].fullGate, 'just verify')
 
@@ -528,7 +563,7 @@ try {
     return broken
   }, null, /content key other must equal route choice language/)
 
-  for (const roleId of ['language', 'proof', 'backend', 'tools']) {
+  for (const roleId of ['language', 'proof', 'backend', 'tools', 'agent']) {
     for (const missingPrerequisite of ['common-journey-evidence', 'contributor-routes']) {
       rejectRoleLab(`missing-${roleId}-${missingPrerequisite}-prerequisite`, () => {
         const broken = structuredClone(roleLabSite)

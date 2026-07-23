@@ -138,11 +138,11 @@
       "title": "Coding agent",
       "summary": "Retrieve the authority, isolate the work, make one bounded edit, and report observed evidence.",
       "order": 50,
-      "targetPage": "agent-guide",
+      "targetPage": "coding-agent-role-lab",
       "seams": ["CLAUDE.md", "docs/decisions/README.md", "CONTRIBUTING.md"],
       "firstChange": "Identify the source of truth and complete one issue-sized edit in an isolated lane.",
-      "narrowGate": "just fitness",
-      "fullGate": "just verify"
+      "narrowGate": "nix develop --command just fitness",
+      "fullGate": "nix develop --command just verify"
     }
   ],
   "pages": [
@@ -414,6 +414,17 @@
       "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
       "target": { "kind": "onboarding-page", "route": "/contribute/routes/tooling-docs-examples", "contentKey": "tooling-docs-examples" },
       "navigation": { "order": 70 }
+    },
+    {
+      "id": "coding-agent-role-lab",
+      "title": "Coding-agent role lab",
+      "section": "contribute",
+      "audience": ["agent", "contributor"],
+      "lifecycle": "snapshot",
+      "prerequisites": ["common-journey-evidence", "contribution-workflow", "agent-guide", "contributor-routes", "language-and-cli"],
+      "status": { "kind": "not-applicable", "reason": "generated-onboarding" },
+      "target": { "kind": "onboarding-page", "route": "/contribute/routes/coding-agent", "contentKey": "coding-agent" },
+      "navigation": { "order": 80 }
     },
     {
       "id": "current-architecture",

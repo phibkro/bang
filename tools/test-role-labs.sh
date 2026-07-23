@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tool: role=test couples=web/docs/role-lab-lane.mjs,web/docs/test-role-lab-lane.mjs,tools/test-role-lab-frontend.sh,tools/test-role-lab-kernel-proof.sh,tools/test-role-lab-machine-backend.sh,tools/test-role-lab-tooling-docs-examples.sh runs-in=verify
+# tool: role=test couples=web/docs/role-lab-lane.mjs,web/docs/test-role-lab-lane.mjs,tools/test-role-lab-frontend.sh,tools/test-role-lab-kernel-proof.sh,tools/test-role-lab-machine-backend.sh,tools/test-role-lab-tooling-docs-examples.sh,tools/test-role-lab-coding-agent.sh runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # Concurrent composite consuming one runner-owned, built exact-HEAD lane through
 # private reflink snapshots. The snapshots isolate root fixtures without cloning
@@ -37,8 +37,8 @@ assert_lane_boundary() {
 
 node web/docs/test-role-lab-lane.mjs
 
-role_lab_batteries=(test-role-lab-frontend test-role-lab-kernel-proof test-role-lab-machine-backend test-role-lab-tooling-docs-examples)
-cold_artifacts=('' .lake/build/lib/lean/Bang/Core/Soundness.olean .lake/build/bin/bang .lake/build/bin/bang)
+role_lab_batteries=(test-role-lab-frontend test-role-lab-kernel-proof test-role-lab-machine-backend test-role-lab-tooling-docs-examples test-role-lab-coding-agent)
+cold_artifacts=('' .lake/build/lib/lean/Bang/Core/Soundness.olean .lake/build/bin/bang .lake/build/bin/bang .lake/build/bin/bang)
 [ "${#cold_artifacts[@]}" -eq "${#role_lab_batteries[@]}" ] || {
   echo "role-labs: INTERNAL ERROR — cold-artifact map does not cover every enrolled harness" >&2
   exit 1
@@ -120,8 +120,8 @@ done
   echo "role-labs: INTERNAL ERROR — collected ${#statuses[@]}/${#role_lab_batteries[@]} statuses" >&2
   exit 1
 }
-[ "${#role_lab_batteries[@]}" -eq 4 ] || {
-  echo "role-labs: INTERNAL ERROR — expected four enrolled role-lab harnesses" >&2
+[ "${#role_lab_batteries[@]}" -eq 5 ] || {
+  echo "role-labs: INTERNAL ERROR — expected five enrolled role-lab harnesses" >&2
   exit 1
 }
 
@@ -155,4 +155,4 @@ assert_lane_boundary "$lane" "after all role labs (built template)"
   exit 1
 }
 
-echo "role-labs: 4/4 harnesses passed in isolated snapshots of one shared built exact-HEAD lane; 3/3 displayed-build cold-artifact poles restored."
+echo "role-labs: 5/5 harnesses passed in isolated snapshots of one shared built exact-HEAD lane; 4/4 displayed-build cold-artifact poles restored."
