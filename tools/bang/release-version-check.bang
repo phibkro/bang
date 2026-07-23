@@ -1,0 +1,65 @@
+-- release-version-check.bang — the release-tag ↔ compiler-provenance decision logic,
+-- ported from tools/check-release-version.sh's hand-rolled bash regex + string compare.
+-- Reads two lines from real stdin (line 1: the tag, e.g. "v0.1.1"; line 2: the actual
+-- `bang --version` output, e.g. "bang 0.1.1") and returns "PASS" or a "FAIL: ..." message
+-- as main's value — tools/check-release-version.sh is the process-exit-code wrapper
+-- (bang has no subprocess/exit-code primitive; the shell still runs `$BANG --version` and
+-- interprets this program's printed line, same division of labor as ADR-0104's host-IO seam).
+
+import Io
+
+-- isDigit n: 1 if n is an ASCII digit code point ('0'-'9' = 48-57), else 0. Mirrors
+-- caesar's range-check idiom (64 < n / n < 91) — no `<=` operator needed.
+let isDigit = {fun n =>
+  if 47 < n then if n < 58 then 1 else 0 else 0}
+
+-- step st s: a small automaton recognizing `v<digits>.<digits>.<digits>` (the release
+-- tag grammar `^v[0-9]+\.[0-9]+\.[0-9]+$`). States: 0 start, 1 need first digit of seg1,
+-- 2 in seg1 (>=1 digit seen), 3 need first digit of seg2, 4 in seg2, 5 need first digit of
+-- seg3, 6 in seg3 (>=1 digit seen, terminal). Structural recursion on s (caesar-shaped, no
+-- Div needed).
+let rec step : Int -> Str -> Int = fun st => fun s =>
+  match (s : Str) {
+    SNil -> if st == 6 then 1 else 0,
+    SCons(c, t) -> match c { Char(n) ->
+      let d = ($isDigit n);
+          dot = if n == 46 then 1 else 0;
+          v = if n == 118 then 1 else 0
+      in
+      if st == 0 then (if v == 1 then ($step 1 t) else 0)
+      else if st == 1 then (if d == 1 then ($step 2 t) else 0)
+      else if st == 2 then (if d == 1 then ($step 2 t) else if dot == 1 then ($step 3 t) else 0)
+      else if st == 3 then (if d == 1 then ($step 4 t) else 0)
+      else if st == 4 then (if d == 1 then ($step 4 t) else if dot == 1 then ($step 5 t) else 0)
+      else if st == 5 then (if d == 1 then ($step 6 t) else 0)
+      else if st == 6 then (if d == 1 then ($step 6 t) else 0)
+      else 0
+    }
+  }
+
+let validTag = {fun s => ($step 0 s)}
+
+-- strEq a b: structural string equality (no prelude `eq`/`streq` over Str; caesar's own
+-- `roundtrips` reuses `$eq` but that is a generic derived Eq, not assumed here).
+let rec strEq : Str -> Str -> Int = fun a => fun b =>
+  match (a : Str) {
+    SNil -> match (b : Str) { SNil -> 1, SCons(cb, tb) -> 0 },
+    SCons(ca, ta) -> match (b : Str) {
+      SNil -> 0,
+      SCons(cb, tb) -> match ca { Char(na) -> match cb { Char(nb) -> if na == nb then ($strEq ta tb) else 0 } }
+    }
+  }
+
+-- tailOf s: s with its first char dropped (SNil unchanged) — strips the tag's leading 'v'.
+let tailOf = {fun s => match (s : Str) { SNil -> SNil, SCons(c, t) -> t }}
+
+let main =
+  let tag = Io.readLine(());
+      actual = Io.readLine(())
+  in
+  let valid = ($validTag tag);
+      expected = $concat "bang " ($tailOf tag)
+  in
+  if valid == 0 then $concat "FAIL: bad tag format: " tag
+  else if ($strEq expected actual) == 0 then $concat "FAIL: provenance mismatch, want " expected
+  else "PASS"
