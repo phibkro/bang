@@ -75,11 +75,13 @@ theorem krelS_append_inv {m : Nat} {nid : Nat} {X D : CTy Eff Mult} {eₛ : Eff}
                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
                  obtain ⟨Dᵢ, hrec⟩ := ih P₀' htail hlen'
                  exact ⟨Dᵢ, by rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, hrec⟩⟩)
-              | (-- WALL: handleF-in-prefix. `krelS_handleF` unfolds hK's tail over `P₀ ++ deep` and
-                 -- its resume `hres` is over that LONGER stack. Rebuilding the wrapper `handleF nid hh_p
-                 -- :: P₀` demands hh_p's resume over the SHORTER prefix P₀ — the SAME relocation this
-                 -- lemma performs, at a nested handler (self-entangled). Even DESTRUCTURING then rebuilding
-                 -- fails: the resume slot shape mismatches (longer-stack `hres` ≠ shorter-stack conjunct).
+              | (rw [krelS_handleF] at hK
+                 obtain ⟨hmid, hHRp, htail, hresp⟩ := hK
+                 obtain ⟨Dᵢ, hrec⟩ := ih P₀' htail hlen'
+                 refine ⟨Dᵢ, ?_⟩
+                 rw [krelS_handleF]
+                 refine ⟨hmid, hHRp, hrec, ?_⟩
+                 trace_state
                  sorry)
 
 end Bang
